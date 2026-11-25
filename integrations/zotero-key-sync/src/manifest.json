@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Key Sync",
+  "version": "1.0.0",
+  "description": "Keeps Key in step with this Zotero library: records changes and answers Key on Zotero's local server.",
+  "author": "Key",
+  "applications": {
+    "zotero": {
+      "id": "key-sync@key.dev",
+      "update_url": "https://localhost.invalid/key-sync/updates.json",
+      "strict_min_version": "6.999",
+      "strict_max_version": "9.*"
+    }
+  }
+}
