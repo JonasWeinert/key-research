@@ -20,8 +20,14 @@ export interface AppSettings {
   openalexMailto: string
   /** An OpenAlex API key, for a daily budget of one's own. */
   openalexApiKey: string
+  /** Web search providers by id (see main/web-search): turned off, or given an API key. */
+  webProviders: Record<string, WebProviderSetting>
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '' }
+export interface WebProviderSetting {
+  enabled?: boolean
+  apiKey?: string
+}
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {} }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -60,7 +66,21 @@ function sanitize(input: AppSettings): AppSettings {
     openalex: input.openalex !== false,
     openalexMailto: typeof input.openalexMailto === 'string' && /^[^\s@]+@[^\s@]+$/.test(input.openalexMailto.trim()) ? input.openalexMailto.trim() : '',
     openalexApiKey: typeof input.openalexApiKey === 'string' ? input.openalexApiKey.trim().slice(0, 200) : '',
+    webProviders: webProviders(input.webProviders),
   }
+}
+
+function webProviders(input: unknown): Record<string, WebProviderSetting> {
+  const out: Record<string, WebProviderSetting> = {}
+  if (!input || typeof input !== 'object') return out
+  for (const [id, value] of Object.entries(input as Record<string, WebProviderSetting>).slice(0, 20)) {
+    if (!/^[a-z0-9-]{1,32}$/.test(id) || !value || typeof value !== 'object') continue
+    const entry: WebProviderSetting = {}
+    if (typeof value.enabled === 'boolean') entry.enabled = value.enabled
+    if (typeof value.apiKey === 'string' && value.apiKey.trim()) entry.apiKey = value.apiKey.trim().slice(0, 200)
+    out[id] = entry
+  }
+  return out
 }
 
 // Every view (shell, readers, office editors) follows prefers-color-scheme, which this sets.

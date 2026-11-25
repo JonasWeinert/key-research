@@ -317,6 +317,8 @@ export interface AppSettings {
   /** Sent with OpenAlex requests (their polite pool); empty uses the app's own address. */
   openalexMailto: string;
   openalexApiKey: string;
+  /** Web search providers by id: turned off, or given an API key. */
+  webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
 }
 export interface AppInfo {
   version: string;

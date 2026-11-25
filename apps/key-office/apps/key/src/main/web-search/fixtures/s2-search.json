@@ -1,0 +1,55 @@
+{
+  "total": 3,
+  "offset": 0,
+  "next": 3,
+  "data": [
+    {
+      "paperId": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+      "externalIds": { "DBLP": "journals/corr/VaswaniSPUJGKP17", "MAG": "2963403868", "ArXiv": "1706.03762", "CorpusId": 13756489 },
+      "url": "https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+      "title": "Attention is All you Need",
+      "abstract": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks in an encoder-decoder configuration. The best performing models also connect the encoder and decoder through an attention mechanism.",
+      "venue": "Neural Information Processing Systems",
+      "year": 2017,
+      "citationCount": 120000,
+      "isOpenAccess": false,
+      "openAccessPdf": { "url": "", "status": null, "license": null },
+      "publicationTypes": ["JournalArticle", "Conference"],
+      "journal": { "pages": "5998-6008", "name": "" },
+      "authors": [
+        { "authorId": "40348417", "name": "Ashish Vaswani" },
+        { "authorId": "1846258", "name": "Noam M. Shazeer" }
+      ]
+    },
+    {
+      "paperId": "df2b0e26d0599ce3e70df8a9da02e51594e0e992",
+      "externalIds": { "MAG": "2896457183", "DOI": "10.18653/v1/N19-1423", "ArXiv": "1810.04805", "ACL": "N19-1423", "CorpusId": 52967399 },
+      "url": "https://www.semanticscholar.org/paper/df2b0e26d0599ce3e70df8a9da02e51594e0e992",
+      "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "abstract": null,
+      "venue": "North American Chapter of the Association for Computational Linguistics",
+      "year": 2019,
+      "citationCount": 90000,
+      "isOpenAccess": true,
+      "openAccessPdf": { "url": "https://aclanthology.org/N19-1423.pdf", "status": "HYBRID" },
+      "publicationTypes": ["JournalArticle"],
+      "journal": { "name": "", "pages": "4171-4186" },
+      "authors": [{ "authorId": "39172707", "name": "Jacob Devlin" }]
+    },
+    {
+      "paperId": "7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b",
+      "externalIds": { "ArXiv": "2005.14165", "CorpusId": 218971783 },
+      "url": "https://www.semanticscholar.org/paper/7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b",
+      "title": "Language Models are Few-Shot Learners",
+      "abstract": "Recent work has demonstrated substantial gains on many NLP tasks.",
+      "venue": "Neural Information Processing Systems",
+      "year": 2020,
+      "citationCount": 30000,
+      "isOpenAccess": false,
+      "openAccessPdf": null,
+      "publicationTypes": null,
+      "journal": null,
+      "authors": [{ "authorId": "1", "name": "Tom B. Brown" }]
+    }
+  ]
+}

@@ -21,6 +21,7 @@ import { AgentFill } from "./agent-fill";
 import { AppSettingsStore, appInfo } from "./app-settings";
 import { downloadPdf } from "./download-pdf";
 import { LinkedFolders } from "./linked-folders";
+import { WebSearch } from "./web-search";
 import { Registry, type WorkspaceInfo } from "./workspaces";
 import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-media";
 import { WindowStateStore, type SavedLayout, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
@@ -1739,6 +1740,7 @@ else
       });
       serveNoteMedia(registry);
       const linkedFolders = new LinkedFolders((c, a, w) => registry.invoke(c, a, w), () => liveShells().map((w) => w.workspaceId), (v) => emit("linked-folders-changed", v));
+      const webSearch = new WebSearch({ settings: () => appSettings.get(), invoke: (c, a, w) => registry.invoke(c, a, w), emit });
       routeEmbeddedMedia();
       agentFill = new AgentFill(
         registry,
@@ -1875,6 +1877,7 @@ else
             return result;
           }
           if (linkedFolders.handles(command)) return linkedFolders.handle(command, args, targetWorkspace, (from ?? focusedShell()).window);
+          if (webSearch.handles(command)) return webSearch.handle(command, args, targetWorkspace);
           if (command === "agent_fill_propose")
             return agentFill.propose(targetWorkspace, args);
           if (command === "agent_fill_apply")

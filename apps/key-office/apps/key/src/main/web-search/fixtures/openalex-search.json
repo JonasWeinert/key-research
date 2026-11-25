@@ -1,0 +1,55 @@
+{
+  "meta": { "count": 3, "db_response_time_ms": 41, "page": null, "per_page": 3, "next_cursor": "IlsxMDAuMCwgJ2h0dHBzOi8vb3BlbmFsZXgub3JnL1cyOTYzNDAzODY4J10i", "groups_count": null },
+  "results": [
+    {
+      "id": "https://openalex.org/W2963403868",
+      "doi": null,
+      "display_name": "Attention Is All You Need",
+      "publication_year": 2017,
+      "type": "preprint",
+      "authorships": [
+        { "author_position": "first", "author": { "id": "https://openalex.org/A5001", "display_name": "Ashish Vaswani" } },
+        { "author_position": "middle", "author": { "id": "https://openalex.org/A5002", "display_name": "Noam Shazeer" } },
+        { "author_position": "middle", "author": { "id": "https://openalex.org/A5003", "display_name": "Niki Parmar" } }
+      ],
+      "primary_location": { "is_oa": true, "landing_page_url": "https://arxiv.org/abs/1706.03762", "pdf_url": "https://arxiv.org/pdf/1706.03762", "source": { "id": "https://openalex.org/S4306400194", "display_name": "arXiv (Cornell University)" } },
+      "best_oa_location": { "is_oa": true, "landing_page_url": "https://arxiv.org/abs/1706.03762", "pdf_url": "https://arxiv.org/pdf/1706.03762", "source": { "display_name": "arXiv (Cornell University)" } },
+      "open_access": { "is_oa": true, "oa_status": "green", "oa_url": "https://arxiv.org/pdf/1706.03762", "any_repository_has_fulltext": true },
+      "ids": { "openalex": "https://openalex.org/W2963403868", "mag": "2963403868" },
+      "cited_by_count": 61234,
+      "abstract_inverted_index": { "The": [0], "dominant": [1], "sequence": [2], "transduction": [3], "models": [4], "are": [5], "based": [6], "on": [7], "complex": [8], "recurrent": [9], "networks.": [10] }
+    },
+    {
+      "id": "https://openalex.org/W2896457183",
+      "doi": "https://doi.org/10.18653/v1/n19-1423",
+      "display_name": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+      "publication_year": 2019,
+      "type": "article",
+      "authorships": [
+        { "author": { "display_name": "Jacob Devlin" } },
+        { "author": { "display_name": "Ming-Wei Chang" } }
+      ],
+      "primary_location": { "landing_page_url": "https://doi.org/10.18653/v1/n19-1423", "pdf_url": null, "source": { "display_name": "Proceedings of the 2019 Conference of the North" } },
+      "best_oa_location": { "landing_page_url": "https://aclanthology.org/N19-1423", "pdf_url": "https://aclanthology.org/N19-1423.pdf", "source": null },
+      "open_access": { "is_oa": true, "oa_status": "hybrid", "oa_url": "https://aclanthology.org/N19-1423.pdf" },
+      "ids": { "openalex": "https://openalex.org/W2896457183", "doi": "https://doi.org/10.18653/v1/n19-1423", "mag": "2896457183" },
+      "cited_by_count": 41000,
+      "abstract_inverted_index": null
+    },
+    {
+      "id": "https://openalex.org/W3000000001",
+      "doi": "https://doi.org/10.1038/s41586-021-03819-2",
+      "display_name": "Highly accurate protein structure prediction with AlphaFold",
+      "publication_year": 2021,
+      "type": "article",
+      "authorships": [{ "author": { "display_name": "John Jumper" } }],
+      "primary_location": { "landing_page_url": "https://www.nature.com/articles/s41586-021-03819-2", "source": { "display_name": "Nature" } },
+      "best_oa_location": null,
+      "open_access": { "is_oa": false, "oa_status": "closed", "oa_url": null },
+      "ids": { "openalex": "https://openalex.org/W3000000001", "doi": "https://doi.org/10.1038/s41586-021-03819-2", "pmid": "https://pubmed.ncbi.nlm.nih.gov/34265844", "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/8371605" },
+      "cited_by_count": 20000,
+      "abstract_inverted_index": { "Proteins": [0], "are": [1], "essential": [2], "to": [3], "life.": [4] }
+    }
+  ],
+  "group_by": []
+}
