@@ -99,6 +99,9 @@ pub struct BatchEdit {
     pub collections_add: Vec<String>,
     #[serde(default)]
     pub collections_remove: Vec<String>,
+    /// Properties set to a formula's result on each source (`{"Age": "2026 - [year]"}`).
+    #[serde(default)]
+    pub formulas: Map<String, Json>,
     /// The user typed it: bibliographic fields are marked as edited by hand.
     #[serde(default = "yes")]
     pub by_hand: bool,
@@ -429,6 +432,12 @@ impl Store {
                 let current: Option<String> = db.query_row("SELECT tags FROM sources WHERE id = ?", [id], |r| r.get(0)).optional().map_err(e)?;
                 let Some(current) = current else { continue };
                 let mut patch = edit.patch.clone();
+                if !edit.formulas.is_empty() {
+                    let computed = formula_patch(db, id, &edit.formulas)?;
+                    let mut properties = patch.get("properties").and_then(Json::as_object).cloned().unwrap_or_default();
+                    properties.extend(computed);
+                    patch.insert("properties".into(), Json::Object(properties));
+                }
                 if !edit.tags_add.is_empty() || !edit.tags_remove.is_empty() {
                     let tags: Vec<String> = serde_json::from_str(&current).unwrap_or_default();
                     let mut next: Vec<String> = tags.into_iter().filter(|t| !edit.tags_remove.iter().any(|r| r.trim().eq_ignore_ascii_case(t.trim()))).collect();
@@ -603,6 +612,24 @@ fn record(db: &Connection, kind: &str, label: &str, payload: Payload) -> Result<
     let seq = db.last_insert_rowid();
     db.execute("DELETE FROM journal WHERE seq <= ?1", [seq - MAX_ENTRIES]).map_err(e)?;
     Ok(JournalEntry { seq, kind: kind.into(), label: label.into(), count, created_at: now, ids })
+}
+
+/// The values `formulas` give on source `id` (a failing formula leaves its property alone).
+fn formula_patch(db: &Connection, id: &str, formulas: &Map<String, Json>) -> Result<Map<String, Json>> {
+    let row: Option<(String, Option<String>, Option<i64>, Option<i64>, String, Option<String>)> = db
+        .query_row("SELECT properties, title, year, page_count, creators, container_title FROM sources WHERE id = ?", [id], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+        })
+        .optional()
+        .map_err(e)?;
+    let Some((properties, title, year, pages, creators, journal)) = row else { return Ok(Map::new()) };
+    let properties: Map<String, Json> = serde_json::from_str(&properties).unwrap_or_default();
+    let creators: Vec<crate::Creator> = serde_json::from_str(&creators).unwrap_or_default();
+    let context = crate::formula::context(&properties, title.as_deref(), year, pages, &creators, journal.as_deref());
+    Ok(formulas
+        .iter()
+        .filter_map(|(name, formula)| Some((name.clone(), crate::formula::evaluate(formula.as_str()?, &context).ok()?.to_json())))
+        .collect())
 }
 
 fn default_label(n: usize, edit: &BatchEdit) -> String {

@@ -9,6 +9,8 @@ mod identify;
 mod linked;
 mod links;
 pub mod matching;
+pub mod normalize;
+pub mod formula;
 mod openalex;
 mod properties;
 mod relations;
@@ -303,8 +305,7 @@ pub struct SortKey {
 fn sort_expression(field: &str) -> String {
     // `property:<name>` sorts by a typed property; the name is quoted into a JSON path.
     if let Some(name) = field.strip_prefix("property:") {
-        let name: String = name.chars().filter(|c| !matches!(c, '"' | '\\' | '\0')).collect::<String>().replace('\'', "''");
-        return format!("json_extract(s.properties, '$.\"{name}\"')");
+        return formula::property_sql(name);
     }
     match field {
         "title" => "s.title COLLATE NOCASE",
@@ -490,7 +491,9 @@ impl Store {
             tx.commit().map_err(e)?;
         }
         citation_keys::ensure_schema(&conn)?;
+        formula::register(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
+        formula::register(&reader)?;
         reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
         Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
     }
@@ -612,6 +615,7 @@ impl Store {
         if let Some(source) = source.as_mut() {
             identify::decorate(&db, source)?;
             citation_keys::decorate(&db, source)?;
+            formula::decorate(&db, std::slice::from_mut(source))?;
         }
         Ok(source)
     }
@@ -655,11 +659,12 @@ impl Store {
             query.offset
         );
         let mut statement = db.prepare(&sql).map_err(e)?;
-        let items = statement
+        let mut items = statement
             .query_map(params_from_iter(values.iter()), read_source)
             .map_err(e)?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(e)?;
+        formula::decorate(&db, &mut items)?;
         let next = query.offset + items.len();
         let counts = counts(&db, query)?;
         Ok(SourcePage {

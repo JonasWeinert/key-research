@@ -117,12 +117,13 @@ pub(crate) fn condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
         ("oaStatus", _) => ("s.oa_status = ?".into(), vec![text()]),
         ("workType", _) => ("s.work_type = ?".into(), vec![text()]),
         ("language", _) => ("s.language = ? COLLATE NOCASE".into(), vec![text()]),
+        // A formula property filters by its computed value.
         ("property", is) => {
-            let path = Value::Text(format!("$.\"{}\"", filter.key.as_deref()?.replace('"', "\\\"")));
+            let value_sql = crate::formula::property_sql(filter.key.as_deref()?);
             if is {
-                ("CAST(json_extract(s.properties, ?) AS TEXT) = ? COLLATE NOCASE".into(), vec![path, text()])
+                (format!("CAST({value_sql} AS TEXT) = ? COLLATE NOCASE"), vec![text()])
             } else {
-                ("CAST(json_extract(s.properties, ?) AS TEXT) LIKE ? ESCAPE '\\'".into(), vec![path, like(value)])
+                (format!("CAST({value_sql} AS TEXT) LIKE ? ESCAPE '\\'"), vec![like(value)])
             }
         }
         _ => return None,
