@@ -165,6 +165,9 @@ impl Library {
                 let remove: Option<Vec<String>> = arg(args, "remove")?;
                 json_output(self.store.bulk_tag(&ids, &add.unwrap_or_default(), &remove.unwrap_or_default())?)
             })(),
+            "store_tag_index" => self.store.tag_index().and_then(json_output),
+            "store_tag_apply" => arg::<key_store::TagOperation>(args, "operation").and_then(|op| json_output(self.store.apply_tags(&op)?)),
+            "store_tag_restore" => arg::<key_store::TagSnapshot>(args, "snapshot").and_then(|s| json_output(self.store.restore_tags(&s)?)),
             "store_retag" => (|| json_output(self.store.retag(&arg::<Vec<String>>(args, "from")?, &arg::<String>(args, "to")?)?))(),
             "store_collections" => json_output(self.store.collections().unwrap_or_default()),
             "store_collection_create" => (|| {
