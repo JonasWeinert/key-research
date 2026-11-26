@@ -161,10 +161,10 @@ const assert = require("node:assert/strict");
     await page.locator(".kx-library .kx-row").nth(0).click();
     await page.locator(".kx-library .kx-row").nth(1).click({ modifiers: ["Shift"] });
     await context.locator('[data-status-item="selected"]', { hasText: "2 selected" }).waitFor();
-    await page.evaluate(() => window.key.setAppSettings({ theme: "dark" }));
+    await page.emulateMedia({ colorScheme: "dark" });
     await page.waitForTimeout(700);
     await shot("status-bar-library-dark");
-    await page.evaluate(() => window.key.setAppSettings({ theme: "light" }));
+    await page.emulateMedia({ colorScheme: null });
     await page.evaluate((id) => window.key.invoke("store_index_control", { action: "resume" }, id), ws.id);
 
     // Two groups: the bar follows the focused group's view.
