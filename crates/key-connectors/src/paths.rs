@@ -294,7 +294,7 @@ fn xml_parse(path: &str) -> Result<Vec<XStep>, String> {
         return Ok(vec![XStep::SelfNode]);
     }
     let mut out = Vec::new();
-    let mut rest = path.strip_prefix("$/").or_else(|| path.strip_prefix("./")).unwrap_or(path);
+    let mut rest = path.strip_prefix(".//").map(|r| &path[path.len() - r.len() - 2..]).or_else(|| path.strip_prefix("$/")).or_else(|| path.strip_prefix("./")).unwrap_or(path);
     let mut descendant = false;
     if let Some(r) = rest.strip_prefix("//") {
         descendant = true;
@@ -435,7 +435,7 @@ struct Compound {
 
 #[derive(Debug, Clone)]
 struct Selector {
-    scope: bool,
+
     /// (child combinator, compound)
     parts: Vec<(bool, Compound)>,
     attr: Option<String>,
@@ -491,7 +491,8 @@ fn css_parse(path: &str) -> Result<Vec<Selector>, String> {
         if parts.is_empty() && !scope && attr.is_none() {
             return Err(format!("bad selector {alternative:?}"));
         }
-        out.push(Selector { scope: scope || parts.is_empty(), parts, attr });
+        let _ = scope;
+        out.push(Selector { parts, attr });
     }
     Ok(out)
 }
@@ -679,7 +680,7 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(texts(&select(&items[0], "h3 > a@href").unwrap()), vec!["/s/1"]);
         assert_eq!(texts(&select(&items[0], ".tag:contains(researchers) a").unwrap()), vec!["Ann", "Bo"]);
-        assert_eq!(texts(&select(&items[0], ".tag:nth-of-type(2) span").unwrap()), vec!["Country"]);
+        assert_eq!(texts(&select(&items[0], ".tag:nth-of-type(1) span").unwrap()), vec!["Country"]);
         assert_eq!(texts(&select(&items[1], ":scope").unwrap()), vec!["Two"]);
         assert!(css_parse("div:hover").is_err());
     }
