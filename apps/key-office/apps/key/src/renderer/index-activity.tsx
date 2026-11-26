@@ -46,6 +46,10 @@ export function stageLabel(job: IndexJob) {
   switch (job.stage) {
     case "opening":
       return "Opening…";
+    case "identifying":
+      return "Identifying…";
+    case "analysing":
+      return "Analysing layout…";
     case "reading":
       return job.total ? `Reading page ${Math.min(job.done + 1, job.total)} of ${job.total}` : "Reading text…";
     case "chunking":
