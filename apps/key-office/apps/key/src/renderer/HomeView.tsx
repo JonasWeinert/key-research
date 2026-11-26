@@ -129,12 +129,17 @@ export default function HomeView({
       run: () => workspace && importSources(workspace.id),
     },
     {
-      label: "New document",
-      hint: "Write in your workspace",
-      icon: "doc",
+      label: "New canvas",
+      hint: "Map sources and ideas",
+      icon: "canvas",
       tone: "indigo",
       disabled: !workspace,
-      run: () => action("create-office", { kind: "docs", workspaceId: workspace?.id }),
+      run: async () => {
+        if (!workspace) return;
+        const canvas = await invoke<{ id: string; title: string }>("store_canvas_save", { id: null, title: "", doc: { version: 1, nodes: [], edges: [] } }, workspace.id);
+        window.dispatchEvent(new Event("key:canvases-changed"));
+        action("open-content", { section: "canvas", workspaceId: workspace.id, canvasId: canvas.id, title: canvas.title });
+      },
     },
     {
       label: "New note",

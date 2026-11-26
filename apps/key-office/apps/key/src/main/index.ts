@@ -19,7 +19,6 @@ import { join, resolve, basename, dirname, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { access, copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { setUiLang, normalizeLang } from "@key/i18n";
 import { AiService } from "./ai/service";
 import { secrets as secretStore } from "./services/setup";
 import { AppSettingsStore, appInfo } from "./app-settings";
@@ -52,17 +51,6 @@ import { webPageRect } from "../shared/browser-layout";
 import { feedsEnvironmentRequest, watchFeedsEnvironment } from "./feeds-environment";
 import { forgetReading, reportReading } from "./reading-events";
 import { WindowStateStore, type SavedGroup, type SavedTab, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
-import {
-  setOfficeShellWindow,
-  configureOfficeEditors,
-  createOfficeView,
-  closeOfficeView,
-  canCloseOfficeView,
-  activateOfficeView,
-  loadOffice,
-  officeLoaded,
-  type OfficeKind,
-} from "./office-editors";
 import {
   activateWorkspaceTab,
   activeGroup,
@@ -100,14 +88,11 @@ import {
   type WorkspaceTabsState,
 } from "../shared/tab-model";
 
-const OFFICE_KINDS: OfficeKind[] = ["docs", "sheets", "slides", "markdown", "html"];
-const isOffice = (kind?: string): kind is OfficeKind => OFFICE_KINDS.includes(kind as OfficeKind);
-
 type OwnedView = {
   id: string;
   title: string;
   /** "home" views are drawn by the shell's renderer; every other kind is a native view (see `nativeKinds`). */
-  kind: "home" | "pdf" | "web" | OfficeKind;
+  kind: "home" | "pdf" | "web";
   /** A browser tab's page: where it is and what its bar shows. */
   web?: WebTabState;
   /** The title of the page a browser tab was opened from. */
@@ -153,7 +138,6 @@ type OwnedView = {
   sharedSearchNavigation?: boolean;
   dirty?: boolean;
   workspaceId?: string;
-  path?: string;
   source?: any;
   searchTarget?: any;
   /** Where the reader should go once it is ready: a page, and the annotation to light up. */
@@ -168,8 +152,6 @@ type OwnedView = {
   viewState?: any;
   view?: WebContentsView;
   lastUsed: number;
-  recordId?: string;
-  revision?: number;
   /** The window whose content view currently holds this view's native WebContentsView. */
   host?: ShellWindow;
 };
@@ -612,28 +594,6 @@ registerNativeKind("pdf", {
     return true;
   },
 });
-for (const kind of OFFICE_KINDS)
-  registerNativeKind(kind, {
-    // The editors load with the first Office tab shown, then every window lays out again.
-    ready: () => {
-      if (officeLoaded()) return true;
-      void loadOffice().then(
-        () => liveShells().forEach((w) => layout(w)),
-        (error) => emit("operation-error", String(error)),
-      );
-      return false;
-    },
-    create: (record) => createOfficeView(kind, record.path, { newBlank: !record.path }),
-    canClose: (record) => (record.view ? canCloseOfficeView({ kind, view: record.view }) : Promise.resolve(true)),
-    async dispose(record) {
-      if (record.view && !(await closeOfficeView({ kind, view: record.view }, true))) return false;
-      if (record.view) {
-        if (record.host && !record.host.window.isDestroyed()) record.host.window.contentView.removeChildView(record.view);
-        if (!record.view.webContents.isDestroyed()) record.view.webContents.close();
-      }
-      return true;
-    },
-  });
 // ── In-app browser: browser tabs, every web link in the app, PDFs found on the web ──
 registerNativeKind("web", {
   create(record) {
@@ -913,7 +873,6 @@ function attach(record: OwnedView, w: ShellWindow) {
     if (owner && found) {
       owner.state = activateWorkspaceTab(owner.state, found.tab.id);
       if (record.panel) record.panel.focused = false;
-      activateOfficeView(isOffice(record.kind) ? record.kind : null, isOffice(record.kind) ? view : null);
       tabsChanged(owner);
     }
   });
@@ -1018,8 +977,6 @@ function layout(w: ShellWindow = focusedShell()) {
       disposePdf(record);
     }
   }
-  const active = views.get(activeWorkspaceTab(w.state)?.viewId ?? "");
-  activateOfficeView(isOffice(active?.kind) ? active.kind : null, isOffice(active?.kind) ? (active.view ?? null) : null);
   tabsChanged(w);
 }
 /** Shows a view wherever it is open (in its group, which takes focus), bringing its window forward. */
@@ -1283,34 +1240,13 @@ async function closeViews(w: ShellWindow, ids: string[]): Promise<boolean> {
   }
   return true;
 }
-function office(kind: OfficeKind, path?: string, workspaceId?: string, w: ShellWindow = focusedShell()) {
-  const existing = [...views.values()].find((v) => path && v.path === path);
-  if (existing) {
-    focus(existing.id);
-    return existing.view;
-  }
-  return add({
-    id: randomUUID(),
-    kind,
-    path,
-    workspaceId,
-    title: path ? basename(path) : `Untitled ${kind}`,
-    lastUsed: Date.now(),
-  }, w);
-}
-function openPath(path: string, workspaceId?: string, w: ShellWindow = focusedShell()) {
-  const kind = (
-    {
-      ".docx": "docs",
-      ".xlsx": "sheets",
-      ".pptx": "slides",
-      ".md": "markdown",
-      ".html": "html",
-    } as Record<string, OfficeKind>
-  )[extname(path).toLowerCase()];
-  if (!kind) return false;
-  office(kind, path, workspaceId, w);
-  return true;
+/** Files Key has no editor for (Word, Excel and PowerPoint files saved by earlier versions)
+ * open in their default app, with a note saying why. */
+async function openInDefaultApp(path: string) {
+  if (!existsSync(path)) throw Error(`This file is no longer at ${path}`);
+  const error = await systemShell.openPath(path);
+  if (error) throw Error(error);
+  notify("info", `Key can't edit ${basename(path)} yet, so it opened in its default app.`);
 }
 async function sourceOpen(source: any, hit?: any, results?: any[], w: ShellWindow = focusedShell()) {
   const origin = views.get(activeViewId(w) ?? "");
@@ -1372,35 +1308,18 @@ async function sourceOpen(source: any, hit?: any, results?: any[], w: ShellWindo
     lastUsed: Date.now(),
   }, w);
 }
-async function saveOfficeRecord(v: OwnedView) {
-  try {
-    v.workspaceId ??= shellOfView(v.id)?.workspaceId ?? (await registry.list())[0]?.id;
-    if (!v.workspaceId || !v.path) return;
-    const record: any = await registry.invoke(
-      "workspace_register_file",
-      { path: v.path, editor: v.kind, title: v.title },
-      v.workspaceId,
-    );
-    v.recordId = record.id;
-    v.revision = record.revision;
-    emit("library-changed");
-  } catch (e) {
-    emit("operation-error", String(e));
-  }
-}
 async function importSources(workspaceId?: string, w: ShellWindow = focusedShell()) {
   workspaceId ??= w.workspaceId;
   const result = await dialog.showOpenDialog(w.window, {
     properties: ["openFile", "multiSelections"],
     filters: [
       {
-        name: "Documents",
-        extensions: ["pdf", "docx", "xlsx", "pptx", "md", "html"],
+        name: "PDFs",
+        extensions: ["pdf"],
       },
     ],
   });
   for (const path of result.filePaths) {
-    if (openPath(path, workspaceId, w)) continue;
     const info: any = await registry.invoke(
       "library_import_file",
       { path },
@@ -1589,8 +1508,6 @@ function createShell(
     lastFocusedShell = w;
     focusOrder.splice(focusOrder.indexOf(w.id) >>> 0, 1);
     focusOrder.unshift(w.id);
-    // Office editors open their dialogs and menus over the window in use.
-    setOfficeShellWindow(window);
     refreshMenu();
   });
   window.on("close", (event) => {
@@ -1807,7 +1724,6 @@ function savedView(id: string): SavedView | undefined {
   if (v.kind === "web") return v.web ? { type: "web", url: v.web.url, title: v.title } : undefined;
   if (v.kind === "pdf")
     return v.workspaceId ? { type: "pdf", workspaceId: v.workspaceId, hash: v.source?.hash ?? v.id.split(":").at(-1)!, title: v.title } : undefined;
-  if (v.kind !== "home") return v.path ? { type: "office", kind: v.kind, path: v.path, workspaceId: v.workspaceId } : undefined;
   const c = v.content;
   if (!c || c.section === "home") return { type: "home" };
   // A record that was never saved has nothing to reopen.
@@ -1960,12 +1876,8 @@ async function openContent(w: ShellWindow, p: any) {
 async function restoredView(saved: SavedView): Promise<OwnedView | undefined> {
   try {
     if (saved.type === "home") return homeView();
-    if (saved.type === "office") {
-      if (!existsSync(saved.path) || [...views.values()].some((v) => v.path === saved.path)) return undefined;
-      const record: OwnedView = { id: randomUUID(), kind: saved.kind as OfficeKind, path: saved.path, workspaceId: saved.workspaceId, title: basename(saved.path), lastUsed: Date.now() };
-      views.set(record.id, record);
-      return record;
-    }
+    // An Office tab saved by an earlier version: Key has no editor for it any more.
+    if (saved.type === "office") return undefined;
     if (saved.type === "web") {
       const url = webUrl(saved.url);
       if (!url) return undefined;
@@ -2146,12 +2058,8 @@ function stepTab(delta: number) {
   const at = group.tabs.findIndex((t) => t.id === group.activeTabId);
   selectTab((at + delta + group.tabs.length) % group.tabs.length);
 }
-/** The base menu, or the focused Office editor's own menu while one has focus. */
 function refreshMenu() {
-  const w = focusedShell();
-  const active = w && views.get(activeWorkspaceTab(w.state)?.viewId ?? "");
-  if (active?.view && isOffice(active.kind)) activateOfficeView(active.kind, active.view);
-  else baseMenu();
+  baseMenu();
 }
 function baseMenu() {
   // The workspaces window, in front or alone, has a menu of its own: nothing here acts on a
@@ -2381,7 +2289,6 @@ else
     .whenReady()
     .then(async () => {
       startupMark("ready");
-      setUiLang(normalizeLang(app.getLocale()));
       const root = resolve(app.getAppPath(), "../../../..");
       workspaceParent =
         process.env.KEY_WORKSPACE_PARENT ?? join(app.getPath("documents"), "Key");
@@ -2516,76 +2423,6 @@ else
       // key:// links from other apps, once the shell has had a moment to listen.
       if (first) first.window.webContents.once("did-finish-load", () => setTimeout(() => deliverDeepLinks(sendItemLink), 1200));
       else deliverDeepLinks(sendItemLink);
-      configureOfficeEditors(first?.window ?? launcher.browserWindow!, {
-        extractPdfText: async (bytes) => {
-          if (bytes.byteLength > 32 * 1024 * 1024)
-            throw Error("PDF attachment exceeds 32 MiB");
-          const workspaceId = (await registry.list())[0].id;
-          const id = randomUUID();
-          let text = "";
-          try {
-            const doc: any = await registry.invoke(
-              "native_open_buffer",
-              { id },
-              workspaceId,
-              {
-                binary: bytes,
-              },
-            );
-            for (let page = 0; page < doc.pages.length; page++) {
-              const value: any = await registry.invoke(
-                "native_text",
-                { id, page },
-                workspaceId,
-              );
-              text += value.text + "\n";
-              if (text.length > 2 * 1024 * 1024)
-                throw Error("PDF attachment text exceeds 2 MiB");
-            }
-            return text;
-          } finally {
-            await registry.invoke("native_close", { id }, workspaceId);
-          }
-        },
-        open: (kind, path) => office(kind, path),
-        openPath,
-        closeActive: () => {
-          const w = focusedShell();
-          const tab = activeWorkspaceTab(w.state);
-          if (tab) void closeTab(w, tab.id);
-        },
-        listTabs: () =>
-          [...views.values()].map((v) => ({
-            id: v.id,
-            title: v.title,
-            kind: v.kind,
-            active: v.id === activeWorkspaceTab(focusedShell().state)?.viewId,
-          })),
-        focus,
-        fileChanged: (wc, path) => {
-          const v = [...views.values()].find(
-            (v) => v.view?.webContents.id === wc,
-          );
-          if (v) {
-            v.path = path;
-            v.title = basename(path);
-            void saveOfficeRecord(v);
-            const w = shellOfView(v.id);
-            if (w) tabsChanged(w);
-          }
-        },
-        titleChanged: (wc, title) => {
-          const v = [...views.values()].find(
-            (v) => v.view?.webContents.id === wc,
-          );
-          if (v) {
-            v.title = title;
-            const w = shellOfView(v.id);
-            if (w) tabsChanged(w);
-          }
-        },
-        installBaseMenu: baseMenu,
-      });
       const bound = (sender: number) =>
         [...views.values()].find((v) => v.view?.webContents.id === sender);
       serveNotices(() => liveShells().map((s) => s.window.webContents));
@@ -3473,9 +3310,8 @@ else
             w.state = reorderWorkspaceTab(w.state, p.tabId, Number(p.index));
             tabsChanged(w);
             return snapshot(w);
+          // A press on the tab strip: the dismiss relay already closes other views' menus.
           case "chrome-pressed":
-            for (const record of views.values())
-              record.view?.webContents.send("app:chrome-pressed");
             return snapshot(w);
           // The strip's tab list: a group's tabs.
           case "tab-menu": {
@@ -3613,25 +3449,12 @@ else
             moveTab(w, found.tab.id, undefined, { x: at.x - 120, y: at.y - 20 });
             return snapshot(w);
           }
-          case "create-office":
-            if (
-              ["docs", "sheets", "slides", "markdown", "html"].includes(p.kind)
-            ) {
-              if (!p.workspaceId) throw Error("Choose a workspace");
-              office(p.kind, undefined, p.workspaceId, w);
-            }
-            break;
-          case "open-office-record": {
-            const item: any = await registry.invoke(
-              "workspace_record",
-              { id: p.recordId },
-              p.workspaceId,
-            );
-            if (
-              !item?.properties?.path ||
-              !openPath(item.properties.path, p.workspaceId, w)
-            )
-              throw Error("No supported file linked to this record");
+          // A workspace record that stands for a file (a document saved by an earlier
+          // version's Office editors) opens in the file's default app.
+          case "open-record-file": {
+            const item: any = await registry.invoke("workspace_record", { id: p.recordId }, p.workspaceId);
+            if (!item?.properties?.path) throw Error("No file is linked to this item");
+            await openInDefaultApp(String(item.properties.path));
             break;
           }
           case "link-folder": {
