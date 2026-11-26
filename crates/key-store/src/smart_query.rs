@@ -6,12 +6,26 @@
 use crate::{Result, Store, e};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QueryFilter {
     pub field: String,
     pub op: String,
     pub value: String,
     pub label: String,
+    /// The property name (`field = "property"`) or a creator's role.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub negate: bool,
+    /// An OR group (`field = "any"`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub any: Vec<QueryFilter>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<String>,
+    /// What the token says before its label ("Rating", "Added"); empty when the label says it all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -27,6 +41,9 @@ pub struct Detection {
     /// The query is only this identifier: the library can offer to add the work it names.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub add: Option<Identifier>,
+    /// What picking it does, in words (typed-out filters).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explain: Option<String>,
 }
 
 /// A work's identifier as pasted: doi | arxiv | pmid | pmcid | isbn, normalised.
@@ -96,12 +113,31 @@ pub struct KnownCollection {
     pub name: String,
 }
 
+/// A property the workspace defines, as a query can name it.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownProperty {
+    pub name: String,
+    /// The definition's type (text, number, select, multiselect, checkbox, date, formula …).
+    pub kind: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// A formula's result type.
+    #[serde(default)]
+    pub result_type: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct KnownNames {
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
     pub collections: Vec<KnownCollection>,
+    #[serde(default)]
+    pub properties: Vec<KnownProperty>,
+    /// Days since the epoch that relative dates count from (tests); today when absent.
+    #[serde(default)]
+    pub today: Option<i64>,
 }
 
 const MIN_YEAR: i64 = 1500;
@@ -111,7 +147,7 @@ fn is_year(y: i64) -> bool {
 }
 
 fn filter(field: &str, value: &str, label: &str, op: &str) -> QueryFilter {
-    QueryFilter { field: field.into(), op: op.into(), value: value.into(), label: label.into() }
+    QueryFilter { field: field.into(), op: op.into(), value: value.into(), label: label.into(), ..Default::default() }
 }
 
 // ── Text helpers ─────────────────────────────────────────────────────────────
@@ -339,7 +375,7 @@ fn arxiv_id(text: &str, at: usize) -> Option<(usize, usize)> {
 }
 
 fn detection(id: &'static str, filters: Vec<QueryFilter>, rest: String) -> Detection {
-    Detection { id, filters, kinds: None, rest, add: None }
+    Detection { id, filters, kinds: None, rest, add: None, explain: None }
 }
 
 /// `key:smith2020` or `@smith2020`: a citation key.
@@ -868,7 +904,7 @@ fn kind_word(text: &str, kinds: bool) -> Option<Detection> {
             return Some(detection("kind", vec![filter("kind", kind, label, "is")], rest));
         }
         if let Some(find) = find.filter(|_| kinds) {
-            return Some(Detection { id: "kind", filters: vec![], kinds: Some(vec![find]), rest, add: None });
+            return Some(Detection { id: "kind", filters: vec![], kinds: Some(vec![find]), rest, add: None, explain: None });
         }
     }
     None
@@ -929,71 +965,53 @@ fn known_name(text: &str, known: Option<&KnownNames>) -> Option<Detection> {
     Some(detection("collection", vec![filter("collection", &collection.id, &collection.name, "is")], cut(text, at, at + collection.name.len())))
 }
 
-/// Every reading of `text`, best first. An identifier stands alone; the others can combine.
-/// `status:unread|reading|read` and `read:>2026-01-01` (when last read; also `<`, `>=`, `<=`).
-fn reading_token(text: &str) -> Option<Detection> {
-    if !text.contains(':') {
-        return None;
+/// The query without the given byte ranges.
+fn without_spans(text: &str, spans: &[(usize, usize)]) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    for &(start, end) in spans {
+        out.push_str(&text[at..start.max(at)]);
+        out.push(' ');
+        at = end.max(at);
     }
-    for at in char_starts(text).filter(|at| boundary_before(text, *at)) {
-        for (prefix, field) in [("status:", "status"), ("read:", "read")] {
-            if !starts_ci(text, at, prefix) {
-                continue;
-            }
-            let start = at + prefix.len();
-            let end = text[start..].find(char::is_whitespace).map_or(text.len(), |n| start + n);
-            let raw = &text[start..end];
-            if field == "status" {
-                let value = match raw.to_lowercase().as_str() {
-                    "unread" | "new" => "unread",
-                    "reading" | "in-progress" | "progress" | "started" => "reading",
-                    "read" | "finished" | "done" => "read",
-                    _ => continue,
-                };
-                let label = match value {
-                    "unread" => "Unread",
-                    "reading" => "In progress",
-                    _ => "Read",
-                };
-                return Some(detection("status", vec![filter("status", value, label, "is")], cut(text, at, end)));
-            }
-            let (op, date) = [(">=", "gte"), ("<=", "lte"), (">", "gt"), ("<", "lt")]
-                .iter()
-                .find_map(|(sign, op)| raw.strip_prefix(sign).map(|d| (*op, d)))
-                .unwrap_or(("gte", raw));
-            if crate::reading::date_ms(date).is_none() {
-                continue;
-            }
-            let label = match op {
-                "gt" | "gte" => format!("Read since {date}"),
-                _ => format!("Last read before {date}"),
-            };
-            return Some(detection("read", vec![filter("read", date, &label, op)], cut(text, at, end)));
-        }
-    }
-    None
+    out.push_str(&text[at..]);
+    tidy(&out)
 }
 
+/// Every reading of `text`, best first. An identifier stands alone; the others can combine.
 pub fn detect_query(text: &str, kinds: bool, known: Option<&KnownNames>) -> Vec<Detection> {
     let query = text.trim();
     if query.encode_utf16().count() < 3 {
         return vec![];
+    }
+    // Filters typed out ("rating>3", "-tag:draft", "added last week") come out first; the
+    // rest reads as usual, with them.
+    let today = known.and_then(|k| k.today).unwrap_or_else(crate::field_query::today);
+    if let Some(typed) = crate::field_query::read(query, known, today) {
+        let rest = without_spans(query, &typed.spans);
+        let id: &'static str = match typed.filters.as_slice() {
+            [one] => crate::field_query::SPECS.iter().find(|s| s.field == one.field).map_or(if one.field == "property" { "property" } else { "fields" }, |s| s.field),
+            _ => "fields",
+        };
+        let said = typed.filters.iter().map(|f| [f.scope.clone().unwrap_or_default(), f.label.clone()].join(" ").trim().to_string()).collect::<Vec<_>>().join(", ");
+        let explain = format!("Only sources: {said}{}", if rest.is_empty() { String::new() } else { format!(", then searches “{rest}”") });
+        let token = Detection { id, filters: typed.filters, kinds: None, rest: rest.clone(), add: None, explain: Some(explain) };
+        let mut out = vec![token.clone()];
+        if rest.encode_utf16().count() >= 3 {
+            for mut found in detect_query(&rest, kinds, known) {
+                found.filters.splice(0..0, token.filters.clone());
+                found.add = None;
+                found.explain = None;
+                out.push(found);
+            }
+        }
+        return out;
     }
     if let Some(mut id) = identifier(query) {
         if id.rest.trim().is_empty() {
             id.add = addable(&id);
         }
         return vec![id];
-    }
-    // A reading token is taken out first; the rest reads as usual, with it.
-    if let Some(token) = reading_token(query) {
-        let mut out = vec![token.clone()];
-        for mut found in detect_query(&token.rest, kinds, known) {
-            found.filters.splice(0..0, token.filters.clone());
-            found.add = None;
-            out.push(found);
-        }
-        return out;
     }
     let readers: [&dyn Fn(&str) -> Option<Detection>; 4] = [&quoted, &years, &|t| kind_word(t, kinds), &|t| known_name(t, known)];
     let mut out = Vec::new();
@@ -1012,7 +1030,7 @@ pub fn detect_query(text: &str, kinds: bool, known: Option<&KnownNames>) -> Vec<
     // Several readings: also all at once ("pdf since 2020 malaria" → PDF, 2020 or later, "malaria").
     if out.len() > 1 && cite.is_none() {
         let mut rest = query.to_string();
-        let mut all = Detection { id: "all", filters: vec![], kinds: None, rest: String::new(), add: None };
+        let mut all = Detection { id: "all", filters: vec![], kinds: None, rest: String::new(), add: None, explain: None };
         for read in readers {
             let Some(found) = read(&rest) else { continue };
             all.filters.extend(found.filters);
@@ -1037,7 +1055,44 @@ impl Store {
         let tags = statement.query_map([], |r| r.get::<_, String>(0)).map_err(e)?.filter_map(|r| r.ok()).collect();
         let mut statement = db.prepare("SELECT id, name FROM collections").map_err(e)?;
         let collections = statement.query_map([], |r| Ok(KnownCollection { id: r.get(0)?, name: r.get(1)? })).map_err(e)?.filter_map(|r| r.ok()).collect();
-        Ok(KnownNames { tags, collections })
+        drop(statement);
+        let properties = self.known_properties(&db)?;
+        Ok(KnownNames { tags, collections, properties, today: None })
+    }
+
+    /// The workspace's properties with their types; a formula without a stored result type
+    /// is typed by the values it computes.
+    fn known_properties(&self, db: &rusqlite::Connection) -> Result<Vec<KnownProperty>> {
+        let mut statement = db.prepare("SELECT name, config FROM property_definitions ORDER BY name COLLATE NOCASE").map_err(e)?;
+        let rows: Vec<(String, String)> = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?.filter_map(|r| r.ok()).collect();
+        let mut out = Vec::new();
+        for (name, config) in rows {
+            let config: serde_json::Value = serde_json::from_str(&config).unwrap_or_default();
+            let kind = config.get("type").and_then(|t| t.as_str()).unwrap_or("text").to_string();
+            let mut options: Vec<String> = config.get("options").and_then(|o| o.as_array()).into_iter().flatten().filter_map(|o| o.as_str().map(String::from)).collect();
+            let mut result_type = config.get("resultType").and_then(|t| t.as_str()).map(String::from);
+            if kind == "formula" && result_type.is_none() {
+                let sql = format!("SELECT typeof(v) FROM (SELECT {} v FROM sources s WHERE s.trashed_at IS NULL LIMIT 50) WHERE v IS NOT NULL LIMIT 1", crate::formula::property_sql(&name));
+                let seen: Option<String> = db.query_row(&sql, [], |r| r.get(0)).ok();
+                result_type = Some(if matches!(seen.as_deref(), Some("integer" | "real")) { "number" } else { "text" }.into());
+            }
+            if kind == "select" || kind == "multiselect" {
+                let mut known = db.prepare("SELECT value FROM property_options WHERE property = ? ORDER BY position").map_err(e)?;
+                for value in known.query_map([&name], |r| r.get::<_, String>(0)).map_err(e)?.filter_map(|r| r.ok()) {
+                    if !options.contains(&value) {
+                        options.push(value);
+                    }
+                }
+            }
+            out.push(KnownProperty { name, kind, options, result_type });
+        }
+        Ok(out)
+    }
+
+    /// Every field a search can filter by, the workspace's properties included, with types,
+    /// operators and examples (the suggestions and the filter builder).
+    pub fn filter_fields(&self) -> Result<Vec<crate::field_query::FieldInfo>> {
+        Ok(crate::field_query::fields(&self.known_names()?))
     }
 
     /// The readings of a search query, with the workspace's own tag and collection names.
@@ -1174,7 +1229,7 @@ mod tests {
 
     #[test]
     fn names_tags_and_collections_within_a_longer_query() {
-        let known = KnownNames { tags: vec!["to read".into(), "review".into()], collections: vec![KnownCollection { id: "c1".into(), name: "Falls project".into() }] };
+        let known = KnownNames { tags: vec!["to read".into(), "review".into()], collections: vec![KnownCollection { id: "c1".into(), name: "Falls project".into() }], ..Default::default() };
         let k = Some(&known);
         assert_eq!(first_with("to read malaria", false, k), one("tag", &["tag=to read"], "malaria"));
         assert_eq!(first_with("#review sepsis", false, k).unwrap().1, ["tag=review"]);
@@ -1201,7 +1256,7 @@ mod tests {
 
     #[test]
     fn never_panics_on_odd_input() {
-        let known = KnownNames { tags: vec!["İstanbul".into(), "ß-tag".into()], collections: vec![] };
+        let known = KnownNames { tags: vec!["İstanbul".into(), "ß-tag".into()], collections: vec![], ..Default::default() };
         for text in ["İstanbul 2020 x", "10.", "doi:", "\"ab\"", "isbn", "#", "“", "web  ", "pmc", "arxiv:", "10.1234/", "1999-", "Ⅻ 2020"] {
             let _ = detect_query(text, true, Some(&known));
         }
@@ -1209,7 +1264,7 @@ mod tests {
 
     #[test]
     fn is_fast() {
-        let known = KnownNames { tags: (0..5000).map(|i| format!("topic number {i}")).collect(), collections: vec![] };
+        let known = KnownNames { tags: (0..5000).map(|i| format!("topic number {i}")).collect(), collections: vec![], ..Default::default() };
         let start = std::time::Instant::now();
         for _ in 0..100 {
             detect_query("pdf since 2020 malaria topic number 4999", true, Some(&known));

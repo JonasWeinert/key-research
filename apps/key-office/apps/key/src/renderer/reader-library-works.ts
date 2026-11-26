@@ -3,6 +3,7 @@
 // library"), and the add through the shared collection chooser (add-from-source.tsx) with the
 // source being read as the origin. Without a chooser, the work goes in as a search result's
 // Add does, with the DOI's OpenAlex record when there is one, into the source's collections.
+// "Add to Inbox" keeps a cited work for later (`inbox_save`), saying which source it was in.
 import { LibraryWorks, type CitedWork, type LibraryMatch } from "@key-reader/pdfjs/library-works";
 import type { WebResult } from "../shared/web-search";
 import type { AddWork } from "./add-from-source";
@@ -50,6 +51,7 @@ export function readerLibraryWorks({
   open,
   collections,
   addFrom,
+  origin,
 }: {
   invoke: Invoke;
   open: (sourceId: string) => void;
@@ -57,7 +59,13 @@ export function readerLibraryWorks({
   collections: () => Promise<string[]>;
   /** Adds through the collection chooser (null: cancelled). */
   addFrom?: (work: AddWork) => Promise<{ id: string } | null>;
+  /** The source being read, which a work saved to the Inbox is noted as found in. */
+  origin?: () => Promise<{ sourceId?: string | null; kind?: string } | null>;
 }) {
+  const inboxWork = (work: CitedWork) => {
+    const result = webResultOf(work);
+    return { ...result, landingUrl: work.url ?? null };
+  };
   return new LibraryWorks({
     match: async (works) => {
       const hits = await invoke<{ key: string; sourceId: string; certain: boolean }[]>("store_match_identifiers", {
@@ -83,5 +91,19 @@ export function readerLibraryWorks({
       return { sourceId: source.id, existed };
     },
     open,
+    saveToInbox: async (work) => {
+      const from = await origin?.().catch(() => null);
+      const source = from?.sourceId ? await invoke<{ title?: string } | null>("store_source", { id: from.sourceId }).catch(() => null) : null;
+      const out = await invoke<{ state: "inbox" | "library" }>("inbox_save", {
+        work: inboxWork(work),
+        origin: { kind: from?.kind ?? "reader", label: source?.title || "a source you were reading", sourceId: from?.sourceId ?? null },
+      });
+      window.dispatchEvent(new Event("key:feeds-changed"));
+      return out.state;
+    },
+    inInbox: async (works) => {
+      const states = await invoke<{ state: string }[]>("inbox_state", { works: works.map(inboxWork) });
+      return works.filter((_, i) => states[i]?.state === "inbox").map((w) => w.key);
+    },
   });
 }

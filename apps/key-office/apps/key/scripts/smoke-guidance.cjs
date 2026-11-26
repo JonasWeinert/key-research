@@ -155,14 +155,15 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
     await shot("inbox-empty-light");
 
     // The manager, from the empty state's action; follow a feed so the Inbox has items.
-    await empty.getByRole("button", { name: "Add a feed…" }).click();
+    await empty.getByRole("button", { name: "Follow something…" }).click();
     const sheet = page.getByRole("dialog", { name: "Feeds and alerts" });
     await sheet.getByText("Not following anything").waitFor();
     await shot("feeds-manager-light");
     await theme(true);
     await shot("feeds-manager-dark");
     await theme(false);
-    await sheet.getByLabel("Feed or page address").fill(`${mock}/feed.xml`);
+    await sheet.getByLabel("Follow a journal, author, topic or search").fill(`${mock}/feed.xml`);
+    await sheet.getByLabel("Follow a journal, author, topic or search").press("Enter");
     await sheet.getByRole("button", { name: "Follow", exact: true }).click();
     await sheet.locator(".kx-feeds-row", { hasText: "Journal of Guidance" }).waitFor();
     await sheet.getByRole("button", { name: "Close", exact: true }).click();

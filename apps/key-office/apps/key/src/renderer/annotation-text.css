@@ -4,6 +4,7 @@
 }
 .kx-annotation-quote {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 .kx-annotation .kx-annotation-comment {
   margin: 0;

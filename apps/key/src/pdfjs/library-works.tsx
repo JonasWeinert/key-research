@@ -1,6 +1,8 @@
 // "Add to library" for works the reader shows (a cited work's card, a reference list row): the
 // host says which works the library has and adds one; the reader keeps each work's state so
 // every place showing it agrees (Add to library → Adding… → In library, which opens it).
+// Beside it, when the host keeps an Inbox, "Add to Inbox" keeps a work to decide on later
+// (Add to Inbox → In Inbox), secondary to adding it.
 import { useEffect, useSyncExternalStore } from 'react';
 import { Icon } from '../ui/Icon';
 import './library-works.css';
@@ -25,7 +27,13 @@ export interface LibraryWorksHost {
   /** Adds the work; null when the person cancelled (the collection chooser). */
   add(work: CitedWork): Promise<{ sourceId: string; existed?: boolean } | null>;
   open(sourceId: string): void;
+  /** Keeps the work in the Inbox for later: where it ended up. */
+  saveToInbox?(work: CitedWork): Promise<'inbox' | 'library'>;
+  /** Which of these works the Inbox has already: their keys. */
+  inInbox?(works: Array<CitedWork & { key: string }>): Promise<string[]>;
 }
+
+export type InboxState = 'none' | 'saving' | 'inbox';
 
 export type LibraryWorkState =
   | { status: 'checking' }
@@ -46,6 +54,7 @@ export function workKey(work: CitedWork) {
 
 export class LibraryWorks {
   private states = new Map<string, LibraryWorkState>();
+  private inbox = new Map<string, InboxState>();
   private listeners = new Set<() => void>();
   private queue = new Map<string, CitedWork>();
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -59,6 +68,32 @@ export class LibraryWorks {
 
   state(key: string) {
     return this.states.get(key) ?? CHECKING;
+  }
+
+  get canSaveToInbox() {
+    return !!this.host.saveToInbox;
+  }
+
+  inboxState(key: string): InboxState {
+    return this.inbox.get(key) ?? 'none';
+  }
+
+  private setInbox(key: string, state: InboxState) {
+    this.inbox.set(key, state);
+    for (const listener of this.listeners) listener();
+  }
+
+  async saveToInbox(work: CitedWork) {
+    const key = workKey(work);
+    if (!this.host.saveToInbox || this.inboxState(key) !== 'none') return;
+    this.setInbox(key, 'saving');
+    try {
+      const where = await this.host.saveToInbox(work);
+      this.setInbox(key, 'inbox');
+      if (where === 'library') this.check(work);
+    } catch {
+      this.setInbox(key, 'none');
+    }
   }
 
   private set(key: string, state: LibraryWorkState) {
@@ -86,11 +121,10 @@ export class LibraryWorks {
     const batch = [...this.queue].map(([key, work]) => ({ ...work, key }));
     this.queue.clear();
     let found: Record<string, LibraryMatch> = {};
-    try {
-      found = await this.host.match(batch);
-    } catch {
-      // Unknown: offer the add; adding answers the existing source when there is one.
-    }
+    const [matched, saved] = await Promise.allSettled([this.host.match(batch), this.host.inInbox?.(batch) ?? Promise.resolve([])]);
+    // Unknown: offer the add; adding answers the existing source when there is one.
+    if (matched.status === 'fulfilled') found = matched.value;
+    if (saved.status === 'fulfilled') for (const key of saved.value) this.inbox.set(key, 'inbox');
     for (const { key } of batch) {
       if (this.states.has(key)) continue;
       const match = found[key];
@@ -131,6 +165,29 @@ export function useLibraryWork(works: LibraryWorks | undefined, work: CitedWork 
   const subscribe = works?.subscribe ?? noSubscribe;
   return useSyncExternalStore(subscribe, () => (works && key ? works.state(key) : CHECKING));
 }
+
+/** "Add to Inbox" → "In Inbox", beside Add to library for works not in the library. */
+function InboxButton({ works, work, className }: { works: LibraryWorks; work: CitedWork; className: string }) {
+  const key = workKey(work);
+  const state = useSyncExternalStore(works.subscribe, () => works.inboxState(key));
+  if (!works.canSaveToInbox) return null;
+  return (
+    <button
+      type="button"
+      className={`${className} key-work-inbox`}
+      data-state={state}
+      disabled={state !== 'none'}
+      title={state === 'inbox' ? 'In your Inbox, to decide on later' : 'Keep it in your Inbox to decide on later, without adding it to the library'}
+      onClick={event => {
+        event.stopPropagation();
+        void works.saveToInbox(work);
+      }}
+    >
+      <Icon name={state === 'inbox' ? 'check' : 'inbox'} />
+      {state === 'inbox' ? 'In Inbox' : state === 'saving' ? 'Saving…' : 'Add to Inbox'}
+    </button>
+  );
+}
 const noSubscribe = () => () => {};
 
 /** The one-click add, then the way to the library's copy. `variant` fits a card's action row
@@ -167,6 +224,7 @@ export function AddToLibraryButton({
       </button>
     );
   // Only the title matched: shown as such, and adding stays one click away.
+  const inbox = <InboxButton works={works} work={work} className={className} />;
   if (state.status === 'possible')
     return (
       <span className="key-work-possible" data-variant={variant}>
@@ -196,6 +254,7 @@ export function AddToLibraryButton({
         >
           <Icon name="add" />
         </button>
+        {inbox}
       </span>
     );
   if (state.status === 'adding')
@@ -206,18 +265,21 @@ export function AddToLibraryButton({
       </button>
     );
   return (
-    <button
-      type="button"
-      className={className}
-      data-state={state.status}
-      title={state.status === 'failed' ? `Could not add it: ${state.error}. Try again.` : 'Add this work to your library'}
-      onClick={event => {
-        event.stopPropagation();
-        void works.add(work);
-      }}
-    >
-      <Icon name={state.status === 'failed' ? 'retry' : 'add'} />
-      {state.status === 'failed' ? 'Try again' : 'Add to library'}
-    </button>
+    <>
+      <button
+        type="button"
+        className={className}
+        data-state={state.status}
+        title={state.status === 'failed' ? `Could not add it: ${state.error}. Try again.` : 'Add this work to your library'}
+        onClick={event => {
+          event.stopPropagation();
+          void works.add(work);
+        }}
+      >
+        <Icon name={state.status === 'failed' ? 'retry' : 'add'} />
+        {state.status === 'failed' ? 'Try again' : 'Add to library'}
+      </button>
+      {inbox}
+    </>
   );
 }

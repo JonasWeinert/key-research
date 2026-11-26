@@ -1,0 +1,207 @@
+/* The search field's filter builder button and popover, turned-around tokens, and the row of
+   suggested filters under the field in the search window (search-suggest.tsx). */
+
+.kx-search[data-builder] .kx-search-field {
+  padding-right: 56px;
+}
+.kx-search[data-builder] .kx-search-clear {
+  right: 29px;
+}
+.kx-search[data-builder] kbd {
+  right: 30px;
+}
+.kx-search[data-builder] .kx-search-spinner {
+  right: 52px;
+}
+.kx-search-build {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+.kx-search-build:hover,
+.kx-search-build[aria-expanded="true"] {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+
+/* "Not" tokens read as such. */
+.kx-token[data-negate] .kx-token-value {
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--kx-text-2) 60%, transparent);
+}
+
+/* The builder */
+.kx-filter-builder {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  right: 0;
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(70vh, 560px);
+  padding: 10px 12px 12px;
+  overflow-y: auto;
+  text-align: left;
+}
+.kx-filter-builder-tabs {
+  display: flex;
+  margin-bottom: 10px;
+}
+.kx-filter-builder-tabs button {
+  flex: 1;
+  width: auto;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+}
+.kx-filter-builder-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.kx-filter-builder-row > :is(select, input) {
+  flex: 1;
+  min-width: 0;
+}
+.kx-filter-builder-and {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-filter-builder-help {
+  margin: 0 0 10px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.kx-filter-builder-help code,
+.kx-filter-builder-typed {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 11.5px/16px ui-monospace, monospace;
+}
+.kx-filter-builder-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kx-filter-builder-foot .kui-button {
+  margin-left: auto;
+}
+.kx-filter-builder-typed {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-filter-builder-not {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kx-filter-builder-error {
+  margin: 8px 0 0;
+  color: var(--kx-red);
+  font-size: 12px;
+}
+.kx-filter-syntax h3 {
+  margin: 12px 0 5px;
+  color: var(--kx-text-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+.kx-filter-syntax-rules {
+  margin: 0;
+}
+.kx-filter-syntax-rules > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 10px;
+  padding: 3px 0;
+  border-bottom: 0.5px solid var(--kx-line);
+  font-size: 12px;
+}
+.kx-filter-syntax-rules dt {
+  font: 11.5px/18px ui-monospace, monospace;
+  color: var(--kx-text);
+}
+.kx-filter-syntax-rules dd {
+  margin: 0;
+  color: var(--kx-text-2);
+}
+.kx-filter-syntax-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kx-filter-syntax-examples button {
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 11.5px/18px ui-monospace, monospace;
+}
+.kx-filter-syntax-examples button:hover {
+  background: var(--kx-accent-soft);
+}
+
+/* Suggested filters as chips under the field (the search window). */
+.kx-suggest-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 2px 0;
+}
+.kx-suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--kx-fill);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+  color: var(--kx-text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kx-suggest-chip .kx-suggest-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kx-suggest-chip[data-detected] {
+  background: var(--kx-accent-soft);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--kx-accent) 40%, transparent);
+  color: var(--kx-text);
+}
+.kx-suggest-chip:hover {
+  box-shadow: inset 0 0 0 1px var(--kx-accent);
+}
+.kx-suggest-chip kbd {
+  position: static;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--kx-text-3);
+  font: 500 10px/14px var(--kx-font);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+.kx-suggest-chip .kx-suggest-token {
+  height: 16px;
+  background: var(--kx-bg-raised);
+}

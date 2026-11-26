@@ -1,0 +1,23 @@
+{
+ "meta": {
+  "count": 1,
+  "page": 1,
+  "per_page": 4
+ },
+ "results": [
+  {
+   "id": "https://openalex.org/T10341",
+   "display_name": "Coral and Marine Ecosystems Studies",
+   "works_count": 93836,
+   "field": {
+    "id": "https://openalex.org/fields/23",
+    "display_name": "Environmental Science"
+   },
+   "subfield": {
+    "id": "https://openalex.org/subfields/2303",
+    "display_name": "Ecology"
+   }
+  }
+ ],
+ "group_by": []
+}

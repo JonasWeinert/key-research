@@ -3,7 +3,13 @@ import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 export default defineConfig({
   main: { build: { externalizeDeps: false } },
-  preload: { build: { externalizeDeps: false } },
+  preload: {
+    build: {
+      externalizeDeps: false,
+      // web-signin runs in browser pages (session.registerPreloadScript in main/browser/sign-in.ts).
+      rollupOptions: { input: { index: resolve(__dirname, "src/preload/index.ts"), "web-signin": resolve(__dirname, "src/preload/web-signin.ts") } },
+    },
+  },
   renderer: {
     plugins: [react()],
     resolve: {

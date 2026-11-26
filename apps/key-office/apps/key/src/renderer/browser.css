@@ -152,6 +152,16 @@
   padding: 0;
   color: var(--kx-text-3);
 }
+/* Passkey sign-ins: the same quiet notice, with the way on as its first action. */
+.key-web-signin[data-waiting] > svg,
+.key-web-signin[data-handoff] > svg,
+.key-web-signin[data-imported] > svg {
+  color: var(--kx-accent);
+}
+.key-web-signin > button:not([data-primary], .key-web-proxy-close) {
+  color: var(--kx-text-2);
+  font-weight: 400;
+}
 /* Loading: a thin line sweeping along the bar's bottom edge. */
 .key-web-progress {
   position: absolute;

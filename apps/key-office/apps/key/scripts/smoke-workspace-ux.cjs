@@ -103,16 +103,11 @@ const assert = require("node:assert/strict");
     await send("toggle-inspector");
     await page.locator(".kx-inspector-panel .kx-item-title", { hasText: "Alpha" }).waitFor();
 
-    // Open Quickly: a note found by its text, in the "In the text" section, which collapses.
+    // Open Quickly: a note found by its text, in the Notes group, with its passage in the preview.
     await command("quick-open");
     await page.locator(".kx-palette input").fill("Zebrafish");
-    const inText = page.locator(".kx-palette .kx-found-group[data-group=text]");
-    await inText.locator(".kx-found-row", { hasText: "Beta" }).waitFor();
-    await inText.locator(".kx-search-head").click();
-    await until(async () => (await inText.locator(".kx-found-row").count()) === 0, "the section to collapse");
-    assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem("key.search.collapsed"))), ["text"]);
-    await inText.locator(".kx-search-head").click();
-    await inText.locator(".kx-found-row").first().waitFor();
+    const notes = page.locator(".kx-spot .kx-spot-group[data-group=note]");
+    await notes.locator(".kx-spot-row", { hasText: "Beta" }).waitFor();
     await shot(page, "2-open-quickly");
     await page.keyboard.press("Escape");
     await page.locator(".key-global-drawer-scrim").waitFor({ state: "detached" });
