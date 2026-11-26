@@ -1026,6 +1026,16 @@ impl Store {
         let rows = statement.query_map([id], |r| r.get(0)).map_err(e)?;
         rows.collect::<std::result::Result<_, _>>().map_err(e)
     }
+
+    /// Whether the user said these two sources are not duplicates ("Not duplicates").
+    pub fn marked_distinct(&self, a: &str, b: &str) -> Result<bool> {
+        let (a, b) = pair_key(a, b);
+        self.read()?
+            .query_row("SELECT 1 FROM source_pairs WHERE a = ?1 AND b = ?2 AND kind = 'distinct'", params![a, b], |_| Ok(()))
+            .optional()
+            .map(|found| found.is_some())
+            .map_err(e)
+    }
 }
 
 /// The library index, with the last change (`source_key_changes.seq`) it has applied.
@@ -1145,6 +1155,9 @@ mod tests {
         // Not duplicates: c is apart from a; b and a remain.
         store.mark_distinct(&[a.clone(), c.clone()]).unwrap();
         store.mark_distinct(&[b.clone(), c.clone()]).unwrap();
+        // Other checks (the notes' reference checker) ask about the decision both ways round.
+        assert!(store.marked_distinct(&c, &a).unwrap() && store.marked_distinct(&b, &c).unwrap());
+        assert!(!store.marked_distinct(&a, &b).unwrap());
         let report = store.duplicate_groups(false).unwrap();
         assert_eq!(report.groups[0].ids.len(), 2);
         assert!(!report.groups[0].ids.contains(&c));

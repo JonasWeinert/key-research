@@ -100,12 +100,14 @@ fn check_note(library: &Library, args: &Json) -> Result<Json, String> {
             CheckSource { title: source.title().to_string(), in_library: true, trashed: source.trashed_at.is_some(), notice, item: csl_json::from_source(&source), preprint, published },
         );
     }
-    // The same work cited as two library items (versions linked to each other are not).
+    // The same work cited as two library items (versions linked to each other are not, nor
+    // pairs the user marked "Not duplicates").
     for (i, (a, wa)) in works.iter().enumerate() {
         for (b, wb) in &works[i + 1..] {
             if let Some(verdict) = duplicates::compare(wa, wb)
                 && verdict.kind != MatchKind::Version
                 && !library.store.versions_of(a)?.contains(b)
+                && !library.store.marked_distinct(a, b)?
             {
                 input.duplicates.push((a.clone(), b.clone(), verdict.reason));
             }
