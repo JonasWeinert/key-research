@@ -318,7 +318,8 @@
         "fields": { "type": "array", "items": { "type": "string" } },
         "fixture": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "offlineOnly": { "type": "boolean" },
-        "maxRecords": { "type": "integer", "minimum": 1 }
+        "maxRecords": { "type": "integer", "minimum": 1 },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 10000 }
       }
     }
   }
