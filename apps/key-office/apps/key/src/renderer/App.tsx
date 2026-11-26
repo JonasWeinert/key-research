@@ -8,8 +8,8 @@ import Settings, { type SettingsSection } from "./Settings";
 import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api";
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
 import type { SearchPreviewState } from "./search-preview";
-import { TabBar, type TabSummary, type TabsApi } from "./TabBar";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { TabBar, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./TabBar";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ROW_PX, share } from "./sidebar-budget";
 import { type LibrarySource, type LibraryHit } from "./LibraryHome";
 import "./shell.css";
@@ -26,18 +26,7 @@ import Inspector from "./Inspector";
 import CommandCenter from "./CommandCenter";
 import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
-import {
-  MAX_PANES,
-  PANE_HEADER,
-  layoutPanes,
-  paneBody,
-  setWorkspaceSplitRatio,
-  tabWithLayout,
-  type PaneLayout,
-  type SplitEdge,
-  type WorkspaceViewDrop,
-} from "../shared/tab-model";
-import { TabKindIcon, type ContentDropTarget } from "./TabBar";
+import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 interface Workspace {
   id: string;
   name: string;
@@ -60,33 +49,41 @@ interface RecordItem {
   revision: number;
   workspaceId?: string;
 }
+interface ViewState {
+  id: string;
+  title: string;
+  kind: string;
+  workspaceId?: string;
+  content?: ContentSpec;
+  /** Titles of what this view showed before (oldest first), and the next one forward. */
+  back?: string[];
+  forward?: string;
+  /** Bumped each time a link is followed in this view (or Back/Forward). */
+  nav?: number;
+}
+/** Main's snapshot of this window (see `snapshot` in main/index.ts). */
 interface TabState {
   searchPreview?: SearchPreviewState;
   /** The workspace this window shows; other windows' workspaces for the switcher. */
   workspaceId?: string;
   windowId?: string;
+  windowCount?: number;
   windows?: { windowId: string; workspaceId: string }[];
+  /** Editor groups, left to right. */
+  groups: { id: string; size: number; activeTabId: string | null; tabIds: string[] }[];
+  activeGroupId?: string;
+  /** Every group's tabs; each shows one view, and a reader may carry its details-and-notes panel. */
   tabs: {
     id: string;
-    layout?: PaneLayout;
+    groupId: string;
     pinned?: boolean;
     title: string;
-    views: {
-      id: string;
-      title: string;
-      kind: string;
-      workspaceId?: string;
-      content?: ContentSpec;
-      /** Titles of what this pane showed before (oldest first), and the next one forward. */
-      back?: string[];
-      forward?: string;
-      /** Bumped each time a link is followed in this pane (or Back/Forward). */
-      nav?: number;
-    }[];
+    views: ViewState[];
+    panel?: ViewState & { ratio: number };
   }[];
+  /** The focused group's tab, and the view with focus (that tab's view, or its panel). */
   activeTabId: string;
   activeViewId: string;
-  splitRatio?: number;
 }
 const api = () =>
   (
@@ -123,12 +120,10 @@ const SIDEBAR_MIN = 180,
   SIDEBAR_DEFAULT = 240;
 const clampSidebar = (width: number) => Math.round(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, width)));
 
-const emptyTabs: TabState = { tabs: [], activeTabId: "", activeViewId: "" };
-// Native views start below the 40px tab bar; DOM panes use the same geometry.
-const CHROME_TOP = 40;
-/** A quarter of the pane, at most this many pixels, from an edge splits there. */
-const EDGE_BAND = 80;
-const DIVIDER_STEP = 0.025;
+const emptyTabs: TabState = { groups: [], tabs: [], activeTabId: "", activeViewId: "" };
+/** A third of a group, at most this many pixels, from its side opens a new group there. */
+const EDGE_BAND = 140;
+const SASH_STEP = 0.025;
 const INSPECTOR_WIDTH = 300;
 
 /** The item a content pane shows, for the inspector when nothing is selected. */
@@ -147,41 +142,47 @@ function paneItem(content?: ContentSpec, title?: string): DraggedItem | undefine
 const contentIdentity = (content?: ContentSpec) =>
   content ? [content.section, content.noteId ?? content.canvasId ?? content.sourceId ?? content.entityId ?? content.record?.id ?? content.workspaceId ?? ""].join(":") : "";
 
-const tabSummary = (state: TabState): TabSummary[] =>
-  state.tabs.map((tab) => ({
-    id: tab.id,
-    title: tab.title,
-    kind: (tab.views[0]?.kind as TabSummary["kind"]) || "home",
-    active: tab.id === state.activeTabId,
-    closable: !tab.pinned,
-    pinned: Boolean(tab.pinned),
-    views: tab.views.map((view) => ({
-      ...view,
-      active: view.id === state.activeViewId,
-    })),
-  }));
-const officeTabs: TabsApi = {
-  list: () => api().tabs().then(tabSummary),
-  onChanged: (callback) =>
-    api().on("tabs-changed", (state) =>
-      callback(tabSummary(state as TabState)),
-    ),
-  focusView: (viewId) => {
-    void api().tabAction("focus", { viewId });
-  },
-  activate: (tabId) => api().tabAction("activate", { tabId }),
-  close: (tabId) => api().tabAction("close", { tabId }),
-  closeView: (viewId) => api().tabAction("close-pane", { viewId }),
-  reorder: (tabId, index) => api().tabAction("reorder", { tabId, index }),
-  showNewMenu: () => api().tabAction("new"),
-  showMenu: (x, y) => api().tabAction("tab-menu", { x, y }),
-  showTabMenu: (tabId, x, y) => api().tabAction("tab-context-menu", { tabId, x, y }),
-  dropView: (drop) => api().tabAction("drop-view", drop),
-  tearOff: (target) => api().tabAction("tear-off", target),
-  notifyChromePressed: () => {
-    void api().tabAction("chrome-pressed");
-  },
-};
+/** Each group's strip, as its TabBar shows it. */
+const groupSummaries = (state: TabState) =>
+  new Map(
+    state.groups.map((group) => [
+      group.id,
+      state.tabs
+        .filter((tab) => tab.groupId === group.id)
+        .map(
+          (tab): TabSummary => ({
+            id: tab.id,
+            title: tab.title,
+            kind: (tab.views[0]?.kind as TabSummary["kind"]) || "home",
+            active: tab.id === group.activeTabId,
+            closable: !tab.pinned,
+            pinned: Boolean(tab.pinned),
+          }),
+        ),
+    ]),
+  );
+const groupApis = new Map<string, TabsApi>();
+/** A group's strip acts on main through this (one object per group, so effects keyed on it stay put). */
+function groupApi(groupId: string): TabsApi {
+  let made = groupApis.get(groupId);
+  if (!made) {
+    made = {
+      activate: (tabId) => api().tabAction("activate", { tabId }),
+      close: (tabId) => api().tabAction("close", { tabId }),
+      reorder: (tabId, index) => api().tabAction("reorder", { tabId, index }),
+      showNewMenu: () => api().tabAction("new", { groupId }),
+      showMenu: (x, y) => api().tabAction("tab-menu", { x, y, groupId }),
+      showTabMenu: (tabId, x, y) => api().tabAction("tab-context-menu", { tabId, x, y }),
+      dropTab: (drop) => api().tabAction("drop-tab", drop as unknown as Record<string, unknown>),
+      tearOff: (tabId) => api().tabAction("tear-off", { tabId }),
+      notifyChromePressed: () => {
+        void api().tabAction("chrome-pressed");
+      },
+    };
+    groupApis.set(groupId, made);
+  }
+  return made;
+}
 export default function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]),
     [workspaceId, setWorkspaceId] = useState<string>();
@@ -193,8 +194,6 @@ export default function App() {
     [record, setRecord] = useState<RecordItem>();
   const [error, setError] = useState(""),
     [refreshKey, setRefreshKey] = useState(0);
-  const splitFrame = useRef<number | null>(null);
-  const splitPending = useRef<{ path: string; ratio: number }>({ path: "", ratio: 0.5 });
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem("key.sidebar.collapsed") === "true",
   );
@@ -236,16 +235,20 @@ export default function App() {
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
-  // A divider being dragged: its split and the ratio shown until main confirms it.
-  const [dragSplit, setDragSplit] = useState<{ path: string; ratio: number }>();
-  const resizeSplit = (path: string, ratio: number) => {
-    const next = { path, ratio: Math.max(0.1, Math.min(0.9, ratio)) };
-    setDragSplit(next);
-    splitPending.current = next;
-    if (splitFrame.current === null)
-      splitFrame.current = requestAnimationFrame(() => {
-        splitFrame.current = null;
-        action("resize-split", splitPending.current);
+  // A sash being dragged (between groups, or a reader and its panel): what is shown until
+  // main confirms it. Main moves native views once per frame meanwhile.
+  const [dragSizes, setDragSizes] = useState<number[]>();
+  const [dragPanel, setDragPanel] = useState<{ tabId: string; viewId: string; ratio: number }>();
+  const sashFrame = useRef<number | null>(null);
+  const sashPending = useRef<() => void>(undefined);
+  const sashDragging = useRef(false);
+  /** Sends the latest sash position to main at most once a frame. */
+  const sendSash = (send: () => void) => {
+    sashPending.current = send;
+    if (sashFrame.current === null)
+      sashFrame.current = requestAnimationFrame(() => {
+        sashFrame.current = null;
+        sashPending.current?.();
       });
   };
   const [createMenu, setCreateMenu] = useState(false),
@@ -455,8 +458,15 @@ export default function App() {
   const model = useModelProgress(invoke, workspaceId || workspaces[0]?.id);
   const selectedWorkspace = workspaces.find((w) => w.id === workspaceId),
     selectedProject = projects.find((p) => p.id === projectId);
+  // Once main has the sizes a sash was dragged to, its snapshot takes over again.
+  useEffect(() => {
+    if (sashDragging.current) return;
+    setDragSizes(undefined);
+    setDragPanel(undefined);
+  }, [tabs]);
+  const summaries = useMemo(() => groupSummaries(tabs), [tabs]);
   const activeTab = tabs.tabs.find((t) => t.id === tabs.activeTabId),
-    activeView = activeTab?.views.find((v) => v.id === tabs.activeViewId);
+    activeView = activeTab && [activeTab.views[0], activeTab.panel].find((v) => v?.id === tabs.activeViewId);
   // The sidebar shows the window's workspace; the focused view only picks the project
   // and highlights its row (a view from another workspace changes neither).
   useEffect(() => {
@@ -529,54 +539,64 @@ export default function App() {
       }),
     [],
   );
-  // The active tab's panes and dividers, in content-area pixels (right of the sidebar, below the tab bar).
-  const shownLayout = (() => {
-    const layout = activeTab?.layout;
-    if (!layout || !dragSplit) return layout;
-    const tab = tabWithLayout({ id: "drag" }, layout);
-    return setWorkspaceSplitRatio({ tabs: [tab], activeTabId: tab.id }, tab.id, dragSplit.ratio, dragSplit.path).tabs[0].layout;
-  })();
-  const laidOut = shownLayout
-    ? layoutPanes(shownLayout, {
-        x: 0,
-        y: 0,
-        width: Math.max(0, viewport.width - sidebarWidth - inspectorWidth),
-        height: Math.max(0, viewport.height - CHROME_TOP),
-      })
-    : { panes: [], dividers: [] };
-  /** What releasing a dragged tab or pane at (x, y) over the content would do. */
-  const contentDrop = (x: number, y: number, drag: { viewId: string; pane: boolean; header?: boolean }): ContentDropTarget | undefined => {
-    const cx = x - sidebarWidth,
-      cy = y - CHROME_TOP;
-    const target = laidOut.panes.find((p) => cx >= p.x && cx < p.x + p.width && cy >= p.y && cy < p.y + p.height);
-    if (!activeTab || !target || target.viewId === drag.viewId) return undefined;
-    const distances: [SplitEdge, number, number][] = [
-      ["left", cx - target.x, target.width],
-      ["right", target.x + target.width - cx, target.width],
-      ["top", cy - target.y, target.height],
-      ["bottom", target.y + target.height - cy, target.height],
-    ];
-    const near = distances
-      .map(([edge, distance, size]) => [edge, distance / Math.min(EDGE_BAND, size / 4)] as const)
-      .filter(([, scaled]) => scaled <= 1)
-      .sort((a, b) => a[1] - b[1])[0];
-    const title = activeTab.views.find((v) => v.id === target.viewId)?.title ?? "this pane";
-    const onScreen = { x: target.x + sidebarWidth, y: target.y + CHROME_TOP, width: target.width, height: target.height };
-    if (near) {
-      const edge = near[0];
-      const half =
-        edge === "left" ? { ...onScreen, width: onScreen.width / 2 }
-        : edge === "right" ? { ...onScreen, x: onScreen.x + onScreen.width / 2, width: onScreen.width / 2 }
-        : edge === "top" ? { ...onScreen, height: onScreen.height / 2 }
-        : { ...onScreen, y: onScreen.y + onScreen.height / 2, height: onScreen.height / 2 };
-      const drop: WorkspaceViewDrop = { kind: "split", viewId: drag.viewId, targetTabId: activeTab.id, targetViewId: target.viewId, edge };
-      const where = { left: "left of", right: "right of", top: "above", bottom: "below" }[edge];
-      return { drop, preview: half, label: `◫ Release to split ${where} ${title}` };
+  // Editor groups side by side, in pixels from the content area's left edge (right of the
+  // sidebar) and the window's top. Main places native views with the same function and numbers.
+  const contentWidth = Math.max(0, viewport.width - sidebarWidth - inspectorWidth);
+  const laidOut = layoutGroups(
+    tabs.groups.map((g, i) => ({ id: g.id, size: dragSizes?.[i] ?? g.size })),
+    { x: 0, y: 0, width: contentWidth, height: viewport.height },
+  );
+  const groupRect = (groupId: string) => laidOut.groups.find((g) => g.id === groupId);
+  /** Where each shown tab's view (and a reader's panel) sits. */
+  const placed = new Map<string, Rect>();
+  const panels: { tabId: string; readerId: string; panelId: string; sash: Rect; body: Rect; ratio: number }[] = [];
+  for (const group of tabs.groups) {
+    const rect = groupRect(group.id);
+    const tab = tabs.tabs.find((t) => t.id === group.activeTabId);
+    if (!rect || !tab?.views[0]) continue;
+    const body = groupBody(rect);
+    if (tab.panel) {
+      const ratio = dragPanel?.tabId === tab.id ? dragPanel.ratio : tab.panel.ratio;
+      const split = layoutPanel(body, ratio);
+      placed.set(tab.views[0].id, split.main);
+      placed.set(tab.panel.id, split.panel);
+      panels.push({ tabId: tab.id, readerId: tab.views[0].id, panelId: tab.panel.id, sash: split.sash, body, ratio });
+    } else placed.set(tab.views[0].id, body);
+  }
+  /** What releasing a tab dragged out of its strip at (x, y) would do: join another group's
+   * strip, move into another group, or open a group of its own beside one. */
+  const locateDrop = (x: number, y: number, drag: { tabId: string; groupId: string }): DropTarget | undefined => {
+    if (y <= TAB_STRIP_HEIGHT + 4) {
+      const strip = [...document.querySelectorAll<HTMLElement>("[data-group-strip]")].find((el) => {
+        const r = el.getBoundingClientRect();
+        return x >= r.left && x < r.right;
+      });
+      const groupId = strip?.dataset.groupStrip;
+      if (!strip || !groupId || groupId === drag.groupId) return undefined;
+      const rects = Array.from(strip.querySelectorAll<HTMLElement>(".tab-item"), (el) => el.getBoundingClientRect());
+      const found = rects.findIndex((r) => x < r.left + r.width / 2);
+      const index = found < 0 ? rects.length : found;
+      const marker = index < rects.length ? rects[index].left - 1 : (rects.at(-1)?.right ?? strip.getBoundingClientRect().left + 8) + 1;
+      return { drop: { kind: "move", tabId: drag.tabId, groupId, index }, label: "Release to move to this group", marker: { x: marker } };
     }
-    // The centre of a pane in a split swaps with it; a pane's own group falls back to separating,
-    // except when the pane is dragged by its header, which stays in the content.
-    if ((drag.pane && !drag.header) || activeTab.views.length < 2) return undefined;
-    return { drop: { kind: "swap", viewId: drag.viewId, targetViewId: target.viewId }, preview: onScreen, label: `⇄ Release to swap with ${title}` };
+    const cx = x - sidebarWidth;
+    const rect = laidOut.groups.find((g) => cx >= g.x && cx < g.x + g.width);
+    if (!rect) return undefined;
+    const body = groupBody(rect);
+    const onScreen = { ...body, x: body.x + sidebarWidth };
+    const source = tabs.groups.find((g) => g.id === drag.groupId);
+    const own = rect.id === drag.groupId;
+    // A group's only tab cannot leave it for a group beside it: that would empty it.
+    const canSplit = !(own && (source?.tabIds.length ?? 0) < 2) && (tabs.groups.length < MAX_GROUPS || (!own && source?.tabIds.length === 1));
+    const band = Math.min(EDGE_BAND, body.width / 3);
+    const side = cx < body.x + band ? "left" : cx >= body.x + body.width - band ? "right" : undefined;
+    if (side && canSplit) {
+      const half = { ...onScreen, width: onScreen.width / 2, x: side === "left" ? onScreen.x : onScreen.x + onScreen.width / 2 };
+      return { drop: { kind: "split", tabId: drag.tabId, groupId: rect.id, side }, label: `Release to open in a new group on the ${side}`, preview: half, content: true };
+    }
+    if (own) return { label: "Drag to a side to open a new group", content: true };
+    const index = tabs.tabs.filter((t) => t.groupId === rect.id).length;
+    return { drop: { kind: "move", tabId: drag.tabId, groupId: rect.id, index } satisfies TabDrop, label: "Release to move to this group", preview: onScreen, content: true };
   };
   // While a drag is over the content, native views are swapped for still frames so the
   // drop preview can be drawn over them.
@@ -608,58 +628,7 @@ export default function App() {
       void api().tabAction("global-overlay-close", { id });
     }
   };
-  // A pane of a split dragged by its header: onto another pane to split or swap, up into the
-  // tab bar to become a tab of its own, or out of the window into a new one.
-  const paneDragRef = useRef<{ pointerId: number; viewId: string; startX: number; startY: number; started: boolean; drop?: WorkspaceViewDrop; tearOff?: boolean }>(undefined);
-  const [paneDrag, setPaneDrag] = useState<{ viewId: string; x: number; label: string; preview?: ContentDropTarget["preview"]; insertAt?: number }>();
-  const movePaneDrag = (e: React.PointerEvent) => {
-    const drag = paneDragRef.current;
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    if (!drag.started) {
-      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < 5) return;
-      drag.started = true;
-      contentDragging(true);
-    }
-    const outside = e.clientX < 0 || e.clientY < 0 || e.clientX > window.innerWidth || e.clientY > window.innerHeight;
-    drag.drop = undefined;
-    drag.tearOff = outside;
-    if (outside) return setPaneDrag({ viewId: drag.viewId, x: e.clientX, label: "↗ Release to open in a new window" });
-    if (e.clientY < CHROME_TOP) {
-      const rects = Array.from(document.querySelectorAll<HTMLElement>(".tab-strip .tab-item"), (el) => el.getBoundingClientRect());
-      const index = rects.findIndex((r) => e.clientX < r.left + r.width / 2);
-      const at = index < 0 ? rects.length : index;
-      drag.drop = { kind: "detach", viewId: drag.viewId, index: at };
-      const marker = at < rects.length ? rects[at].left : (rects.at(-1)?.right ?? 0);
-      return setPaneDrag({ viewId: drag.viewId, x: e.clientX, label: "↑ Release to move into a tab of its own", insertAt: marker });
-    }
-    const target = contentDrop(e.clientX, e.clientY, { viewId: drag.viewId, pane: true, header: true });
-    drag.drop = target?.drop;
-    setPaneDrag({
-      viewId: drag.viewId,
-      x: e.clientX,
-      label: target?.label ?? "Drag onto another pane, or up to the tab bar",
-      preview: target?.preview,
-    });
-  };
-  const endPaneDrag = (pointerId: number, commit: boolean) => {
-    const drag = paneDragRef.current;
-    if (!drag || pointerId !== drag.pointerId) return;
-    paneDragRef.current = undefined;
-    setPaneDrag(undefined);
-    if (!drag.started) return;
-    contentDragging(false);
-    if (!commit) return;
-    if (drag.tearOff) action("tear-off", { tabId: tabs.activeTabId, viewId: drag.viewId });
-    else if (drag.drop) action("drop-view", drag.drop as unknown as Record<string, unknown>);
-  };
-  useEffect(() => {
-    if (!paneDrag) return;
-    const cancel = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && paneDragRef.current) endPaneDrag(paneDragRef.current.pointerId, false);
-    };
-    window.addEventListener("keydown", cancel);
-    return () => window.removeEventListener("keydown", cancel);
-  });
+  const totalTabs = tabs.tabs.length;
   const recordIcon = (r: RecordItem): IconName =>
     r.kind === "note" ? "note" : r.kind === "database" ? "database" : "doc";
   // The Workspace section lists notes, canvases, pages and documents together.
@@ -771,7 +740,7 @@ export default function App() {
           { id: "highlights", label: "All highlights", icon: "quote", shortcut: "⌘⇧H", run: () => action("open-content", { section: "highlights", workspaceId }) },
           { id: "inspector", label: inspectorOpen ? "Hide inspector" : "Show inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => setInspectorOpen((o) => !o) },
           { id: "sidebar", label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: "sidebar", run: () => setSidebarCollapsed((v) => !v) },
-          { id: "split", label: "Split with another tab", icon: "split", run: () => action("split-menu") },
+          { id: "split", label: "Split right", icon: "split", shortcut: "⌘\\", run: () => action("split-right") },
           { id: "capture", label: "Quick capture", icon: "plus", shortcut: "⌃⌥Space", run: () => action("quick-capture") },
           { id: "settings", label: "Settings", icon: "gear", shortcut: "⌘,", run: () => setSettingsSection("general") },
           { id: "shortcuts", label: "Keyboard shortcuts", icon: "info", shortcut: "⌘/", run: () => window.dispatchEvent(new CustomEvent("key:shortcuts")) },
@@ -1050,93 +1019,66 @@ export default function App() {
         )}
       </div>
       <div className="kx-main">
-      <TabBar
-        api={officeTabs}
-        contentDrop={contentDrop}
-        onContentDrag={contentDragging}
-        trailingControls={
-          <div className="key-chrome-layout-controls">
-            {activeTab && activeTab.views.length > 1 && (
-              <>
-                <button
-                  title="Swap panes"
-                  aria-label="Swap panes"
-                  onClick={() => action("swap")}
-                >
-                  <Icon name="swap" />
-                </button>
-                <button
-                  title="Separate panes"
-                  aria-label="Separate panes"
-                  onClick={() =>
-                    action("separate", { viewId: tabs.activeViewId })
-                  }
-                >
-                  <Icon name="detach" />
-                </button>
-              </>
-            )}
-            {tabs.tabs.length > 1 && (
-              <button
-                title="Move this tab to a new window"
-                aria-label="Move tab to new window"
-                onClick={() => action("pop-out", { tabId: tabs.activeTabId })}
-              >
-                <Icon name="windows" />
-              </button>
-            )}
-            <button
-              title="Split with another tab"
-              aria-label="Split with another tab"
-              disabled={
-                (activeTab?.views.length ?? 0) >= MAX_PANES ||
-                !tabs.tabs.some(
-                  (t) => t.id !== tabs.activeTabId && t.views.length === 1,
-                )
+      {/* One strip per editor group, at the height of the window's title bar. */}
+      <div className="key-group-strips">
+        {tabs.groups.map((group, index) => {
+          const rect = groupRect(group.id);
+          if (!rect) return null;
+          return (
+            <TabBar
+              key={group.id}
+              api={groupApi(group.id)}
+              groupId={group.id}
+              tabs={summaries.get(group.id) ?? []}
+              first={index === 0}
+              focused={tabs.groups.length < 2 || group.id === tabs.activeGroupId}
+              lone={totalTabs < 2 && (tabs.windowCount ?? 1) < 2}
+              style={{ position: "absolute", top: 0, left: rect.x, width: rect.width }}
+              locateDrop={locateDrop}
+              onContentDrag={contentDragging}
+              onFocusGroup={() => action("focus-group", { groupId: group.id })}
+              chromeControl={index === 0 && sidebarCollapsed ? sidebarToggle : undefined}
+              trailingControls={
+                <div className="key-chrome-layout-controls">
+                  <button
+                    title="Split right (⌘\)"
+                    aria-label="Split right"
+                    disabled={tabs.groups.length >= MAX_GROUPS}
+                    onClick={() => action("split-right", { tabId: group.activeTabId })}
+                  >
+                    <Icon name="split" />
+                  </button>
+                </div>
               }
-              onClick={() => action("split-menu")}
-            >
-              <Icon name="split" />
-            </button>
-          </div>
-        }
-        chromeControl={sidebarCollapsed ? sidebarToggle : undefined}
-      />
+            />
+          );
+        })}
+      </div>
       <div className="key-shell-body key-ui-root">
         <div className="key-content-panes">
           {tabs.tabs
-            .flatMap((t) => t.views)
-            .filter((v) => v.content)
-            .map((v) => {
-              const pane = laidOut.panes.find((p) => p.viewId === v.id);
-              const placed = pane && paneBody(pane, laidOut.panes.length > 1);
+            .flatMap((t) => [{ view: t.views[0], docked: undefined as string | undefined }, ...(t.panel ? [{ view: t.panel as ViewState, docked: t.views[0]?.id }] : [])])
+            .filter(({ view }) => view?.content)
+            .map(({ view: v, docked }) => {
+              const rect = placed.get(v.id);
               return (
                 <div
                   key={v.id}
                   data-content-view={v.id}
+                  data-panel={docked ? "" : undefined}
                   className="key-content-pane"
-                  data-pane-focused={laidOut.panes.length > 1 && v.id === tabs.activeViewId ? "" : undefined}
                   tabIndex={-1}
-                  hidden={!placed}
+                  hidden={!rect}
                   onPointerDownCapture={() => {
-                    if (tabs.activeViewId !== v.id)
-                      action("focus", { viewId: v.id });
+                    if (tabs.activeViewId !== v.id) action("focus", { viewId: v.id });
                   }}
                   onFocusCapture={() => {
-                    if (tabs.activeViewId !== v.id)
-                      action("focus", { viewId: v.id });
+                    if (tabs.activeViewId !== v.id) action("focus", { viewId: v.id });
                   }}
-                  style={
-                    placed && {
-                      left: placed.x,
-                      top: placed.y,
-                      width: placed.width,
-                      height: placed.height,
-                    }
-                  }
+                  style={rect && { left: rect.x, top: rect.y - TAB_STRIP_HEIGHT, width: rect.width, height: rect.height }}
                 >
                   {!!(v.back?.length || v.forward) && (
-                    <nav className="key-pane-history" aria-label="Pane history">
+                    <nav className="key-pane-history" aria-label="History">
                       <button disabled={!v.back?.length} title={v.back?.length ? `Back to ${v.back.at(-1)} (⌘[)` : undefined} aria-label="Back" onClick={() => action("history", { viewId: v.id, step: -1 })}>
                         <Icon name="chevronRight" size={13} style={{ transform: "scaleX(-1)" }} />
                       </button>
@@ -1157,8 +1099,16 @@ export default function App() {
                     key={v.nav ?? 0}
                     viewId={v.id}
                     spec={v.content || { section: "sources" }}
-                    visible={!!placed}
+                    visible={!!rect}
                     tabs={tabs}
+                    docked={
+                      docked
+                        ? {
+                            onPopOut: () => action("panel-pop-out", { viewId: docked }),
+                            onClose: () => action("panel-close", { viewId: docked }),
+                          }
+                        : undefined
+                    }
                   />
                 </div>
               );
@@ -1177,134 +1127,107 @@ export default function App() {
           <Inspector invoke={invoke} workspaceId={workspaceId} items={selected} onClose={() => setInspectorOpen(false)} />
         </div>
       )}
-      {laidOut.dividers.map((d) => {
-        const row = d.split === "row";
-        const fromPointer = (e: React.PointerEvent) =>
-          row
-            ? (e.clientX - sidebarWidth - d.parent.x) / Math.max(1, d.parent.width)
-            : (e.clientY - CHROME_TOP - d.parent.y) / Math.max(1, d.parent.height);
+      {/* Sashes between groups: drag to resize the two beside it, double-click to even all out. */}
+      {laidOut.sashes.map((sash) => {
+        const sizes = () => dragSizes ?? tabs.groups.map((g) => g.size);
+        const resize = (next: number[], done = false) => {
+          setDragSizes(next);
+          if (done) action("resize-groups", { sizes: next, done: true });
+          else sendSash(() => void api().tabAction("resize-groups", { sizes: next }));
+        };
+        const left = tabs.groups[sash.index],
+          share = sizes()[sash.index] / (sizes().reduce((a, b) => a + b, 0) || 1);
         return (
           <div
-            key={d.path || "root"}
-            className={`key-split-divider ${row ? "" : "key-split-divider-column"}`}
+            key={`${left?.id}-sash`}
+            className="key-group-sash"
             role="separator"
-            aria-label="Resize split panes"
-            aria-orientation={row ? "vertical" : "horizontal"}
-            aria-valuemin={10}
-            aria-valuemax={90}
-            aria-valuenow={Math.round(d.ratio * 100)}
-            data-split-path={d.path}
+            aria-label="Resize groups"
+            aria-orientation="vertical"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(share * 100)}
+            title="Drag to resize · double-click to make all groups the same width"
             tabIndex={0}
-            style={{
-              left: sidebarWidth + d.x,
-              top: CHROME_TOP + d.y,
-              width: d.width,
-              height: d.height,
-            }}
+            data-sash-index={sash.index}
+            style={{ left: sidebarWidth + sash.x, width: sash.width }}
             onPointerDown={(e) => {
+              e.preventDefault();
               e.currentTarget.setPointerCapture(e.pointerId);
-              resizeSplit(d.path, fromPointer(e));
+              sashDragging.current = true;
             }}
             onPointerMove={(e) => {
-              if (e.currentTarget.hasPointerCapture(e.pointerId))
-                resizeSplit(d.path, fromPointer(e));
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) resize(dragGroupSash(sizes(), sash.index, e.clientX - sidebarWidth, contentWidth));
             }}
             onPointerUp={(e) => {
-              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                e.currentTarget.releasePointerCapture(e.pointerId);
-                action("resize-split", splitPending.current);
-                setDragSplit(undefined);
-              }
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+              e.currentTarget.releasePointerCapture(e.pointerId);
+              sashDragging.current = false;
+              resize(sizes(), true);
             }}
-            onPointerCancel={() => setDragSplit(undefined)}
-            onDoubleClick={() => action("resize-split", { path: d.path, ratio: 0.5 })}
+            onPointerCancel={() => {
+              sashDragging.current = false;
+              setDragSizes(undefined);
+            }}
+            onDoubleClick={() => action("equalize-groups")}
             onKeyDown={(e) => {
-              const back = row ? "ArrowLeft" : "ArrowUp",
-                forward = row ? "ArrowRight" : "ArrowDown";
-              if (e.key === back || e.key === forward) {
-                e.preventDefault();
-                action("resize-split", {
-                  path: d.path,
-                  ratio: d.ratio + (e.key === back ? -DIVIDER_STEP : DIVIDER_STEP),
-                });
-              }
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              const at = laidOut.groups[sash.index + 1].x - GROUP_GAP + (e.key === "ArrowLeft" ? -1 : 1) * SASH_STEP * contentWidth;
+              resize(dragGroupSash(sizes(), sash.index, at, contentWidth), true);
             }}
           />
         );
       })}
-      {laidOut.panes.length > 1 &&
-        laidOut.panes.map((p) => {
-          const view = activeTab?.views.find((v) => v.id === p.viewId);
-          if (!view) return null;
-          const title = view.title.replace(/ •$/, "");
-          return (
-            <div
-              key={p.viewId}
-              className="key-pane-header"
-              data-pane-header={p.viewId}
-              data-pane-focused={p.viewId === tabs.activeViewId ? "" : undefined}
-              data-dragging={paneDrag?.viewId === p.viewId ? "" : undefined}
-              title={`${title}\nDrag to move this pane · middle-click to close`}
-              style={{ left: sidebarWidth + p.x, top: CHROME_TOP + p.y, width: p.width, height: Math.min(PANE_HEADER, p.height) }}
-              onPointerDown={(e) => {
-                if (e.button === 1) e.preventDefault();
-                if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
-                if (tabs.activeViewId !== p.viewId) action("focus", { viewId: p.viewId });
-                paneDragRef.current = { pointerId: e.pointerId, viewId: p.viewId, startX: e.clientX, startY: e.clientY, started: false };
-                e.currentTarget.setPointerCapture(e.pointerId);
-              }}
-              onPointerMove={movePaneDrag}
-              onPointerUp={(e) => endPaneDrag(e.pointerId, true)}
-              onPointerCancel={(e) => endPaneDrag(e.pointerId, false)}
-              onLostPointerCapture={(e) => endPaneDrag(e.pointerId, false)}
-              onAuxClick={(e) => {
-                if (e.button === 1) action("close-pane", { viewId: p.viewId });
-              }}
-            >
-              <span className="key-pane-header-icon">
-                <TabKindIcon kind={view.kind} />
-              </span>
-              <span className="key-pane-header-title">{view.title}</span>
-              <button
-                title="Move to a tab of its own"
-                aria-label={`Move ${title} to a tab of its own`}
-                onClick={() => {
-                  const index = tabs.tabs.findIndex((t) => t.id === tabs.activeTabId);
-                  action("drop-view", { kind: "detach", viewId: p.viewId, index: index + 1 });
-                }}
-              >
-                <Icon name="detach" size={13} />
-              </button>
-              <button
-                className="key-pane-close"
-                title={`Close ${title} (⌘W when focused)`}
-                aria-label={`Close pane ${title}`}
-                onClick={() => action("close-pane", { viewId: p.viewId })}
-              >
-                <Icon name="close" size={12} />
-              </button>
-            </div>
-          );
-        })}
-      {paneDrag && (
-        <div className="tab-drop-feedback" role="status" aria-live="polite" style={{ left: Math.max(12, Math.min(window.innerWidth - 280, paneDrag.x - 110)) }}>
-          {paneDrag.label}
-          <small>Esc to cancel</small>
-        </div>
-      )}
-      {paneDrag?.preview && (
-        <div
-          className="key-pane-drop-preview"
-          aria-hidden="true"
-          style={{
-            left: paneDrag.preview.x + 4,
-            top: paneDrag.preview.y + 4,
-            width: Math.max(0, paneDrag.preview.width - 8),
-            height: Math.max(0, paneDrag.preview.height - 8),
-          }}
-        />
-      )}
-      {paneDrag?.insertAt !== undefined && <div className="key-tab-insert-marker" aria-hidden="true" style={{ left: paneDrag.insertAt - 1 }} />}
+      {/* A reader's panel: the sash between them sets the panel's share of the tab. */}
+      {panels.map((p) => {
+        const ratioAt = (x: number) => (p.body.x + p.body.width - (x - sidebarWidth) - GROUP_GAP) / Math.max(1, p.body.width - 2 * GROUP_GAP);
+        const resize = (ratio: number, done = false) => {
+          const clamped = Math.min(0.8, Math.max(0.2, ratio));
+          setDragPanel({ tabId: p.tabId, viewId: p.readerId, ratio: clamped });
+          if (done) action("panel-resize", { viewId: p.readerId, ratio: clamped, done: true });
+          else sendSash(() => void api().tabAction("panel-resize", { viewId: p.readerId, ratio: clamped }));
+        };
+        return (
+          <div
+            key={`${p.tabId}-panel-sash`}
+            className="key-group-sash key-panel-sash"
+            role="separator"
+            aria-label="Resize details and notes"
+            aria-orientation="vertical"
+            aria-valuemin={20}
+            aria-valuemax={80}
+            aria-valuenow={Math.round(p.ratio * 100)}
+            title="Drag to resize · double-click to reset"
+            tabIndex={0}
+            style={{ left: sidebarWidth + p.sash.x, top: p.sash.y, width: p.sash.width, height: p.sash.height }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              sashDragging.current = true;
+            }}
+            onPointerMove={(e) => {
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) resize(ratioAt(e.clientX));
+            }}
+            onPointerUp={(e) => {
+              if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+              e.currentTarget.releasePointerCapture(e.pointerId);
+              sashDragging.current = false;
+              resize(ratioAt(e.clientX), true);
+            }}
+            onPointerCancel={() => {
+              sashDragging.current = false;
+              setDragPanel(undefined);
+            }}
+            onDoubleClick={() => resize(0.4, true)}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              resize(p.ratio + (e.key === "ArrowLeft" ? SASH_STEP : -SASH_STEP), true);
+            }}
+          />
+        );
+      })}
       {dragFrames.map((frame) => (
         <img
           key={frame.id}

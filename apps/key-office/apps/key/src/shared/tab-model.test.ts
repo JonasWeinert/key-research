@@ -1,306 +1,209 @@
 import { describe, expect, it } from "vitest";
 import {
-  reorderWorkspaceTab,
-  applyWorkspaceViewDrop,
   activateWorkspaceTab,
-  closeWorkspaceView,
-  separateWorkspaceTab,
-  setWorkspaceSplitRatio,
-  singleWorkspaceTab,
-  splitWithTab,
-  swapWorkspaceSplit,
-  layoutViews,
-  layoutPanes,
-  neighbourPane,
-  resetWorkspaceSplits,
-  replaceWorkspaceView,
-  MAX_PANES,
-  PANE_HEADER,
-  paneBody,
+  activeGroup,
+  activeWorkspaceTab,
+  addGroupWithTab,
+  addWorkspaceTab,
+  allTabs,
+  closeWorkspaceTab,
+  dragGroupSash,
+  equalizeGroups,
+  findViewTab,
+  focusGroup,
+  layoutGroups,
+  layoutPanel,
+  moveWorkspaceTab,
+  normalizeTabs,
   pinWorkspaceTab,
+  reorderWorkspaceTab,
+  replaceWorkspaceView,
+  setGroupSizes,
+  shownTabs,
+  singleWorkspaceTab,
+  splitWorkspaceTab,
+  tabsState,
   tabsToClose,
-  moveWorkspacePane,
+  MAX_GROUPS,
+  MIN_GROUP_WIDTH,
+  PANEL_MIN,
+  READER_MIN,
   type WorkspaceTabsState,
 } from "./tab-model";
-function initial(): WorkspaceTabsState {
-  const tabs = ["a", "b", "c", "d"].map(singleWorkspaceTab);
-  return { tabs, activeTabId: tabs[0].id };
-}
+
+const initial = () => tabsState(["a", "b", "c", "d"].map(singleWorkspaceTab));
+const views = (s: WorkspaceTabsState) => s.groups.map((g) => g.tabs.map((t) => t.viewId));
+const tabOf = (s: WorkspaceTabsState, viewId: string) => findViewTab(s, viewId)!.tab.id;
 function invariant(state: WorkspaceTabsState, expected: string[]) {
-  const owned = state.tabs.flatMap((t) => t.viewIds);
-  expect(owned.sort()).toEqual([...expected].sort());
+  const owned = allTabs(state).map((t) => t.viewId);
+  expect([...owned].sort()).toEqual([...expected].sort());
   expect(new Set(owned).size).toBe(owned.length);
-  for (const tab of state.tabs) {
-    expect(tab.viewIds).toContain(tab.activeViewId);
-    expect(tab.viewIds.length).toBeGreaterThanOrEqual(1);
-    expect(tab.viewIds.length).toBeLessThanOrEqual(MAX_PANES);
-    expect(layoutViews(tab.layout)).toEqual(tab.viewIds);
-    expect(Number.isFinite(tab.splitRatio)).toBe(true);
+  expect(state.groups.length).toBeGreaterThan(0);
+  expect(state.groups.map((g) => g.id)).toContain(state.activeGroupId);
+  expect(state.groups.reduce((s, g) => s + g.size, 0)).toBeCloseTo(1);
+  for (const group of state.groups) {
+    if (state.groups.length > 1) expect(group.tabs.length).toBeGreaterThan(0);
+    if (group.tabs.length) expect(group.tabs.map((t) => t.id)).toContain(group.activeTabId);
+    const pinned = group.tabs.map((t) => Boolean(t.pinned));
+    expect(pinned).toEqual([...pinned].sort((a, b) => Number(b) - Number(a)));
   }
-  if (state.tabs.length)
-    expect(state.tabs.some((t) => t.id === state.activeTabId)).toBe(true);
-  else expect(state.activeTabId).toBeNull();
 }
-describe("Electron global view ownership", () => {
-  it("preserves every view through split, focus, swap, separate and close", () => {
-    let state = initial();
-    const [a, b, c] = state.tabs;
-    state = splitWithTab(state, a.id, b.id);
-    invariant(state, ["a", "b", "c", "d"]);
-    state = activateWorkspaceTab(state, c.id);
-    state = activateWorkspaceTab(state, a.id, "b");
-    expect(state.tabs.find((t) => t.id === a.id)?.activeViewId).toBe("b");
-    state = swapWorkspaceSplit(state, a.id);
-    invariant(state, ["a", "b", "c", "d"]);
-    state = separateWorkspaceTab(state, a.id);
-    invariant(state, ["a", "b", "c", "d"]);
-    state = closeWorkspaceView(state, "b");
-    invariant(state, ["a", "c", "d"]);
-    for (const id of ["a", "c", "d"]) state = closeWorkspaceView(state, id);
-    invariant(state, []);
+
+describe("tabs and groups", () => {
+  it("opens tabs in the focused group, at its end", () => {
+    let s = initial();
+    s = addWorkspaceTab(s, singleWorkspaceTab("e"));
+    expect(views(s)).toEqual([["a", "b", "c", "d", "e"]]);
+    expect(activeWorkspaceTab(s)?.viewId).toBe("e");
+    invariant(s, ["a", "b", "c", "d", "e"]);
   });
-  it("merges a split target's whole arrangement beside the focused pane", () => {
-    let state = initial();
-    const [a, b, c] = state.tabs;
-    state = splitWithTab(state, b.id, c.id);
-    state = splitWithTab(state, a.id, b.id, "bottom");
-    invariant(state, ["a", "b", "c", "d"]);
-    expect(state.tabs[0].layout).toEqual({
-      split: "column",
-      ratio: 0.5,
-      a: { view: "a" },
-      b: { split: "row", ratio: 0.5, a: { view: "b" }, b: { view: "c" } },
-    });
+
+  it("splits a tab into a new group to the right, halving its group", () => {
+    const base = initial();
+    const split = splitWorkspaceTab(base, tabOf(base, "b"), base.groups[0].id, "right");
+    expect(views(split)).toEqual([["a", "c", "d"], ["b"]]);
+    expect(split.groups.map((g) => g.size)).toEqual([0.5, 0.5]);
+    expect(activeWorkspaceTab(split)?.viewId).toBe("b");
+    invariant(split, ["a", "b", "c", "d"]);
   });
-  it("closing one split view retains the other owner and resets geometry", () => {
-    let state = initial();
-    const [a, b] = state.tabs;
-    state = splitWithTab(state, a.id, b.id);
-    state = setWorkspaceSplitRatio(state, a.id, 0.7);
-    state = closeWorkspaceView(state, "a");
-    expect(state.tabs.find((t) => t.id === a.id)).toMatchObject({
-      viewIds: ["b"],
-      activeViewId: "b",
-      splitRatio: 0.5,
-    });
-    invariant(state, ["b", "c", "d"]);
+
+  it("splits to the left, and never empties the target group", () => {
+    const base = tabsState([singleWorkspaceTab("only")]);
+    expect(splitWorkspaceTab(base, base.groups[0].tabs[0].id, base.groups[0].id, "left")).toBe(base);
+    const two = initial();
+    const left = splitWorkspaceTab(two, tabOf(two, "d"), two.groups[0].id, "left");
+    expect(views(left)).toEqual([["d"], ["a", "b", "c"]]);
   });
-  it("clamps finite ratios and ignores invalid IPC geometry", () => {
-    let state = initial();
-    const id = state.tabs[0].id;
-    state = setWorkspaceSplitRatio(state, id, 2);
-    expect(state.tabs[0].splitRatio).toBe(0.9);
-    state = setWorkspaceSplitRatio(state, id, -1);
-    expect(state.tabs[0].splitRatio).toBe(0.1);
-    expect(setWorkspaceSplitRatio(state, id, 0.5, "../x")).toBe(state);
-    for (const value of [NaN, Infinity, -Infinity])
-      expect(setWorkspaceSplitRatio(state, id, value)).toBe(state);
+
+  it("moving a group's last tab elsewhere closes the group and gives its width away", () => {
+    let s = initial();
+    s = splitWorkspaceTab(s, tabOf(s, "b"), s.groups[0].id, "right");
+    s = splitWorkspaceTab(s, tabOf(s, "c"), s.groups[1].id, "right");
+    expect(views(s)).toEqual([["a", "d"], ["b"], ["c"]]);
+    const [left, , right] = s.groups;
+    s = moveWorkspaceTab(s, tabOf(s, "b"), right.id, 0);
+    expect(views(s)).toEqual([["a", "d"], ["b", "c"]]);
+    expect(s.groups[0].size).toBeCloseTo(left.size);
+    expect(activeWorkspaceTab(s)?.viewId).toBe("b");
+    invariant(s, ["a", "b", "c", "d"]);
   });
-  it("retains ownership across repeated regrouping", () => {
-    let state = initial();
-    for (let i = 0; i < 100; i++) {
-      const singles = state.tabs.filter((t) => t.viewIds.length === 1);
-      if (singles.length >= 2)
-        state = splitWithTab(state, singles[0].id, singles[1].id);
-      const split = state.tabs.find((t) => t.viewIds.length === 2);
-      if (split) {
-        state = swapWorkspaceSplit(state, split.id);
-        state = separateWorkspaceTab(state, split.id);
-      }
-      invariant(state, ["a", "b", "c", "d"]);
-    }
+
+  it("closing the last tab of a group closes the group and focuses its neighbour", () => {
+    let s = initial();
+    s = splitWorkspaceTab(s, tabOf(s, "d"), s.groups[0].id, "right");
+    s = closeWorkspaceTab(s, tabOf(s, "d"));
+    expect(views(s)).toEqual([["a", "b", "c"]]);
+    expect(s.groups[0].size).toBe(1);
+    invariant(s, ["a", "b", "c"]);
+    // The last group stays, empty.
+    let one = tabsState([singleWorkspaceTab("x")]);
+    one = closeWorkspaceTab(one, one.groups[0].tabs[0].id);
+    expect(one.groups).toHaveLength(1);
+    expect(one.groups[0].tabs).toEqual([]);
+    expect(activeWorkspaceTab(one)).toBeNull();
+  });
+
+  it("closing the active tab shows the one beside it", () => {
+    let s = initial();
+    s = activateWorkspaceTab(s, tabOf(s, "b"));
+    s = closeWorkspaceTab(s, tabOf(s, "b"));
+    expect(activeWorkspaceTab(s)?.viewId).toBe("c");
+    s = activateWorkspaceTab(s, tabOf(s, "d"));
+    s = closeWorkspaceTab(s, tabOf(s, "d"));
+    expect(activeWorkspaceTab(s)?.viewId).toBe("c");
+  });
+
+  it("each group keeps its own active tab; activating focuses the tab's group", () => {
+    let s = initial();
+    s = splitWorkspaceTab(s, tabOf(s, "c"), s.groups[0].id, "right");
+    s = moveWorkspaceTab(s, tabOf(s, "d"), s.groups[1].id);
+    s = activateWorkspaceTab(s, tabOf(s, "a"));
+    expect(activeGroup(s).id).toBe(s.groups[0].id);
+    expect(shownTabs(s).map((t) => t.viewId)).toEqual(["a", "d"]);
+    s = focusGroup(s, s.groups[1].id);
+    expect(activeWorkspaceTab(s)?.viewId).toBe("d");
+  });
+
+  it("reorders within a group, pinned tabs first", () => {
+    let s = initial();
+    s = pinWorkspaceTab(s, tabOf(s, "c"), true);
+    expect(views(s)).toEqual([["c", "a", "b", "d"]]);
+    s = reorderWorkspaceTab(s, tabOf(s, "d"), 0);
+    expect(views(s)).toEqual([["c", "d", "a", "b"]]);
+    s = reorderWorkspaceTab(s, tabOf(s, "c"), 3);
+    expect(views(s)).toEqual([["c", "d", "a", "b"]]);
+    expect(tabsToClose(s, tabOf(s, "a"), "others").length).toBe(2);
+    expect(tabsToClose(s, tabOf(s, "d"), "right").length).toBe(2);
+    invariant(s, ["a", "b", "c", "d"]);
+  });
+
+  it("close-others stays within the tab's group", () => {
+    let s = initial();
+    s = splitWorkspaceTab(s, tabOf(s, "d"), s.groups[0].id, "right");
+    expect(tabsToClose(s, tabOf(s, "a"), "others").length).toBe(2);
+    expect(tabsToClose(s, tabOf(s, "d"), "others")).toEqual([]);
+  });
+
+  it("opens a new tab in a group of its own, up to the limit", () => {
+    let s = tabsState([singleWorkspaceTab("a")]);
+    for (let i = 1; i < MAX_GROUPS + 2; i++) s = addGroupWithTab(s, singleWorkspaceTab(`g${i}`), activeGroup(s).id);
+    expect(s.groups).toHaveLength(MAX_GROUPS);
+    invariant(s, ["a", ...Array.from({ length: MAX_GROUPS + 1 }, (_, i) => `g${i + 1}`)]);
+  });
+
+  it("replaces a launcher tab in place", () => {
+    let s = initial();
+    s = replaceWorkspaceView(s, "b", "z");
+    expect(views(s)).toEqual([["a", "z", "c", "d"]]);
+    expect(activeWorkspaceTab(s)?.viewId).toBe("z");
+  });
+
+  it("sizes: set, equalise, normalise", () => {
+    let s = initial();
+    s = splitWorkspaceTab(s, tabOf(s, "d"), s.groups[0].id, "right");
+    s = setGroupSizes(s, [3, 1]);
+    expect(s.groups.map((g) => g.size)).toEqual([0.75, 0.25]);
+    s = equalizeGroups(s);
+    expect(s.groups.map((g) => g.size)).toEqual([0.5, 0.5]);
+    expect(setGroupSizes(s, [1])).toBe(s);
+    const odd = normalizeTabs({ ...s, groups: [...s.groups, { id: "empty", tabs: [], activeTabId: null, size: 0.5 }], activeGroupId: "empty" });
+    expect(odd.groups).toHaveLength(2);
+    expect(odd.activeGroupId).toBe(s.groups[0].id);
   });
 });
 
-it("moves complete split groups without changing ownership, focus or ratios", () => {
-  let state = initial();
-  state = splitWithTab(state, state.tabs[0].id, state.tabs[1].id);
-  const group = state.tabs[0];
-  const moved = reorderWorkspaceTab(state, group.id, 2);
-  expect(moved.tabs[2]).toBe(group);
-  expect(moved.activeTabId).toBe(state.activeTabId);
-  invariant(moved, ["a", "b", "c", "d"]);
-  expect(reorderWorkspaceTab(moved, "missing", 0)).toBe(moved);
-  expect(reorderWorkspaceTab(moved, group.id, NaN)).toBe(moved);
-  expect(reorderWorkspaceTab(moved, group.id, -1).tabs[0]).toBe(group);
-});
-
-describe("spatial tab drops", () => {
-  it("moves a singleton into the target preserving the target identity", () => {
-    const before=initial(),target=before.tabs[1];
-    const next=applyWorkspaceViewDrop(before,{kind:"split",viewId:"a",targetTabId:target.id});
-    invariant(next,["a","b","c","d"]);
-    expect(next.tabs.find(t=>t.id===target.id)?.viewIds).toEqual(["b","a"]);
-    expect(next.activeTabId).toBe(target.id);
-    expect(before.tabs).toHaveLength(4);
+describe("geometry", () => {
+  const rect = { x: 240, y: 0, width: 1206, height: 900 };
+  it("lays groups out edge to edge with sashes between them", () => {
+    const { groups, sashes } = layoutGroups(
+      [
+        { id: "a", size: 0.5 },
+        { id: "b", size: 0.25 },
+        { id: "c", size: 0.25 },
+      ],
+      rect,
+      3,
+    );
+    expect(groups.map((g) => g.width).reduce((a, b) => a + b, 0) + sashes.length * 6).toBe(rect.width);
+    expect(groups[0].x).toBe(240);
+    expect(sashes[0].x).toBe(groups[0].x + groups[0].width);
+    expect(groups[1].x).toBe(sashes[0].x + 6);
+    expect(groups[2].x + groups[2].width).toBe(rect.x + rect.width);
   });
-  it("detaches either pane at an insertion position without closing its sibling", () => {
-    const before=initial();const split=splitWithTab(before,before.tabs[0].id,before.tabs[1].id);
-    for(const viewId of ["a","b"]) {
-      const next=applyWorkspaceViewDrop(split,{kind:"detach",viewId,index:0});
-      invariant(next,["a","b","c","d"]);
-      expect(next.tabs[0].viewIds).toEqual([viewId]);
-      expect(next.activeTabId).toBe(next.tabs[0].id);
-      expect(next.tabs.find(t=>t.id===split.tabs[0].id)?.viewIds).toEqual([viewId==="a"?"b":"a"]);
-    }
+  it("drags a sash between two groups only, never below the minimum width", () => {
+    const sizes = dragGroupSash([0.5, 0.25, 0.25], 1, 900, 1206, 3);
+    expect(sizes[0]).toBe(0.5);
+    expect(sizes[1] + sizes[2]).toBeCloseTo(0.5);
+    const tight = dragGroupSash([0.5, 0.5], 0, 10, 1206, 3);
+    expect(tight[0] * 1200).toBeCloseTo(MIN_GROUP_WIDTH);
   });
-  it("swaps a singleton with exactly the chosen split half", () => {
-    const before=initial();const split=splitWithTab(before,before.tabs[1].id,before.tabs[2].id);
-    const next=applyWorkspaceViewDrop(split,{kind:"swap",viewId:"a",targetViewId:"c"});
-    invariant(next,["a","b","c","d"]);
-    expect(next.tabs[0].viewIds).toEqual(["c"]);
-    expect(next.tabs[1].viewIds).toEqual(["b","a"]);
-    expect(next.tabs[1].activeViewId).toBe("a");
-  });
-  it("moves between groups and exchanges halves inside one group", () => {
-    let state=initial();state=splitWithTab(state,state.tabs[0].id,state.tabs[1].id);
-    state=applyWorkspaceViewDrop(state,{kind:"split",viewId:"b",targetTabId:state.tabs[1].id});
-    invariant(state,["a","b","c","d"]);
-    const swapped=applyWorkspaceViewDrop(state,{kind:"swap",viewId:"c",targetViewId:"b"});
-    invariant(swapped,["a","b","c","d"]);
-    expect(swapped.tabs.find(t=>t.viewIds.includes("b"))?.viewIds).toEqual(["b","c"]);
-  });
-  it("exchanges panes between two split groups while retaining their geometry", () => {
-    const before=initial();
-    let state=splitWithTab(before,before.tabs[0].id,before.tabs[1].id);
-    state=splitWithTab(state,before.tabs[2].id,before.tabs[3].id);
-    state=setWorkspaceSplitRatio(state,before.tabs[0].id,.3);
-    state=setWorkspaceSplitRatio(state,before.tabs[2].id,.7);
-    const next=applyWorkspaceViewDrop(state,{kind:"swap",viewId:"b",targetViewId:"c"});
-    invariant(next,["a","b","c","d"]);
-    expect(next.tabs[0].viewIds).toEqual(["a","c"]);
-    expect(next.tabs[1].viewIds).toEqual(["b","d"]);
-    expect(next.tabs.map(t=>t.splitRatio)).toEqual([.3,.7]);
-  });
-  it("ignores stale targets and invalid detach requests", () => {
-    const state=initial();
-    expect(applyWorkspaceViewDrop(state,{kind:"split",viewId:"a",targetTabId:"missing"})).toBe(state);
-    expect(applyWorkspaceViewDrop(state,{kind:"swap",viewId:"a",targetViewId:"b"})).toBe(state);
-    expect(applyWorkspaceViewDrop(state,{kind:"detach",viewId:"a",index:NaN})).toBe(state);
-  });
-});
-
-describe("nested pane layouts", () => {
-  function three(): WorkspaceTabsState {
-    // a | (b over c)
-    let state = initial();
-    state = applyWorkspaceViewDrop(state, { kind: "split", viewId: "b", targetTabId: state.tabs[0].id, edge: "right" });
-    state = applyWorkspaceViewDrop(state, { kind: "split", viewId: "c", targetTabId: state.tabs[0].id, targetViewId: "b", edge: "bottom" });
-    return state;
-  }
-  it("splits any pane on any edge and keeps reading order", () => {
-    const state = three();
-    invariant(state, ["a", "b", "c", "d"]);
-    expect(state.tabs[0].viewIds).toEqual(["a", "b", "c"]);
-    expect(state.tabs[0].activeViewId).toBe("c");
-    const left = applyWorkspaceViewDrop(state, { kind: "split", viewId: "d", targetTabId: state.tabs[0].id, targetViewId: "c", edge: "left" });
-    expect(left.tabs[0].viewIds).toEqual(["a", "b", "d", "c"]);
-    invariant(left, ["a", "b", "c", "d"]);
-  });
-  it("lays out nested panes edge to edge with dividers between them", () => {
-    const { panes, dividers } = layoutPanes(three().tabs[0].layout, { x: 240, y: 40, width: 1200, height: 900 });
-    const byId = Object.fromEntries(panes.map((p) => [p.viewId, p]));
-    expect(byId.a).toEqual({ viewId: "a", x: 240, y: 40, width: 597, height: 900 });
-    expect(byId.b).toEqual({ viewId: "b", x: 843, y: 40, width: 597, height: 447 });
-    expect(byId.c).toEqual({ viewId: "c", x: 843, y: 493, width: 597, height: 447 });
-    expect(dividers.map((d) => [d.path, d.split, d.x, d.y, d.width, d.height])).toEqual([
-      ["", "row", 837, 40, 6, 900],
-      ["b", "column", 843, 487, 597, 6],
-    ]);
-  });
-  it("resizes, swaps and resets the split holding the focused pane", () => {
-    let state = three();
-    const id = state.tabs[0].id;
-    state = setWorkspaceSplitRatio(state, id, 0.3, "b");
-    expect(state.tabs[0].splitRatio).toBe(0.5);
-    expect((state.tabs[0].layout as any).b.ratio).toBe(0.3);
-    state = swapWorkspaceSplit(state, id);
-    expect(state.tabs[0].viewIds).toEqual(["a", "c", "b"]);
-    state = resetWorkspaceSplits(state, id);
-    expect((state.tabs[0].layout as any).b.ratio).toBe(0.5);
-  });
-  it("finds neighbours by position", () => {
-    const layout = three().tabs[0].layout;
-    expect(neighbourPane(layout, "a", "right")).toBe("b");
-    expect(neighbourPane(layout, "b", "bottom")).toBe("c");
-    expect(neighbourPane(layout, "c", "left")).toBe("a");
-    expect(neighbourPane(layout, "a", "left")).toBeUndefined();
-  });
-  it("closes a nested pane, focusing what took its place", () => {
-    let state = three();
-    state = closeWorkspaceView(state, "c");
-    expect(state.tabs[0].viewIds).toEqual(["a", "b"]);
-    expect(state.tabs[0].activeViewId).toBe("b");
-    invariant(state, ["a", "b", "d"]);
-  });
-  it("moves a pane within its own tab, and separates every pane", () => {
-    let state = three();
-    state = applyWorkspaceViewDrop(state, { kind: "split", viewId: "a", targetTabId: state.tabs[0].id, targetViewId: "c", edge: "right" });
-    expect(state.tabs[0].viewIds).toEqual(["b", "c", "a"]);
-    invariant(state, ["a", "b", "c", "d"]);
-    state = separateWorkspaceTab(state, state.tabs[0].id);
-    expect(state.tabs.map((t) => t.viewIds)).toEqual([["b"], ["c"], ["a"], ["d"]]);
-  });
-  it("replaces a launcher pane in place and caps panes per tab", () => {
-    let state = replaceWorkspaceView(three(), "b", "x");
-    expect(state.tabs[0].viewIds).toEqual(["a", "x", "c"]);
-    expect(state.tabs[0].activeViewId).toBe("x");
-    let many: WorkspaceTabsState = { tabs: [singleWorkspaceTab("v0")], activeTabId: null };
-    for (let i = 1; i < MAX_PANES + 3; i++) {
-      many = { ...many, tabs: [...many.tabs, singleWorkspaceTab(`v${i}`)] };
-      many = applyWorkspaceViewDrop(many, { kind: "split", viewId: `v${i}`, targetTabId: many.tabs[0].id });
-    }
-    expect(many.tabs[0].viewIds.length).toBe(MAX_PANES);
-  });
-  it("closes one pane of a split and leaves the others, the last pane closing the tab", () => {
-    let state = three();
-    const tabId = state.tabs[0].id;
-    state = activateWorkspaceTab(state, tabId, "b");
-    state = closeWorkspaceView(state, "b");
-    expect(state.tabs[0].id).toBe(tabId);
-    expect(state.tabs[0].viewIds).toEqual(["a", "c"]);
-    expect(state.tabs[0].viewIds).toContain(state.tabs[0].activeViewId);
-    invariant(state, ["a", "c", "d"]);
-    state = closeWorkspaceView(closeWorkspaceView(state, "a"), "c");
-    expect(state.tabs.map((t) => t.viewIds)).toEqual([["d"]]);
-    invariant(state, ["d"]);
-  });
-  it("keeps pinned tabs first, through reorder, detach, separate and close others", () => {
-    let state = initial();
-    const [a, b, c, d] = state.tabs.map((t) => t.id);
-    state = pinWorkspaceTab(state, c, true);
-    expect(state.tabs.map((t) => t.id)).toEqual([c, a, b, d]);
-    state = pinWorkspaceTab(state, d, true);
-    expect(state.tabs.map((t) => t.id)).toEqual([c, d, a, b]);
-    // An unpinned tab cannot be dragged among the pinned ones, nor a pinned one past them.
-    expect(reorderWorkspaceTab(state, b, 0).tabs.map((t) => t.id)).toEqual([c, d, b, a]);
-    expect(reorderWorkspaceTab(state, c, 9).tabs.map((t) => t.id)).toEqual([d, c, a, b]);
-    expect(tabsToClose(state, a, "others")).toEqual([b]);
-    expect(tabsToClose(state, c, "right")).toEqual([a, b]);
-    // A pinned split keeps its pin while panes come and go.
-    state = splitWithTab(state, c, a);
-    expect(state.tabs[0]).toMatchObject({ id: c, pinned: true, viewIds: ["c", "a"] });
-    state = applyWorkspaceViewDrop(state, { kind: "detach", viewId: "a", index: 0 });
-    expect(state.tabs.map((t) => t.viewIds)).toEqual([["c"], ["d"], ["a"], ["b"]]);
-    expect(state.tabs[0].pinned).toBe(true);
-    state = splitWithTab(state, c, state.tabs[2].id);
-    state = separateWorkspaceTab(state, c);
-    expect(state.tabs.filter((t) => t.pinned).map((t) => t.viewIds[0])).toEqual(["c", "d"]);
-    expect(state.tabs.map((t) => t.viewIds[0])).toEqual(["c", "d", "a", "b"]);
-    state = pinWorkspaceTab(state, c, false);
-    expect(state.tabs.map((t) => t.viewIds[0])).toEqual(["d", "c", "a", "b"]);
-    expect("pinned" in state.tabs[1]).toBe(false);
-    invariant(state, ["a", "b", "c", "d"]);
-  });
-  it("moves the focused pane past its neighbour and leaves room for pane headers", () => {
-    let state = three();
-    state = moveWorkspacePane(state, "a", "right");
-    expect(state.tabs[0].viewIds).toEqual(["b", "a", "c"]);
-    expect(state.tabs[0].activeViewId).toBe("a");
-    expect(moveWorkspacePane(state, "b", "left")).toEqual(state);
-    invariant(state, ["a", "b", "c", "d"]);
-    const pane = { x: 0, y: 10, width: 100, height: 200 };
-    expect(paneBody(pane, false)).toEqual(pane);
-    expect(paneBody(pane, true)).toEqual({ x: 0, y: 10 + PANE_HEADER, width: 100, height: 200 - PANE_HEADER });
+  it("gives a reader and its panel their room", () => {
+    const wide = layoutPanel({ x: 0, y: 40, width: 1206, height: 800 }, 0.4, 3);
+    expect(wide.main.width + wide.sash.width + wide.panel.width).toBe(1206);
+    expect(wide.panel.x).toBe(wide.sash.x + 6);
+    const squeezed = layoutPanel({ x: 0, y: 40, width: 900, height: 800 }, 0.9, 3);
+    expect(squeezed.main.width).toBe(READER_MIN);
+    const minimal = layoutPanel({ x: 0, y: 40, width: 900, height: 800 }, 0.05, 3);
+    expect(minimal.panel.width).toBe(PANEL_MIN);
   });
 });

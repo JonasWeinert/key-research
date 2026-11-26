@@ -1,434 +1,362 @@
-/** A tab's arrangement: one view, or a split whose halves are arrangements themselves.
- * `row` places `a` left of `b`; `column` places `a` above `b`. */
-export type PaneLayout =
-  | { view: string }
-  | { split: "row" | "column"; ratio: number; a: PaneLayout; b: PaneLayout };
-
+/** A window's tabs, in editor groups side by side (like VS Code's). Each tab shows exactly
+ * one view; each group has its own strip and its own active tab, and one group has focus. */
 export interface WorkspaceTab {
   id: string;
-  /** The layout's views in reading order (left to right, top to bottom). */
-  viewIds: string[];
-  activeViewId: string;
-  /** The root split's ratio (0.5 for a single pane). */
-  splitRatio: number;
-  layout: PaneLayout;
-  /** Pinned tabs sit, compact, before every other tab and survive Close Others. */
+  viewId: string;
+  /** Pinned tabs sit, compact, before every other tab of their group and survive Close Others. */
   pinned?: boolean;
 }
 
-export interface WorkspaceTabsState {
+export interface TabGroup {
+  id: string;
   tabs: WorkspaceTab[];
   activeTabId: string | null;
+  /** The group's share of the content width; a window's sizes sum to 1. */
+  size: number;
 }
 
-export type SplitEdge = "left" | "right" | "top" | "bottom";
-
-export const LIBRARY_VIEW_ID = "key:library";
-/** More panes than this stop being readable in one window. */
-export const MAX_PANES = 8;
-/** Height of the slim header (title, close) above each pane of a split. */
-export const PANE_HEADER = 26;
-const MIN_RATIO = 0.1,
-  MAX_RATIO = 0.9;
-
-export function layoutViews(layout: PaneLayout): string[] {
-  return "view" in layout ? [layout.view] : [...layoutViews(layout.a), ...layoutViews(layout.b)];
+export interface WorkspaceTabsState {
+  /** Left to right. Never empty: a window without tabs keeps one empty group. */
+  groups: TabGroup[];
+  activeGroupId: string;
 }
 
-/** A tab around `layout`, keeping `activeViewId` when it is still part of it. */
-export function tabWithLayout(tab: Pick<WorkspaceTab, "id"> & Partial<WorkspaceTab>, layout: PaneLayout): WorkspaceTab {
-  const viewIds = layoutViews(layout);
-  return {
-    id: tab.id,
-    viewIds,
-    activeViewId: tab.activeViewId && viewIds.includes(tab.activeViewId) ? tab.activeViewId : viewIds[0],
-    splitRatio: "view" in layout ? 0.5 : layout.ratio,
-    layout,
-    ...(tab.pinned ? { pinned: true } : {}),
-  };
-}
+export type GroupSide = "left" | "right";
 
-/** Pinned tabs first, each group in its own order. */
-function pinnedFirst(tabs: WorkspaceTab[]): WorkspaceTab[] {
-  return [...tabs.filter((tab) => tab.pinned), ...tabs.filter((tab) => !tab.pinned)];
-}
+/** Height of each group's tab strip, above its content. */
+export const TAB_STRIP_HEIGHT = 40;
+/** Half the width of the sash between groups (and between a reader and its panel). */
+export const GROUP_GAP = 3;
+/** More groups than this stop being readable in one window. */
+export const MAX_GROUPS = 6;
+/** A group is never dragged narrower than this. */
+export const MIN_GROUP_WIDTH = 240;
+/** A reader's details-and-notes panel: its default share of the tab, and the narrowest each side gets. */
+export const PANEL_RATIO = 0.4;
+export const PANEL_MIN = 300;
+export const READER_MIN = 320;
+
+const newId = () => crypto.randomUUID();
 
 export function singleWorkspaceTab(viewId: string): WorkspaceTab {
-  return tabWithLayout({ id: crypto.randomUUID() }, { view: viewId });
+  return { id: newId(), viewId };
 }
 
-/** `layout` with `viewId` taken out; its sibling takes the parent split's place. */
-export function removeFromLayout(layout: PaneLayout, viewId: string): PaneLayout | null {
-  if ("view" in layout) return layout.view === viewId ? null : layout;
-  const a = removeFromLayout(layout.a, viewId),
-    b = removeFromLayout(layout.b, viewId);
-  if (!a) return b;
-  if (!b) return a;
-  return a === layout.a && b === layout.b ? layout : { ...layout, a, b };
+export function newTabGroup(tabs: WorkspaceTab[] = [], size = 1): TabGroup {
+  return { id: newId(), tabs, activeTabId: tabs.at(-1)?.id ?? null, size };
 }
 
-/** Places `insert` beside the pane showing `targetViewId`, on its `edge`. */
-export function insertIntoLayout(layout: PaneLayout, targetViewId: string, insert: PaneLayout, edge: SplitEdge): PaneLayout {
-  if ("view" in layout) {
-    if (layout.view !== targetViewId) return layout;
-    const split = edge === "left" || edge === "right" ? "row" : "column";
-    const before = edge === "left" || edge === "top";
-    return { split, ratio: 0.5, a: before ? insert : layout, b: before ? layout : insert };
-  }
-  return {
-    ...layout,
-    a: insertIntoLayout(layout.a, targetViewId, insert, edge),
-    b: insertIntoLayout(layout.b, targetViewId, insert, edge),
-  };
+export function emptyTabsState(): WorkspaceTabsState {
+  const group = newTabGroup();
+  return { groups: [group], activeGroupId: group.id };
 }
 
-function mapViews(layout: PaneLayout, map: (id: string) => string): PaneLayout {
-  return "view" in layout ? { view: map(layout.view) } : { ...layout, a: mapViews(layout.a, map), b: mapViews(layout.b, map) };
+/** One group holding `tabs`, the last one active. */
+export function tabsState(tabs: WorkspaceTab[]): WorkspaceTabsState {
+  const group = newTabGroup(tabs);
+  return { groups: [group], activeGroupId: group.id };
 }
 
-/** Splits are addressed by their path from the root: "" is the root, "ab" is the root's a's b. */
-export function layoutAt(layout: PaneLayout, path: string): PaneLayout | undefined {
-  let node: PaneLayout | undefined = layout;
-  for (const step of path) node = node && "split" in node ? (step === "a" ? node.a : node.b) : undefined;
-  return node;
+export function allTabs(state: WorkspaceTabsState): WorkspaceTab[] {
+  return state.groups.flatMap((g) => g.tabs);
 }
-function updateAt(layout: PaneLayout, path: string, update: (node: PaneLayout) => PaneLayout): PaneLayout {
-  if (!path) return update(layout);
-  if (!("split" in layout)) return layout;
-  return path[0] === "a"
-    ? { ...layout, a: updateAt(layout.a, path.slice(1), update) }
-    : { ...layout, b: updateAt(layout.b, path.slice(1), update) };
-}
-/** The path of the split directly holding `viewId`'s pane. */
-function parentPath(layout: PaneLayout, viewId: string, path = ""): string | undefined {
-  if ("view" in layout) return undefined;
-  for (const side of ["a", "b"] as const) {
-    const child = layout[side];
-    if ("view" in child && child.view === viewId) return path;
-    const found = parentPath(child, viewId, path + side);
-    if (found !== undefined) return found;
+
+export function findTab(state: WorkspaceTabsState, tabId: string) {
+  for (const group of state.groups) {
+    const index = group.tabs.findIndex((t) => t.id === tabId);
+    if (index >= 0) return { group, tab: group.tabs[index], index };
   }
   return undefined;
 }
 
-export interface PaneRect {
+export function findViewTab(state: WorkspaceTabsState, viewId: string) {
+  for (const group of state.groups) {
+    const index = group.tabs.findIndex((t) => t.viewId === viewId);
+    if (index >= 0) return { group, tab: group.tabs[index], index };
+  }
+  return undefined;
+}
+
+export function activeGroup(state: WorkspaceTabsState): TabGroup {
+  return state.groups.find((g) => g.id === state.activeGroupId) ?? state.groups[0];
+}
+
+/** The focused group's active tab. */
+export function activeWorkspaceTab(state: WorkspaceTabsState): WorkspaceTab | null {
+  const group = activeGroup(state);
+  return group?.tabs.find((t) => t.id === group.activeTabId) ?? group?.tabs[0] ?? null;
+}
+
+/** Each group's shown tab, left to right. */
+export function shownTabs(state: WorkspaceTabsState): WorkspaceTab[] {
+  return state.groups.flatMap((g) => {
+    const tab = g.tabs.find((t) => t.id === g.activeTabId) ?? g.tabs[0];
+    return tab ? [tab] : [];
+  });
+}
+
+/** Pinned tabs first, each set in its own order. */
+function pinnedFirst(tabs: WorkspaceTab[]): WorkspaceTab[] {
+  return [...tabs.filter((tab) => tab.pinned), ...tabs.filter((tab) => !tab.pinned)];
+}
+
+/** Keeps the invariants every operation relies on: at least one group, no empty group
+ * beside others, sizes that sum to 1, and active ids that exist. */
+export function normalizeTabs(state: WorkspaceTabsState): WorkspaceTabsState {
+  let groups = state.groups.filter((g) => g.tabs.length > 0);
+  if (!groups.length) groups = [state.groups[0] ?? newTabGroup()];
+  const sizes = groups.map((g) => (Number.isFinite(g.size) && g.size > 0 ? g.size : 1 / groups.length));
+  const total = sizes.reduce((sum, s) => sum + s, 0) || 1;
+  groups = groups.map((g, i) => {
+    const size = sizes[i] / total;
+    const activeTabId = g.tabs.some((t) => t.id === g.activeTabId) ? g.activeTabId : (g.tabs[0]?.id ?? null);
+    return g.size === size && g.activeTabId === activeTabId ? g : { ...g, size, activeTabId };
+  });
+  const activeGroupId = groups.some((g) => g.id === state.activeGroupId) ? state.activeGroupId : groups[0].id;
+  return { groups, activeGroupId };
+}
+
+function mapGroup(state: WorkspaceTabsState, groupId: string, update: (group: TabGroup) => TabGroup): WorkspaceTabsState {
+  return { ...state, groups: state.groups.map((g) => (g.id === groupId ? update(g) : g)) };
+}
+
+export function focusGroup(state: WorkspaceTabsState, groupId: string): WorkspaceTabsState {
+  return state.groups.some((g) => g.id === groupId) ? { ...state, activeGroupId: groupId } : state;
+}
+
+/** Shows `tabId` in its group and gives that group focus. */
+export function activateWorkspaceTab(state: WorkspaceTabsState, tabId: string): WorkspaceTabsState {
+  const found = findTab(state, tabId);
+  if (!found) return state;
+  return { ...mapGroup(state, found.group.id, (g) => ({ ...g, activeTabId: tabId })), activeGroupId: found.group.id };
+}
+
+/** Adds a tab to a group (the focused one by default), at `index` or at its end. Pinned tabs stay first. */
+export function addWorkspaceTab(
+  state: WorkspaceTabsState,
+  tab: WorkspaceTab,
+  options: { groupId?: string; index?: number; activate?: boolean } = {},
+): WorkspaceTabsState {
+  const groupId = state.groups.some((g) => g.id === options.groupId) ? options.groupId! : activeGroup(state).id;
+  const activate = options.activate !== false;
+  const next = mapGroup(state, groupId, (g) => {
+    const tabs = [...g.tabs];
+    const pinned = tabs.filter((t) => t.pinned).length;
+    const at = options.index === undefined || !Number.isFinite(options.index) ? tabs.length : Math.trunc(options.index);
+    tabs.splice(tab.pinned ? Math.min(Math.max(0, at), pinned) : Math.min(Math.max(pinned, at), tabs.length), 0, tab);
+    return { ...g, tabs, activeTabId: activate || !g.activeTabId ? tab.id : g.activeTabId };
+  });
+  return activate ? { ...next, activeGroupId: groupId } : next;
+}
+
+/** Removes a tab. Its group shows the tab beside it; an emptied group closes (unless it is
+ * the last), handing its width and focus to its neighbour. */
+export function closeWorkspaceTab(state: WorkspaceTabsState, tabId: string): WorkspaceTabsState {
+  const found = findTab(state, tabId);
+  if (!found) return state;
+  const { group, index } = found;
+  const tabs = group.tabs.filter((t) => t.id !== tabId);
+  if (!tabs.length && state.groups.length > 1) return removeGroup(state, group.id);
+  const activeTabId = group.activeTabId === tabId ? (tabs[Math.min(index, tabs.length - 1)]?.id ?? null) : group.activeTabId;
+  return mapGroup(state, group.id, (g) => ({ ...g, tabs, activeTabId }));
+}
+
+/** Takes a group out; its width goes to the neighbour that takes focus (the right one, or the left at the end). */
+function removeGroup(state: WorkspaceTabsState, groupId: string): WorkspaceTabsState {
+  const index = state.groups.findIndex((g) => g.id === groupId);
+  if (index < 0 || state.groups.length < 2) return state;
+  const removed = state.groups[index];
+  const heir = state.groups[index + 1] ?? state.groups[index - 1];
+  const groups = state.groups.filter((g) => g.id !== groupId).map((g) => (g.id === heir.id ? { ...g, size: g.size + removed.size } : g));
+  return normalizeTabs({ groups, activeGroupId: state.activeGroupId === groupId ? heir.id : state.activeGroupId });
+}
+
+/** Reorders within a group; a tab stays among the pinned tabs, or among the others. */
+export function reorderWorkspaceTab(state: WorkspaceTabsState, tabId: string, index: number): WorkspaceTabsState {
+  const found = findTab(state, tabId);
+  if (!found || !Number.isFinite(index)) return state;
+  return mapGroup(state, found.group.id, (g) => {
+    const tabs = [...g.tabs];
+    const [moved] = tabs.splice(found.index, 1);
+    const pinned = tabs.filter((tab) => tab.pinned).length;
+    const [min, max] = moved.pinned ? [0, pinned] : [pinned, tabs.length];
+    tabs.splice(Math.min(max, Math.max(min, Math.trunc(index))), 0, moved);
+    return { ...g, tabs };
+  });
+}
+
+/** Moves a tab into another group at `index` (its end by default), where it becomes active
+ * and focused. Within its own group this is a reorder. */
+export function moveWorkspaceTab(state: WorkspaceTabsState, tabId: string, groupId: string, index?: number): WorkspaceTabsState {
+  const found = findTab(state, tabId);
+  if (!found || !state.groups.some((g) => g.id === groupId)) return state;
+  if (found.group.id === groupId) {
+    const reordered = index === undefined ? state : reorderWorkspaceTab(state, tabId, index);
+    return activateWorkspaceTab(reordered, tabId);
+  }
+  const without = closeWorkspaceTab(state, tabId);
+  return addWorkspaceTab(without, found.tab, { groupId, index });
+}
+
+/** Opens a new group beside `targetGroupId` holding `tabId`, which leaves its own group.
+ * The new group takes half the target's width. Nothing happens when the tab is the only
+ * one of the target group (it would leave that group empty) or the window is full. */
+export function splitWorkspaceTab(state: WorkspaceTabsState, tabId: string, targetGroupId: string, side: GroupSide): WorkspaceTabsState {
+  const found = findTab(state, tabId);
+  const target = state.groups.find((g) => g.id === targetGroupId);
+  if (!found || !target || (side !== "left" && side !== "right")) return state;
+  if (found.group.id === target.id && target.tabs.length < 2) return state;
+  const sourceCloses = found.group.id !== target.id && found.group.tabs.length === 1;
+  if (state.groups.length >= MAX_GROUPS && !sourceCloses) return state;
+  const fresh = newTabGroup([found.tab], target.size / 2);
+  let groups = state.groups.flatMap((g) => {
+    if (g.id !== target.id) return [g];
+    const half = { ...g, size: g.size / 2 };
+    return side === "left" ? [fresh, half] : [half, fresh];
+  });
+  // The tab leaves where it was.
+  groups = groups.map((g) => {
+    if (g.id === fresh.id || !g.tabs.some((t) => t.id === tabId)) return g;
+    const tabs = g.tabs.filter((t) => t.id !== tabId);
+    const at = g.tabs.findIndex((t) => t.id === tabId);
+    return { ...g, tabs, activeTabId: g.activeTabId === tabId ? (tabs[Math.min(at, tabs.length - 1)]?.id ?? null) : g.activeTabId };
+  });
+  const emptied = groups.find((g) => g.id !== fresh.id && !g.tabs.length);
+  const next = { groups, activeGroupId: fresh.id };
+  return emptied ? removeGroup(next, emptied.id) : normalizeTabs(next);
+}
+
+/** `tab` (new to the window) opens in a group of its own beside `targetGroupId`. */
+export function addGroupWithTab(state: WorkspaceTabsState, tab: WorkspaceTab, targetGroupId: string, side: GroupSide = "right"): WorkspaceTabsState {
+  const target = state.groups.find((g) => g.id === targetGroupId) ?? activeGroup(state);
+  if (state.groups.length >= MAX_GROUPS) return addWorkspaceTab(state, tab, { groupId: target.id });
+  const fresh = newTabGroup([tab], target.size / 2);
+  const groups = state.groups.flatMap((g) => (g.id !== target.id ? [g] : side === "left" ? [fresh, { ...g, size: g.size / 2 }] : [{ ...g, size: g.size / 2 }, fresh]));
+  return normalizeTabs({ groups, activeGroupId: fresh.id });
+}
+
+/** The group beside `groupId` on `side`, if any. */
+export function neighbourGroup(state: WorkspaceTabsState, groupId: string, side: GroupSide): TabGroup | undefined {
+  const index = state.groups.findIndex((g) => g.id === groupId);
+  if (index < 0) return undefined;
+  return state.groups[side === "left" ? index - 1 : index + 1];
+}
+
+/** Sets every group's share (in order); non-positive or missing shares keep the old value. */
+export function setGroupSizes(state: WorkspaceTabsState, sizes: number[]): WorkspaceTabsState {
+  if (!Array.isArray(sizes) || sizes.length !== state.groups.length) return state;
+  return normalizeTabs({
+    ...state,
+    groups: state.groups.map((g, i) => (Number.isFinite(sizes[i]) && sizes[i] > 0 ? { ...g, size: sizes[i] } : g)),
+  });
+}
+
+export function equalizeGroups(state: WorkspaceTabsState): WorkspaceTabsState {
+  return { ...state, groups: state.groups.map((g) => ({ ...g, size: 1 / state.groups.length })) };
+}
+
+/** Pins a tab after its group's pinned ones, or unpins it to the start of the others. */
+export function pinWorkspaceTab(state: WorkspaceTabsState, tabId: string, pinned: boolean): WorkspaceTabsState {
+  const found = findTab(state, tabId);
+  if (!found || Boolean(found.tab.pinned) === pinned) return state;
+  return mapGroup(state, found.group.id, (g) => {
+    const rest = g.tabs.filter((tab) => tab.id !== tabId);
+    const at = rest.filter((tab) => tab.pinned).length;
+    const { pinned: _, ...unpinned } = found.tab;
+    rest.splice(at, 0, pinned ? { ...found.tab, pinned: true } : unpinned);
+    return { ...g, tabs: rest };
+  });
+}
+
+/** The tabs Close Other Tabs or Close Tabs to the Right would close, within the tab's group:
+ * never pinned ones. */
+export function tabsToClose(state: WorkspaceTabsState, tabId: string, which: "others" | "right"): string[] {
+  const found = findTab(state, tabId);
+  if (!found) return [];
+  return found.group.tabs
+    .filter((tab, i) => !tab.pinned && (which === "others" ? i !== found.index : i > found.index))
+    .map((tab) => tab.id);
+}
+
+/** Puts `viewId` in the place of the tab showing `replacedViewId` (a launcher being used). */
+export function replaceWorkspaceView(state: WorkspaceTabsState, replacedViewId: string, viewId: string): WorkspaceTabsState {
+  const found = findViewTab(state, replacedViewId);
+  if (!found || findViewTab(state, viewId)) return state;
+  const next = mapGroup(state, found.group.id, (g) => ({ ...g, tabs: g.tabs.map((t) => (t.id === found.tab.id ? { ...t, viewId } : t)) }));
+  return activateWorkspaceTab(next, found.tab.id);
+}
+
+export interface Rect {
   x: number;
   y: number;
   width: number;
   height: number;
 }
-export interface LaidOutPane extends PaneRect {
-  viewId: string;
+export interface LaidOutGroup extends Rect {
+  id: string;
 }
-export interface LaidOutDivider extends PaneRect {
-  path: string;
-  split: "row" | "column";
-  ratio: number;
-  /** The extent the divider's ratio is measured against. */
-  parent: PaneRect;
-}
-/** Pixel rectangles for every pane and divider. Each divider is 2 × `gap` wide.
- * Main (native views) and renderer (DOM panes, dividers) share this, so they never disagree. */
-export function layoutPanes(layout: PaneLayout, rect: PaneRect, gap = 3) {
-  const panes: LaidOutPane[] = [],
-    dividers: LaidOutDivider[] = [];
-  const visit = (node: PaneLayout, r: PaneRect, path: string) => {
-    if ("view" in node) {
-      panes.push({ viewId: node.view, ...r });
-      return;
-    }
-    const row = node.split === "row";
-    const size = row ? r.width : r.height;
-    const at = Math.round(size * node.ratio);
-    const first = Math.max(0, at - gap),
-      second = Math.max(0, size - at - gap);
-    if (row) {
-      dividers.push({ path, split: "row", ratio: node.ratio, parent: r, x: r.x + at - gap, y: r.y, width: gap * 2, height: r.height });
-      visit(node.a, { ...r, width: first }, path + "a");
-      visit(node.b, { ...r, x: r.x + at + gap, width: second }, path + "b");
-    } else {
-      dividers.push({ path, split: "column", ratio: node.ratio, parent: r, x: r.x, y: r.y + at - gap, width: r.width, height: gap * 2 });
-      visit(node.a, { ...r, height: first }, path + "a");
-      visit(node.b, { ...r, y: r.y + at + gap, height: second }, path + "b");
-    }
-  };
-  visit(layout, rect, "");
-  return { panes, dividers };
+export interface LaidOutSash extends Rect {
+  /** The sash sits between group `index` and group `index + 1`. */
+  index: number;
 }
 
-/** Where a pane's content goes: below its header when the tab is split. */
-export function paneBody<R extends PaneRect>(pane: R, split: boolean): R {
-  if (!split) return pane;
-  const header = Math.min(PANE_HEADER, pane.height);
-  return { ...pane, y: pane.y + header, height: pane.height - header };
-}
-
-/** The pane next to `viewId` in `direction`, judged by where the panes are on screen. */
-export function neighbourPane(layout: PaneLayout, viewId: string, direction: SplitEdge): string | undefined {
-  const { panes } = layoutPanes(layout, { x: 0, y: 0, width: 1000, height: 1000 });
-  const from = panes.find((p) => p.viewId === viewId);
-  if (!from) return undefined;
-  const horizontal = direction === "left" || direction === "right";
-  const overlap = (p: LaidOutPane) =>
-    horizontal
-      ? Math.min(p.y + p.height, from.y + from.height) - Math.max(p.y, from.y)
-      : Math.min(p.x + p.width, from.x + from.width) - Math.max(p.x, from.x);
-  const distance = (p: LaidOutPane) =>
-    direction === "left" ? from.x - (p.x + p.width)
-    : direction === "right" ? p.x - (from.x + from.width)
-    : direction === "top" ? from.y - (p.y + p.height)
-    : p.y - (from.y + from.height);
-  return panes
-    .filter((p) => p.viewId !== viewId && distance(p) >= 0 && overlap(p) > 0)
-    .sort((p, q) => distance(p) - distance(q) || overlap(q) - overlap(p))[0]?.viewId;
-}
-
-export function activeWorkspaceTab(state: WorkspaceTabsState) {
-  return (
-    state.tabs.find((tab) => tab.id === state.activeTabId) ??
-    state.tabs[0] ??
-    null
-  );
-}
-
-export function activateWorkspaceTab(
-  state: WorkspaceTabsState,
-  tabId: string,
-  viewId?: string,
-): WorkspaceTabsState {
-  const target = state.tabs.find((tab) => tab.id === tabId);
-  if (!target) return state;
-  const activeViewId =
-    viewId && target.viewIds.includes(viewId) ? viewId : target.activeViewId;
-  return {
-    tabs: state.tabs.map((tab) =>
-      tab.id === tabId ? { ...tab, activeViewId } : tab,
-    ),
-    activeTabId: tabId,
-  };
-}
-
-/** Moves the whole of `targetTabId`'s arrangement beside the source tab's focused pane. */
-export function splitWithTab(
-  state: WorkspaceTabsState,
-  sourceTabId: string,
-  targetTabId: string,
-  edge: SplitEdge = "right",
-): WorkspaceTabsState {
-  const source = state.tabs.find((tab) => tab.id === sourceTabId);
-  const target = state.tabs.find((tab) => tab.id === targetTabId);
-  if (
-    !source ||
-    !target ||
-    source.id === target.id ||
-    source.viewIds.length + target.viewIds.length > MAX_PANES
-  ) {
-    return state;
-  }
-  const split = tabWithLayout(
-    { ...source, activeViewId: source.activeViewId },
-    insertIntoLayout(source.layout, source.activeViewId, target.layout, edge),
-  );
-  return {
-    tabs: state.tabs
-      .filter((tab) => tab.id !== target.id)
-      .map((tab) => (tab.id === source.id ? split : tab)),
-    activeTabId: source.id,
-  };
-}
-
-/** Every pane of a split tab becomes a tab of its own, in reading order. */
-export function separateWorkspaceTab(
-  state: WorkspaceTabsState,
-  tabId: string,
-): WorkspaceTabsState {
-  const target = state.tabs.find((tab) => tab.id === tabId);
-  if (!target || target.viewIds.length < 2) return state;
-  const [first, ...rest] = target.viewIds;
-  const firstTab = tabWithLayout({ id: target.id, pinned: target.pinned }, { view: first });
-  const index = state.tabs.findIndex((tab) => tab.id === tabId);
-  const tabs = [...state.tabs];
-  tabs.splice(index, 1, firstTab, ...rest.map(singleWorkspaceTab));
-  return { tabs: pinnedFirst(tabs), activeTabId: firstTab.id };
-}
-
-/** Exchanges the two sides of the split holding the focused pane. */
-export function swapWorkspaceSplit(
-  state: WorkspaceTabsState,
-  tabId: string,
-): WorkspaceTabsState {
-  return {
-    ...state,
-    tabs: state.tabs.map((tab) => {
-      if (tab.id !== tabId || tab.viewIds.length < 2) return tab;
-      const path = parentPath(tab.layout, tab.activeViewId) ?? "";
-      return tabWithLayout(tab, updateAt(tab.layout, path, (node) => ("split" in node ? { ...node, a: node.b, b: node.a } : node)));
-    }),
-  };
-}
-
-export function setWorkspaceSplitRatio(
-  state: WorkspaceTabsState,
-  tabId: string,
-  ratio: number,
-  path = "",
-): WorkspaceTabsState {
-  if (!Number.isFinite(ratio) || typeof path !== "string" || !/^[ab]*$/.test(path)) return state;
-  const clamped = Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio));
-  return {
-    ...state,
-    tabs: state.tabs.map((tab) => {
-      if (tab.id !== tabId) return tab;
-      if ("view" in tab.layout && !path) return { ...tab, splitRatio: clamped };
-      return tabWithLayout(tab, updateAt(tab.layout, path, (node) => ("split" in node ? { ...node, ratio: clamped } : node)));
-    }),
-  };
-}
-
-/** Every split in the tab back to half and half. */
-export function resetWorkspaceSplits(state: WorkspaceTabsState, tabId: string): WorkspaceTabsState {
-  const even = (node: PaneLayout): PaneLayout => ("view" in node ? node : { ...node, ratio: 0.5, a: even(node.a), b: even(node.b) });
-  return { ...state, tabs: state.tabs.map((tab) => (tab.id === tabId ? tabWithLayout(tab, even(tab.layout)) : tab)) };
-}
-
-/** Puts `viewId` where `replacedViewId` is; the replaced view leaves the layout. */
-export function replaceWorkspaceView(state: WorkspaceTabsState, replacedViewId: string, viewId: string): WorkspaceTabsState {
-  const owner = state.tabs.find((tab) => tab.viewIds.includes(replacedViewId));
-  if (!owner || state.tabs.some((tab) => tab.viewIds.includes(viewId))) return state;
-  return {
-    tabs: state.tabs.map((tab) =>
-      tab.id === owner.id ? tabWithLayout({ ...tab, activeViewId: viewId }, mapViews(tab.layout, (id) => (id === replacedViewId ? viewId : id))) : tab,
-    ),
-    activeTabId: owner.id,
-  };
-}
-
-export function closeWorkspaceView(
-  state: WorkspaceTabsState,
-  viewId: string,
-): WorkspaceTabsState {
-  const owner = state.tabs.find((tab) => tab.viewIds.includes(viewId));
-  if (!owner) return state;
-  const layout = removeFromLayout(owner.layout, viewId);
-  if (layout) {
-    // Focus stays near the closed pane: the first view of what took its place.
-    const sibling = "split" in owner.layout ? parentPath(owner.layout, viewId) : undefined;
-    const parent = sibling !== undefined ? layoutAt(owner.layout, sibling) : undefined;
-    const survivor =
-      parent && "split" in parent
-        ? layoutViews("view" in parent.a && parent.a.view === viewId ? parent.b : parent.a)[0]
-        : undefined;
-    return {
-      ...state,
-      tabs: state.tabs.map((tab) =>
-        tab.id === owner.id
-          ? tabWithLayout({ id: tab.id, pinned: tab.pinned, activeViewId: tab.activeViewId === viewId ? survivor : tab.activeViewId }, layout)
-          : tab,
-      ),
-    };
-  }
-  const index = state.tabs.findIndex((tab) => tab.id === owner.id);
-  const tabs = state.tabs.filter((tab) => tab.id !== owner.id);
-  const activeTabId =
-    state.activeTabId === owner.id
-      ? (tabs[Math.min(index, tabs.length - 1)]?.id ?? null)
-      : state.activeTabId;
-  return { tabs, activeTabId };
-}
-
-/** Reorder groups as units; document identities and active pane are unchanged.
- * A tab stays among the pinned tabs, or among the others, whichever it belongs to. */
-export function reorderWorkspaceTab(
-  state: WorkspaceTabsState,
-  id: string,
-  index: number,
-): WorkspaceTabsState {
-  const from = state.tabs.findIndex((tab) => tab.id === id);
-  if (from < 0 || !Number.isFinite(index)) return state;
-  const tabs = [...state.tabs];
-  const [moved] = tabs.splice(from, 1);
-  const pinned = tabs.filter((tab) => tab.pinned).length;
-  const [min, max] = moved.pinned ? [0, pinned] : [pinned, tabs.length];
-  tabs.splice(Math.min(max, Math.max(min, Math.trunc(index))), 0, moved);
-  return { ...state, tabs };
-}
-
-/** Pins a tab after the pinned ones, or unpins it to the start of the others. */
-export function pinWorkspaceTab(state: WorkspaceTabsState, tabId: string, pinned: boolean): WorkspaceTabsState {
-  const target = state.tabs.find((tab) => tab.id === tabId);
-  if (!target || Boolean(target.pinned) === pinned) return state;
-  const rest = state.tabs.filter((tab) => tab.id !== tabId);
-  const at = rest.filter((tab) => tab.pinned).length;
-  const { pinned: _, ...unpinned } = target;
-  rest.splice(at, 0, pinned ? { ...target, pinned: true } : unpinned);
-  return { ...state, tabs: rest };
-}
-
-/** The tabs Close Other Tabs or Close Tabs to the Right would close: never pinned ones. */
-export function tabsToClose(state: WorkspaceTabsState, tabId: string, which: "others" | "right"): string[] {
-  const index = state.tabs.findIndex((tab) => tab.id === tabId);
-  if (index < 0) return [];
-  return state.tabs.filter((tab, i) => !tab.pinned && (which === "others" ? i !== index : i > index)).map((tab) => tab.id);
-}
-
-/** Trades the focused pane's place with its neighbour in `direction`; focus follows the pane. */
-export function moveWorkspacePane(state: WorkspaceTabsState, viewId: string, direction: SplitEdge): WorkspaceTabsState {
-  const owner = state.tabs.find((tab) => tab.viewIds.includes(viewId));
-  const neighbour = owner && neighbourPane(owner.layout, viewId, direction);
-  if (!owner || !neighbour) return state;
-  const moved = applyWorkspaceViewDrop(state, { kind: "swap", viewId, targetViewId: neighbour });
-  return activateWorkspaceTab(moved, owner.id, viewId);
-}
-
-export type WorkspaceViewDrop =
-  /** Beside `targetViewId` (default: the target tab's focused pane) on `edge` (default: right). */
-  | { kind: "split"; viewId: string; targetTabId: string; targetViewId?: string; edge?: SplitEdge }
-  | { kind: "swap"; viewId: string; targetViewId: string }
-  | { kind: "detach"; viewId: string; index: number };
-
-const EDGES: SplitEdge[] = ["left", "right", "top", "bottom"];
-
-/** Atomic ownership transfer: no view is closed or duplicated during a drag. */
-export function applyWorkspaceViewDrop(state: WorkspaceTabsState, drop: WorkspaceViewDrop): WorkspaceTabsState {
-  const source = state.tabs.find(tab => tab.viewIds.includes(drop.viewId));
-  if (!source) return state;
-  if (drop.kind === "swap") {
-    const target = state.tabs.find(tab => tab.viewIds.includes(drop.targetViewId));
-    if (!target || drop.viewId === drop.targetViewId) return state;
-    // A singleton dropped on another singleton would only trade tab places.
-    if (target.viewIds.length < 2 && source.viewIds.length < 2) return state;
-    const exchange = (id: string) => id === drop.viewId ? drop.targetViewId : id === drop.targetViewId ? drop.viewId : id;
-    return {
-      tabs: state.tabs.map(tab => tab.id === source.id || tab.id === target.id ? {
-        ...tabWithLayout(tab, mapViews(tab.layout, exchange)),
-        activeViewId: tab.id === target.id ? drop.viewId : exchange(tab.activeViewId),
-      } : tab),
-      activeTabId: target.id,
-    };
-  }
-  if (drop.kind === "detach") {
-    if (source.viewIds.length < 2 || !Number.isFinite(drop.index)) return state;
-    const tabs = state.tabs.map(tab => tab.id === source.id ? tabWithLayout(tab, removeFromLayout(tab.layout, drop.viewId)!) : tab);
-    const detached = singleWorkspaceTab(drop.viewId);
-    const pinned = tabs.filter(tab => tab.pinned).length;
-    tabs.splice(Math.max(pinned, Math.min(tabs.length, Math.trunc(drop.index))), 0, detached);
-    return {tabs, activeTabId: detached.id};
-  }
-  const target = state.tabs.find(tab => tab.id === drop.targetTabId);
-  const edge = drop.edge ?? "right";
-  if (!target || !EDGES.includes(edge)) return state;
-  const targetViewId = drop.targetViewId ?? target.activeViewId;
-  if (!target.viewIds.includes(targetViewId) || targetViewId === drop.viewId) return state;
-  if (target.id === source.id ? false : target.viewIds.length >= MAX_PANES) return state;
-  const tabs = state.tabs.flatMap(tab => {
-    if (tab.id !== source.id) return [tab];
-    const rest = removeFromLayout(tab.layout, drop.viewId);
-    return rest ? [tabWithLayout(tab, rest)] : [];
+/** Pixel rectangles for every group (strip included) and the sashes between them. Main
+ * (native views) and the renderer (strips, DOM panes, sashes) share this, so they never disagree. */
+export function layoutGroups(groups: Pick<TabGroup, "id" | "size">[], rect: Rect, gap = GROUP_GAP) {
+  const n = groups.length;
+  const usable = Math.max(0, rect.width - Math.max(0, n - 1) * 2 * gap);
+  const total = groups.reduce((sum, g) => sum + (g.size > 0 ? g.size : 0), 0) || 1;
+  const laidOut: LaidOutGroup[] = [],
+    sashes: LaidOutSash[] = [];
+  let share = 0,
+    previous = 0;
+  groups.forEach((g, i) => {
+    share += g.size > 0 ? g.size : 0;
+    const edge = i === n - 1 ? usable : Math.round((usable * share) / total);
+    const x = rect.x + previous + i * 2 * gap;
+    const width = Math.max(0, edge - previous);
+    laidOut.push({ id: g.id, x, y: rect.y, width, height: rect.height });
+    if (i < n - 1) sashes.push({ index: i, x: x + width, y: rect.y, width: 2 * gap, height: rect.height });
+    previous = edge;
   });
+  return { groups: laidOut, sashes };
+}
+
+/** A group's content: below its tab strip. */
+export function groupBody<R extends Rect>(group: R): R {
+  const strip = Math.min(TAB_STRIP_HEIGHT, group.height);
+  return { ...group, y: group.y + strip, height: group.height - strip };
+}
+
+/** New sizes after dragging the sash between group `index` and the next to `x` (pixels from
+ * the content area's left edge). Only those two groups change; neither gets narrower than
+ * MIN_GROUP_WIDTH (or a fair half when even that does not fit). */
+export function dragGroupSash(sizes: number[], index: number, x: number, width: number, gap = GROUP_GAP): number[] {
+  if (index < 0 || index >= sizes.length - 1 || !Number.isFinite(x)) return sizes;
+  const usable = Math.max(1, width - (sizes.length - 1) * 2 * gap);
+  const total = sizes.reduce((s, v) => s + v, 0) || 1;
+  const fractions = sizes.map((s) => s / total);
+  const before = fractions.slice(0, index).reduce((s, v) => s + v, 0);
+  const pair = fractions[index] + fractions[index + 1];
+  const pointer = (x - index * 2 * gap - gap) / usable - before;
+  const min = Math.min(MIN_GROUP_WIDTH / usable, pair / 2);
+  const left = Math.min(pair - min, Math.max(min, pointer));
+  const next = [...fractions];
+  next[index] = left;
+  next[index + 1] = pair - left;
+  return next;
+}
+
+/** A reader and its details-and-notes panel side by side in one tab's content. */
+export function layoutPanel(rect: Rect, ratio: number, gap = GROUP_GAP) {
+  const room = Math.max(0, rect.width - 2 * gap);
+  const wanted = Math.round(room * (Number.isFinite(ratio) ? ratio : PANEL_RATIO));
+  const panelWidth =
+    room >= PANEL_MIN + READER_MIN ? Math.min(room - READER_MIN, Math.max(PANEL_MIN, wanted)) : Math.round(room * PANEL_RATIO);
+  const mainWidth = room - panelWidth;
   return {
-    tabs: tabs.map(tab => tab.id === target.id
-      ? tabWithLayout({...tab, activeViewId: drop.viewId}, insertIntoLayout(tab.layout, targetViewId, {view: drop.viewId}, edge))
-      : tab),
-    activeTabId: target.id,
+    main: { ...rect, width: mainWidth },
+    sash: { ...rect, x: rect.x + mainWidth, width: 2 * gap },
+    panel: { ...rect, x: rect.x + mainWidth + 2 * gap, width: panelWidth },
   };
 }

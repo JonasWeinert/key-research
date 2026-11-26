@@ -53,7 +53,14 @@ export interface SourceSide {
   progress?: { fraction: number; label: string };
 }
 
-export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side }: { invoke: Invoke; workspaceId: string; sourceId: string; viewId?: string; side?: SourceSide }) {
+/** The page shown as a reader's details-and-notes panel, in the reader's tab. */
+export interface DockedPanel {
+  /** Moves the page into a tab of its own. */
+  onPopOut: () => void;
+  onClose: () => void;
+}
+
+export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side, docked }: { invoke: Invoke; workspaceId: string; sourceId: string; viewId?: string; side?: SourceSide; docked?: DockedPanel }) {
   const [source, setSource] = useState<Source>();
   const [notes, setNotes] = useState<Note[]>([]);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -500,7 +507,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               Copied {copied}
             </span>
           )}
-          {isPdf ? (
+          {docked ? null : isPdf ? (
             <button className="kx-page-action" onClick={openReader} title="Read the PDF beside this page">
               <Icon name="book" size={13} />
               Read
@@ -534,6 +541,16 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <button onClick={() => void invoke("store_index_control", { action: "reindex", ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Re-index</button>
             </div>
           </details>
+          {docked && (
+            <span className="kx-docked-actions">
+              <button className="kx-icon-button" title="Open in its own tab" aria-label="Open details and notes in their own tab" onClick={docked.onPopOut}>
+                <Icon name="detach" size={14} />
+              </button>
+              <button className="kx-icon-button" title="Hide details and notes" aria-label="Hide details and notes" onClick={docked.onClose}>
+                <Icon name="close" size={13} />
+              </button>
+            </span>
+          )}
           {side && (
             <>
               <button className="kx-icon-button" title="Open as page" aria-label="Open as page" onClick={() => side.onOpenPage(source)}>

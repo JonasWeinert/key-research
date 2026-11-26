@@ -363,38 +363,6 @@ body.vib .tab-bar-drag-spacer {
   outline: 2px solid var(--accent, #3276cd);
   outline-offset: -2px;
 }
-.tab-item.tab-split {
-  flex-basis: 360px;
-  min-width: 180px;
-}
-.tab-split-content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
-.tab-split-badge {
-  font-size: 16px;
-  color: var(--accent, #3276cd);
-  flex: none;
-}
-.tab-split-pane {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: 1;
-  min-width: 0;
-}
-.tab-split-divider {
-  height: 14px;
-  width: 1px;
-  background: var(--tab-separator);
-  margin-left: 3px;
-  flex: none;
-}
 @media (prefers-reduced-motion: reduce) {
   .tab-item {
     transition: none !important;
@@ -406,32 +374,6 @@ body.vib .tab-bar-drag-spacer {
 .tab-strip.settling .tab-item {
   transition: none !important;
 }
-.tab-split-pane {
-  border-radius: 4px;
-  padding: 2px 3px;
-}
-.tab-split-pane.pane-active {
-  background: color-mix(
-    in srgb,
-    var(--color-brand-secondary, #3276cd) 12%,
-    transparent
-  );
-  font-weight: 600;
-}
-
-.tab-item.tab-drop-split .tab-plate {
-  background: color-mix(in srgb, var(--color-brand-secondary, #3276cd) 18%, var(--tab-bg, #fff));
-  outline: 2px solid var(--color-brand-secondary, #3276cd);
-  outline-offset: -2px;
-}
-.tab-split-pane.pane-drop-swap {
-  background: color-mix(in srgb, var(--color-brand-secondary, #3276cd) 22%, transparent);
-  outline: 2px solid var(--color-brand-secondary, #3276cd);
-}
-.tab-split-pane.pane-drag-source { opacity: .45; cursor: grabbing; }
-.tab-split-pane { cursor: grab; }
-.tab-split-pane:focus-visible { outline: 2px solid var(--color-brand-secondary, #3276cd); }
-.tab-split-badge { cursor: grab; }
 .tab-drop-feedback {
   position: fixed;
   /* Native document views begin at y=40; feedback must stay in chrome. */
@@ -442,19 +384,11 @@ body.vib .tab-bar-drag-spacer {
   flex-direction: column;
   gap: 2px;
   padding: 3px 9px;
-  border: 1px solid var(--color-brand-secondary, #3276cd);
-  border-radius: 8px;
-  background: var(--tab-active-bg, #fff);
-  color: var(--tab-text, #25262a);
-  box-shadow: 0 4px 16px #0002;
   font: 11px/1.2 system-ui, sans-serif;
 }
 .tab-drop-feedback small { opacity: .65; font-size: 10px; }
-@media(prefers-color-scheme:dark) {
-  .tab-drop-feedback { background: #27282d; color: #eee; }
-}
 
-/* Centre targets use their original geometry, not animated reorder slots. */
+/* Away from the strip, tabs keep their original geometry, not animated reorder slots. */
 .tab-strip.targeting .tab-item { transition: none !important; }
 
 /* Items dragged over the tab bar open in new tabs when dropped. */
@@ -470,40 +404,7 @@ body.vib .tab-bar-drag-spacer {
   padding: 0 12px 6px;
   justify-content: center;
 }
-.tab-item.tab-pinned.tab-split {
-  flex-basis: auto;
-  min-width: 0;
-}
-/* A split group grows with its panes, then shrinks with the strip; past that it scrolls. */
-.tab-item.tab-split {
-  flex: 0 1 calc(var(--panes, 2) * 170px);
-  min-width: calc(var(--panes, 2) * 64px + 36px);
-  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--kx-accent) 55%, transparent);
-}
-.tab-item.tab-split.active {
-  box-shadow: none;
-}
-.tab-split-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-}
-.tab-split-count {
-  font-size: 10px;
-  font-weight: 600;
-}
-/* Each pane of a group has its own close button, shown on hover and for the focused pane. */
-.tab-split-pane .tab-pane-close {
-  width: 14px;
-  height: 14px;
-  opacity: 0;
-}
-.tab-split-pane:hover .tab-pane-close,
-.tab-split-pane:focus-within .tab-pane-close,
-.tab-split-pane.pane-active .tab-pane-close {
-  opacity: 1;
-}
 /* Inactive tabs keep a quieter close button until hovered. */
-.tab-item:not(.active):not(:hover):not(.tab-split) .tab-close {
+.tab-item:not(.active):not(:hover) .tab-close {
   opacity: 0.55;
 }

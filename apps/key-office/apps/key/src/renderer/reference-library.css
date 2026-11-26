@@ -2069,6 +2069,19 @@
 .kx-source-page[data-tight="true"] .kx-page-highlights footer button {
   padding: 0 4px;
 }
+/* Docked beside its reader, the page's header stays one row: the type shrinks first. */
+.kx-source-page-bar:has(.kx-docked-actions) {
+  flex-wrap: nowrap;
+}
+.kx-docked-actions {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid var(--kx-line);
+}
 /* The item type takes only the width of the chosen type, so the actions stay on one line. */
 .kx-source-page-bar .kx-kind-badge {
   flex: 0 1 auto;

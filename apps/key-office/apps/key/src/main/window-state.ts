@@ -20,12 +20,23 @@ export type SavedView =
     }
   | { type: "pdf"; workspaceId: string; hash: string; title: string }
   | { type: "office"; kind: string; path: string; workspaceId?: string };
-export type SavedLayout =
-  | { view: SavedView }
-  | { split: "row" | "column"; ratio: number; a: SavedLayout; b: SavedLayout };
+export interface SavedTab {
+  view: SavedView;
+  pinned?: boolean;
+  /** A reader's docked details-and-notes panel, and its share of the tab. */
+  panel?: { view: SavedView; ratio: number };
+}
+export interface SavedGroup {
+  tabs: SavedTab[];
+  /** Which tab the group showed. */
+  active: number;
+  /** The group's share of the window's width. */
+  size: number;
+}
 export interface SavedTabs {
-  /** Each tab's layout, and which of its panes (in reading order) had focus. */
-  tabs: { layout: SavedLayout; active: number; pinned?: boolean }[];
+  /** Editor groups, left to right. */
+  groups: SavedGroup[];
+  /** Which group had focus. */
   active: number;
 }
 export interface SavedWindow {
@@ -37,7 +48,7 @@ export interface SavedWindow {
   tabs: SavedTabs;
 }
 export interface WindowState {
-  version: 1;
+  version: 2;
   /** Open windows, front-most first. */
   windows: SavedWindow[];
   /** The arrangement last left behind in each workspace, for switching back. */
@@ -46,26 +57,46 @@ export interface WindowState {
   recent: string[];
 }
 
-const empty = (): WindowState => ({ version: 1, windows: [], layouts: {}, recent: [] });
+const empty = (): WindowState => ({ version: 2, windows: [], layouts: {}, recent: [] });
 const MAX_DEPTH = 8;
 
-function validLayout(value: any, depth = 0): value is SavedLayout {
-  if (!value || typeof value !== "object" || depth > MAX_DEPTH) return false;
-  if ("view" in value) return !!value.view && typeof value.view === "object" && typeof value.view.type === "string";
-  return (
-    (value.split === "row" || value.split === "column") &&
-    Number.isFinite(value.ratio) &&
-    validLayout(value.a, depth + 1) &&
-    validLayout(value.b, depth + 1)
-  );
+const validView = (value: any): value is SavedView => !!value && typeof value === "object" && typeof value.type === "string";
+const validTab = (t: any): t is SavedTab =>
+  !!t && validView(t.view) && (t.panel === undefined || (validView(t.panel?.view) && Number.isFinite(t.panel.ratio)));
+/** The views of a version 1 tab, which could hold a split of views, in reading order. */
+function legacyViews(value: any, depth = 0): SavedView[] | undefined {
+  if (!value || typeof value !== "object" || depth > MAX_DEPTH) return undefined;
+  if ("view" in value) return validView(value.view) ? [value.view] : undefined;
+  if (value.split !== "row" && value.split !== "column") return undefined;
+  const a = legacyViews(value.a, depth + 1),
+    b = legacyViews(value.b, depth + 1);
+  return a && b ? [...a, ...b] : undefined;
 }
-function validTabs(value: any): value is SavedTabs {
-  return (
-    !!value &&
-    Array.isArray(value.tabs) &&
-    value.tabs.length <= 200 &&
-    value.tabs.every((t: any) => t && validLayout(t.layout) && Number.isInteger(t.active))
-  );
+/** A saved arrangement, or undefined when it is unreadable. A version 1 split tab comes back
+ * as its views, each a tab of its own, in its place. */
+export function readSavedTabs(value: any): SavedTabs | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  if (Array.isArray(value.groups)) {
+    const groups: SavedGroup[] = value.groups
+      .filter((g: any) => g && Array.isArray(g.tabs) && g.tabs.length <= 200 && g.tabs.every(validTab))
+      .slice(0, 16)
+      .map((g: any) => ({
+        tabs: g.tabs,
+        active: Number.isInteger(g.active) ? g.active : 0,
+        size: Number.isFinite(g.size) && g.size > 0 ? g.size : 1,
+      }));
+    return groups.length ? { groups, active: Number.isInteger(value.active) ? value.active : 0 } : undefined;
+  }
+  if (!Array.isArray(value.tabs) || value.tabs.length > 200) return undefined;
+  const tabs: SavedTab[] = [];
+  let active = 0;
+  for (const [index, t] of value.tabs.entries()) {
+    const views = t && legacyViews(t.layout);
+    if (!views) return undefined;
+    if (index === value.active) active = tabs.length + Math.min(Math.max(0, Number(t.active) || 0), views.length - 1);
+    for (const view of views) tabs.push({ view, ...(t.pinned === true ? { pinned: true } : {}) });
+  }
+  return { groups: [{ tabs, active, size: 1 }], active: 0 };
 }
 
 /** `window-state.json`: written atomically shortly after changes, and synchronously at quit. */
@@ -77,14 +108,20 @@ export class WindowStateStore {
   async load(): Promise<WindowState> {
     try {
       const data = JSON.parse(await readFile(this.file, "utf8"));
-      if (data?.version !== 1) throw Error("Unknown window state version");
+      if (data?.version !== 1 && data?.version !== 2) throw Error("Unknown window state version");
       this.state = {
-        version: 1,
+        version: 2,
         windows: (Array.isArray(data.windows) ? data.windows : [])
-          .filter((w: any) => w && typeof w.workspaceId === "string" && validTabs(w.tabs))
+          .flatMap((w: any) => {
+            const tabs = w && typeof w.workspaceId === "string" ? readSavedTabs(w.tabs) : undefined;
+            return tabs ? [{ ...w, tabs }] : [];
+          })
           .slice(0, 16),
         layouts: Object.fromEntries(
-          Object.entries(data.layouts ?? {}).filter(([id, tabs]) => typeof id === "string" && validTabs(tabs)),
+          Object.entries(data.layouts ?? {}).flatMap(([id, value]) => {
+            const tabs = readSavedTabs(value);
+            return tabs ? [[id, tabs]] : [];
+          }),
         ) as Record<string, SavedTabs>,
         recent: (Array.isArray(data.recent) ? data.recent : []).filter((id: unknown) => typeof id === "string").slice(0, 32),
       };

@@ -793,9 +793,6 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
 .tab-item.tab-home {
   padding-right: 12px;
 }
-.tab-item.tab-split {
-  flex-basis: 340px;
-}
 .tab-item::before,
 .tab-new-btn::before,
 .tab-overflow-btn::before,
@@ -870,13 +867,25 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   background: var(--kx-fill);
   color: var(--kx-text);
 }
-.tab-split-badge {
-  display: grid;
-  color: var(--kx-accent);
+/* Editor groups: one strip each, side by side in the title bar's band. */
+.key-group-strips {
+  position: relative;
+  flex: none;
+  height: 40px;
+  background: var(--kx-bg);
+  -webkit-app-region: drag;
 }
-.tab-split-pane.pane-active {
-  background: var(--kx-accent-soft);
-  font-weight: 500;
+.key-shell .tab-bar:not([data-first]) .tab-bar-drag-spacer {
+  width: 6px;
+}
+/* With several groups, only the focused group's active tab is drawn at full strength. */
+.tab-bar:not([data-focused]) .tab-item.active {
+  color: var(--kx-text-2);
+  font-weight: 400;
+}
+.tab-bar:not([data-focused]) .tab-item.active .tab-plate,
+:root[data-theme="dark"] .tab-bar:not([data-focused]) .tab-item.active .tab-plate {
+  background: var(--kx-fill);
 }
 .tab-drop-feedback {
   border: 0;
@@ -913,14 +922,16 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   opacity: 0.3;
 }
 
-/* Split divider: a 6px hit area with a hairline. */
-.key-split-divider {
+/* The sash between editor groups (and between a reader and its panel): a 6px hit area
+   with a hairline, running the full height, strips included. */
+.key-group-sash {
   position: fixed;
+  top: 0;
   bottom: 0;
   z-index: 50;
-  width: 6px;
   cursor: col-resize;
   touch-action: none;
+  -webkit-app-region: no-drag;
   background: linear-gradient(
     to right,
     transparent 2.5px,
@@ -929,91 +940,16 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
     transparent 3.5px
   );
 }
-.key-split-divider:hover,
-.key-split-divider:focus-visible {
+.key-group-sash:hover,
+.key-group-sash:focus-visible {
   background: linear-gradient(to right, transparent 1.5px, var(--kx-accent) 1.5px, var(--kx-accent) 4.5px, transparent 4.5px);
   outline: none;
+  transition: background 120ms 250ms;
 }
-.key-split-divider-column {
-  cursor: row-resize;
-  background: linear-gradient(
-    to bottom,
-    transparent 2.5px,
-    var(--kx-line-strong) 2.5px,
-    var(--kx-line-strong) 3.5px,
-    transparent 3.5px
-  );
+.key-panel-sash {
+  bottom: auto;
 }
-.key-split-divider-column:hover,
-.key-split-divider-column:focus-visible {
-  background: linear-gradient(to bottom, transparent 1.5px, var(--kx-accent) 1.5px, var(--kx-accent) 4.5px, transparent 4.5px);
-}
-/* The slim header above each pane of a split: what it shows, a handle to drag it, and its close button. */
-.key-pane-header {
-  position: fixed;
-  z-index: 45;
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 4px 0 10px;
-  border-bottom: 1px solid var(--kx-line);
-  background: var(--kx-bg-sunken);
-  color: var(--kx-text-2);
-  font: 500 11.5px/1 var(--kx-font);
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-.key-pane-header[data-pane-focused] {
-  background: var(--kx-bg);
-  color: var(--kx-text);
-  box-shadow: inset 0 2px 0 var(--kx-accent);
-}
-.key-pane-header[data-dragging] {
-  cursor: grabbing;
-  opacity: 0.6;
-}
-.key-pane-header-icon {
-  display: flex;
-  flex: none;
-}
-.key-pane-header-icon svg {
-  width: 13px;
-  height: 13px;
-}
-.key-pane-header-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.key-pane-header button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0;
-}
-.key-pane-header:hover button,
-.key-pane-header:focus-within button,
-.key-pane-header[data-pane-focused] .key-pane-close {
-  opacity: 1;
-}
-.key-pane-header button:hover,
-.key-pane-header button:focus-visible {
-  background: var(--kx-fill);
-  outline: none;
-}
-/* Where a pane dragged up into the tab bar becomes a tab. */
+/* Where a tab dragged to another group's strip goes. */
 .key-tab-insert-marker {
   position: fixed;
   z-index: 2000;
@@ -2749,7 +2685,7 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   backdrop-filter: none;
   -webkit-app-region: no-drag;
 }
-html.kx-modal-open :is(.tab-bar, .tab-strip, .kx-sidebar-titlebar) {
+html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titlebar) {
   -webkit-app-region: no-drag;
 }
 .key-global-dialog.key-global-drawer {
