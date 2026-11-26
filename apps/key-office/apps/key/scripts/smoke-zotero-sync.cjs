@@ -4,7 +4,7 @@
 // the first sync, deltas (edit, new item, trash, leaving the scope), "Zotero is not
 // running" and pause in Settings. Screenshots in light and dark.
 const { _electron: electron } = require("playwright-core");
-const { mkdtemp, mkdir, copyFile } = require("node:fs/promises");
+const { mkdtemp, mkdir, copyFile, writeFile, readFile, access } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
@@ -80,6 +80,12 @@ const library = (pdf) => ({
   mock.setMode("missing");
   const shots = path.join(temp, "shots");
   await mkdir(shots);
+  // A fake Zotero profile for the one-click install; the real one is never touched.
+  const zoteroRoot = path.join(temp, "zotero-profiles");
+  const profile = path.join(zoteroRoot, "Profiles/fake.default");
+  await mkdir(profile, { recursive: true });
+  await writeFile(path.join(zoteroRoot, "profiles.ini"), "[Profile0]\nName=default\nIsRelative=1\nPath=Profiles/fake.default\nDefault=1\n");
+  await writeFile(path.join(profile, "prefs.js"), 'user_pref("extensions.lastAppBuildId", "20260707110915");\nuser_pref("extensions.lastAppVersion", "9.0.6");\n');
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
     args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
@@ -90,6 +96,8 @@ const library = (pdf) => ({
       KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
       KEY_ZOTERO_DATA_DIR: zotero,
       KEY_ZOTERO_PORT: String(mock.port),
+      KEY_ZOTERO_PROFILE_ROOT: zoteroRoot,
+      KEY_ZOTERO_APP: path.join(temp, "NoZotero.app"),
     },
   });
   const report = { shots };
@@ -154,6 +162,18 @@ const library = (pdf) => ({
     await shot("5-sync-plugin-missing-light");
     const plugin = await page.evaluate(() => window.key.zoteroPlugin());
     assert.match(plugin.file, /key-sync\.xpi$/);
+    // One-click install into the fake profile: the file lands, Zotero is told to look for it.
+    await sheet.getByRole("button", { name: "Install in Zotero" }).click();
+    await sheet.getByText("Restart Zotero to finish").waitFor();
+    await access(path.join(profile, "extensions/key-sync@key.dev.xpi"));
+    await shot("5b-sync-plugin-installed-light");
+    const prefs = await readFile(path.join(profile, "prefs.js"), "utf8");
+    assert.doesNotMatch(prefs, /lastAppBuildId/, "Zotero rescans its extensions at the next start");
+    assert.match(prefs, /"extensions\.autoDisableScopes", 14\)/);
+    assert.match(prefs, /"extensions\.key-sync\.restoreAutoDisableScopes", -1\)/);
+    const status = await page.evaluate(() => window.key.zoteroPlugin("status"));
+    assert.equal(status.install.state, "pending");
+    report.install = true;
     mock.setMode("ok");
     await sheet.getByRole("button", { name: "Check again" }).click();
     await sheet.getByText("Pair Key with Zotero").waitFor();

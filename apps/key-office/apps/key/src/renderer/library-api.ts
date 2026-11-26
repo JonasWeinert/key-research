@@ -353,8 +353,9 @@ export interface Bridge {
   zoteroWorkspace(): Promise<WorkspaceSummary>;
   /** Syncs the Zotero workspace now, when sync is on. */
   syncZotero(): Promise<void>;
-  /** The bundled Key Sync plugin file, or "wake" to check Zotero now. */
-  zoteroPlugin(action?: "wake"): Promise<{ file: string | null } | null>;
+  /** The bundled Key Sync plugin file; "wake" checks Zotero now; "status", "install", "restart"
+   *  and "open" report and drive installing the plugin into Zotero's profile. */
+  zoteroPlugin(action?: "wake" | "status" | "install" | "restart" | "open"): Promise<{ file: string | null; install?: ZoteroInstall; error?: string } | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
   /** A Quick Look thumbnail as a data URL, or null when the file has none. */
@@ -432,6 +433,14 @@ export interface ZoteroItem {
 }
 /** How Key reaches Zotero through the Key Sync plugin. */
 export type ZoteroConnection = "ok" | "not-running" | "plugin-missing" | "unpaired" | "error" | "off" | "paused";
+/** Key Sync in Zotero's profile, as Key's installer sees it. */
+export interface ZoteroInstall {
+  state: "no-zotero" | "not-installed" | "outdated" | "pending" | "installed" | "disabled";
+  running: boolean;
+  profile: string | null;
+  installedVersion: string | null;
+  bundledVersion: string | null;
+}
 export interface ZoteroProbe {
   connection?: ZoteroConnection | null;
   message?: string | null;

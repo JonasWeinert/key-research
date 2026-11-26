@@ -41,6 +41,23 @@ var KeySync = {
     return token;
   },
 
+  /** Key's installer lets Zotero enable this plugin when it finds it in the profile by
+   *  relaxing extensions.autoDisableScopes once; put back what was there before. */
+  restoreInstallPrefs() {
+    const MARK = "extensions.key-sync.restoreAutoDisableScopes";
+    try {
+      if (!Services.prefs.prefHasUserValue(MARK)) return;
+      const previous = Services.prefs.getIntPref(MARK, -1);
+      if (previous < 0) Services.prefs.clearUserPref("extensions.autoDisableScopes");
+      else Services.prefs.setIntPref("extensions.autoDisableScopes", previous);
+      Services.prefs.clearUserPref(MARK);
+      Services.prefs.savePrefFile(null);
+      this.log("Restored extensions.autoDisableScopes after Key's install");
+    } catch (e) {
+      this.log("Could not restore install prefs: " + e);
+    }
+  },
+
   regenerateToken() {
     Zotero.Prefs.clear(this.TOKEN_PREF, true);
     return this.token();
@@ -50,6 +67,7 @@ var KeySync = {
     this.id = id;
     this.version = version;
     this.rootURI = rootURI;
+    this.restoreInstallPrefs();
     this.token();
     await this.loadJournal();
     this.api = KeySyncCore.createAPI({

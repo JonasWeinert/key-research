@@ -5,14 +5,23 @@ It targets Zotero 7, 8 and 9 (tested on Zotero 9.0.6) and only reads from Zotero
 
 ## Install
 
-1. Build the plugin: `node integrations/zotero-key-sync/build.mjs` → `dist/key-sync.xpi`.
-   Key's packaged app carries the same file; its Zotero sheet has **Show plugin in Finder**.
-2. In Zotero: **Tools → Plugins**, then drag `key-sync.xpi` onto the window (or use the gear
-   menu → **Install Plugin From File…**).
-3. In Key: **Add → Import from Zotero…**, choose **Keep in sync**, then what to sync.
+In Key: **Add → Import from Zotero…**, choose **Keep in sync**, then **Install in Zotero**.
+Key copies its bundled `key-sync.xpi` into Zotero's default profile
+(`~/Library/Application Support/Zotero/Profiles/<profile>/extensions/key-sync@key.dev.xpi`) and,
+while Zotero is closed, prepares `prefs.js` so Zotero loads it at its next start: it removes
+`extensions.lastAppBuildId` (so Zotero rescans its extensions; Zotero writes it back) and clears
+the profile bit of `extensions.autoDisableScopes` (so the plugin is not added switched off). The
+plugin restores `autoDisableScopes` the first time it starts. If Zotero is running, Key offers
+**Restart Zotero** (a normal quit, so Zotero can ask to save) and applies the edit in between.
+Key then finds the pairing code in `prefs.js` on its own.
 
-Key finds the pairing code in Zotero's preferences file on its own. If it cannot (for example
-with a custom Zotero profile), copy the code from **Zotero → Settings → Key Sync** into Key.
+By hand: build with `node integrations/zotero-key-sync/build.mjs` (→ `dist/key-sync.xpi`; Key's
+sheet also has **Show plugin file**), then in Zotero **Tools → Plugins** drag the file onto the
+window. If Key cannot find the pairing code (a custom profile), copy it from
+**Zotero → Settings → Key Sync**.
+
+`updates.json` is the plugin's update feed (`update_url`); it lists no updates because new
+versions come with Key, whose sheet offers **Update in Zotero** when its copy is newer.
 
 ## How it works
 
