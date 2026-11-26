@@ -278,8 +278,38 @@ fn detection(id: &'static str, filters: Vec<QueryFilter>, rest: String) -> Detec
     Detection { id, filters, kinds: None, rest }
 }
 
+/// `key:smith2020` or `@smith2020`: a citation key.
+fn citation_key(text: &str) -> Option<Detection> {
+    if !text.contains('@') && !text.as_bytes().windows(4).any(|w| w.eq_ignore_ascii_case(b"key:")) {
+        return None;
+    }
+    let key_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | ':' | '.' | '/');
+    for at in char_starts(text) {
+        if !prev_char(text, at).is_none_or(char::is_whitespace) {
+            continue;
+        }
+        let start = if starts_ci(text, at, "key:") {
+            at + 4
+        } else if text[at..].starts_with('@') {
+            at + 1
+        } else {
+            continue;
+        };
+        let length: usize = text[start..].chars().take_while(|c| key_char(*c)).map(char::len_utf8).sum();
+        let key = text[start..start + length].trim_end_matches(['.', ':', '/']);
+        if key.is_empty() || !next_char(text, start + key.len()).is_none_or(char::is_whitespace) {
+            continue;
+        }
+        return Some(detection("citationKey", vec![filter("citationKey", key, &format!("@{key}"), "is")], cut(text, at, start + key.len())));
+    }
+    None
+}
+
 /// Identifiers: DOI, arXiv, PMID, PMCID, ISBN, then any other link. At most one.
 fn identifier(query: &str) -> Option<Detection> {
+    if let Some(key) = citation_key(query) {
+        return Some(key);
+    }
     let text = replace_escaped_slash(query);
     let text = text.as_str();
     let doi = read_doi(text);
@@ -918,6 +948,17 @@ mod tests {
     }
     fn one(id: &str, filters: &[&str], rest: &str) -> Option<(String, Vec<String>, Option<Vec<&'static str>>, String)> {
         Some((id.into(), filters.iter().map(|s| s.to_string()).collect(), None, rest.into()))
+    }
+
+    #[test]
+    fn reads_citation_keys() {
+        let found = detect_query("@smith2020a", false, None);
+        assert_eq!(found[0].id, "citationKey");
+        assert_eq!(found[0].filters[0].value, "smith2020a");
+        let found = detect_query("malaria key:doe:2019", false, None);
+        assert_eq!(found[0].filters[0].value, "doe:2019");
+        assert_eq!(found[0].rest.trim(), "malaria");
+        assert!(detect_query("mail me@example.org", false, None).iter().all(|d| d.id != "citationKey"));
     }
 
     #[test]

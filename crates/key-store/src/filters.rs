@@ -82,6 +82,8 @@ pub(crate) fn condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
             "lower(trim(s.doi)) IN (lower(?), 'https://doi.org/' || lower(?), 'http://doi.org/' || lower(?), 'https://dx.doi.org/' || lower(?), 'doi:' || lower(?))".into(),
             vec![text(), text(), text(), text(), text()],
         ),
+        ("citationKey", true) => ("s.citation_key = ? COLLATE NOCASE".into(), vec![text()]),
+        ("citationKey", false) => ("s.citation_key LIKE ? ESCAPE '\\'".into(), vec![like(value)]),
         ("pmid", _) => ("trim(s.pmid) = ?".into(), vec![text()]),
         ("pmcid", _) => ("upper(trim(s.pmcid)) IN (upper(?), 'PMC' || upper(?))".into(), vec![text(), text()]),
         // Stored with or without its version; a preprint may only carry its arXiv DOI.
