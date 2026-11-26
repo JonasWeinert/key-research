@@ -717,7 +717,6 @@ impl RenderCsl for citationberg::Date {
 
         let parts = self.parts.or(base.and_then(|b| b.parts)).unwrap_or_default();
 
-        // TODO: Date ranges
         let mut last_was_empty = true;
 
         // Localized (base) delimiter takes precedence over the cs:date
@@ -735,31 +734,97 @@ impl RenderCsl for citationberg::Date {
             None => self.delimiter.as_deref(),
         };
 
-        for part in &base.unwrap_or(self).date_part {
-            match part.name {
-                DatePartName::Month if !parts.has_month() && date.season.is_none() => {
-                    continue;
+        // Key patch: the parts this date has (a delimiter before a part without a
+        // value left "2021," for a year-only date), and the end of a range.
+        let shown: Vec<&citationberg::DatePart> = base
+            .unwrap_or(self)
+            .date_part
+            .iter()
+            .filter(|part| match part.name {
+                DatePartName::Month => {
+                    (parts.has_month() || date.season.is_some())
+                        && (date.month.is_some() || date.season.is_some())
                 }
-                DatePartName::Day if !parts.has_day() => continue,
-                _ => {}
-            }
-
+                DatePartName::Day => parts.has_day() && date.day.is_some(),
+                DatePartName::Year => true,
+            })
+            .collect();
+        let end = ctx
+            .instance
+            .entry
+            .resolve_date_range_end(variable)
+            .filter(|end| *end != *date);
+        // The largest part that differs; it and the smaller parts are shown as a range.
+        let differs = |name: DatePartName| {
+            end.as_ref().is_some_and(|end| match name {
+                DatePartName::Year => end.year != date.year,
+                DatePartName::Month => {
+                    end.year != date.year || end.month != date.month || end.season != date.season
+                }
+                DatePartName::Day => end != &*date,
+            })
+        };
+        let ranged: Vec<usize> =
+            (0..shown.len()).filter(|i| differs(shown[*i].name)).collect();
+        let contiguous = ranged.windows(2).all(|w| w[1] == w[0] + 1);
+        let over_ride = |name: DatePartName| {
+            base.is_some().then(|| self.date_part.iter().find(|p| p.name == name)).flatten()
+        };
+        let before = ctx.writing.len();
+        let mut i = 0;
+        while i < shown.len() {
             let cursor = ctx.writing.len();
             if !last_was_empty && let Some(delim) = chosen_delim {
                 ctx.push_str(delim);
             }
-
-            let over_ride = base
-                .is_some()
-                .then(|| self.date_part.iter().find(|p| p.name == part.name))
-                .flatten();
-
-            render_date_part(part, &date, ctx, over_ride, first);
+            match (&end, ranged.first()) {
+                (Some(end), Some(&start)) if i == start => {
+                    // Start and end of the run of differing parts, joined by the range
+                    // delimiter of the largest one (the whole dates when the run is broken).
+                    let run: Vec<usize> =
+                        if contiguous { ranged.clone() } else { (i..shown.len()).collect() };
+                    let range_delim = shown[run[0]]
+                        .range_delimiter
+                        .as_deref()
+                        .unwrap_or(citationberg::DatePart::DEFAULT_DELIMITER);
+                    for (k, at) in run.iter().enumerate() {
+                        if k > 0 && let Some(delim) = chosen_delim {
+                            ctx.push_str(delim);
+                        }
+                        render_date_part(shown[*at], &date, ctx, over_ride(shown[*at].name), first);
+                    }
+                    ctx.push_str(range_delim);
+                    for (k, at) in run.iter().enumerate() {
+                        if k > 0 && let Some(delim) = chosen_delim {
+                            ctx.push_str(delim);
+                        }
+                        // "May 3–7", not "May 3– 7": the range delimiter replaces the
+                        // prefix of the end's first part.
+                        let mut part = shown[*at].clone();
+                        if k == 0 {
+                            part.affixes.prefix = None;
+                        }
+                        render_date_part(&part, end, ctx, over_ride(part.name), first);
+                    }
+                    i = run.last().copied().unwrap_or(i) + 1;
+                }
+                _ => {
+                    render_date_part(shown[i], &date, ctx, over_ride(shown[i].name), first);
+                    i += 1;
+                }
+            }
             last_was_empty = cursor == ctx.writing.len();
         }
 
+        // A date whose parts all are missing (the month and day of a year-only date) is no
+        // output: a group around it must not add its delimiter ("2021,").
+        let empty = ctx.writing.len() == before;
         ctx.pop_case(cidx);
         ctx.apply_suffix(&self.affixes, affix_loc);
+        if empty {
+            ctx.discard_elem(depth);
+            return;
+        }
         ctx.commit_elem(depth, self.display, Some(ElemMeta::Date));
     }
 
@@ -792,7 +857,21 @@ impl RenderCsl for citationberg::Date {
         if !self.will_render(ctx, variable.into()) {
             (false, UsageInfo::default())
         } else {
-            let has_non_empty_vars = ctx.resolve_date_variable(variable).is_some();
+            // Key patch: a date that shows none of the parts it has (only month and day,
+            // for a year-only date) prints nothing, so a group leaves out its delimiter.
+            let has_non_empty_vars = ctx.resolve_date_variable(variable).is_some_and(|date| {
+                let base = self.form.and_then(|form| ctx.localized_date(form));
+                let parts = self.parts.or(base.and_then(|b| b.parts)).unwrap_or_default();
+                ctx.instance.sorting.is_some()
+                    || base.unwrap_or(self).date_part.iter().any(|part| match part.name {
+                        DatePartName::Year => true,
+                        DatePartName::Month => {
+                            (parts.has_month() || date.season.is_some())
+                                && (date.month.is_some() || date.season.is_some())
+                        }
+                        DatePartName::Day => parts.has_day() && date.day.is_some(),
+                    })
+            });
             (
                 has_non_empty_vars,
                 UsageInfo {

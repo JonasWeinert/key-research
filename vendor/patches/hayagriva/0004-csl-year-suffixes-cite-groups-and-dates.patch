@@ -1,0 +1,274 @@
+--- a/src/csl/mod.rs
++++ b/src/csl/mod.rs
+@@ -266,10 +266,15 @@
+                     continue;
+                 }
+ 
+-                // 2c. Disambiguate by year-suffix.
+-                disambiguate_year_suffix(&res, group, |entry, state| {
+-                    mark(&mut rerender, entry, state)
+-                });
++                // 2c. Disambiguate by year-suffix (in bibliography order: Key patch).
++                disambiguate_year_suffix(
++                    &res,
++                    group,
++                    |entry| {
++                        entries.iter().position(|e| e.entry == entry).unwrap_or(usize::MAX)
++                    },
++                    |entry, state| mark(&mut rerender, entry, state),
++                );
+             }
+ 
+             if rerender.is_empty() {
+@@ -287,6 +292,31 @@
+             }
+         }
+ 
++        // Key patch: a sorted citation puts the works one author published in one year in
++        // the order of their year suffixes ("Doe, 2020a, 2020b"), which the sort before
++        // disambiguation could not know.
++        for cite in res.iter_mut() {
++            if cite.request.style.citation.sort.is_none() {
++                continue;
++            }
++            let suffix = |item: &SpeculativeItemRender<'_, T>| match item.cite_props.speculative.disambiguation {
++                DisambiguateState::YearSuffix(s) => Some(s),
++                _ => None,
++            };
++            let names = |item: &SpeculativeItemRender<'_, T>| item.rendered.find_names().map(|e| format!("{e:?}"));
++            for i in 1..cite.items.len() {
++                let mut j = i;
++                while j > 0 {
++                    let (a, b) = (&cite.items[j - 1], &cite.items[j]);
++                    match (suffix(a), suffix(b)) {
++                        (Some(x), Some(y)) if x > y && names(a).is_some() && names(a) == names(b) => cite.items.swap(j - 1, j),
++                        _ => break,
++                    }
++                    j -= 1;
++                }
++            }
++        }
++
+         // 3. Group adjacent citations.
+         for cite in res.iter_mut() {
+             // This map contains the last index of each entry with this names
+@@ -1033,6 +1063,7 @@
+ fn disambiguate_year_suffix<F, T>(
+     renders: &[SpeculativeCiteRender<'_, '_, T>],
+     group: &AmbiguousGroup,
++    order: impl Fn(&T) -> usize,
+     mut mark: F,
+ ) where
+     T: EntryLike + PartialEq,
+@@ -1078,7 +1109,10 @@
+             }
+         }
+ 
+-        // Assign year suffixes.
++        // Assign year suffixes. Key patch: in the order of the bibliography (which is the
++        // order of first citation when it is not sorted), as the CSL specification says;
++        // they followed the citation order, so "Doe 2020b" could come first in the list.
++        entries.sort_by_key(|entry| order(entry));
+         for (i, entry) in entries.into_iter().enumerate() {
+             mark(entry, DisambiguateState::YearSuffix(i as u8));
+         }
+@@ -1155,12 +1189,13 @@
+         .as_deref()
+         .or(style.citation.layout.delimiter.as_deref());
+ 
+-    let group_delimiter = style.citation.cite_group_delimiter.as_deref();
++    // Key patch: ", " is CSL's default cite-group delimiter ("Doe, 2020a, 2020b").
++    let group_delimiter = style.citation.cite_group_delimiter.as_deref().or(Some(", "));
+     let year_suffix_delimiter = style
+         .citation
+         .year_suffix_delimiter
+         .as_deref()
+-        .or(style.citation.cite_group_delimiter.as_deref());
++        .or(group_delimiter);
+ 
+     match style.citation.collapse {
+         Some(Collapse::CitationNumber) => {
+--- a/src/csl/rendering/mod.rs
++++ b/src/csl/rendering/mod.rs
+@@ -717,7 +717,6 @@
+ 
+         let parts = self.parts.or(base.and_then(|b| b.parts)).unwrap_or_default();
+ 
+-        // TODO: Date ranges
+         let mut last_was_empty = true;
+ 
+         // Localized (base) delimiter takes precedence over the cs:date
+@@ -735,31 +734,97 @@
+             None => self.delimiter.as_deref(),
+         };
+ 
+-        for part in &base.unwrap_or(self).date_part {
+-            match part.name {
+-                DatePartName::Month if !parts.has_month() && date.season.is_none() => {
+-                    continue;
++        // Key patch: the parts this date has (a delimiter before a part without a
++        // value left "2021," for a year-only date), and the end of a range.
++        let shown: Vec<&citationberg::DatePart> = base
++            .unwrap_or(self)
++            .date_part
++            .iter()
++            .filter(|part| match part.name {
++                DatePartName::Month => {
++                    (parts.has_month() || date.season.is_some())
++                        && (date.month.is_some() || date.season.is_some())
+                 }
+-                DatePartName::Day if !parts.has_day() => continue,
+-                _ => {}
+-            }
+-
++                DatePartName::Day => parts.has_day() && date.day.is_some(),
++                DatePartName::Year => true,
++            })
++            .collect();
++        let end = ctx
++            .instance
++            .entry
++            .resolve_date_range_end(variable)
++            .filter(|end| *end != *date);
++        // The largest part that differs; it and the smaller parts are shown as a range.
++        let differs = |name: DatePartName| {
++            end.as_ref().is_some_and(|end| match name {
++                DatePartName::Year => end.year != date.year,
++                DatePartName::Month => {
++                    end.year != date.year || end.month != date.month || end.season != date.season
++                }
++                DatePartName::Day => end != &*date,
++            })
++        };
++        let ranged: Vec<usize> =
++            (0..shown.len()).filter(|i| differs(shown[*i].name)).collect();
++        let contiguous = ranged.windows(2).all(|w| w[1] == w[0] + 1);
++        let over_ride = |name: DatePartName| {
++            base.is_some().then(|| self.date_part.iter().find(|p| p.name == name)).flatten()
++        };
++        let before = ctx.writing.len();
++        let mut i = 0;
++        while i < shown.len() {
+             let cursor = ctx.writing.len();
+             if !last_was_empty && let Some(delim) = chosen_delim {
+                 ctx.push_str(delim);
+             }
+-
+-            let over_ride = base
+-                .is_some()
+-                .then(|| self.date_part.iter().find(|p| p.name == part.name))
+-                .flatten();
+-
+-            render_date_part(part, &date, ctx, over_ride, first);
++            match (&end, ranged.first()) {
++                (Some(end), Some(&start)) if i == start => {
++                    // Start and end of the run of differing parts, joined by the range
++                    // delimiter of the largest one (the whole dates when the run is broken).
++                    let run: Vec<usize> =
++                        if contiguous { ranged.clone() } else { (i..shown.len()).collect() };
++                    let range_delim = shown[run[0]]
++                        .range_delimiter
++                        .as_deref()
++                        .unwrap_or(citationberg::DatePart::DEFAULT_DELIMITER);
++                    for (k, at) in run.iter().enumerate() {
++                        if k > 0 && let Some(delim) = chosen_delim {
++                            ctx.push_str(delim);
++                        }
++                        render_date_part(shown[*at], &date, ctx, over_ride(shown[*at].name), first);
++                    }
++                    ctx.push_str(range_delim);
++                    for (k, at) in run.iter().enumerate() {
++                        if k > 0 && let Some(delim) = chosen_delim {
++                            ctx.push_str(delim);
++                        }
++                        // "May 3–7", not "May 3– 7": the range delimiter replaces the
++                        // prefix of the end's first part.
++                        let mut part = shown[*at].clone();
++                        if k == 0 {
++                            part.affixes.prefix = None;
++                        }
++                        render_date_part(&part, end, ctx, over_ride(part.name), first);
++                    }
++                    i = run.last().copied().unwrap_or(i) + 1;
++                }
++                _ => {
++                    render_date_part(shown[i], &date, ctx, over_ride(shown[i].name), first);
++                    i += 1;
++                }
++            }
+             last_was_empty = cursor == ctx.writing.len();
+         }
+ 
++        // A date whose parts all are missing (the month and day of a year-only date) is no
++        // output: a group around it must not add its delimiter ("2021,").
++        let empty = ctx.writing.len() == before;
+         ctx.pop_case(cidx);
+         ctx.apply_suffix(&self.affixes, affix_loc);
++        if empty {
++            ctx.discard_elem(depth);
++            return;
++        }
+         ctx.commit_elem(depth, self.display, Some(ElemMeta::Date));
+     }
+ 
+@@ -792,7 +857,21 @@
+         if !self.will_render(ctx, variable.into()) {
+             (false, UsageInfo::default())
+         } else {
+-            let has_non_empty_vars = ctx.resolve_date_variable(variable).is_some();
++            // Key patch: a date that shows none of the parts it has (only month and day,
++            // for a year-only date) prints nothing, so a group leaves out its delimiter.
++            let has_non_empty_vars = ctx.resolve_date_variable(variable).is_some_and(|date| {
++                let base = self.form.and_then(|form| ctx.localized_date(form));
++                let parts = self.parts.or(base.and_then(|b| b.parts)).unwrap_or_default();
++                ctx.instance.sorting.is_some()
++                    || base.unwrap_or(self).date_part.iter().any(|part| match part.name {
++                        DatePartName::Year => true,
++                        DatePartName::Month => {
++                            (parts.has_month() || date.season.is_some())
++                                && (date.month.is_some() || date.season.is_some())
++                        }
++                        DatePartName::Day => parts.has_day() && date.day.is_some(),
++                    })
++            });
+             (
+                 has_non_empty_vars,
+                 UsageInfo {
+--- a/src/csl/taxonomy.rs
++++ b/src/csl/taxonomy.rs
+@@ -35,6 +35,10 @@
+     ) -> Option<Cow<'_, ChunkedString>>;
+     fn resolve_name_variable(&self, variable: NameVariable) -> Vec<Cow<'_, Person>>;
+     fn resolve_date_variable(&self, variable: DateVariable) -> Option<Cow<'_, Date>>;
++    /// The end of a date range (Key patch); `resolve_date_variable` is its start.
++    fn resolve_date_range_end(&self, _variable: DateVariable) -> Option<Date> {
++        None
++    }
+     fn matches_entry_type(&self, kind: taxonomy::Kind) -> bool;
+     fn is_english(&self) -> Option<bool>;
+     fn key(&self) -> Cow<'_, str>;
+@@ -755,9 +759,8 @@
+                 let Ok(d) = csl_json::FixedDateRange::try_from(d.clone()) else {
+                     return None;
+                 };
+-                if d.end.is_some() {
+-                    panic!("ranges are not supported")
+-                }
++                // Key patch: a range renders its start here and its end through
++                // `resolve_date_range_end` (it used to panic).
+                 let d = d.start;
+                 Some(Cow::Owned(Date {
+                     year: d.year as i32,
+@@ -771,6 +774,12 @@
+         }
+     }
+ 
++    fn resolve_date_range_end(&self, variable: DateVariable) -> Option<Date> {
++        let csl_json::Value::Date(d) = self.0.get(&variable.to_string())? else { return None };
++        let d = csl_json::FixedDateRange::try_from(d.clone()).ok()?.end?;
++        Some(Date { year: d.year as i32, month: d.month, day: d.day, approximate: d.circa, season: d.season })
++    }
++
+     fn resolve_name_variable(&self, variable: NameVariable) -> Vec<Cow<'_, Person>> {
+         match self.0.get(&variable.to_string()) {
+             Some(csl_json::Value::Names(names)) => names

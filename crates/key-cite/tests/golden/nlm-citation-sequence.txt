@@ -11,10 +11,10 @@ Bibliography:
 1. Utility of a deep-learning algorithm to guide novices to acquire echocardiograms for limited diagnostic use. JAMA Cardiology. 2021 Feb 1;6(6):624–32. doi:10.1001/jamacardio.2021.0185 PubMed PMID: 33599681.
 2. Thinking, fast and slow. New York: Farrar, Straus and Giroux; 2011.
 3. Palma MA, Huseynov S. Consumer willingness to pay for food safety. In: The Oxford handbook of food economics. 2nd ed. Oxford: Oxford University Press; 2022. pp. 112–30.
-4. Measuring attention in reading. Cognition. 2020 ;201:104–18.
-5. Attention across scripts. Cognition. 2020 ;205:1–15.
-6. Soil carbon under grazing. Geoderma. 2019 ;340:50–60.
-7. Grazing and nitrogen. Geoderma. 2019 ;341:10–20.
+4. Measuring attention in reading. Cognition. 2020;201:104–18.
+5. Attention across scripts. Cognition. 2020;205:1–15.
+6. Soil carbon under grazing. Geoderma. 2019;340:50–60.
+7. Grazing and nitrogen. Geoderma. 2019;341:10–20.
 8. Attention is all you need [Preprint] [Internet]. arXiv; 2017. Available from: https://arxiv.org/abs/1706.03762
 9. WHO [Internet]. 2023 [cited 2024 Jan 15]. Malaria fact sheet. Available from: https://www.who.int/news-room/fact-sheets/detail/malaria
 10. Neural correlates of reading fluency [PhD thesis]. University of Toronto; 2018.

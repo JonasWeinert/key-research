@@ -107,14 +107,14 @@ fn parse_items(items: &[Json]) -> Vec<Item> {
     items.iter().filter_map(|item| serde_json::from_value::<Item>(sanitize(item.clone())).ok()).collect()
 }
 
-/// Keeps what the engine cannot take out of an item: date ranges (it renders one date) and
+/// Keeps what the engine cannot take out of an item: dates beyond a range's start and end, and
 /// empty values.
 fn sanitize(mut item: Json) -> Json {
     if let Some(map) = item.as_object_mut() {
         map.retain(|_, v| !matches!(v, Json::Null) && v.as_str().is_none_or(|s| !s.trim().is_empty()));
         for value in map.values_mut() {
             if let Some(parts) = value.get_mut("date-parts").and_then(Json::as_array_mut) {
-                parts.truncate(1);
+                parts.truncate(2);
             }
         }
     }

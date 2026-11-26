@@ -35,6 +35,10 @@ pub trait EntryLike {
     ) -> Option<Cow<'_, ChunkedString>>;
     fn resolve_name_variable(&self, variable: NameVariable) -> Vec<Cow<'_, Person>>;
     fn resolve_date_variable(&self, variable: DateVariable) -> Option<Cow<'_, Date>>;
+    /// The end of a date range (Key patch); `resolve_date_variable` is its start.
+    fn resolve_date_range_end(&self, _variable: DateVariable) -> Option<Date> {
+        None
+    }
     fn matches_entry_type(&self, kind: taxonomy::Kind) -> bool;
     fn is_english(&self) -> Option<bool>;
     fn key(&self) -> Cow<'_, str>;
@@ -755,9 +759,8 @@ impl EntryLike for citationberg::json::Item {
                 let Ok(d) = csl_json::FixedDateRange::try_from(d.clone()) else {
                     return None;
                 };
-                if d.end.is_some() {
-                    panic!("ranges are not supported")
-                }
+                // Key patch: a range renders its start here and its end through
+                // `resolve_date_range_end` (it used to panic).
                 let d = d.start;
                 Some(Cow::Owned(Date {
                     year: d.year as i32,
@@ -769,6 +772,12 @@ impl EntryLike for citationberg::json::Item {
             }
             _ => None,
         }
+    }
+
+    fn resolve_date_range_end(&self, variable: DateVariable) -> Option<Date> {
+        let csl_json::Value::Date(d) = self.0.get(&variable.to_string())? else { return None };
+        let d = csl_json::FixedDateRange::try_from(d.clone()).ok()?.end?;
+        Some(Date { year: d.year as i32, month: d.month, day: d.day, approximate: d.circa, season: d.season })
     }
 
     fn resolve_name_variable(&self, variable: NameVariable) -> Vec<Cow<'_, Person>> {

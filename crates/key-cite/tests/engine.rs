@@ -138,8 +138,8 @@ fn apa_citations() {
     assert_eq!(c[1], "(Kahneman, 2011, p. 12)");
     assert_eq!(c[2], "(2022)");
     assert_eq!(c[3], "(Narang et al., 2021, p. 626)");
-    // CSL's default cite-group delimiter is ", "; hayagriva joins collapsed years with the layout delimiter.
-    assert_eq!(c[4], "(Doe, 2020a; 2020b)");
+    // CSL's default cite-group delimiter is ", " (vendor/patches/hayagriva/0004).
+    assert_eq!(c[4], "(Doe, 2020a, 2020b)");
     assert_eq!(c[5], "(A. Smith, 2019; B. Smith, 2019)");
     assert_eq!(c[6], "(see Vaswani et al., 2017 for a review)");
     let bib = out.bibliography.unwrap();
@@ -153,6 +153,7 @@ fn apa_citations() {
     assert!(bib.hanging_indent);
     // Sorted by author.
     assert_eq!(bib.entries[0].id, "doe2020b");
+    assert!(bib.entries[0].formatted.text.starts_with("Doe, J. (2020a). Attention"), "{}", bib.entries[0].formatted.text);
 }
 
 #[test]

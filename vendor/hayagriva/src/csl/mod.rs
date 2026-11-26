@@ -266,10 +266,15 @@ impl<T: EntryLike + Hash + PartialEq + Eq + Debug> BibliographyDriver<'_, T> {
                     continue;
                 }
 
-                // 2c. Disambiguate by year-suffix.
-                disambiguate_year_suffix(&res, group, |entry, state| {
-                    mark(&mut rerender, entry, state)
-                });
+                // 2c. Disambiguate by year-suffix (in bibliography order: Key patch).
+                disambiguate_year_suffix(
+                    &res,
+                    group,
+                    |entry| {
+                        entries.iter().position(|e| e.entry == entry).unwrap_or(usize::MAX)
+                    },
+                    |entry, state| mark(&mut rerender, entry, state),
+                );
             }
 
             if rerender.is_empty() {
@@ -283,6 +288,31 @@ impl<T: EntryLike + Hash + PartialEq + Eq + Debug> BibliographyDriver<'_, T> {
                         item.cite_props.speculative.disambiguation = state.clone();
                         item.rendered = do_rerender(&style_ctx, item, cite.request);
                     }
+                }
+            }
+        }
+
+        // Key patch: a sorted citation puts the works one author published in one year in
+        // the order of their year suffixes ("Doe, 2020a, 2020b"), which the sort before
+        // disambiguation could not know.
+        for cite in res.iter_mut() {
+            if cite.request.style.citation.sort.is_none() {
+                continue;
+            }
+            let suffix = |item: &SpeculativeItemRender<'_, T>| match item.cite_props.speculative.disambiguation {
+                DisambiguateState::YearSuffix(s) => Some(s),
+                _ => None,
+            };
+            let names = |item: &SpeculativeItemRender<'_, T>| item.rendered.find_names().map(|e| format!("{e:?}"));
+            for i in 1..cite.items.len() {
+                let mut j = i;
+                while j > 0 {
+                    let (a, b) = (&cite.items[j - 1], &cite.items[j]);
+                    match (suffix(a), suffix(b)) {
+                        (Some(x), Some(y)) if x > y && names(a).is_some() && names(a) == names(b) => cite.items.swap(j - 1, j),
+                        _ => break,
+                    }
+                    j -= 1;
                 }
             }
         }
@@ -1033,6 +1063,7 @@ fn disambiguate_with_choose<F, T>(
 fn disambiguate_year_suffix<F, T>(
     renders: &[SpeculativeCiteRender<'_, '_, T>],
     group: &AmbiguousGroup,
+    order: impl Fn(&T) -> usize,
     mut mark: F,
 ) where
     T: EntryLike + PartialEq,
@@ -1078,7 +1109,10 @@ fn disambiguate_year_suffix<F, T>(
             }
         }
 
-        // Assign year suffixes.
+        // Assign year suffixes. Key patch: in the order of the bibliography (which is the
+        // order of first citation when it is not sorted), as the CSL specification says;
+        // they followed the citation order, so "Doe 2020b" could come first in the list.
+        entries.sort_by_key(|entry| order(entry));
         for (i, entry) in entries.into_iter().enumerate() {
             mark(entry, DisambiguateState::YearSuffix(i as u8));
         }
@@ -1155,12 +1189,13 @@ fn collapse_items<'a, T: EntryLike>(cite: &mut SpeculativeCiteRender<'a, '_, T>)
         .as_deref()
         .or(style.citation.layout.delimiter.as_deref());
 
-    let group_delimiter = style.citation.cite_group_delimiter.as_deref();
+    // Key patch: ", " is CSL's default cite-group delimiter ("Doe, 2020a, 2020b").
+    let group_delimiter = style.citation.cite_group_delimiter.as_deref().or(Some(", "));
     let year_suffix_delimiter = style
         .citation
         .year_suffix_delimiter
         .as_deref()
-        .or(style.citation.cite_group_delimiter.as_deref());
+        .or(group_delimiter);
 
     match style.citation.collapse {
         Some(Collapse::CitationNumber) => {

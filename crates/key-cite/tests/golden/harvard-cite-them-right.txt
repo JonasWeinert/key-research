@@ -3,13 +3,13 @@ Citations:
 (Kahneman, 2011, p. 12)
 (2022)
 (Narang et al., 2021, p. 626)
-(Doe, 2020a; 2020b)
+(Doe, 2020a, 2020b)
 (A. Smith, 2019; B. Smith, 2019)
 (see Vaswani, Shazeer and Parmar, 2017 for a review)
 
 Bibliography:
-Doe, J. (2020b) “Attention across scripts,” Cognition, 205, pp. 1–15.
-Doe, J. (2020a) “Measuring attention in reading,” Cognition, 201, pp. 104–118.
+Doe, J. (2020a) “Attention across scripts,” Cognition, 205, pp. 1–15.
+Doe, J. (2020b) “Measuring attention in reading,” Cognition, 201, pp. 104–118.
 He, K. and Zhang, X. (2016) “Deep residual learning for image recognition,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. Las Vegas, NV: IEEE, pp. 770–778.
 Intergovernmental Panel on Climate Change (2021) Climate change 2021: The physical science basis. Cambridge: Cambridge University Press. Available at: https://doi.org/10.1017/9781009157896.
 Kahneman, D. (2011) Thinking, fast and slow. New York: Farrar, Straus and Giroux.
