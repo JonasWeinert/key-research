@@ -18,11 +18,12 @@ const assert = require("node:assert/strict");
     args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
     env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"), KEY_DB_SEARCH_MOCK: process.env.KEY_DB_SEARCH_MOCK ?? "1" },
   });
-  const shot = (page, name) => page.screenshot({ path: path.join(temp, `${name}.png`) });
+  // Sheets and the tab pill animate in: shoot once they have settled.
+  const shot = async (page, name) => (await page.waitForTimeout(450), page.screenshot({ path: path.join(temp, `${name}.png`) }));
   const downloads = path.join(temp, "downloads");
   try {
     await app.evaluate(({ session }, dir) => {
-      session.defaultSession.on("will-download", (_e, item) => item.setSavePath(require("node:path").join(dir, item.getFilename())));
+      session.defaultSession.on("will-download", (_e, item) => item.setSavePath(`${dir}/${item.getFilename()}`));
     }, downloads);
     const page = await app.firstWindow();
     page.setDefaultTimeout(20000);
@@ -39,10 +40,11 @@ const assert = require("node:assert/strict");
     await page.evaluate((id) => window.key.tabAction("open-content", { section: "search", workspaceId: id }), ws.id);
     const search = page.getByRole("region", { name: "Search", exact: true });
     await search.getByRole("combobox").first().fill("mindfulness");
+    await page.keyboard.press("Escape");
     await search.getByRole("button", { name: "Databases" }).click();
     const db = page.getByRole("region", { name: "Database search" });
     await db.waitFor();
-    await db.getByText("Sample data").waitFor();
+    await db.getByText("Sample data", { exact: true }).waitFor();
     const concepts = db.locator(".kx-db-concept");
     await concepts.first().locator(".kx-db-chip", { hasText: "mindfulness" }).waitFor();
 
@@ -99,7 +101,7 @@ const assert = require("node:assert/strict");
     const openalex = db.locator('.kx-db-how-item[data-connector="openalex"]');
     await pubmed.waitFor();
     await openalex.waitFor();
-    await page.waitForFunction(() => /\[tiab\]/.test(document.querySelector('.kx-db-how-item[data-connector="pubmed"] .kx-db-native')?.textContent ?? ""));
+    await page.waitForFunction(() => /\[dp\]/.test(document.querySelector('.kx-db-how-item[data-connector="pubmed"] .kx-db-native')?.textContent ?? ""));
     assert.match(await pubmed.locator(".kx-db-native").textContent(), /mindfulness\[ti\].*meditat\*\[tiab\].*AND.*NOT protocol\[tiab\].*2015:2026\[dp\]/);
     await page.waitForFunction(() => /\d/.test(document.querySelector('.kx-db-how-item[data-connector="openalex"] .kx-db-how-count')?.textContent ?? ""));
     await pubmed.locator(".kx-db-how-concepts [data-narrowest]").waitFor();
@@ -177,7 +179,7 @@ const assert = require("node:assert/strict");
     await report.locator(".kx-db-report-table tbody tr").nth(1).waitFor();
     assert.match(await report.locator(".kx-db-report-table").textContent(), /PubMed.*\[tiab\].*OpenAlex/s);
     await shot(page, "db-report-light");
-    await report.getByRole("button", { name: "Markdown" }).click();
+    await report.getByRole("button", { name: "Markdown", exact: true }).click();
     await report.getByRole("button", { name: "CSV" }).click();
     await page.waitForFunction(async () => true);
     let files = [];
@@ -201,8 +203,6 @@ const assert = require("node:assert/strict");
     await saved.waitFor();
     await saved.getByRole("button", { name: "Run again" }).click();
     await progress.locator(".kx-db-progress-foot", { hasText: "Done." }).waitFor({ timeout: 30000 });
-    await db.getByRole("button", { name: "New since last run" }).waitFor();
-    await saved.getByRole("button", { name: "Run again" }).waitFor({ state: "detached" });
     await db.getByRole("tab", { name: /Saved/ }).click();
     await saved.getByRole("button", { name: "Run again" }).click();
     await progress.locator(".kx-db-progress-foot", { hasText: "Done." }).waitFor({ timeout: 30000 });

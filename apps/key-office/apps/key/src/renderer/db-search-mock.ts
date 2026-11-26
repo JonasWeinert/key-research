@@ -165,7 +165,7 @@ function poolWork(q: DbQuery, n: number) {
   const year = (clean.filters.yearFrom ?? 2005) + (hash(`y${n}`) % Math.max(1, (clean.filters.yearTo ?? 2026) - (clean.filters.yearFrom ?? 2005) + 1));
   const authors = [0, 1, 2].slice(0, 1 + (hash(`n${n}`) % 3)).map((i) => NAMES[hash(`au${n}:${i}`) % NAMES.length]);
   return {
-    title: `${shapes[hash(`s${n}`) % shapes.length]}${n > 40 ? ` (${n})` : ""}`,
+    title: `${shapes[hash(`s${n}`) % shapes.length]}${n > 40 && n < 5000 ? ` (${n})` : ""}`,
     authors,
     year,
     venue: VENUES[hash(`v${n}`) % VENUES.length],

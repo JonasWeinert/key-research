@@ -374,7 +374,8 @@ export async function saveToInbox(invoke: Invoke, workspaceId: string, records: 
   const states: LibraryState[] = [];
   let viaCollection: string | undefined;
   for (const work of records) {
-    const out = viaCollection
+    type Saved = { state: "inbox" | "library"; itemId?: string; sourceId?: string; existed: boolean };
+    const out: Saved = viaCollection
       ? await toInboxCollection(invoke, workspaceId, work, viaCollection)
       : await invoke<{ state: "inbox" | "library"; itemId?: string; sourceId?: string; existed: boolean }>("inbox_save", { work, origin: { kind: "database", label, query, url: work.landingUrl } }, workspaceId).catch(async (error) => {
           // A library without the Inbox module (older host): the Inbox collection instead.
@@ -389,7 +390,7 @@ export async function saveToInbox(invoke: Invoke, workspaceId: string, records: 
   return { saved, existed, states };
 }
 
-async function toInboxCollection(invoke: Invoke, workspaceId: string, work: DbRecord, collectionId: string) {
+async function toInboxCollection(invoke: Invoke, workspaceId: string, work: DbRecord, collectionId: string): Promise<{ state: "inbox" | "library"; sourceId?: string; existed: boolean }> {
   const known = await invoke<{ sourceId: string; certain: boolean }[]>("store_match_identifiers", { works: [{ key: work.key, doi: work.doi, title: work.title, year: work.year }] }, workspaceId).catch(() => []);
   const existing = known.find((m) => m.certain);
   if (existing) return { state: "library" as const, sourceId: existing.sourceId, existed: true };

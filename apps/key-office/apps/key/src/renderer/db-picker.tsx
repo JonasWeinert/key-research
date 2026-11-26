@@ -100,7 +100,7 @@ export function DatabasePicker({ workspaceId, connectors, selected, onChange, on
   };
   return (
     <GlobalDrawer presentation="sheet" label="Choose databases" onClose={onClose}>
-      <div className="kx-db-picker" role="dialog" aria-label="Choose databases" data-modal-view="databases">
+      <div className="kx-db-picker" data-modal-view="databases">
         <header className="kx-db-picker-head">
           <div>
             <h2>Choose databases</h2>
@@ -167,7 +167,7 @@ export function DatabasePicker({ workspaceId, connectors, selected, onChange, on
                   const state = connectorState(c);
                   const checked = selected.includes(c.id);
                   return (
-                    <label key={c.id} className="kx-db-option" data-checked={checked || undefined}>
+                    <label key={c.id} className="kx-db-option" data-checked={checked || undefined} title={c.updatedAt ? `Connector ${c.version}, updated ${new Date(c.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : undefined}>
                       <input type="checkbox" checked={checked} onChange={() => toggle(c.id)} />
                       <span className="kx-db-option-text">
                         <span className="kx-db-option-name">
@@ -196,7 +196,7 @@ export function DatabasePicker({ workspaceId, connectors, selected, onChange, on
                             {state.text}
                           </>
                         )}
-                        {c.updatedAt && <small>Updated {new Date(c.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</small>}
+
                       </span>
                     </label>
                   );

@@ -68,7 +68,7 @@ export function ReportSheet({ api, invoke, workspaceId, runId, page, connectors,
   const name_ = (id: string) => connectors.find((c) => c.id === id)?.name ?? id;
   return (
     <GlobalDrawer presentation="sheet" label="Search report" onClose={onClose}>
-      <div className="key-property-editor kx-db-report" role="dialog" aria-label="Search report" data-modal-view="report">
+      <div className="key-property-editor kx-db-report" data-modal-view="report">
         <header>
           <h2>Search report</h2>
           <p>

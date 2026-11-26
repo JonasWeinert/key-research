@@ -398,6 +398,7 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
                           index={item.index}
                           itemRef={virtual.measureElement}
                           work={work}
+                          badge={state.state !== "inbox"}
                           invoke={invoke}
                           workspaceId={workspaceId}
                           selected={item.index === current}
@@ -573,7 +574,7 @@ function AddSheet({ invoke, workspaceId, count, label, onClose, onAdd }: { invok
   };
   return (
     <GlobalDrawer presentation="sheet" label="Add to library" onClose={onClose} busy={busy}>
-      <div className="key-property-editor kx-db-add-sheet" role="dialog" aria-label="Add to library" data-modal-view="add">
+      <div className="key-property-editor kx-db-add-sheet" data-modal-view="add">
         <header>
           <h2>Add {plural(count, "work")} to the library</h2>
           <p>Works already in your library are not added twice; they are filed in the collection you choose.</p>

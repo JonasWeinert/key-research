@@ -185,6 +185,10 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
 
   // While a search runs, the status bar says so.
   const running = runPage?.state === "running";
+  // A finished run updates its saved search's last run and new count.
+  useEffect(() => {
+    if (runPage && !running) refreshSaved();
+  }, [runPage?.runId, running, refreshSaved]);
   const fraction = runPage && runPage.progress.length ? runPage.progress.filter((p) => p.state !== "running" && p.state !== "waiting" && p.state !== "queued").length / runPage.progress.length : undefined;
   useStatusItems(
     viewId,

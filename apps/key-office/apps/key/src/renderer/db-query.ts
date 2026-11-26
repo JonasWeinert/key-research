@@ -143,8 +143,10 @@ export function describeQuery(q: DbQuery): string {
     return fields.length === 1 && fields[0] !== "title_abstract" && fields[0] !== "all" ? ` in the ${FIELD_LABEL[fields[0]].toLowerCase()}` : "";
   };
   const group = (terms: QueryTerm[]) => {
-    const words = terms.map(termLabel);
-    const inner = list(words, "or");
+    // With mixed fields, each term that is not searched in titles and abstracts says where it is.
+    const mixed = new Set(terms.map((t) => t.field)).size > 1;
+    const words = terms.map((t) => termLabel(t) + (mixed && t.field !== "title_abstract" && t.field !== "all" ? ` in the ${FIELD_LABEL[t.field].toLowerCase()}` : ""));
+    const inner = words.join(" or ");
     return (terms.length > 1 ? `(${inner})` : inner) + fieldNote(terms);
   };
   let text = `Find works about ${list(clean.concepts.map((c) => group(c.terms)), "and")}`;

@@ -699,7 +699,7 @@
   padding: 6px 8px;
   border-radius: 6px;
   background: var(--kx-bg-sunken);
-  color: var(--kx-code-ink);
+  color: var(--kx-text);
   font: 11.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1247,7 +1247,7 @@ li[data-state="failed"] .kx-db-progress-text {
   font-variant-numeric: tabular-nums;
 }
 .kx-db-report-table code {
-  color: var(--kx-code-ink);
+  color: var(--kx-text);
   font: 11px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
   word-break: break-word;
 }
