@@ -58,6 +58,8 @@ export function ZoteroSettings({
     try {
       await work();
       await load();
+      // The status bar's Zotero item follows.
+      window.dispatchEvent(new CustomEvent("key:zotero-changed"));
     } finally {
       setBusy(false);
     }

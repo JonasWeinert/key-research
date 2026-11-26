@@ -27,6 +27,8 @@ import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
+import { ZoteroImportSheet } from "./ZoteroImport";
+import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
 import { StatusBar } from "./status-bar";
@@ -528,6 +530,13 @@ export default function App() {
   const switchWorkspace = (id: string, newWindow = false) =>
     task(() => api().tabAction("switch-workspace", { workspaceId: id, newWindow }));
   const [switcherRequest, setSwitcherRequest] = useState(0);
+  // The Zotero sheet, from the status bar or the library's Add menu, over any tab.
+  const [zoteroSheet, setZoteroSheet] = useState(false);
+  useEffect(() => {
+    const open = () => setZoteroSheet(true);
+    window.addEventListener("key:open-zotero", open);
+    return () => window.removeEventListener("key:open-zotero", open);
+  }, []);
   useEffect(() => api().on("open-workspace-switcher", () => setSwitcherRequest((n) => n + 1)), []);
   // Cmd-Option-arrows into a DOM pane: focus lands inside it.
   useEffect(
@@ -1228,10 +1237,22 @@ export default function App() {
         workspaceName={selectedWorkspace?.name}
         zoteroWorkspaceId={zoteroWorkspaceOf(workspaces)?.id}
         activeViewId={tabs.activeViewId}
-        onOpenZotero={() => setSettingsSection("libraries")}
+        onOpenZotero={() => setZoteroSheet(true)}
         onOpenWorkspace={() => setSwitcherRequest((n) => n + 1)}
         onOpenLibrary={() => action("open-content", { section: "sources", workspaceId })}
       />
+      {zoteroSheet && (
+        <ZoteroImportSheet
+          invoke={invoke}
+          workspaceId={workspaceId}
+          onClose={() => setZoteroSheet(false)}
+          onDone={(workspace, report, mode) => {
+            toast(mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”`);
+            selectLibrary({ workspaceId: workspace.id });
+            libraryChanged();
+          }}
+        />
+      )}
       {dialog && (
         <GlobalDialog label={dialog === "project" ? "New project" : "Link a folder"} onClose={()=>setDialog(null)}>
           <form

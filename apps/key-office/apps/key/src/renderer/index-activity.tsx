@@ -186,38 +186,14 @@ export function ActivityPanel({
 /** Older PDFs still to identify or look up in the background. */
 export const olderSources = (backfill?: LibraryStatus["backfill"]) => (backfill ? backfill.identify + backfill.lookup : 0);
 
-/** Footer pill with the panel as its popover. */
-export function ActivityPill({ status, onPause }: { status?: LibraryStatus; onPause: (paused: boolean) => void }) {
-  const activity = status?.activity;
-  if (!status) return null;
-  const working = isActive(activity);
-  const { left, eta } = activity ? remaining(activity) : { left: 0, eta: "" };
-  const fraction = activity?.batchTotal ? activity.batchDone / activity.batchTotal : undefined;
-  return (
-    <details className="kx-menu kx-activity">
-      <summary aria-label="Indexing activity">
-        {activity?.paused ? (
-          <>
-            <Icon name="pause" size={11} /> Indexing paused
-          </>
-        ) : working ? (
-          <>
-            <ProgressRing fraction={fraction} size={13} />
-            Indexing · {left.toLocaleString()} left{eta ? ` · ${eta.replace(" left", "")}` : ""}
-          </>
-        ) : (
-          <>
-            <span className="kx-status-dot" data-tone="ready" /> {status.counts.ready.toLocaleString()} searchable
-          </>
-        )}
-      </summary>
-      {activity && (
-        <div className="kx-menu-popover kx-activity-popover">
-          <ActivityPanel activity={activity} modelReady={status.model.state === "ready"} onPause={onPause} backfill={status.backfill} />
-        </div>
-      )}
-    </details>
-  );
+/** The status bar's line for the batch: "Indexing · 12 left · about 3 min", and its progress. */
+export function activityLabel(activity: IndexActivity): { label: string; fraction?: number } {
+  if (activity.paused) return { label: "Indexing paused" };
+  const { left, eta } = remaining(activity);
+  return {
+    label: `Indexing · ${left.toLocaleString()} left${eta ? ` · ${eta.replace(" left", "")}` : ""}`,
+    fraction: activity.batchTotal ? activity.batchDone / activity.batchTotal : undefined,
+  };
 }
 
 /** A banner while a larger batch runs (Sources), or any batch (Home). */

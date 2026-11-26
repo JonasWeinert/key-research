@@ -30,9 +30,11 @@ html:not(.kx-vibrancy) .kx-status-bar {
 }
 .kx-status-side {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 .kx-status-context {
   justify-content: flex-end;
@@ -51,7 +53,51 @@ html:not(.kx-vibrancy) .kx-status-bar {
   background: none;
   color: inherit;
   font: inherit;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.kx-status-item[hidden] {
+  display: none;
+}
+/* Plain information ("2 items"): quieter than what can be clicked. */
+.kx-status-item[data-text] {
+  color: var(--kx-text-3);
+}
+/* A status light in place of the icon: how something stands, at a glance. */
+.kx-status-light {
+  --light: var(--kx-text-3);
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: var(--light);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--light) 60%, transparent);
+}
+.kx-status-item[data-tone="ready"] .kx-status-light {
+  --light: var(--kx-green);
+}
+.kx-status-item[data-tone="idle"] .kx-status-light {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.25px var(--light);
+}
+/* Warnings and errors tint the label too; the light takes the same colour. */
+.kx-status-item[data-tone="warning"] {
+  color: var(--kx-amber);
+}
+.kx-status-item[data-tone="error"] {
+  color: var(--kx-red);
+}
+.kx-status-item[data-tone="warning"] .kx-status-light,
+.kx-status-item[data-tone="error"] .kx-status-light {
+  --light: currentColor;
+}
+.kx-status-item[data-tone="off"] {
+  color: var(--kx-text-3);
+}
+.kx-status-item[aria-expanded="true"] {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
 }
 .kx-status-item svg {
   flex: none;
@@ -73,18 +119,30 @@ button.kx-status-item:active {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.kx-status-work svg {
-  animation: kx-status-pulse 1.6s ease-in-out infinite;
+.kx-status-item .kx-ring circle {
+  stroke-width: 2;
 }
-@keyframes kx-status-pulse {
-  50% {
-    opacity: 0.35;
-  }
+.kx-status-item svg.kx-ring {
+  opacity: 1;
 }
-@media (prefers-reduced-motion: reduce) {
-  .kx-status-work svg {
-    animation: none;
-  }
+/* A popover hanging above a bar item (the indexing activity, a view's own). */
+.kx-status-popover {
+  position: fixed;
+  /* Above the still frames of native views (global-drawer.css). */
+  z-index: 950;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  user-select: text;
+  -webkit-user-select: text;
+  transform-origin: bottom left;
+  animation: kx-status-in 140ms var(--kx-ease);
 }
 .kx-status-notice {
   display: inline-flex;

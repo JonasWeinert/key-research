@@ -4,7 +4,8 @@ import { itemAttrs, selectItems } from "./item-ui";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { GROUPS, type SearchGroup } from "./unified-search";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityBanner, ActivityPill, ProgressRing, jobProgress, useLibraryStatus } from "./index-activity";
+import { ActivityBanner, ProgressRing, isActive, jobProgress, useLibraryStatus } from "./index-activity";
+import { useStatusItems } from "./status-bar";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import { Icon } from "./icons";
 import {
@@ -46,7 +47,6 @@ import {
 import { DatabaseToolbar, DatabaseView, useDatabaseViewState, type DatabaseViewHandle } from "./DatabaseView";
 import { DEFAULT_SORTS, SOURCE_SORTS, SourceCard, legacyColumnSettings, useSourceColumns } from "./library-columns";
 import "./reference-library.css";
-import { ZoteroImportSheet } from "./ZoteroImport";
 
 const PAGE = 300;
 const ROW = 58;
@@ -74,11 +74,14 @@ export default function ReferenceLibrary({
   onOpen,
   onOpenHit,
   onOpenNote,
+  viewId,
 }: {
   invoke: Invoke;
   workspaceId: string;
   workspaceName: string;
   active: boolean;
+  /** The tab view showing the library: its counts go to the status bar while it has focus. */
+  viewId?: string;
   refreshKey: number;
   onOpen: (source: Source) => void;
   onOpenHit: (hit: OpenHit) => void;
@@ -112,7 +115,6 @@ export default function ReferenceLibrary({
   const [agent, setAgent] = useState<{ targets: Source[]; name?: string }>();
   const [tagManager, setTagManager] = useState(false);
   const [identifier, setIdentifier] = useState(false);
-  const [zotero, setZotero] = useState(false);
   // Layout, columns and sorting are remembered per workspace library.
   const [viewState, setViewState] = useDatabaseViewState(`library:${workspaceId}`, {
     layout: (() => {
@@ -293,6 +295,21 @@ export default function ReferenceLibrary({
     },
     [invoke, workspaceId],
   );
+  // The window's status bar shows the count, the selection and (when nothing is being
+  // indexed; the bar's own work item covers that) how much is searchable.
+  const matching = search?.result?.hits.length ?? 0;
+  useStatusItems(viewId, [
+    {
+      id: "count",
+      label: search ? `${matching.toLocaleString()} matching ${matching === 1 ? "source" : "sources"}` : `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`,
+      text: true,
+      priority: 60,
+    },
+    ...(selected.size > 1 ? [{ id: "selected", label: `${selected.size.toLocaleString()} selected`, text: true, priority: 55 }] : []),
+    ...(status && !isActive(activity) && !activity?.paused
+      ? [{ id: "searchable", label: `${status.counts.ready.toLocaleString()} searchable`, icon: "search", text: true, priority: 30, title: "Sources searchable by their full text" }]
+      : []),
+  ]);
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId);
 
   // While searching, selection, arrow keys and bulk actions work on the results, in the
@@ -632,7 +649,7 @@ export default function ReferenceLibrary({
                 setInspector(source);
               }}
               onIdentifier={() => setIdentifier(true)}
-              onZotero={() => setZotero(true)}
+              onZotero={() => window.dispatchEvent(new CustomEvent("key:open-zotero"))}
             />
           </div>
         </header>
@@ -729,14 +746,6 @@ export default function ReferenceLibrary({
             )}
           />
         )}
-        <footer className="kx-status-bar">
-          <span>
-            {search ? `${search.result?.hits.length ?? 0} matching sources` : `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`}
-            {selected.size > 1 ? ` · ${selected.size} selected` : ""}
-          </span>
-          <span className="kx-spacer" />
-          <ActivityPill status={status} onPause={pauseIndexing} />
-        </footer>
 
         {selected.size > 1 && (
           <BulkBar
@@ -862,18 +871,6 @@ export default function ReferenceLibrary({
           workspaceId={workspaceId}
           onClose={() => setTagManager(false)}
           onSaved={() => void load(0)}
-        />
-      )}
-      {zotero && (
-        <ZoteroImportSheet
-          invoke={invoke}
-          workspaceId={workspaceId}
-          onClose={() => setZotero(false)}
-          onDone={(workspace, report, mode) => {
-            setToast({ text: mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”` });
-            selectLibrary({ workspaceId: workspace.id });
-            libraryChanged();
-          }}
         />
       )}
       {identifier && (

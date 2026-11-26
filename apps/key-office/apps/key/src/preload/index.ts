@@ -62,6 +62,7 @@ contextBridge.exposeInMainWorld("key", {
       ![
         "tabs-changed",
         "global-overlay-frames",
+        "zotero-syncing",
         "save-content",
         "property-definitions-changed",
         "library-changed",

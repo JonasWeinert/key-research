@@ -153,10 +153,18 @@ const library = (pdf) => ({
     assert.equal(await sourceOf("ITEMAAAA"), undefined, "papers not chosen stay out");
     report.importPapers = true;
 
-    // 2. Keep in sync: the plugin is missing, then installed, then paired with a code.
+    // Opened again, the sheet starts on what is set up: the import, its papers, what came along.
     await openSheet();
-    await sheet.getByRole("radio", { name: /Keep in sync/ }).click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    const overview = sheet.locator(".kx-zotero-overview");
+    await overview.getByText("Imported once").waitFor();
+    await overview.locator('[data-fact="scope"]', { hasText: "1 chosen paper" }).waitFor();
+    await overview.locator('[data-fact="bring"]', { hasText: "PDFs and files" }).waitFor();
+    await shot("4b-overview-imported-light");
+    report.overviewImport = true;
+
+    // 2. Keep in sync: the plugin is missing, then installed, then paired with a code.
+    await sheet.getByRole("button", { name: "Keep in sync instead…" }).click();
+    await page.getByRole("heading", { name: "Keep in sync with Zotero" }).waitFor();
     await sheet.getByText("Install the Key Sync plugin in Zotero").waitFor();
     assert.equal(await sheet.locator(".key-property-primary").isDisabled(), true);
     await shot("5-sync-plugin-missing-light");
@@ -193,6 +201,25 @@ const library = (pdf) => ({
     // The paper imported before is outside the sync: it stays, unfollowed.
     assert.ok(await sourceOf("ITEMBBBB"));
     report.firstSync = true;
+    // The status bar shows the sync with its light, and opens the same sheet on what is set up.
+    const zoteroItem = page.getByRole("contentinfo", { name: "Status" }).locator('[data-status-item="zotero"]');
+    await page.waitForFunction(() => document.querySelector('[data-status-item="zotero"]')?.dataset.tone === "ready", null, { timeout: 40000 });
+    assert.match(await zoteroItem.innerText(), /Zotero/);
+    assert.match(await zoteroItem.getAttribute("title"), /In sync with Zotero/);
+    await zoteroItem.click();
+    await overview.getByText("Keeping in sync").waitFor();
+    await overview.locator('[data-fact="scope"]', { hasText: "Thesis" }).waitFor();
+    await overview.locator('[data-fact="items"]', { hasText: /Last synced/ }).waitFor();
+    await shot("8b-overview-sync-light");
+    await sheet.getByRole("button", { name: "Change what syncs…" }).click();
+    await sheet.getByRole("heading", { name: "Change what Key syncs" }).waitFor();
+    assert.equal(await sheet.getByRole("radio", { name: "Collections" }).getAttribute("aria-checked"), "true", "the synced scope is picked");
+    assert.equal(await sheet.getByRole("checkbox", { name: "Thesis" }).isChecked(), true, "the synced collection is ticked");
+    await sheet.getByRole("button", { name: "Back" }).click();
+    await overview.waitFor();
+    await sheet.getByRole("button", { name: "Close" }).first().click();
+    await sheet.waitFor({ state: "detached" });
+    report.overviewSync = true;
 
     // 3. Changes in Zotero arrive: an edit, a new item in a synced collection, one moved out.
     mock.edit("ITEMAAAA", (r) => (r.fields.title = "Health and income"));
@@ -234,12 +261,15 @@ const library = (pdf) => ({
     await mock.close();
     await group.getByRole("button", { name: "Sync now" }).click();
     await group.getByText(/Zotero is not running/).waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-status-item="zotero"]')?.dataset.tone === "idle", null, { timeout: 40000 });
+    assert.match(await zoteroItem.innerText(), /Zotero closed/);
     await group.screenshot({ path: path.join(shots, "10-settings-not-running-light.png") });
     await page.emulateMedia({ colorScheme: "dark" });
     await page.waitForTimeout(400);
     await group.screenshot({ path: path.join(shots, "11-settings-not-running-dark.png") });
     await group.getByRole("button", { name: "Pause" }).click();
     await group.getByText(/Paused/).waitFor();
+    await page.waitForFunction(() => /Zotero paused/.test(document.querySelector('[data-status-item="zotero"]')?.textContent ?? ""), null, { timeout: 40000 });
     await group.getByRole("button", { name: "Resume" }).click();
     report.settings = true;
 
@@ -257,11 +287,10 @@ const library = (pdf) => ({
     await page.keyboard.press("Escape");
     await page.locator(".kx-settings-group").first().waitFor({ state: "detached" }).catch(() => {});
     await openSheet();
-    await shot("14-mode-dark");
-    await sheet.getByRole("radio", { name: /Keep in sync/ }).click();
-    await page.getByRole("button", { name: "Continue" }).click();
+    await overview.getByText("Keeping in sync").waitFor();
+    await shot("14-overview-dark");
+    await sheet.getByRole("button", { name: "Change what syncs…" }).click();
     await sheet.getByText(/Connected to Zotero/).waitFor();
-    await sheet.getByRole("radio", { name: "Collections" }).click();
     await shot("15-sync-collections-dark");
     await page.keyboard.press("Escape");
     await page.emulateMedia({ colorScheme: null });

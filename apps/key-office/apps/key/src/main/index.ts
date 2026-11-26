@@ -2533,6 +2533,7 @@ else
           return root ? (await registry.list()).find((w) => w.root === root) : undefined;
         },
         changed: () => emit("library-changed"),
+        syncing: (running) => emit("zotero-syncing", running),
         check: (sender) => void shell(sender),
       });
       ipcMain.handle("key:open-sources", (event, id) => {

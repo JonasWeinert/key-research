@@ -1250,36 +1250,6 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   from { transform: rotate(-90deg); }
   to { transform: rotate(270deg); }
 }
-.kx-activity {
-  position: relative;
-}
-.kx-activity > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 6px;
-  color: var(--kx-text-2);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
-  list-style: none;
-  cursor: default;
-}
-.kx-activity > summary::-webkit-details-marker {
-  display: none;
-}
-.kx-activity > summary:hover,
-.kx-activity[open] > summary {
-  background: var(--kx-fill);
-  color: var(--kx-text);
-}
-.kx-activity-popover {
-  top: auto;
-  bottom: calc(100% + 8px);
-  width: 360px;
-  padding: 0;
-}
 .kx-activity-panel {
   display: grid;
   gap: 12px;
