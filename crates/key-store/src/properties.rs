@@ -104,12 +104,13 @@ impl Store {
         if let Some(object) = config.as_object_mut() {
             object.remove("name");
         }
+        let db = self.db()?;
+        let tx = db.unchecked_transaction().map_err(e)?;
+        crate::formula_scope::prepare_definition(&tx, name, &mut config)?;
         let text = config.to_string();
         if text.len() > 16384 {
             return Err("Property definition exceeds 16 KiB".into());
         }
-        let db = self.db()?;
-        let tx = db.unchecked_transaction().map_err(e)?;
         tx.execute(
             "INSERT INTO property_definitions(name, config, updated_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(name) DO UPDATE SET config = excluded.config, updated_at = excluded.updated_at",
@@ -213,6 +214,13 @@ impl Store {
         )
         .map_err(e)?;
         tx.execute("UPDATE agent_recipes SET name = ?2 WHERE name = ?1", params![name, new_name]).map_err(e)?;
+        // Formulas that use the property follow the new name.
+        let formulas: Vec<(String, String)> = crate::formula::definitions(&tx)?;
+        for (other, formula) in formulas {
+            if let Some(renamed) = crate::formula::rename_reference(&formula, name, new_name) {
+                tx.execute("UPDATE property_definitions SET config = json_set(config, '$.formula', ?2) WHERE name = ?1", params![other, renamed]).map_err(e)?;
+            }
+        }
         tx.execute("UPDATE property_provenance SET name = ?2 WHERE name = ?1", params![name, new_name]).map_err(e)?;
         tx.commit().map_err(e)?;
         drop(db);

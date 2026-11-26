@@ -923,19 +923,9 @@ fn record(db: &Connection, kind: &str, label: &str, payload: Payload) -> Result<
 
 /// The values `formulas` give on source `id` (a failing formula leaves its property alone).
 fn formula_patch(db: &Connection, id: &str, formulas: &Map<String, Json>) -> Result<Map<String, Json>> {
-    let row: Option<(String, Option<String>, Option<i64>, Option<i64>, String, Option<String>)> = db
-        .query_row("SELECT properties, title, year, page_count, creators, container_title FROM sources WHERE id = ?", [id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
-        })
-        .optional()
-        .map_err(e)?;
-    let Some((properties, title, year, pages, creators, journal)) = row else { return Ok(Map::new()) };
-    let properties: Map<String, Json> = serde_json::from_str(&properties).unwrap_or_default();
-    let creators: Vec<crate::Creator> = serde_json::from_str(&creators).unwrap_or_default();
-    let context = crate::formula::context(&properties, title.as_deref(), year, pages, &creators, journal.as_deref());
     Ok(formulas
         .iter()
-        .filter_map(|(name, formula)| Some((name.clone(), crate::formula::evaluate(formula.as_str()?, &context).ok()?.to_json())))
+        .filter_map(|(name, formula)| Some((name.clone(), crate::formula::evaluate_on(db, id, formula.as_str()?).ok()?.to_json())))
         .collect())
 }
 

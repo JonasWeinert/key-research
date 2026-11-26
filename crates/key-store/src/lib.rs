@@ -10,7 +10,10 @@ mod linked;
 mod links;
 pub mod matching;
 pub mod normalize;
+pub mod fill;
 pub mod formula;
+pub mod formula_catalog;
+mod formula_scope;
 pub mod find;
 mod openalex;
 mod properties;
@@ -515,12 +518,14 @@ impl Store {
         citation_keys::ensure_schema(&conn)?;
         feeds::ensure_schema(&conn)?;
         reading::ensure_schema(&conn)?;
+        fill::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
-        formula::register(&conn)?;
+        let formula_cache = formula::FormulaCache::new(root.clone());
+        formula::register(&conn, &formula_cache)?;
         let readers = (0..READERS)
             .map(|_| {
                 let reader = Connection::open(root.join("key.db")).map_err(e)?;
-                formula::register(&reader)?;
+                formula::register(&reader, &formula_cache)?;
                 reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
                 Ok(reader)
             })
