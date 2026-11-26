@@ -415,10 +415,12 @@ impl CaseFolder {
             Case::Title(config)
                 if config.trim_start && self.pristine && c.is_whitespace() => {}
             Case::Title(_) => {
+                // Key patch: CSL title case only capitalizes word starts; the rest of a
+                // word keeps its case ("PLoS One", "iPhone" and "mRNA" stay as written).
                 if prev_class.is_new_word() {
                     self.buf.extend(c.to_uppercase());
                 } else {
-                    self.buf.extend(c.to_lowercase());
+                    self.buf.push(c);
                 }
             }
             Case::Sentence(config)

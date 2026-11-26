@@ -252,6 +252,75 @@ pub fn render(style: &IndependentStyle, locale: Option<&str>, items: &[Json], re
     Ok(RenderOutput { citations, bibliography, note_style, missing })
 }
 
+/// Where a quotation is from, for "“…” — <attribution>" outside a document: the in-text
+/// citation without its brackets for author-date styles ("Narang et al., 2021, p. 4"), the
+/// first note for note styles, and the reference itself for numeric ones (a bare "[1]" means
+/// nothing on its own), with the page after it.
+pub fn attribution(style: &IndependentStyle, locale: Option<&str>, item: &Json, locator: Option<&str>, label: Option<&str>) -> Result<Formatted, String> {
+    let id = item.get("id").and_then(Json::as_str).unwrap_or_default().to_string();
+    let cite = CiteItem { id: id.clone(), locator: locator.map(String::from), label: label.map(String::from), ..Default::default() };
+    let numeric = style.settings.class != StyleClass::Note
+        && style.info.category.iter().any(|c| {
+            matches!(c, citationberg::StyleCategory::CitationFormat { format: citationberg::CitationFormat::Numeric | citationberg::CitationFormat::Label })
+        });
+    if numeric {
+        let request = RenderRequest { bibliography: true, uncited: vec![id], ..Default::default() };
+        let out = render(style, locale, std::slice::from_ref(item), &request)?;
+        let entry = out.bibliography.and_then(|b| b.entries.into_iter().next()).ok_or("This style has no reference list")?;
+        let mut text = strip_label(&entry.formatted.text);
+        let mut html = entry.formatted.html.clone();
+        if let Some(page) = locator.map(str::trim).filter(|p| !p.is_empty()) {
+            text = format!("{}, p. {page}", text.trim_end_matches('.'));
+            html = format!("{html}, p. {}", escape_html(page));
+        }
+        return Ok(Formatted { rtf: escape_rtf(&text), text, html });
+    }
+    let request = RenderRequest { citations: vec![CitationInput { items: vec![cite], note_number: None }], ..Default::default() };
+    let out = render(style, locale, std::slice::from_ref(item), &request)?;
+    let mut formatted = out.citations.into_iter().next().unwrap_or_default();
+    if style.settings.class != StyleClass::Note {
+        formatted.text = strip_brackets(&formatted.text);
+        formatted.html = strip_brackets(&formatted.html);
+        formatted.rtf = strip_brackets(&formatted.rtf);
+    }
+    Ok(formatted)
+}
+
+/// "(Doe, 2020, p. 4)" -> "Doe, 2020, p. 4", when the brackets enclose the whole citation.
+fn strip_brackets(text: &str) -> String {
+    let t = text.trim();
+    for (open, close) in [('(', ')'), ('[', ']')] {
+        if t.starts_with(open) && t.ends_with(close) {
+            let inner = &t[open.len_utf8()..t.len() - close.len_utf8()];
+            let mut depth = 0i32;
+            let balanced = inner.chars().all(|c| {
+                if c == open {
+                    depth += 1;
+                } else if c == close {
+                    depth -= 1;
+                }
+                depth >= 0
+            });
+            if balanced && depth == 0 {
+                return inner.trim().to_string();
+            }
+        }
+    }
+    t.to_string()
+}
+
+/// "[1] A. Narang, …" / "1. Narang A, …" -> the reference without its number.
+fn strip_label(text: &str) -> String {
+    let t = text.trim_start();
+    let rest = if let Some(r) = t.strip_prefix('[').and_then(|r| r.split_once(']')).map(|(_, r)| r) {
+        r
+    } else {
+        let digits = t.len() - t.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        if digits > 0 { t[digits..].trim_start_matches(['.', ')']) } else { t }
+    };
+    rest.trim().to_string()
+}
+
 /// Renders a sample work once so a style the engine cannot use is known before it is used.
 pub fn check(style: &IndependentStyle) -> Result<(), String> {
     let item = serde_json::json!({
@@ -345,7 +414,46 @@ fn trim_leading(children: &mut ElemChildren) -> bool {
 
 // ── Writers ───────────────────────────────────────────────────────────────────
 
+fn runs_mut<'a>(children: &'a mut ElemChildren, out: &mut Vec<&'a mut Run>) {
+    for child in children.0.iter_mut() {
+        match child {
+            ElemChild::Text(run) => out.push(run),
+            ElemChild::Link { text, .. } => out.push(text),
+            ElemChild::Elem(elem) => runs_mut(&mut elem.children, out),
+            _ => {}
+        }
+    }
+}
+
+/// CSL drops a period that follows a title's own "?" or "!" (or a period): "more? PLoS",
+/// not "more?. PLoS". hayagriva leaves them doubled when they come from different variables.
+fn fix_punctuation(children: &mut ElemChildren) {
+    let mut runs = Vec::new();
+    runs_mut(children, &mut runs);
+    let mut previous_end: Option<char> = None;
+    for run in runs {
+        if run.text.is_empty() {
+            continue;
+        }
+        if run.text.starts_with('.') && !run.text.starts_with("..") && matches!(previous_end, Some('.' | '?' | '!')) {
+            run.text.remove(0);
+        }
+        for (from, to) in [("?.", "?"), ("!.", "!")] {
+            if run.text.contains(from) {
+                run.text = run.text.replace(from, to);
+            }
+        }
+        // Closing quotes are looked through: “Is it?”. -> “Is it?”
+        if let Some(last) = run.text.trim_end_matches(['”', '’', '"', '\'']).chars().last() {
+            previous_end = Some(last);
+        }
+    }
+}
+
 fn formatted(children: &ElemChildren, entry: bool) -> Formatted {
+    let mut children = children.clone();
+    fix_punctuation(&mut children);
+    let children = &children;
     let mut text = String::new();
     let mut html = String::new();
     let mut rtf = String::new();

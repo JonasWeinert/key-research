@@ -284,6 +284,75 @@ fn csl_json_mapping() {
     }
 }
 
+// Ported from the renderer's former citation.test.ts / citation-styles.test.ts.
+#[test]
+fn formats_the_cases_the_typescript_formatters_covered() {
+    let palma = json!({
+        "id": "1", "type": "article-journal", "title": "Health versus income amid COVID-19: What do people value more?",
+        "author": [{ "family": "Palma", "given": "Marco A." }, { "family": "Huseynov", "given": "Samir" }, { "family": "Nayga", "given": "Rodolfo M." }],
+        "issued": { "date-parts": [[2022]] }, "container-title": "PLoS One", "volume": "17", "issue": "4", "page": "e0266237",
+        "DOI": "10.1371/journal.pone.0266237"
+    });
+    let pair = {
+        let mut p = palma.clone();
+        p["id"] = json!("2");
+        p["author"] = json!([{ "family": "Palma", "given": "Marco A." }, { "family": "Huseynov", "given": "Samir" }]);
+        p
+    };
+    let report = json!({ "id": "3", "type": "book", "title": "Untitled report", "publisher": "WHO" });
+    let kirkby = json!({
+        "id": "k", "type": "article-journal", "title": "Education-related inequalities in beliefs and behaviors",
+        "author": [{ "family": "Kirkby", "given": "Jane" }, { "family": "Smith", "given": "Ann" }, { "family": "Lee", "given": "Bo" }],
+        "issued": { "date-parts": [[2022]] }, "container-title": "Journal of Health", "volume": "12", "issue": "3", "page": "4-19", "DOI": "10.1/xyz"
+    });
+    let items = vec![palma, pair, report, kirkby];
+    let bib = |style: &str, id: &str| {
+        let request = RenderRequest { bibliography: true, uncited: vec![id.into()], ..Default::default() };
+        render(&styles().style(style).unwrap(), None, &items, &request).unwrap().bibliography.unwrap().entries.remove(0).formatted
+    };
+    let cite = |style: &str, item: CiteItem| render(&styles().style(style).unwrap(), None, &items, &RenderRequest { citations: vec![one(item)], ..Default::default() }).unwrap().citations.remove(0).text;
+    assert_eq!(
+        bib("apa", "1").text,
+        "Palma, M. A., Huseynov, S., & Nayga, R. M. (2022). Health versus income amid COVID-19: What do people value more? PLoS One, 17(4), e0266237. https://doi.org/10.1371/journal.pone.0266237"
+    );
+    assert!(bib("apa", "1").html.contains("<i>PLoS One</i>, <i>17</i>(4)"), "{}", bib("apa", "1").html);
+    assert_eq!(cite("apa", cite_id("1")), "(Palma et al., 2022)");
+    assert_eq!(cite("apa", cite_id("2")), "(Palma & Huseynov, 2022)");
+    assert_eq!(bib("apa", "3").text, "Untitled report. (n.d.). WHO.");
+    assert_eq!(cite("apa", CiteItem { locator: Some("4".into()), ..cite_id("k") }), "(Kirkby et al., 2022, p. 4)");
+    // Chicago 18 shortens three or more authors to "et al." (17 listed up to three).
+    assert_eq!(cite("chicago-author-date", CiteItem { locator: Some("4".into()), ..cite_id("k") }), "(Kirkby et al. 2022, 4)");
+    assert!(bib("apa", "k").text.contains("Kirkby, J., Smith, A., & Lee, B. (2022)."));
+    assert_eq!(
+        bib("chicago-author-date", "k").text,
+        "Kirkby, Jane, Ann Smith, and Bo Lee. 2022. “Education-Related Inequalities in Beliefs and Behaviors.” Journal of Health 12 (3): 4–19. https://doi.org/10.1/xyz."
+    );
+    assert_eq!(
+        bib("modern-language-association", "k").text,
+        "Kirkby, Jane, et al. “Education-Related Inequalities in Beliefs and Behaviors.” Journal of Health, vol. 12, no. 3, 2022, pp. 4–19, https://doi.org/10.1/xyz."
+    );
+    assert!(bib("modern-language-association", "k").html.contains("<i>Journal of Health</i>"));
+    let bibtex = bib("bibtex", "1").text;
+    assert!(bibtex.starts_with("@article{"), "{bibtex}");
+    assert!(bibtex.contains("Palma, Marco A. and Huseynov, Samir and Nayga, Rodolfo M."), "{bibtex}");
+}
+
+fn cite_id(id: &str) -> CiteItem {
+    cite(id)
+}
+
+#[test]
+fn quote_attributions() {
+    let items = library();
+    let attribution = |style: &str| key_cite::render::attribution(&styles().style(style).unwrap(), None, &items[0], Some("4"), None).unwrap().text;
+    assert_eq!(attribution("apa"), "Narang et al., 2021, p. 4");
+    assert_eq!(attribution("modern-language-association"), "Narang et al. 4");
+    assert!(attribution("ieee").starts_with("A. Narang, R. Bae"), "{}", attribution("ieee"));
+    assert!(attribution("ieee").ends_with(", p. 4"), "{}", attribution("ieee"));
+    let note = attribution("chicago-notes-bibliography");
+    assert!(note.starts_with("Akhil Narang et al., “Utility") && note.contains("4"), "{note}");
+}
+
 #[test]
 fn locales_are_all_bundled() {
     let list = key_cite::styles::locale_list();
