@@ -365,6 +365,8 @@ export interface LibraryStatus {
   enrichment?: number;
   /** Older PDFs identified and looked up in the background, behind everything else. */
   backfill?: { identify: number; lookup: number };
+  /** On-device models (models-ui.tsx): state, progress and disk use. */
+  models?: import("./models-ui").ModelsListing;
 }
 
 export type Theme = "system" | "light" | "dark";
@@ -372,6 +374,8 @@ export interface AppSettings {
   theme: Theme;
   onboarded: boolean;
   layoutModel: boolean;
+  /** Download on-device models by themselves when first needed (default on). */
+  modelsAutoDownload?: boolean;
   zoteroSync: boolean;
   /** Look sources up in OpenAlex when they are imported with a DOI (and refresh counts when viewed). */
   openalex: boolean;
@@ -425,7 +429,7 @@ export interface Bridge {
    *  and "open" report and drive installing the plugin into Zotero's profile. */
   zoteroPlugin(action?: "wake" | "status" | "install" | "restart" | "open"): Promise<{ file: string | null; install?: ZoteroInstall; error?: string } | null>;
   /** A file chosen in an open or save panel, or null. */
-  choosePath(request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }): Promise<string | null>;
+  choosePath(request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[]; filterName?: string; allowFolders?: boolean }): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
   writeClipboard?(data: { text: string; html?: string; rtf?: string }): Promise<void>;

@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "embeddinggemma-2-q8",
+      "name": "Search model",
+      "title": "EmbeddingGemma 2 (GGUF, Q8_0)",
+      "purpose": "Finds passages by meaning when you search.",
+      "repo": "JonasWeinert/key-embeddinggemma-2-gguf",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "upstream": "https://huggingface.co/google/embeddinggemma-2",
+      "files": [
+        {
+          "path": "embeddinggemma-2-Q8_0.gguf",
+          "size": 309855456,
+          "sha256": "2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135",
+          "upstream": "https://huggingface.co/ggml-org/embeddinggemma-2-GGUF/resolve/6ea3e3a309d12a4779cfda98b8c19800d2d5da71/embeddinggemma-2-Q8_0.gguf",
+          "legacy": "embeddinggemma-2/model.gguf"
+        }
+      ]
+    },
+    {
+      "id": "pp-doclayoutv3-fp16",
+      "name": "PDF layout model",
+      "title": "PP-DocLayoutV3 (ONNX, fp16)",
+      "purpose": "Finds headings, columns, tables, figures and reading order in PDFs.",
+      "repo": "JonasWeinert/key-pp-doclayoutv3-onnx",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "upstream": "https://huggingface.co/PaddlePaddle/PP-DocLayoutV3",
+      "files": [
+        {
+          "path": "model_fp16.onnx",
+          "size": 65546435,
+          "sha256": "e549a04370b88c3f26fe8a975d7f15d76cb15876b54588270c977426793445ad",
+          "upstream": "https://huggingface.co/datasets/embedpdf/embed-pdf-viewer/resolve/0833193a430ce271aa434cf1eecfab19412ac6a0/models/PP-DocLayoutV3-ONNX/model_fp16.onnx"
+        }
+      ]
+    },
+    {
+      "id": "arctic-embed-xs-q",
+      "name": "Reader search model",
+      "title": "Snowflake Arctic Embed XS (ONNX, quantised)",
+      "purpose": "Finds passages by meaning inside an open PDF.",
+      "repo": "JonasWeinert/key-arctic-embed-xs-q",
+      "revision": "main",
+      "license": "Apache-2.0",
+      "licenseUrl": "https://www.apache.org/licenses/LICENSE-2.0",
+      "upstream": "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs",
+      "files": [
+        {
+          "path": "onnx/model_quantized.onnx",
+          "size": 22972992,
+          "sha256": "e6aa5e656466a73d7c3111e9a3378bd13e5b93af30eaac2b3f13fd56692589a1",
+          "upstream": "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/d8c86521100d3556476a063fc2342036d45c106f/onnx/model_quantized.onnx"
+        },
+        {
+          "path": "tokenizer.json",
+          "size": 711649,
+          "sha256": "91f1def9b9391fdabe028cd3f3fcc4efd34e5d1f08c3bf2de513ebb5911a1854",
+          "upstream": "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/d8c86521100d3556476a063fc2342036d45c106f/tokenizer.json"
+        },
+        {
+          "path": "config.json",
+          "size": 737,
+          "sha256": "d7d071046ab952af96b7abad788db7ab3fc997b465e1b9914ff39707092254ec",
+          "upstream": "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/d8c86521100d3556476a063fc2342036d45c106f/config.json"
+        },
+        {
+          "path": "tokenizer_config.json",
+          "size": 1433,
+          "sha256": "9ca59277519f6e3692c8685e26b94d4afca2d5438deff66483db495e48735810",
+          "upstream": "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/d8c86521100d3556476a063fc2342036d45c106f/tokenizer_config.json"
+        },
+        {
+          "path": "special_tokens_map.json",
+          "size": 695,
+          "sha256": "5d5b662e421ea9fac075174bb0688ee0d9431699900b90662acd44b2a350503a",
+          "upstream": "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/d8c86521100d3556476a063fc2342036d45c106f/special_tokens_map.json"
+        }
+      ]
+    }
+  ]
+}

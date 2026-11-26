@@ -801,6 +801,8 @@ export default function App() {
           info={prefs.info}
           theme={prefs.settings.theme}
           onTheme={(theme) => updatePrefs({ theme })}
+          autoDownload={prefs.settings.modelsAutoDownload !== false}
+          onAutoDownload={(modelsAutoDownload) => updatePrefs({ modelsAutoDownload })}
           onFinish={(id) => {
             setWelcome(false);
             updatePrefs({ onboarded: true });

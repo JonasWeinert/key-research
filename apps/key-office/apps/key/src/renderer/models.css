@@ -1,0 +1,58 @@
+/* On-device models in Settings (models-ui.tsx). */
+.kx-models-row > div:first-child {
+  min-width: 0;
+}
+.kx-models-links {
+  display: flex;
+  gap: 10px;
+}
+.kx-models-links a {
+  color: var(--kx-accent-text);
+  text-decoration: none;
+}
+.kx-models-links a:hover {
+  text-decoration: underline;
+}
+.kx-models-error {
+  color: var(--kx-red);
+}
+.kx-models-failed {
+  color: var(--kx-red);
+  font-size: 12px;
+  font-weight: 500;
+}
+.kx-models-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-models-progress b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.kx-models-progress .kx-meter {
+  width: 96px;
+}
+.kx-onboarding-models {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--kx-fill);
+}
+.kx-onboarding-models > div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+}
+.kx-onboarding-models strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.kx-onboarding-models small {
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}

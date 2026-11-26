@@ -9,6 +9,8 @@ const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const assert = require("node:assert/strict");
+// The layout model, from the dev cache (node tools/models/fetch.mjs); never downloaded here.
+const { devCache } = require("../../../../../tools/models/models.cjs");
 
 (async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "key-analysis-"));
@@ -17,7 +19,7 @@ const assert = require("node:assert/strict");
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
     args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
-    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces") },
+    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_MODEL_DIR: process.env.KEY_MODEL_DIR ?? devCache(), KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces") },
   });
   const shot = (page, name) => page.screenshot({ path: path.join(temp, `${name}.png`) });
   try {

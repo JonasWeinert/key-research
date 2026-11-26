@@ -311,9 +311,14 @@ impl Embedder for PrecomputedEmbedder {
     }
 }
 
+/// The model: `KEY_SEMANTIC_MODEL_DIR` (a developer's copy), the downloaded one in the shared
+/// models folder (key-models), a copy inside an older app bundle, or the crate's resources.
 pub fn default_model_dir() -> Result<PathBuf, String> {
     if let Some(path) = std::env::var_os("KEY_SEMANTIC_MODEL_DIR") {
         return validate_model_dir(PathBuf::from(path));
+    }
+    if let Some(path) = key_models::Models::from_env().path(key_models::READER_EMBEDDINGS) {
+        return Ok(path);
     }
     if let Ok(executable) = std::env::current_exe()
         && let Some(macos_dir) = executable.parent()
@@ -337,6 +342,23 @@ pub fn default_model_dir() -> Result<PathBuf, String> {
             .join("resources")
             .join(MODEL_DIRECTORY_NAME),
     )
+}
+
+/// `default_model_dir`, or the model fetched on demand: `wait` downloads it now (when
+/// automatic downloads are on), otherwise a background download starts and this fails.
+pub fn model_dir_on_demand(wait: bool) -> Result<PathBuf, String> {
+    if let Ok(path) = default_model_dir() {
+        return Ok(path);
+    }
+    let models = key_models::Models::from_env();
+    if !key_models::auto_download() {
+        return Err("The reader search model has not been downloaded (Settings › Search & indexing)".into());
+    }
+    if wait {
+        return models.ensure(key_models::READER_EMBEDDINGS);
+    }
+    models.request(key_models::READER_EMBEDDINGS, false, None);
+    Err("The reader search model is downloading".into())
 }
 
 fn validate_model_dir(path: PathBuf) -> Result<PathBuf, String> {

@@ -12,7 +12,7 @@ import { ZoteroImport } from "./ZoteroImport";
 import { ZoteroSettings } from "./ZoteroSyncSettings";
 import { ADD_MODES } from "./add-from-source";
 import type { Mode as ZoteroMode } from "./zotero-sheet-model";
-import { ModelProgressCard, useModelProgress } from "./model-progress";
+import { ModelsGroup, type ModelsListing } from "./models-ui";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
@@ -422,7 +422,16 @@ function SearchSettings({
 }) {
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id);
   const status = useLibraryStatus(invoke, workspaceId);
-  const model = useModelProgress(invoke, workspaceId);
+  // Fresh on open and after each action; the status poll keeps progress moving.
+  const [fetched, setFetched] = useState<ModelsListing>();
+  const refreshModels = useCallback(() => {
+    void invoke<ModelsListing>("store_models", {}, workspaceId).then(setFetched).catch(() => {});
+  }, [invoke, workspaceId]);
+  useEffect(refreshModels, [refreshModels]);
+  useEffect(() => {
+    if (status?.models) setFetched(status.models);
+  }, [status?.models]);
+  const models = fetched;
   const [message, setMessage] = useState("");
   // The switch answers at once; the next status poll confirms it.
   const [pausing, setPausing] = useState<boolean>();
@@ -445,28 +454,15 @@ function SearchSettings({
   const failed = counts?.attention ?? 0;
   return (
     <>
-      <Group title="Search model" footer="Runs on this Mac. Your sources and searches never leave it.">
-        {model && ["downloading", "missing", "failed"].includes(model.state) ? (
-          <div className="kx-settings-row kx-settings-row-wide">
-            <ModelProgressCard progress={model} compact />
-          </div>
-        ) : (
-          <Row label="EmbeddingGemma 2" detail={accelerator ? `768 dimensions · ${accelerator}` : "768 dimensions"}>
-            {model?.state === "ready" ? (
-              <span className="kx-settings-ok">
-                <Icon name="check" size={12} /> Ready
-              </span>
-            ) : (
-              <span className="kx-settings-state">{model ? "Starting…" : "Checking…"}</span>
-            )}
-          </Row>
-        )}
-        <Row label="Model folder" path detail={info.modelDir.replace(/^\/Users\/[^/]+/, "~")}>
-          <button className="kx-settings-button" onClick={() => void bridge().revealPath(info.modelDir)}>
-            Show in Finder
-          </button>
-        </Row>
-      </Group>
+      <ModelsGroup
+        invoke={invoke}
+        workspaceId={workspaceId}
+        listing={models}
+        autoDownload={settings.modelsAutoDownload !== false}
+        onAutoDownload={(value) => onSettings({ modelsAutoDownload: value })}
+        accelerator={accelerator}
+        onChanged={refreshModels}
+      />
       {workspaces.length > 1 && (
         <Group>
           <Row label="Library">

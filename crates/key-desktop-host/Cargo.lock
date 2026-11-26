@@ -2308,6 +2308,7 @@ dependencies = [
  "key-embed",
  "key-index",
  "key-library",
+ "key-models",
  "key-pdf-core",
  "key-pdf-runtime",
  "key-pdfium",
@@ -2332,6 +2333,7 @@ dependencies = [
 name = "key-embed"
 version = "0.1.0"
 dependencies = [
+ "key-models",
  "serde",
  "serde_json",
  "zed-reqwest",
@@ -2359,6 +2361,17 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+]
+
+[[package]]
+name = "key-models"
+version = "0.1.0"
+dependencies = [
+ "key-safe-http",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "url",
 ]
 
 [[package]]
@@ -2424,6 +2437,7 @@ dependencies = [
  "frankensearch",
  "frankensearch-core",
  "key-library",
+ "key-models",
  "key-processing",
  "opendataloader-pdf",
  "serde",

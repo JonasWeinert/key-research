@@ -7,7 +7,7 @@ fn ranks_documents_by_meaning() {
         return;
     }
     let dir = ModelDir::from_env();
-    assert!(dir.download().unwrap(), "another process holds the download lock");
+    dir.models().ensure(key_models::EMBEDDINGS).unwrap();
     let embedder = Embedder::load(&dir).unwrap();
     let docs = [
         ("", "Venus is often called Earth's twin because of its similar size and proximity."),

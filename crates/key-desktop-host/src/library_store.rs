@@ -26,7 +26,7 @@ pub struct Library {
     zotero_progress: std::sync::Arc<std::sync::Mutex<Option<key_zotero::Progress>>>,
 }
 
-struct HostPdfText(NativePdfService);
+struct HostPdfText(NativePdfService, std::sync::Arc<std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>>);
 
 impl PdfText for HostPdfText {
     fn pages(&self, path: &Path, _hash: &str, progress: &dyn Fn(usize, usize)) -> Result<Vec<PageText>, String> {
@@ -56,6 +56,13 @@ impl PdfText for HostPdfText {
         crate::layout_helper::analyze(path, model).map(Some)
     }
     fn layout_with_progress(&self, path: &Path, _hash: &str, model: bool, progress: &dyn Fn(&str, usize, usize)) -> Result<Option<key_index::Layout>, String> {
+        // First need of the layout model: this PDF is read without it now and analysed
+        // again once it has downloaded.
+        if model && crate::layout_helper::model_path().is_none() {
+            if let Some(request) = self.1.get() {
+                request();
+            }
+        }
         crate::layout_helper::analyze_with_progress(path, model, progress).map(Some)
     }
     fn document_info(&self, path: &Path) -> Result<Option<key_index::DocumentInfo>, String> {
@@ -92,9 +99,12 @@ fn page_text(page: usize, text: TextPageDto) -> PageText {
 impl Library {
     pub fn open(root: &Path, native: NativePdfService, cache: key_library::Library) -> Result<Self, String> {
         let store = Store::open(root)?;
-        let indexer = Indexer::start(store.clone(), key_embed::ModelDir::from_env(), std::sync::Arc::new(HostPdfText(native.clone())));
+        let request_layout = std::sync::Arc::new(std::sync::OnceLock::<Box<dyn Fn() + Send + Sync>>::new());
+        let indexer = Indexer::start(store.clone(), key_embed::ModelDir::from_env(), std::sync::Arc::new(HostPdfText(native.clone(), request_layout.clone())));
         // The app turns the layout model off through the environment (Settings).
         indexer.set_layout_model(std::env::var("KEY_LAYOUT_MODEL_ENABLED").map_or(true, |v| v != "0"));
+        let _ = request_layout.set(super::models_commands::layout_requester(store.clone(), indexer.clone()));
+        super::models_commands::resume(&store, &indexer);
         let references = super::reference_worker::ReferenceWorker::start(store.clone(), native, cache);
         let openalex = super::openalex::OpenAlex::start(store.clone());
         // Older PDFs are looked up only while indexing is idle, and not while it is paused.
@@ -148,6 +158,9 @@ impl Library {
     }
 
     pub fn dispatch(&self, command: &str, args: &Json, root: &Path) -> Option<Result<Output, String>> {
+        if let Some(result) = super::models_commands::dispatch(&self.store, &self.indexer, command, args) {
+            return Some(result);
+        }
         let result = match command {
             "store_sources" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.list_sources(&q)?)),
             "store_facets" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.facets(&q)?)),
@@ -319,6 +332,8 @@ impl Library {
                 let counts = self.store.list_sources(&ListQuery { limit: Some(0), ..Default::default() })?.counts;
                 json_output(json!({
                     "model": self.indexer.model_status(),
+                    // Every on-device model (layout, search), for progress in the status bar.
+                    "models": super::models_commands::models().list(),
                     "busy": self.indexer.is_busy(),
                     "activity": self.indexer.activity(),
                     "references": self.store.references_activity()?,
@@ -456,6 +471,8 @@ impl Library {
                     "citations": self.store.citations(&id)?,
                     "sections": self.store.sections(&id)?,
                     "layoutModel": self.indexer.layout_model(),
+                    // missing | downloading | ready | failed: the model may still be on its way.
+                    "layoutModelState": super::models_commands::models().status(key_models::LAYOUT).map(|s| s.state).unwrap_or_default(),
                     "indexStatus": self.store.source(&id)?.map(|s| s.index_status),
                     // Where indexing has got with it, while it runs (stage, pages, passages).
                     "job": self.indexer.job(&id),
