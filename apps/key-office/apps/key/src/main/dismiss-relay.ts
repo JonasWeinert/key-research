@@ -24,6 +24,8 @@ function send(window: BrowserWindow | undefined, from: WebContents | undefined, 
   }
 }
 
+const WHEEL_STEP = 12;
+
 /** Relays presses and wheel scrolls in `contents` to the other webContents of its window
  *  (looked up on each event: a view can move between windows). */
 export function relayDismiss(contents: WebContents, windowOf: () => BrowserWindow | undefined) {
@@ -31,10 +33,13 @@ export function relayDismiss(contents: WebContents, windowOf: () => BrowserWindo
   let timer: NodeJS.Timeout | undefined;
   contents.on("input-event", (_event, input) => {
     if (input.type === "mouseDown") send(windowOf(), contents, { reason: "press" });
-    else if (input.type === "mouseWheel") {
-      // Batched: a trackpad sends a stream of small deltas.
+    else if (input.type === "mouseWheel" || input.type === "gestureScrollUpdate") {
+      // These events carry no deltas here: each counts as a step of WHEEL_STEP px, so a
+      // mouse notch (two wheel events and an update) or a few trackpad frames close an
+      // overlay elsewhere, and a single stray event doesn't. Batched, as a trackpad sends
+      // a stream of them.
       const wheel = input as { deltaX?: number; deltaY?: number };
-      pending += Math.abs(wheel.deltaY ?? 0) + Math.abs(wheel.deltaX ?? 0) || 10;
+      pending += Math.abs(wheel.deltaY ?? 0) + Math.abs(wheel.deltaX ?? 0) || WHEEL_STEP;
       timer ??= setTimeout(() => {
         const dy = pending;
         pending = 0;

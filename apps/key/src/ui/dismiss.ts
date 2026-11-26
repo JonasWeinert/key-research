@@ -39,6 +39,11 @@ const stack: Entry[] = [];
 let installed = false;
 let swallowUntil = 0;
 let quietTimer: ReturnType<typeof setTimeout> | undefined;
+// What had focus before the current element: an overlay that focuses its own field as it
+// opens gives focus back to this (its trigger) on Escape.
+let focusBefore: Element | null = null;
+if (typeof document !== "undefined")
+  document.addEventListener("focusout", (e) => (focusBefore = e.target instanceof Element ? e.target : null), true);
 
 const closeEntry = (entry: Entry, reason: DismissReason) => {
   const at = stack.indexOf(entry);
@@ -176,7 +181,8 @@ function install() {
 /** Registers an open overlay; returns a function that unregisters it (without closing it). */
 export function openLayer(layer: DismissLayer): () => void {
   install();
-  const focus = typeof document === "undefined" ? null : document.activeElement;
+  let focus = typeof document === "undefined" ? null : document.activeElement;
+  if (focus && layer.contains(focus)) focus = focusBefore;
   const entry: Entry = { layer, focus: focus && focus !== document.body ? focus : null, scrolled: 0, baselines: new Map() };
   stack.push(entry);
   return () => {
