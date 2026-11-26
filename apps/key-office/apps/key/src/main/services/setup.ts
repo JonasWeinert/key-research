@@ -15,6 +15,9 @@ import { SERVICES } from "./registry";
 import { UsageStore } from "./usage";
 
 let services: KeyedServices | undefined;
+let secretStore: SecretStore | undefined;
+/** The secret store, once loaded (the AI assistant keeps its keys there too). */
+export const secrets = () => secretStore;
 let settingsStore: AppSettingsStore | undefined;
 
 /** For the registry's prelude: what a starting host is told about the keys. */
@@ -44,6 +47,7 @@ export async function startKeyedServices(options: { registry: () => Registry; ap
   });
   const secrets = new SecretStore({ dir: userData, backend: choice.backend, reason: choice.reason, safeStorage: choice.backend === "keychain" ? safeStorage : undefined });
   await secrets.load().catch(() => undefined);
+  secretStore = secrets;
   const usage = new UsageStore(join(userData, "service-usage.json"));
   await usage.load();
   const keyed = (services = new KeyedServices({
