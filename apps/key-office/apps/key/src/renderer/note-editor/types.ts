@@ -179,12 +179,26 @@ export function itemHref(item: ItemLink): string {
   return `${ITEM_HREF_PREFIX}${item.kind}/${encodeURIComponent(item.id)}${item.anchor ? `#${encodeURIComponent(item.anchor)}` : ""}`;
 }
 
+/** A citation's page ("p. 3", "3–5") as the anchor it opens at: its first work's locator. */
+function citedPageAnchor(href: string): string | undefined {
+  const raw = href.split("#")[0].split("?")[1]?.split("&").find((p) => p.startsWith("cite="))?.slice(5);
+  if (!raw) return undefined;
+  try {
+    const first = (JSON.parse(decodeURIComponent(raw)) as { locator?: unknown; label?: unknown }[])?.[0];
+    if (!first || (first.label && first.label !== "page")) return undefined;
+    const page = /^\s*(\d+)/.exec(String(first.locator ?? ""))?.[1];
+    return page && Number(page) > 0 ? `page:${Number(page) - 1}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function itemFromHref(href: string | null | undefined): ItemLink | null {
   if (!href || !href.startsWith(ITEM_HREF_PREFIX)) return null;
   // `?page=3` from older notes; `?cite=…` on citations (see citations.ts).
   const match = /^([a-z]+)\/([^?#]+)(?:\?(?:page=(\d+)|[^#]*))?(?:#(.+))?$/.exec(href.slice(ITEM_HREF_PREFIX.length));
   if (!match || !(ITEM_KINDS as readonly string[]).includes(match[1])) return null;
-  const anchor = match[4] ? decodeURIComponent(match[4]) : match[3] ? `page:${match[3]}` : undefined;
+  const anchor = match[4] ? decodeURIComponent(match[4]) : match[3] ? `page:${match[3]}` : match[1] === "source" ? citedPageAnchor(href) : undefined;
   return { kind: match[1] as ItemKind, id: decodeURIComponent(match[2]), ...(anchor ? { anchor } : {}) };
 }
 

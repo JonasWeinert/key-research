@@ -15,12 +15,19 @@ describe("citations in notes", () => {
       { id: "c", suppressAuthor: true, label: "chapter", locator: "3" },
     ]);
     expect(href).not.toMatch(/[()\s]/);
-    expect(itemFromHref(href)).toEqual({ kind: "source", id: "a b" });
+    expect(itemFromHref(href)).toEqual({ kind: "source", id: "a b", anchor: "page:11" });
     expect(citeItemsOf(href)).toEqual([
       { id: "a b", locator: "12–14", prefix: "see (also)" },
       { id: "c", locator: "3", label: "chapter", suppressAuthor: true },
     ]);
     expect(citeItemsOf("key://source/x#page:3")).toBeNull();
+  });
+
+  it("opens a cited page where the citation's locator says", () => {
+    expect(itemFromHref(citeHref([{ id: "s1", locator: "3" }]))).toEqual({ kind: "source", id: "s1", anchor: "page:2" });
+    expect(itemFromHref(citeHref([{ id: "s1", locator: "12-14" }]))?.anchor).toBe("page:11");
+    expect(itemFromHref(citeHref([{ id: "s1", locator: "4", label: "chapter" }]))?.anchor).toBeUndefined();
+    expect(itemFromHref(citeHref([{ id: "s1" }]))?.anchor).toBeUndefined();
   });
 
   it("finds citations old and new, and round-trips them through Markdown", () => {

@@ -129,7 +129,8 @@ const assert = require("node:assert/strict");
     await page.keyboard.type("and @Interaction p. 3");
     await page.locator(".ne-menu-item", { hasText: "Interaction study" }).first().waitFor();
     await page.keyboard.press("Enter");
-    await editor.locator("a[href*='page%3A2']", { hasText: "(Palma, 2022, p. 3)" }).waitFor();
+    // The typed page is the citation's locator (in its `cite` parameter), and the link opens there.
+    await editor.locator("a[href*='?cite='][href*='%22locator%22%3A%223%22']", { hasText: "(Palma, 2022, p. 3)" }).waitFor();
     await page.keyboard.press("Enter");
     await page.keyboard.type("![[Beta");
     await page.locator(".ne-menu-item", { hasText: "Beta" }).first().waitFor();
@@ -140,7 +141,7 @@ const assert = require("node:assert/strict");
       return saved.includes("```embed") && saved.includes("(Palma, 2022, p. 3)") ? saved : null;
     }, "Alpha's links to save");
     assert.match(body, new RegExp(`\\[Board\\]\\(key://canvas/${board.id}\\)`));
-    assert.match(body, new RegExp(`\\]\\(key://source/${source.id}#page%3A2\\)`));
+    assert.match(body, new RegExp(`\\]\\(key://source/${source.id}\\?cite=[^)]*%22locator%22%3A%223%22[^)]*\\)`));
     assert.match(body, new RegExp(`\`\`\`embed href="key://note/${beta.id}"`));
     await shot(page, "3-note-links");
 
