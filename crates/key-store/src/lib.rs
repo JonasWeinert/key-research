@@ -496,6 +496,7 @@ impl Store {
             tx.commit().map_err(e)?;
         }
         citation_keys::ensure_schema(&conn)?;
+        graph::ensure_people_index(&conn)?;
         formula::register(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
         formula::register(&reader)?;
@@ -559,6 +560,8 @@ impl Store {
         let db = self.db()?;
         let tx = db.unchecked_transaction().map_err(e)?;
         let now = now_ms();
+        // People new to the library get their merge suggestions once, at the end.
+        let ids = graph::with_batched_suggestions(&tx, || {
         let mut ids = Vec::with_capacity(inputs.len());
         for input in &inputs {
             let existing: Option<String> = match (&input.origin, &input.origin_key) {
@@ -596,6 +599,8 @@ impl Store {
             refresh_fts(&tx, &id)?;
             ids.push(id);
         }
+        Ok(ids)
+        })?;
         tx.commit().map_err(e)?;
         Ok(ids)
     }
