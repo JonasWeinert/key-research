@@ -2,7 +2,7 @@ import HomeView from "./HomeView";
 import { Button, Input, Textarea, Select } from "@key/design-system";
 import NotePage from "./NotePage";
 import CanvasPage from "./canvas/CanvasPage";
-import SourcePage from "./SourcePage";
+import SourcePage, { type DockedPanel } from "./SourcePage";
 import SearchPage from "./SearchPage";
 import HighlightsPage from "./HighlightsPage";
 import LinkedFileView from "./LinkedFileView";
@@ -231,11 +231,14 @@ export default function WorkspaceContent({
   spec,
   visible,
   tabs,
+  docked,
 }: {
   viewId: string;
   spec: ContentSpec;
   visible: boolean;
   tabs: TabState;
+  /** Set while this view is a reader's details-and-notes panel. */
+  docked?: DockedPanel;
 }) {
   const host = useRef<HTMLElement>(null);
   useEffect(
@@ -726,7 +729,7 @@ export default function WorkspaceContent({
         </section>
       )}
       {section === "source" && workspaceId && spec.sourceId && (
-        <SourcePage invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} />
+        <SourcePage invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} docked={docked} />
       )}
       {section === "canvas" && workspaceId && spec.canvasId && (
         <CanvasPage invoke={invoke} workspaceId={workspaceId} canvasId={spec.canvasId} viewId={viewId} />

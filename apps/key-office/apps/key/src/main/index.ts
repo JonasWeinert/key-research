@@ -24,7 +24,7 @@ import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { Registry, type WorkspaceInfo } from "./workspaces";
 import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-media";
-import { WindowStateStore, type SavedLayout, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
+import { WindowStateStore, type SavedGroup, type SavedTab, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
 import {
   setOfficeShellWindow,
   configureOfficeEditors,
@@ -35,36 +35,56 @@ import {
   type OfficeKind,
 } from "./office-editors";
 import {
-  reorderWorkspaceTab,
-  applyWorkspaceViewDrop,
-  singleWorkspaceTab,
-  activeWorkspaceTab,
   activateWorkspaceTab,
-  closeWorkspaceView,
-  splitWithTab,
-  separateWorkspaceTab,
-  swapWorkspaceSplit,
-  setWorkspaceSplitRatio,
-  resetWorkspaceSplits,
-  replaceWorkspaceView,
-  layoutPanes,
-  layoutViews,
-  neighbourPane,
-  moveWorkspacePane,
-  paneBody,
+  activeGroup,
+  activeWorkspaceTab,
+  addGroupWithTab,
+  addWorkspaceTab,
+  allTabs,
+  closeWorkspaceTab,
+  emptyTabsState,
+  equalizeGroups,
+  findTab,
+  findViewTab,
+  focusGroup,
+  groupBody,
+  layoutGroups,
+  layoutPanel,
+  moveWorkspaceTab,
+  neighbourGroup,
+  newTabGroup,
+  normalizeTabs,
   pinWorkspaceTab,
+  reorderWorkspaceTab,
+  replaceWorkspaceView,
+  setGroupSizes,
+  shownTabs,
+  singleWorkspaceTab,
+  splitWorkspaceTab,
+  tabsState,
   tabsToClose,
-  MAX_PANES,
-  tabWithLayout,
-  type PaneLayout,
-  type SplitEdge,
+  MAX_GROUPS,
+  PANEL_RATIO,
+  type GroupSide,
+  type TabGroup,
+  type WorkspaceTab,
   type WorkspaceTabsState,
 } from "../shared/tab-model";
+
+const OFFICE_KINDS: OfficeKind[] = ["docs", "sheets", "slides", "markdown", "html"];
+const isOffice = (kind?: string): kind is OfficeKind => OFFICE_KINDS.includes(kind as OfficeKind);
 
 type OwnedView = {
   id: string;
   title: string;
+  /** "home" views are drawn by the shell's renderer; every other kind is a native view (see `nativeKinds`). */
   kind: "home" | "pdf" | OfficeKind;
+  /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
+  panel?: { viewId: string; ratio: number; focused?: boolean };
+  /** The panel's share when it was last open, so it comes back the same size. */
+  panelRatio?: number;
+  /** A Home tab opened by Split Right: what it opens takes its place. */
+  launcher?: boolean;
   content?: {
     section: string;
     workspaceId?: string;
@@ -134,8 +154,34 @@ function liveShells() {
 function shellBySender(sender: number) {
   return liveShells().find((w) => w.window.webContents.id === sender);
 }
+/** The reader whose panel shows `viewId`, if it is a docked panel. */
+function panelHost(viewId: string) {
+  for (const v of views.values()) if (v.panel?.viewId === viewId) return v;
+  return undefined;
+}
+/** The view whose tab holds `viewId`: itself, or the reader it is docked in. */
+const tabViewId = (viewId: string) => panelHost(viewId)?.id ?? viewId;
 function shellOfView(viewId: string) {
-  return liveShells().find((w) => w.state.tabs.some((t) => t.viewIds.includes(viewId)));
+  const id = tabViewId(viewId);
+  return liveShells().find((w) => findViewTab(w.state, id));
+}
+/** Every view a window holds: its tabs' views and their panels. */
+function windowViewIds(w: ShellWindow) {
+  return allTabs(w.state).flatMap((t) => withPanel(t.viewId));
+}
+const withPanel = (viewId: string) => {
+  const panel = views.get(viewId)?.panel;
+  return panel ? [viewId, panel.viewId] : [viewId];
+};
+/** What a window shows now: each group's tab, with its panel. */
+function shownViewIds(w: ShellWindow) {
+  return shownTabs(w.state).flatMap((t) => withPanel(t.viewId));
+}
+/** The view with keyboard focus: the focused group's tab, or its panel. */
+function activeViewId(w: ShellWindow) {
+  const tab = activeWorkspaceTab(w.state);
+  const panel = tab && views.get(tab.viewId)?.panel;
+  return panel?.focused ? panel.viewId : tab?.viewId;
 }
 /** The window a menu command or new document should go to. */
 function focusedShell(): ShellWindow {
@@ -207,13 +253,13 @@ type SearchPreviewSession = {
 const searchPreviews = new Map<string, SearchPreviewSession>();
 // The search bar belongs to the tab showing a result (results open in their own tab).
 function activeSearchPreview(w: ShellWindow) {
-  const group = activeWorkspaceTab(w.state);
+  const shown = new Set(shownTabs(w.state).map((t) => t.viewId));
   return [...searchPreviews.values()].find(
     (session) =>
       !session.dismissed &&
-      (session.previewViewId && group?.viewIds.includes(session.previewViewId)
-        ? group.activeViewId === session.previewViewId || group.viewIds.length === 1
-        : (session.busy || Boolean(session.error)) && group?.viewIds.includes(session.sourceViewId)),
+      (session.previewViewId && shown.has(session.previewViewId)
+        ? true
+        : (session.busy || Boolean(session.error)) && shown.has(session.sourceViewId)),
   );
 }
 function searchPreviewSnapshot(w: ShellWindow) {
@@ -260,7 +306,7 @@ async function showSearchPreview(session: SearchPreviewSession, index: number) {
     )
       return;
     // Only follow through while the user is still on the results or on the result's tab.
-    const current = activeWorkspaceTab(w.state)?.viewIds ?? [];
+    const current = shownTabs(w.state).map((t) => t.viewId);
     if (!current.includes(session.sourceViewId) && !current.includes(session.previewViewId ?? "")) {
       session.busy = false;
       session.dismissed = true;
@@ -288,7 +334,7 @@ async function showSearchPreview(session: SearchPreviewSession, index: number) {
       old &&
       old.id !== id &&
       replaceable &&
-      !liveShells().some((s) => s.state.tabs.some((t) => t.viewIds.includes(old.id)))
+      !liveShells().some((s) => findViewTab(s.state, old.id))
     ) {
       disposePdf(old);
       views.delete(old.id);
@@ -338,6 +384,31 @@ function dismissSearchPreview(sourceViewId: string) {
 }
 const preload = join(__dirname, "../preload/index.js");
 const renderer = join(__dirname, "../renderer");
+/** The icon kind a view's tab shows. */
+function viewKind(v: OwnedView | undefined) {
+  const section = v?.content?.section;
+  if (section === "record") return v?.content?.record?.kind || "page";
+  if (!v?.contentKey) return v?.kind;
+  if (section === "sources") return "library";
+  if (section === "note" || section === "canvas" || section === "search") return section;
+  if (section === "source" || section === "file" || ENTITY_SECTIONS.includes(section ?? "")) return "page";
+  return "records";
+}
+function viewSummary(id: string) {
+  const v = views.get(id);
+  return {
+    id,
+    title: `${v?.title ?? "Key"}${v?.dirty ? " •" : ""}`,
+    workspaceId: v?.workspaceId,
+    kind: viewKind(v),
+    content: v?.content,
+    back: v?.back?.map((e) => e.title).slice(-3),
+    forward: v?.forward?.at(-1)?.title,
+    nav: v?.nav,
+  };
+}
+/** What the window's renderer draws: groups and their tabs (each tab shows one view, and a
+ * reader may carry its panel). `tabs` lists every group's tabs, left to right. */
 function snapshot(w: ShellWindow) {
   const state = w.state;
   return {
@@ -346,46 +417,25 @@ function snapshot(w: ShellWindow) {
     windowCount: liveShells().length,
     /** Which workspaces other windows show, for the switcher. */
     windows: liveShells().map((s) => ({ windowId: s.id, workspaceId: s.workspaceId })),
-    splitRatio: activeWorkspaceTab(state)?.splitRatio ?? 0.5,
     searchPreview: searchPreviewSnapshot(w),
-    tabs: state.tabs.map((t) => ({
-      id: t.id,
-      layout: t.layout,
-      pinned: Boolean(t.pinned),
-      title: t.viewIds
-        .map(
-          (id) =>
-            `${views.get(id)?.title ?? "Key"}${views.get(id)?.dirty ? " •" : ""}`,
-        )
-        .join(" / "),
-      views: t.viewIds.map((id) => ({
-        id,
-        title: `${views.get(id)?.title ?? "Key"}${views.get(id)?.dirty ? " •" : ""}`,
-        workspaceId: views.get(id)?.workspaceId,
-        kind:
-          views.get(id)?.content?.section === "record"
-            ? views.get(id)?.content?.record?.kind || "page"
-            : views.get(id)?.contentKey
-              ? views.get(id)?.content?.section === "sources"
-                ? "library"
-                : views.get(id)?.content?.section === "note"
-                  ? "note"
-                  : views.get(id)?.content?.section === "canvas"
-                  ? "canvas"
-                  : views.get(id)?.content?.section === "source" || views.get(id)?.content?.section === "file" || ENTITY_SECTIONS.includes(views.get(id)?.content?.section ?? "")
-                    ? "page"
-                    : views.get(id)?.content?.section === "search"
-                      ? "search"
-                      : "records"
-              : views.get(id)?.kind,
-        content: views.get(id)?.content,
-        back: views.get(id)?.back?.map((e) => e.title).slice(-3),
-        forward: views.get(id)?.forward?.at(-1)?.title,
-        nav: views.get(id)?.nav,
-      })),
-    })),
-    activeTabId: state.activeTabId,
-    activeViewId: activeWorkspaceTab(state)?.activeViewId,
+    groups: state.groups.map((g) => ({ id: g.id, size: g.size, activeTabId: g.activeTabId, tabIds: g.tabs.map((t) => t.id) })),
+    activeGroupId: state.activeGroupId,
+    tabs: state.groups.flatMap((g) =>
+      g.tabs.map((t) => {
+        const view = viewSummary(t.viewId);
+        const panel = views.get(t.viewId)?.panel;
+        return {
+          id: t.id,
+          groupId: g.id,
+          pinned: Boolean(t.pinned),
+          title: view.title,
+          views: [view],
+          ...(panel && views.has(panel.viewId) ? { panel: { ...viewSummary(panel.viewId), ratio: panel.ratio } } : {}),
+        };
+      }),
+    ),
+    activeTabId: activeWorkspaceTab(state)?.id ?? null,
+    activeViewId: activeViewId(w),
   };
 }
 /** Library-wide events reach every window. */
@@ -410,46 +460,107 @@ function homeView(): OwnedView {
   views.set(record.id, record);
   return record;
 }
-function home(w: ShellWindow = focusedShell()) {
-  const tab = singleWorkspaceTab(homeView().id);
-  w.state.tabs.push(tab);
-  w.state.activeTabId = tab.id;
+/** A Home tab in a group (the focused one by default). */
+function home(w: ShellWindow = focusedShell(), groupId?: string) {
+  w.state = addWorkspaceTab(w.state, singleWorkspaceTab(homeView().id), { groupId });
   layout(w);
 }
-/** A Home pane beside the focused pane: a launcher whose next opened item takes its place. */
-function splitPane(w: ShellWindow, edge: SplitEdge) {
-  const tab = activeWorkspaceTab(w.state);
-  if (!tab) return home(w);
-  const record = homeView();
-  const next = applyWorkspaceViewDrop(
-    { ...w.state, tabs: [...w.state.tabs, singleWorkspaceTab(record.id)] },
-    { kind: "split", viewId: record.id, targetTabId: tab.id, targetViewId: tab.activeViewId, edge },
-  );
-  // A full tab cannot take another pane; the Home view goes nowhere.
-  if (next.tabs.some((t) => t.viewIds.length === 1 && t.viewIds[0] === record.id)) {
-    views.delete(record.id);
-    return;
+/** Split Right: the tab moves into a new group to the right of its own. A group's only tab
+ * stays, and the new group opens on a Home launcher instead (what it opens takes its place). */
+function splitRight(w: ShellWindow, tabId = activeWorkspaceTab(w.state)?.id) {
+  const found = tabId ? findTab(w.state, tabId) : undefined;
+  if (!found) return home(w);
+  if (w.state.groups.length >= MAX_GROUPS) return;
+  if (found.group.tabs.length > 1) w.state = splitWorkspaceTab(w.state, found.tab.id, found.group.id, "right");
+  else {
+    const record = homeView();
+    record.launcher = true;
+    w.state = addGroupWithTab(w.state, singleWorkspaceTab(record.id), found.group.id, "right");
   }
-  w.state = next;
   layout(w);
+  focusShown(w);
 }
-function focusPane(w: ShellWindow, direction: SplitEdge) {
+/** Moves the focused tab into the group on `side`; past the last group, into a new one. */
+function moveToGroup(w: ShellWindow, side: GroupSide) {
   const tab = activeWorkspaceTab(w.state);
-  const next = tab && neighbourPane(tab.layout, tab.activeViewId, direction);
-  if (!tab || !next) return;
-  w.state = activateWorkspaceTab(w.state, tab.id, next);
+  const found = tab && findTab(w.state, tab.id);
+  if (!found) return;
+  const next = neighbourGroup(w.state, found.group.id, side);
+  w.state = next ? moveWorkspaceTab(w.state, found.tab.id, next.id) : splitWorkspaceTab(w.state, found.tab.id, found.group.id, side);
   layout(w);
-  // Native views take keyboard focus themselves; DOM panes are focused by the shell.
-  const view = views.get(next)?.view;
+  focusShown(w);
+}
+/** Focus moves to the group on `side` of the focused one. */
+function focusGroupBeside(w: ShellWindow, side: GroupSide) {
+  const next = neighbourGroup(w.state, activeGroup(w.state).id, side);
+  if (!next) return;
+  w.state = focusGroup(w.state, next.id);
+  layout(w);
+  focusShown(w);
+}
+/** Keyboard focus follows the focused group: native views take it themselves, DOM views
+ * are focused by the shell. */
+function focusShown(w: ShellWindow) {
+  const id = activeViewId(w);
+  if (!id) return;
+  const view = views.get(id)?.view;
   if (view) view.webContents.focus();
   else {
     w.window.webContents.focus();
-    emitTo(w, "focus-pane", next);
+    emitTo(w, "focus-pane", id);
   }
 }
+/** How a native tab kind makes its WebContentsView and lets it go. Kinds not listed ("home")
+ * are drawn by the shell's renderer. A new kind adds itself to `OwnedView["kind"]`, registers
+ * here, and opens as a tab of the focused group with `add(record, w)`. */
+interface NativeKind {
+  create(record: OwnedView): WebContentsView;
+  /** Asked before the tab closes; false keeps it open. */
+  canClose?(record: OwnedView): Promise<boolean>;
+  /** Releases the view (and what stands behind it) for good; false keeps the tab. */
+  dispose(record: OwnedView): Promise<boolean> | boolean;
+}
+const nativeKinds: Record<string, NativeKind> = {};
+function registerNativeKind(kind: string, impl: NativeKind) {
+  nativeKinds[kind] = impl;
+}
+registerNativeKind("pdf", {
+  create(record) {
+    const view = new WebContentsView({
+      webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    const load = async () => {
+      await readerReleases.get(record.id);
+      if (record.view !== view || view.webContents.isDestroyed()) return;
+      if (process.env.ELECTRON_RENDERER_URL) await view.webContents.loadURL(`${process.env.ELECTRON_RENDERER_URL}/pdf.html`);
+      else await view.webContents.loadFile(join(renderer, "pdf.html"));
+    };
+    // `load` awaits first, so `record.view` is set by the time it checks it.
+    void load().catch((error) => emit("operation-error", String(error)));
+    return view;
+  },
+  dispose(record) {
+    disposePdf(record);
+    return true;
+  },
+});
+for (const kind of OFFICE_KINDS)
+  registerNativeKind(kind, {
+    create: (record) => createOfficeView(kind, record.path, { newBlank: !record.path }),
+    canClose: (record) => (record.view ? canCloseOfficeView({ kind, view: record.view }) : Promise.resolve(true)),
+    async dispose(record) {
+      if (record.view && !(await closeOfficeView({ kind, view: record.view }, true))) return false;
+      if (record.view) {
+        if (record.host && !record.host.window.isDestroyed()) record.host.window.contentView.removeChildView(record.view);
+        if (!record.view.webContents.isDestroyed()) record.view.webContents.close();
+      }
+      return true;
+    },
+  });
 /** Creates the native view on first show, or moves it to the window that now shows it. */
 function attach(record: OwnedView, w: ShellWindow) {
-  if (record.kind === "home") return;
+  const kind = nativeKinds[record.kind];
+  if (!kind) return;
   if (record.view) {
     if (record.host !== w) {
       if (record.host && !record.host.window.isDestroyed()) record.host.window.contentView.removeChildView(record.view);
@@ -458,67 +569,53 @@ function attach(record: OwnedView, w: ShellWindow) {
     }
     return;
   }
-  if (record.kind === "pdf") {
-    const view = new WebContentsView({
-      webPreferences: {
-        preload,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
-    });
-    record.view = view;
-    const load = async () => {
-      await readerReleases.get(record.id);
-      if (record.view !== view || view.webContents.isDestroyed()) return;
-      if (process.env.ELECTRON_RENDERER_URL)
-        await view.webContents.loadURL(
-          `${process.env.ELECTRON_RENDERER_URL}/pdf.html`,
-        );
-      else await view.webContents.loadFile(join(renderer, "pdf.html"));
-    };
-    void load().catch((error) => emit("operation-error", String(error)));
-  } else
-    record.view = createOfficeView(record.kind, record.path, {
-      newBlank: !record.path,
-    });
-  w.window.contentView.addChildView(record.view);
+  const view = kind.create(record);
+  record.view = view;
+  w.window.contentView.addChildView(view);
   record.host = w;
-  record.view.webContents.on("focus", () => {
+  view.webContents.on("focus", () => {
     const owner = shellOfView(record.id);
-    const tab = owner?.state.tabs.find((t) => t.viewIds.includes(record.id));
-    if (owner && tab) {
-      owner.state = activateWorkspaceTab(owner.state, tab.id, record.id);
-      activateOfficeView(
-        record.kind === "pdf" ? null : (record.kind as OfficeKind),
-        record.kind === "pdf" ? null : record.view!,
-      );
+    const found = owner && findViewTab(owner.state, record.id);
+    if (owner && found) {
+      owner.state = activateWorkspaceTab(owner.state, found.tab.id);
+      if (record.panel) record.panel.focused = false;
+      activateOfficeView(isOffice(record.kind) ? record.kind : null, isOffice(record.kind) ? view : null);
       tabsChanged(owner);
     }
   });
-  record.view.webContents.setWindowOpenHandler(({ url }) => {
+  view.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url))
       void systemShell.openExternal(url);
     return { action: "deny" };
   });
 }
+/** The content area's groups, in window pixels; the renderer lays out strips, DOM views and
+ * sashes with the same function and numbers. */
+function laidOutGroups(w: ShellWindow) {
+  const [width, height] = w.window.getContentSize();
+  return layoutGroups(w.state.groups, {
+    x: w.sidebarWidth,
+    y: 0,
+    width: Math.max(0, width - w.sidebarWidth - (w.inspectorWidth ?? 0)),
+    height,
+  }).groups;
+}
 function placeViews(w: ShellWindow) {
   if (w.window.isDestroyed()) return;
-  const tab = activeWorkspaceTab(w.state);
-  if (!tab) return;
-  const [width, height] = w.window.getContentSize();
-  // The renderer lays its DOM panes and dividers out with the same function and numbers.
-  const { panes } = layoutPanes(tab.layout, {
-    x: w.sidebarWidth,
-    y: 40,
-    width: Math.max(0, width - w.sidebarWidth - (w.inspectorWidth ?? 0)),
-    height: Math.max(0, height - 40),
-  });
-  // Each pane of a split keeps a slim header (title, close) above its content.
-  for (const { viewId, ...bounds } of panes) views.get(viewId)?.view?.setBounds(paneBody(bounds, panes.length > 1));
+  for (const rect of laidOutGroups(w)) {
+    const group = w.state.groups.find((g) => g.id === rect.id);
+    const tab = group?.tabs.find((t) => t.id === group.activeTabId);
+    const record = tab && views.get(tab.viewId);
+    if (!record?.view) continue;
+    const body = groupBody(rect);
+    // A reader with its panel open keeps the left part; the panel is the renderer's.
+    record.view.setBounds(record.panel ? layoutPanel(body, record.panel.ratio).main : body);
+  }
 }
+/** Which native views show where: when it changes, still frames are captured again. */
+const overlayKey = (w: ShellWindow) => JSON.stringify(shownTabs(w.state).map((t) => [t.viewId, views.get(t.viewId)?.view?.getBounds()]));
 async function captureOverlayFrames(w: ShellWindow) {
-  const ids = activeWorkspaceTab(w.state)?.viewIds || [];
+  const ids = shownTabs(w.state).map((t) => t.viewId);
   return Promise.all(
     ids.flatMap((id) => {
       const view = views.get(id)?.view;
@@ -547,12 +644,7 @@ async function captureOverlayFrames(w: ShellWindow) {
 }
 function refreshOverlayFrames(w: ShellWindow) {
   if (!w.globalOverlay) return;
-  const key = JSON.stringify(
-    (activeWorkspaceTab(w.state)?.viewIds || []).map((id) => [
-      id,
-      views.get(id)?.view?.getBounds(),
-    ]),
-  );
+  const key = overlayKey(w);
   if (key === w.overlayCaptureKey) return;
   w.overlayCaptureKey = key;
   const id = w.globalOverlay,
@@ -565,8 +657,8 @@ function refreshOverlayFrames(w: ShellWindow) {
 }
 function layout(w: ShellWindow = focusedShell()) {
   if (!w || w.window.isDestroyed()) return;
-  const tab = activeWorkspaceTab(w.state);
-  const shown = new Set(tab?.viewIds ?? []);
+  w.state = normalizeTabs(w.state);
+  const shown = new Set(shownViewIds(w));
   for (const id of shown) {
     const record = views.get(id);
     if (!record) continue;
@@ -579,7 +671,7 @@ function layout(w: ShellWindow = focusedShell()) {
   placeViews(w);
   refreshOverlayFrames(w);
   // Only the two most recently used PDF renderers retain their raster/GPU caches, across all windows.
-  const visible = new Set(liveShells().flatMap((s) => activeWorkspaceTab(s.state)?.viewIds ?? []));
+  const visible = new Set(liveShells().flatMap((s) => shownViewIds(s)));
   const pdfs = [...views.values()].filter((v) => v.kind === "pdf" && v.view);
   const keep = Math.max(0, 2 - pdfs.filter((v) => visible.has(v.id)).length);
   const inactive = pdfs
@@ -590,21 +682,22 @@ function layout(w: ShellWindow = focusedShell()) {
       disposePdf(record);
     }
   }
-  const active = views.get(tab?.activeViewId ?? "");
-  activateOfficeView(
-    active && active.kind !== "home" && active.kind !== "pdf"
-      ? active.kind
-      : null,
-    active?.kind !== "pdf" ? (active?.view ?? null) : null,
-  );
+  const active = views.get(activeWorkspaceTab(w.state)?.viewId ?? "");
+  activateOfficeView(isOffice(active?.kind) ? active.kind : null, isOffice(active?.kind) ? (active.view ?? null) : null);
   tabsChanged(w);
 }
-/** Shows a view wherever it is open, bringing its window forward. */
+/** Shows a view wherever it is open (in its group, which takes focus), bringing its window forward. */
 function focus(id: string) {
   const w = shellOfView(id);
-  const owner = w?.state.tabs.find((t) => t.viewIds.includes(id));
-  if (w && owner) {
-    w.state = activateWorkspaceTab(w.state, owner.id, id);
+  const host = panelHost(id);
+  const found = w && findViewTab(w.state, host?.id ?? id);
+  if (w && found) {
+    w.state = activateWorkspaceTab(w.state, found.tab.id);
+    if (host?.panel) host.panel.focused = true;
+    else {
+      const panel = views.get(id)?.panel;
+      if (panel) panel.focused = false;
+    }
     layout(w);
     if (!w.window.isFocused()) w.window.focus();
   }
@@ -642,63 +735,66 @@ function stepHistory(w: ShellWindow, viewId: string, step: number) {
   Object.assign(pane, entry, { dirty: false, nav: (pane.nav ?? 0) + 1 });
   tabsChanged(w);
 }
-function add(record: OwnedView, w: ShellWindow = focusedShell()) {
+/** Opens `record` as a new tab: in the focused group of `w` by default, in `options.groupId`
+ * when given, or beside / in place of a view while a `placement` is pending. This is how
+ * every kind of view opens. */
+function add(record: OwnedView, w: ShellWindow = focusedShell(), options: { groupId?: string; index?: number } = {}) {
   const target = placement && views.get(placement.viewId);
   const mode = placement?.mode;
   placement = undefined;
-  if (mode === "here" && target?.kind === "home" && target.content && !target.dirty && record.kind === "home" && shellOfView(target.id) === w) {
+  // A docked panel keeps showing its source: links followed from it open as tabs.
+  const docked = target && panelHost(target.id);
+  if (mode === "here" && !docked && target?.kind === "home" && target.content && !target.dirty && record.kind === "home" && shellOfView(target.id) === w) {
     navigateInPlace(w, target, record);
     return undefined;
   }
   views.set(record.id, record);
-  const beside = mode === "split" && target ? w.state.tabs.find((t) => t.viewIds.includes(target.id)) : undefined;
-  if (beside && beside.viewIds.length < MAX_PANES) {
-    const tab = singleWorkspaceTab(record.id);
-    w.state.tabs.push(tab);
-    w.state = applyWorkspaceViewDrop(w.state, { kind: "split", viewId: record.id, targetTabId: beside.id, targetViewId: target!.id, edge: "right" });
+  const tab = singleWorkspaceTab(record.id);
+  // Beside: in the group right of the one showing `target`, or a new group there.
+  const from = mode === "split" && target ? findViewTab(w.state, tabViewId(target.id)) : undefined;
+  if (from) {
+    const right = neighbourGroup(w.state, from.group.id, "right");
+    w.state = right ? addWorkspaceTab(w.state, tab, { groupId: right.id }) : addGroupWithTab(w.state, tab, from.group.id, "right");
     layout(w);
     return record.view;
   }
-  // A focused Home pane inside a split is a launcher: what it opens takes its place.
-  const current = activeWorkspaceTab(w.state);
-  const launcher = current && current.viewIds.length > 1 ? views.get(current.activeViewId) : undefined;
-  if (launcher?.content?.section === "home") {
+  // A launcher (the Home tab Split Right opened) is replaced by what it opens.
+  const current = !options.groupId ? activeWorkspaceTab(w.state) : undefined;
+  const launcher = current ? views.get(current.viewId) : undefined;
+  if (launcher?.launcher && launcher.content?.section === "home" && !launcher.back?.length) {
     w.state = replaceWorkspaceView(w.state, launcher.id, record.id);
     views.delete(launcher.id);
     layout(w);
     return record.view;
   }
-  const tab = singleWorkspaceTab(record.id);
-  w.state.tabs.push(tab);
-  w.state.activeTabId = tab.id;
+  w.state = addWorkspaceTab(w.state, tab, options);
   layout(w);
   return record.view;
 }
-/** Closes a tab after unsaved-change checks. Returns false if the user kept it.
- * `windowClosing` leaves an emptied window empty instead of opening Home. */
+/** Closes a tab (and a reader's panel with it) after unsaved-change checks. Returns false if
+ * the user kept it. `windowClosing` leaves an emptied window empty instead of opening Home. */
 async function closeTab(w: ShellWindow, id: string, windowClosing = false): Promise<boolean> {
-  const tab = w.state.tabs.find((t) => t.id === id);
-  if (!tab) return true;
-  if (!(await closeViews(w, tab.viewIds))) return false;
+  const found = findTab(w.state, id);
+  if (!found) return true;
+  if (!(await closeViews(w, withPanel(found.tab.viewId)))) return false;
   if (windowClosing) return true;
   afterClose(w);
   return true;
 }
-/** Closes one pane; the tab closes with its last pane. */
-async function closePane(w: ShellWindow, viewId: string): Promise<boolean> {
-  if (!w.state.tabs.some((t) => t.viewIds.includes(viewId))) return true;
-  if (!(await closeViews(w, [viewId]))) return false;
-  afterClose(w);
-  return true;
+/** Closes the tab showing `viewId`, or the panel when it is a docked panel. */
+async function closeView(w: ShellWindow, viewId: string): Promise<boolean> {
+  const host = panelHost(viewId);
+  if (host) {
+    closePanel(host);
+    layout(w);
+    return true;
+  }
+  const found = findViewTab(w.state, viewId);
+  return found ? closeTab(w, found.tab.id) : true;
 }
 /** Closes several tabs in turn; stops at the first one the user keeps. */
 async function closeTabs(w: ShellWindow, ids: string[]) {
   for (const id of ids) if (!(await closeTab(w, id))) return;
-}
-/** Moves the focused pane past its neighbour, keeping keyboard focus on it. */
-function movePane(w: ShellWindow, viewId: string, direction: SplitEdge) {
-  w.state = moveWorkspacePane(w.state, viewId, direction);
-  layout(w);
 }
 function pinTab(w: ShellWindow, tabId: string, pinned: boolean) {
   w.state = pinWorkspaceTab(w.state, tabId, pinned);
@@ -706,11 +802,48 @@ function pinTab(w: ShellWindow, tabId: string, pinned: boolean) {
 }
 // An emptied extra window closes; the last window keeps a Home tab.
 function afterClose(w: ShellWindow) {
-  if (!w.state.tabs.length && liveShells().length > 1) w.window.close();
-  else if (!w.state.tabs.length) home(w);
+  const empty = !allTabs(w.state).length;
+  if (empty && liveShells().length > 1) w.window.close();
+  else if (empty) home(w);
   else layout(w);
 }
-/** Closed panes, newest last, for Reopen Closed Tab. */
+/** Docks a source's page in its reader's tab, as the reader's details-and-notes panel. The
+ * page leaves any tab it had (from any window). */
+function dockPanel(pdf: OwnedView, page: OwnedView) {
+  if (pdf.panel?.viewId !== page.id) {
+    if (pdf.panel) closePanel(pdf);
+    const owner = shellOfView(page.id);
+    const found = owner && findViewTab(owner.state, page.id);
+    if (owner && found) {
+      owner.state = closeWorkspaceTab(owner.state, found.tab.id);
+      if (owner !== shellOfView(pdf.id)) afterClose(owner);
+    }
+    pdf.panel = { viewId: page.id, ratio: pdf.panelRatio ?? PANEL_RATIO };
+  }
+  pdf.view?.webContents.send("reader-notes", true);
+  focus(pdf.id);
+}
+/** Hides a reader's panel; its page is let go (the note saves as it is written). */
+function closePanel(pdf: OwnedView) {
+  const panel = pdf.panel;
+  if (!panel) return;
+  pdf.panel = undefined;
+  pdf.panelRatio = panel.ratio;
+  views.delete(panel.viewId);
+  pdf.view?.webContents.send("reader-notes", false);
+}
+/** The panel's page moves into a tab of its own, right after its reader's. */
+function popOutPanel(w: ShellWindow, pdf: OwnedView) {
+  const panel = pdf.panel;
+  const found = findViewTab(w.state, pdf.id);
+  if (!panel || !found || !views.has(panel.viewId)) return;
+  pdf.panel = undefined;
+  pdf.panelRatio = panel.ratio;
+  pdf.view?.webContents.send("reader-notes", false);
+  w.state = addWorkspaceTab(w.state, singleWorkspaceTab(panel.viewId), { groupId: found.group.id, index: found.index + 1 });
+  layout(w);
+}
+/** Closed tabs, newest last, for Reopen Closed Tab. */
 const closedViews: SavedView[] = [];
 async function reopenClosed(w: ShellWindow) {
   while (closedViews.length) {
@@ -718,10 +851,12 @@ async function reopenClosed(w: ShellWindow) {
     if (record) return void add(record, w);
   }
 }
-/** Checks every view for unsaved changes before disposing any, then disposes them all. */
+/** Checks every view for unsaved changes before disposing any, then disposes them all
+ * (with the tabs showing them). */
 async function closeViews(w: ShellWindow, ids: string[]): Promise<boolean> {
   for (const viewId of ids) {
-    const saved = savedView(viewId);
+    // A panel goes with its reader: reopening the reader is enough.
+    const saved = panelHost(viewId) ? undefined : savedView(viewId);
     if (saved && saved.type !== "home") closedViews.push(saved);
   }
   closedViews.splice(0, Math.max(0, closedViews.length - 20));
@@ -741,35 +876,24 @@ async function closeViews(w: ShellWindow, ids: string[]): Promise<boolean> {
         return false;
       }
     }
-    if (
-      record?.view &&
-      record.kind !== "home" &&
-      record.kind !== "pdf" &&
-      !(await canCloseOfficeView({ kind: record.kind, view: record.view }))
-    ) {
+    const kind = record && nativeKinds[record.kind];
+    if (record && kind?.canClose && !(await kind.canClose(record))) {
       focus(viewId);
       return false;
     }
   }
+  const dropTab = (viewId: string) => {
+    const found = findViewTab(w.state, viewId);
+    if (found) w.state = closeWorkspaceTab(w.state, found.tab.id);
+  };
   for (const viewId of [...ids]) {
     const record = views.get(viewId);
     if (!record) {
-      w.state = closeWorkspaceView(w.state, viewId);
+      dropTab(viewId);
       continue;
     }
-    if (
-      record.view &&
-      record.kind !== "pdf" &&
-      record.kind !== "home" &&
-      !(await closeOfficeView({ kind: record.kind, view: record.view }, true))
-    )
-      return false;
-    if (record.kind === "pdf") disposePdf(record);
-    else if (record.view) {
-      if (record.host && !record.host.window.isDestroyed()) record.host.window.contentView.removeChildView(record.view);
-      if (!record.view.webContents.isDestroyed())
-        record.view.webContents.close();
-    }
+    const kind = nativeKinds[record.kind];
+    if (kind && !(await kind.dispose(record))) return false;
     views.delete(viewId);
     if (searchPreviews.has(viewId)) {
       const session = searchPreviews.get(viewId)!;
@@ -777,7 +901,7 @@ async function closeViews(w: ShellWindow, ids: string[]): Promise<boolean> {
       ++session.sequence;
       searchPreviews.delete(viewId);
     }
-    w.state = closeWorkspaceView(w.state, viewId);
+    dropTab(viewId);
   }
   return true;
 }
@@ -811,7 +935,7 @@ function openPath(path: string, workspaceId?: string, w: ShellWindow = focusedSh
   return true;
 }
 async function sourceOpen(source: any, hit?: any, results?: any[], w: ShellWindow = focusedShell()) {
-  const origin = views.get(activeWorkspaceTab(w.state)?.activeViewId ?? "");
+  const origin = views.get(activeViewId(w) ?? "");
   const returnViewId = origin?.content ? origin.id : origin?.returnViewId;
   const workspaceId = source.workspaceId ?? hit?.workspaceId ?? w.workspaceId;
   if (!workspaceId) throw Error("Choose a workspace");
@@ -1016,10 +1140,10 @@ const WINDOW_OPTIONS = {
     sandbox: true,
   },
 };
-/** Opens a window on a workspace. With `tabs`, it starts with those (moved) tabs; with
- * `saved`, it takes that window's frame and restores its tabs; otherwise it shows Home. */
+/** Opens a window on a workspace. With `tabs`, it starts with those (moved) tabs in one group;
+ * with `saved`, it takes that window's frame and restores its tabs; otherwise it shows Home. */
 function createShell(
-  options: { workspaceId?: string; tabs?: WorkspaceTabsState["tabs"]; saved?: SavedWindow; load?: boolean } = {},
+  options: { workspaceId?: string; tabs?: WorkspaceTab[]; saved?: SavedWindow; load?: boolean } = {},
 ): ShellWindow {
   const previous = focusedShell();
   const frame = options.saved?.bounds && visibleBounds(options.saved.bounds);
@@ -1042,7 +1166,7 @@ function createShell(
     id: randomUUID(),
     window,
     workspaceId: options.saved?.workspaceId ?? options.workspaceId ?? previous?.workspaceId ?? knownWorkspaces[0]?.id ?? "",
-    state: { tabs: options.tabs ?? [], activeTabId: options.tabs?.at(-1)?.id ?? null },
+    state: options.tabs?.length ? tabsState(options.tabs) : emptyTabsState(),
     sidebarWidth: options.saved?.sidebarWidth ?? previous?.sidebarWidth ?? 240,
     overlayCaptureSequence: 0,
     overlayCaptureKey: "",
@@ -1080,7 +1204,7 @@ function createShell(
     if (ending) freezeWindows();
     else windowState.layouts[w.workspaceId] = savedTabs(w);
     void (async () => {
-      for (const tab of [...w.state.tabs]) {
+      for (const tab of allTabs(w.state)) {
         if (!(await closeTab(w, tab.id, true))) {
           quitRequested = false;
           frozen = false;
@@ -1107,7 +1231,7 @@ function createShell(
   if (options.load !== false) {
     void (async () => {
       if (options.saved) await restoreTabs(w, options.saved.tabs);
-      if (!w.state.tabs.length) home(w);
+      if (!allTabs(w.state).length) home(w);
       await loadShell(w);
       layout(w);
       for (const other of liveShells()) if (other !== w) tabsChanged(other);
@@ -1172,7 +1296,7 @@ async function switchWorkspace(w: ShellWindow, workspaceId: string, newWindow = 
   }
   // Leaving: check for unsaved work first, then remember the arrangement and close it.
   const leaving = savedTabs(w);
-  if (!(await closeViews(w, w.state.tabs.flatMap((t) => t.viewIds)))) {
+  if (!(await closeViews(w, windowViewIds(w)))) {
     layout(w);
     return;
   }
@@ -1180,8 +1304,9 @@ async function switchWorkspace(w: ShellWindow, workspaceId: string, newWindow = 
   w.workspaceId = workspaceId;
   touchRecent(workspaceId);
   titleWindow(w);
+  w.state = emptyTabsState();
   if (remembered) await restoreTabs(w, remembered);
-  if (!w.state.tabs.length) {
+  if (!allTabs(w.state).length) {
     // A workspace seen for the first time opens on its library.
     await openContent(w, { section: "sources", workspaceId });
   }
@@ -1190,7 +1315,7 @@ async function switchWorkspace(w: ShellWindow, workspaceId: string, newWindow = 
 }
 
 // Persistence: every window's workspace, frame and tabs, saved as view descriptors.
-let windowState: WindowState = { version: 1, windows: [], layouts: {}, recent: [] };
+let windowState: WindowState = { version: 2, windows: [], layouts: {}, recent: [] };
 let windowStore: WindowStateStore;
 /** Window ids, front-most first. */
 const focusOrder: string[] = [];
@@ -1221,26 +1346,25 @@ function savedView(id: string): SavedView | undefined {
     title: v.title,
   };
 }
-function savedLayout(layout: PaneLayout): SavedLayout | undefined {
-  if ("view" in layout) {
-    const view = savedView(layout.view);
-    return view && { view };
-  }
-  const a = savedLayout(layout.a),
-    b = savedLayout(layout.b);
-  return a && b ? { split: layout.split, ratio: layout.ratio, a, b } : (a ?? b);
-}
 function savedTabs(w: ShellWindow): SavedTabs {
-  const tabs: SavedTabs["tabs"] = [];
+  const groups: SavedGroup[] = [];
   let active = 0;
-  for (const tab of w.state.tabs) {
-    const layout = savedLayout(tab.layout);
-    if (!layout) continue;
-    if (tab.id === w.state.activeTabId) active = tabs.length;
-    const kept = layoutViews(tab.layout).filter((id) => savedView(id));
-    tabs.push({ layout, active: Math.max(0, kept.indexOf(tab.activeViewId)), ...(tab.pinned ? { pinned: true } : {}) });
+  for (const group of w.state.groups) {
+    const tabs: SavedTab[] = [];
+    let shown = 0;
+    for (const tab of group.tabs) {
+      const view = savedView(tab.viewId);
+      if (!view) continue;
+      if (tab.id === group.activeTabId) shown = tabs.length;
+      const panel = views.get(tab.viewId)?.panel;
+      const panelView = panel && savedView(panel.viewId);
+      tabs.push({ view, ...(tab.pinned ? { pinned: true } : {}), ...(panel && panelView ? { panel: { view: panelView, ratio: panel.ratio } } : {}) });
+    }
+    if (!tabs.length) continue;
+    if (group.id === w.state.activeGroupId) active = groups.length;
+    groups.push({ tabs, active: shown, size: group.size });
   }
-  return { tabs, active };
+  return { groups, active };
 }
 function windowStateNow(): WindowState {
   const ordered = focusOrder.map((id) => shells.get(id)).filter((w): w is ShellWindow => !!w && !w.closed && !w.window.isDestroyed());
@@ -1394,51 +1518,57 @@ async function restoredView(saved: SavedView): Promise<OwnedView | undefined> {
     return undefined;
   }
 }
-async function restoredLayout(saved: SavedLayout): Promise<PaneLayout | undefined> {
-  if ("view" in saved) {
-    const view = await restoredView(saved.view);
-    return view && { view: view.id };
+/** A saved tab's view, with its reader's panel when it had one open. */
+async function restoredTab(saved: SavedTab): Promise<WorkspaceTab | undefined> {
+  const view = await restoredView(saved.view);
+  if (!view) return undefined;
+  if (saved.panel && view.kind === "pdf") {
+    const panel = await restoredView(saved.panel.view);
+    if (panel) view.panel = { viewId: panel.id, ratio: Math.min(0.8, Math.max(0.2, saved.panel.ratio)) };
   }
-  const [a, b] = await Promise.all([restoredLayout(saved.a), restoredLayout(saved.b)]);
-  return a && b ? { split: saved.split, ratio: Math.min(0.9, Math.max(0.1, saved.ratio)), a, b } : (a ?? b);
+  return { ...singleWorkspaceTab(view.id), ...(saved.pinned === true ? { pinned: true } : {}) };
 }
-/** Adds a saved arrangement's tabs to `w`, skipping what can no longer be opened. */
+/** Adds a saved arrangement's groups to `w` (after any it has), skipping what can no longer be opened. */
 async function restoreTabs(w: ShellWindow, saved: SavedTabs) {
-  const restored = await Promise.all(saved.tabs.map((t) => restoredLayout(t.layout)));
-  let active: string | undefined;
-  restored.forEach((layout, index) => {
-    if (!layout || w.closed) return;
-    const ids = layoutViews(layout);
-    const tab = tabWithLayout({ id: randomUUID(), activeViewId: ids[saved.tabs[index].active], pinned: saved.tabs[index].pinned === true }, layout);
-    w.state.tabs.push(tab);
-    if (index === saved.active || !active) active = tab.id;
+  const restored = await Promise.all(saved.groups.map((g) => Promise.all(g.tabs.map(restoredTab))));
+  if (w.closed) return;
+  const groups: TabGroup[] = [];
+  let focused: string | undefined;
+  restored.forEach((tabs, index) => {
+    const kept = tabs.filter((t): t is WorkspaceTab => !!t);
+    if (!kept.length) return;
+    const group = newTabGroup(kept, saved.groups[index].size);
+    group.activeTabId = (tabs[saved.groups[index].active] ?? kept[0]).id;
+    groups.push(group);
+    if (index === saved.active || !focused) focused = group.id;
   });
-  if (active) w.state.activeTabId = active;
+  if (!groups.length) return;
+  const existing = w.state.groups.filter((g) => g.tabs.length);
+  // Groups already here keep their share; the restored ones share what is left.
+  const scale = existing.length ? 0.5 : 1;
+  w.state = normalizeTabs({
+    groups: [...existing.map((g) => ({ ...g, size: g.size * (1 - scale) })), ...groups.map((g) => ({ ...g, size: g.size * scale }))],
+    activeGroupId: focused!,
+  });
 }
 /** Moves a tab, with its live views, to another window (a new one by default). */
 function moveTab(from: ShellWindow, tabId: string, to?: ShellWindow, at?: { x: number; y: number }) {
-  const tab = from.state.tabs.find((t) => t.id === tabId);
-  if (!tab) return;
-  if (!to && from.state.tabs.length === 1 && liveShells().length === 1) return;
-  const remaining = from.state.tabs.filter((t) => t.id !== tabId);
-  const index = from.state.tabs.findIndex((t) => t.id === tabId);
-  from.state = {
-    tabs: remaining,
-    activeTabId:
-      from.state.activeTabId === tabId ? (remaining[Math.min(index, remaining.length - 1)]?.id ?? null) : from.state.activeTabId,
-  };
+  const found = findTab(from.state, tabId);
+  if (!found) return;
+  if (!to && allTabs(from.state).length === 1 && liveShells().length === 1) return;
+  from.state = closeWorkspaceTab(from.state, tabId);
+  const tab = { ...found.tab };
   if (to) {
-    to.state = { tabs: [...to.state.tabs, tab], activeTabId: tab.id };
+    to.state = addWorkspaceTab(to.state, tab);
     layout(to);
     to.window.focus();
   } else {
     const opened = createShell({ tabs: [tab], workspaceId: from.workspaceId });
     if (at) opened.window.setPosition(Math.round(at.x), Math.round(at.y));
   }
-  if (!from.state.tabs.length) from.window.close();
+  if (!allTabs(from.state).length) from.window.close();
   else layout(from);
 }
-/** A source's page, opened on its own or (with `read`) beside its PDF in one split tab. */
 /** Passages sent from a PDF selection to a source's note, until its page takes them. */
 const pendingAppends = new Map<string, { text: string; page: number; color?: string }[]>();
 async function openSourcePage(
@@ -1465,63 +1595,45 @@ async function openSourcePage(
     return;
   }
   await sourceOpen({ ...p.pdf, workspaceId: p.workspaceId }, undefined, undefined, w);
-  const pdfId = `pdf:${p.workspaceId}:${p.pdf.documentHash}`;
-  const host = shellOfView(pdfId) ?? w;
-  const pdfTab = host.state.tabs.find((t) => t.viewIds.includes(pdfId));
-  if (!pdfTab || pdfTab.viewIds.includes(page.id)) {
-    focus(pdfId);
-    return;
-  }
-  // The page leaves wherever it was and joins the reader: reader left, page right.
-  const owner = shellOfView(page.id);
-  if (owner) {
-    owner.state = closeWorkspaceView(owner.state, page.id);
-    if (owner !== host) layout(owner);
-  }
-  const tab = host.state.tabs.find((t) => t.viewIds.includes(pdfId))!;
-  if (tab.viewIds.length === 1) {
-    host.state = {
-      tabs: host.state.tabs.map((t) =>
-        t.id === tab.id
-          ? tabWithLayout({ id: t.id, activeViewId: pdfId }, { split: "row", ratio: 0.6, a: { view: pdfId }, b: { view: page!.id } })
-          : t,
-      ),
-      activeTabId: tab.id,
-    };
-    layout(host);
-  } else add(page, host);
+  const pdf = views.get(`pdf:${p.workspaceId}:${p.pdf.documentHash}`);
+  // The page joins the reader's tab as its panel, leaving any tab it had.
+  if (pdf && shellOfView(pdf.id)) dockPanel(pdf, page);
 }
 function windowLabel(w: ShellWindow) {
   const name = knownWorkspaces.find((k) => k.id === w.workspaceId)?.name ?? "Key";
-  const titles = w.state.tabs.map((t) => views.get(t.activeViewId)?.title ?? "Key");
+  const titles = allTabs(w.state).map((t) => views.get(t.viewId)?.title ?? "Key");
   return `${name}: ${titles.slice(0, 3).join(", ")}${titles.length > 3 ? "…" : ""}`;
 }
-/** Runs a pane or tab command on the focused window's active tab. */
+/** Runs a tab command on the focused window's focused group's active tab. */
 function onActiveTab(run: (w: ShellWindow, tabId: string, viewId: string) => void) {
   return () => {
     const w = focusedShell();
     const tab = w && activeWorkspaceTab(w.state);
-    if (tab) run(w, tab.id, tab.activeViewId);
+    if (tab) run(w, tab.id, activeViewId(w) ?? tab.viewId);
   };
 }
+/** Cmd-1…9: a tab of the focused group (negative: its last). */
 function selectTab(index: number) {
   const w = focusedShell();
-  const tab = index < 0 ? w?.state.tabs.at(-1) : w?.state.tabs[index];
+  const tabs = w ? activeGroup(w.state).tabs : [];
+  const tab = index < 0 ? tabs.at(-1) : tabs[index];
   if (!w || !tab) return;
   w.state = activateWorkspaceTab(w.state, tab.id);
   layout(w);
 }
+/** Previous / next tab of the focused group. */
 function stepTab(delta: number) {
   const w = focusedShell();
-  if (!w?.state.tabs.length) return;
-  const at = w.state.tabs.findIndex((t) => t.id === w.state.activeTabId);
-  selectTab((at + delta + w.state.tabs.length) % w.state.tabs.length);
+  const group = w && activeGroup(w.state);
+  if (!group?.tabs.length) return;
+  const at = group.tabs.findIndex((t) => t.id === group.activeTabId);
+  selectTab((at + delta + group.tabs.length) % group.tabs.length);
 }
 /** The base menu, or the focused Office editor's own menu while one has focus. */
 function refreshMenu() {
   const w = focusedShell();
-  const active = w && views.get(activeWorkspaceTab(w.state)?.activeViewId ?? "");
-  if (active?.view && active.kind !== "pdf" && active.kind !== "home") activateOfficeView(active.kind, active.view);
+  const active = w && views.get(activeWorkspaceTab(w.state)?.viewId ?? "");
+  if (active?.view && isOffice(active.kind)) activateOfficeView(active.kind, active.view);
   else baseMenu();
 }
 function baseMenu() {
@@ -1585,7 +1697,7 @@ function baseMenu() {
             accelerator: "CmdOrCtrl+S",
             click: () => {
               const w = focusedShell();
-              const id = activeWorkspaceTab(w.state)?.activeViewId;
+              const id = activeViewId(w);
               if (views.get(id ?? "")?.content?.section === "record") emitTo(w, "save-content", id);
             },
           },
@@ -1594,14 +1706,21 @@ function baseMenu() {
             label: "Move Tab to New Window",
             click: () => {
               const w = focusedShell();
-              if (w.state.activeTabId) moveTab(w, w.state.activeTabId);
+              const tab = activeWorkspaceTab(w.state);
+              if (tab) moveTab(w, tab.id);
             },
           },
           { type: "separator" },
-          // Like a terminal's split panes: Cmd-W closes the focused pane, then the tab.
-          pane("Close", "CmdOrCtrl+W", (w, _tab, viewId) => void closePane(w, viewId)),
-          pane("Close Tab", "CmdOrCtrl+Alt+W", (w, tabId) => void closeTab(w, tabId)),
+          pane("Close Tab", "CmdOrCtrl+W", (w, tabId) => void closeTab(w, tabId)),
           pane("Close Other Tabs", undefined, (w, tabId) => void closeTabs(w, tabsToClose(w.state, tabId, "others"))),
+          {
+            label: "Close Group",
+            accelerator: "CmdOrCtrl+Alt+W",
+            click: () => {
+              const w = focusedShell();
+              if (w) void closeTabs(w, activeGroup(w.state).tabs.map((t) => t.id));
+            },
+          },
           { label: "Close Window", accelerator: "CmdOrCtrl+Shift+W", click: () => focusedShell()?.window.close() },
         ],
       },
@@ -1609,55 +1728,42 @@ function baseMenu() {
       {
         label: "View",
         submenu: [
-          pane("Split Right", "CmdOrCtrl+\\", (w) => splitPane(w, "right")),
-          pane("Split Down", "CmdOrCtrl+Shift+\\", (w) => splitPane(w, "bottom")),
+          // Editor groups side by side, like VS Code's.
+          pane("Split Right", "CmdOrCtrl+\\", (w, tabId) => splitRight(w, tabId)),
           {
-            label: "Focus Pane",
+            label: "Focus Group",
             submenu: (
               [
-                ["Left", "Left", "left"],
-                ["Right", "Right", "right"],
-                ["Above", "Up", "top"],
-                ["Below", "Down", "bottom"],
+                ["Left", "left"],
+                ["Right", "right"],
               ] as const
-            ).map(([label, key, edge]) => pane(label, `CmdOrCtrl+Alt+${key}`, (w) => focusPane(w, edge))),
+            ).map(([label, side]) => ({ label, accelerator: `CmdOrCtrl+Alt+${label}`, click: () => focusedShell() && focusGroupBeside(focusedShell(), side) })),
           },
           {
-            label: "Move Pane",
+            label: "Move Tab to Group",
             submenu: (
               [
-                ["Left", "Left", "left"],
-                ["Right", "Right", "right"],
-                ["Up", "Up", "top"],
-                ["Down", "Down", "bottom"],
+                ["Left", "left"],
+                ["Right", "right"],
               ] as const
-            ).map(([label, key, edge]) => pane(label, `CmdOrCtrl+Alt+Shift+${key}`, (w, _tab, viewId) => movePane(w, viewId, edge))),
+            ).map(([label, side]) => pane(label, `CmdOrCtrl+Alt+Shift+${label}`, (w) => moveToGroup(w, side))),
           },
-          pane("Move Pane to New Tab", undefined, (w, tabId, viewId) => {
-            const index = w.state.tabs.findIndex((t) => t.id === tabId);
-            w.state = applyWorkspaceViewDrop(w.state, { kind: "detach", viewId, index: index + 1 });
-            layout(w);
-          }),
-          pane("Close Pane", undefined, (w, _tab, viewId) => void closePane(w, viewId)),
-          pane("Swap Panes", undefined, (w, tabId) => {
-            w.state = swapWorkspaceSplit(w.state, tabId);
-            layout(w);
-          }),
-          pane("Separate All Panes", undefined, (w, tabId) => {
-            w.state = separateWorkspaceTab(w.state, tabId);
-            layout(w);
-          }),
-          pane("Reset Pane Sizes", undefined, (w, tabId) => {
-            w.state = resetWorkspaceSplits(w.state, tabId);
-            layout(w);
-          }),
+          {
+            label: "Equalize Group Widths",
+            click: () => {
+              const w = focusedShell();
+              if (!w) return;
+              w.state = equalizeGroups(w.state);
+              layout(w);
+            },
+          },
           { type: "separator" },
           pane("Back", "CmdOrCtrl+[", (w, _tab, viewId) => stepHistory(w, viewId, -1)),
           pane("Forward", "CmdOrCtrl+]", (w, _tab, viewId) => stepHistory(w, viewId, 1)),
           { type: "separator" },
           { label: "Show Previous Tab", accelerator: "CmdOrCtrl+Shift+[", click: () => stepTab(-1) },
           { label: "Show Next Tab", accelerator: "CmdOrCtrl+Shift+]", click: () => stepTab(1) },
-          pane("Pin Tab", undefined, (w, tabId) => pinTab(w, tabId, !w.state.tabs.find((t) => t.id === tabId)?.pinned)),
+          pane("Pin Tab", undefined, (w, tabId) => pinTab(w, tabId, !findTab(w.state, tabId)?.tab.pinned)),
           {
             label: "Go to Tab",
             submenu: [
@@ -1793,14 +1899,15 @@ else
         openPath,
         closeActive: () => {
           const w = focusedShell();
-          if (w.state.activeTabId) void closeTab(w, w.state.activeTabId);
+          const tab = activeWorkspaceTab(w.state);
+          if (tab) void closeTab(w, tab.id);
         },
         listTabs: () =>
           [...views.values()].map((v) => ({
             id: v.id,
             title: v.title,
             kind: v.kind,
-            active: v.id === activeWorkspaceTab(focusedShell().state)?.activeViewId,
+            active: v.id === activeWorkspaceTab(focusedShell().state)?.viewId,
           })),
         focus,
         fileChanged: (wc, path) => {
@@ -1981,9 +2088,7 @@ else
           return;
         }
         const w = shellOfView(v.id) ?? focusedShell();
-        const tab = w.state.tabs.find((t) =>
-          t.viewIds.some((id) => views.get(id)?.content?.section === "sources"),
-        );
+        const tab = allTabs(w.state).find((t) => views.get(t.viewId)?.content?.section === "sources");
         if (tab) {
           w.state = activateWorkspaceTab(w.state, tab.id);
           layout(w);
@@ -2077,16 +2182,14 @@ else
         if (!hit) return;
         return sourceOpen(hit, hit, v.searchResults, shellOfView(v.id));
       });
-      // The reader's Notes button: show or hide the source's page beside the PDF.
+      // The reader's "Details & notes" button: show or hide the source's page as the panel
+      // beside the PDF, in the same tab. A page open as a tab of its own comes back into it.
       ipcMain.handle("key:reader-notes", async (event) => {
         const v = bound(event.sender.id);
         if (v?.kind !== "pdf" || !v.workspaceId) throw Error("Not a PDF reader");
         const w = shellOfView(v.id) ?? focusedShell();
-        const tab = w.state.tabs.find((t) => t.viewIds.includes(v.id));
-        const besides = tab?.viewIds.find((id) => id !== v.id);
-        if (tab && besides && views.get(besides)?.content?.section === "source") {
-          w.state = separateWorkspaceTab(w.state, tab.id);
-          w.state = activateWorkspaceTab(w.state, w.state.tabs.find((t) => t.viewIds.includes(v.id))!.id);
+        if (v.panel) {
+          closePanel(v);
           layout(w);
           return false;
         }
@@ -2117,13 +2220,23 @@ else
         queued.push({ text: String(passage.text), page: Number(passage.page) || 0, color: passage.color });
         pendingAppends.set(source.id, queued);
         const w = shellOfView(v.id) ?? focusedShell();
-        await openSourcePage(w, {
-          workspaceId: v.workspaceId,
-          sourceId: source.id,
-          title: source.title,
-          read: true,
-          pdf: { documentHash: hash, documentId: hash, title: v.title, workspaceId: v.workspaceId },
-        });
+        // A page shown in another group already sits beside the reader: it is brought
+        // forward there. Otherwise it docks as the reader's panel.
+        const key = JSON.stringify(["source", v.workspaceId, null, source.id]);
+        const pageView = [...views.values()].find((x) => x.contentKey === key);
+        const pageTab = pageView && findViewTab(w.state, pageView.id);
+        const readerTab = findViewTab(w.state, v.id);
+        if (pageTab && readerTab && pageTab.group.id !== readerTab.group.id) {
+          w.state = { ...activateWorkspaceTab(w.state, pageTab.tab.id), activeGroupId: w.state.activeGroupId };
+          layout(w);
+        } else
+          await openSourcePage(w, {
+            workspaceId: v.workspaceId,
+            sourceId: source.id,
+            title: source.title,
+            read: true,
+            pdf: { documentHash: hash, documentId: hash, title: v.title, workspaceId: v.workspaceId },
+          });
         emit("note-append", { sourceId: source.id });
       });
       ipcMain.handle("key:capture-save", async (event, text: unknown) => {
@@ -2191,13 +2304,11 @@ else
       ipcMain.handle("key:reader-ready", (event) => {
         const v = bound(event.sender.id);
         if (v?.kind !== "pdf") throw Error("Not a PDF reader");
-        const tab = shellOfView(v.id)?.state.tabs.find((t) => t.viewIds.includes(v.id));
-        const besides = tab?.viewIds.find((id) => id !== v.id);
         const focus = v.pendingFocus;
         v.pendingFocus = undefined;
         return {
           focus,
-          notesOpen: !!besides && views.get(besides)?.content?.section === "source",
+          notesOpen: !!v.panel,
           source: v.source,
           viewState: v.viewState,
           searchTarget: v.searchTarget,
@@ -2221,7 +2332,7 @@ else
             w.overlayCaptureKey = "";
             const frames = await captureOverlayFrames(w);
             if (w.globalOverlay === p.id) {
-              w.overlayCaptureKey = JSON.stringify((activeWorkspaceTab(w.state)?.viewIds || []).map((id) => [id, views.get(id)?.view?.getBounds()]));
+              w.overlayCaptureKey = overlayKey(w);
               layout(w);
             }
             return { frames };
@@ -2297,16 +2408,17 @@ else
             if (session) focus(session.sourceViewId);
             return snapshot(w);
           }
+          // A new Home tab, in the given group or the focused one.
           case "new":
-            home(w);
+            home(w, typeof p.groupId === "string" ? p.groupId : undefined);
             break;
           case "quick-capture":
             quickCapture();
             return snapshot(w);
           case "open-home": {
             const existing =
-              w.state.tabs.flatMap((t) => t.viewIds).find((id) => views.get(id)?.content?.section === "home") ??
-              [...views.values()].find((v) => v.content?.section === "home")?.id;
+              allTabs(w.state).find((t) => views.get(t.viewId)?.content?.section === "home")?.viewId ??
+              [...views.values()].find((v) => v.content?.section === "home" && shellOfView(v.id))?.id;
             if (existing) focus(existing); else home(w);
             break;
           }
@@ -2314,7 +2426,7 @@ else
             await withPlacement(p, () => openContent(w, p));
             break;
           case "history":
-            stepHistory(w, String(p.viewId ?? activeWorkspaceTab(w.state)?.activeViewId ?? ""), Number(p.step) < 0 ? -1 : 1);
+            stepHistory(w, String(p.viewId ?? activeViewId(w) ?? ""), Number(p.step) < 0 ? -1 : 1);
             return snapshot(w);
           // A note's tab follows its title as it is edited.
           case "content-title": {
@@ -2383,10 +2495,51 @@ else
             w.inspectorWidth = Math.max(0, Math.min(480, Number(p.width) || 0));
             placeViews(w);
             return snapshot(w);
-          case "drop-view":
-            w.state = applyWorkspaceViewDrop(w.state, p);
+          // A tab dropped from a drag: into a group's strip at `index`, or into a new group
+          // on a group's `side` (see TabBar).
+          case "drop-tab": {
+            const tabId = String(p.tabId),
+              groupId = String(p.groupId);
+            if (p.kind === "move") w.state = moveWorkspaceTab(w.state, tabId, groupId, Number.isFinite(Number(p.index)) ? Number(p.index) : undefined);
+            else if (p.kind === "split" && (p.side === "left" || p.side === "right")) w.state = splitWorkspaceTab(w.state, tabId, groupId, p.side);
             layout(w);
+            focusShown(w);
             return snapshot(w);
+          }
+          case "split-right":
+            splitRight(w, typeof p.tabId === "string" ? p.tabId : undefined);
+            return snapshot(w);
+          case "focus-group":
+            w.state = focusGroup(w.state, String(p.groupId));
+            layout(w);
+            if (p.keyboard) focusShown(w);
+            return snapshot(w);
+          case "resize-groups":
+            w.state = setGroupSizes(w.state, Array.isArray(p.sizes) ? p.sizes.map(Number) : []);
+            placeViews(w);
+            if (p.done) tabsChanged(w);
+            return;
+          case "equalize-groups":
+            w.state = equalizeGroups(w.state);
+            break;
+          // A reader's panel: resized, popped out into a tab of its own, or closed.
+          case "panel-resize": {
+            const pdf = views.get(tabViewId(String(p.viewId)));
+            if (pdf?.panel && Number.isFinite(Number(p.ratio))) pdf.panel.ratio = Math.min(0.8, Math.max(0.2, Number(p.ratio)));
+            placeViews(w);
+            if (p.done) tabsChanged(w);
+            return;
+          }
+          case "panel-pop-out": {
+            const pdf = views.get(tabViewId(String(p.viewId)));
+            if (pdf) popOutPanel(w, pdf);
+            return snapshot(w);
+          }
+          case "panel-close": {
+            const pdf = views.get(tabViewId(String(p.viewId)));
+            if (pdf) closePanel(pdf);
+            break;
+          }
           case "reorder":
             w.state = reorderWorkspaceTab(w.state, p.tabId, Number(p.index));
             tabsChanged(w);
@@ -2395,14 +2548,14 @@ else
             for (const record of views.values())
               record.view?.webContents.send("app:chrome-pressed");
             return snapshot(w);
-          case "tab-menu":
+          // The strip's tab list: a group's tabs.
+          case "tab-menu": {
+            const group = w.state.groups.find((g) => g.id === p.groupId) ?? activeGroup(w.state);
             Menu.buildFromTemplate(
-              w.state.tabs.map((tab) => ({
-                label: tab.viewIds
-                  .map((id) => views.get(id)?.title ?? "Key")
-                  .join(" / "),
+              group.tabs.map((tab) => ({
+                label: views.get(tab.viewId)?.title ?? "Key",
                 type: "radio" as const,
-                checked: tab.id === w.state.activeTabId,
+                checked: tab.id === group.activeTabId,
                 click: () => {
                   w.state = activateWorkspaceTab(w.state, tab.id);
                   layout(w);
@@ -2410,6 +2563,7 @@ else
               })),
             ).popup({ window: w.window, x: Math.round(p.x), y: Math.round(p.y) });
             return snapshot(w);
+          }
           case "take-note-appends": {
             const queued = pendingAppends.get(String(p.sourceId)) ?? [];
             pendingAppends.delete(String(p.sourceId));
@@ -2430,7 +2584,7 @@ else
             return snapshot(w);
           // Multiple windows: move a tab out to a new window or into another one.
           case "pop-out":
-            moveTab(w, String(p.tabId ?? w.state.activeTabId));
+            moveTab(w, String(p.tabId ?? activeWorkspaceTab(w.state)?.id));
             return snapshot(w);
           case "move-to-window": {
             const target = liveShells().find((s) => s.id === p.windowId);
@@ -2439,27 +2593,27 @@ else
           }
           case "tab-context-menu": {
             const tabId = String(p.tabId);
-            const tab = w.state.tabs.find((t) => t.id === tabId);
-            if (!tab) return snapshot(w);
+            const found = findTab(w.state, tabId);
+            if (!found) return snapshot(w);
+            const { tab, group, index } = found;
             const others = liveShells().filter((s) => s !== w);
-            const title = (id: string) => views.get(id)?.title ?? "Key";
-            const index = w.state.tabs.indexOf(tab);
-            const split = tab.viewIds.length > 1;
+            const full = w.state.groups.length >= MAX_GROUPS;
+            const left = neighbourGroup(w.state, group.id, "left"),
+              right = neighbourGroup(w.state, group.id, "right");
+            const moveTo = (target: TabGroup) => () => {
+              w.state = moveWorkspaceTab(w.state, tabId, target.id);
+              layout(w);
+            };
             Menu.buildFromTemplate([
-              { label: "New Tab to the Right", click: () => { home(w); w.state = reorderWorkspaceTab(w.state, w.state.activeTabId!, index + 1); tabsChanged(w); } },
+              { label: "New Tab to the Right", click: () => { w.state = addWorkspaceTab(w.state, singleWorkspaceTab(homeView().id), { groupId: group.id, index: index + 1 }); layout(w); } },
               { type: "separator" as const },
               { label: tab.pinned ? "Unpin Tab" : "Pin Tab", click: () => pinTab(w, tabId, !tab.pinned) },
-              ...(split
-                ? [
-                    { label: "Separate Panes", click: () => { w.state = separateWorkspaceTab(w.state, tabId); layout(w); } },
-                    {
-                      label: "Close Pane",
-                      submenu: tab.viewIds.map((id) => ({ label: title(id), click: () => void closePane(w, id) })),
-                    },
-                  ]
-                : []),
               { type: "separator" as const },
-              { label: "Move to New Window", enabled: w.state.tabs.length > 1 || others.length > 0, click: () => moveTab(w, tabId) },
+              { label: "Split Right", enabled: !full, click: () => splitRight(w, tabId) },
+              ...(left ? [{ label: "Move to Left Group", click: moveTo(left) }] : []),
+              ...(right ? [{ label: "Move to Right Group", click: moveTo(right) }] : []),
+              { type: "separator" as const },
+              { label: "Move to New Window", enabled: allTabs(w.state).length > 1 || others.length > 0, click: () => moveTab(w, tabId) },
               ...(others.length
                 ? [
                     {
@@ -2487,65 +2641,15 @@ else
           case "close":
             await closeTab(w, p.tabId);
             break;
-          case "split-menu": {
-            const sourceId = w.state.activeTabId;
-            if ((activeWorkspaceTab(w.state)?.viewIds.length ?? MAX_PANES) >= MAX_PANES)
-              return snapshot(w);
-            Menu.buildFromTemplate(
-              w.state.tabs
-                .filter((t) => t.id !== sourceId && t.viewIds.length === 1)
-                .map((t) => ({
-                  label: views.get(t.activeViewId)?.title || "Tab",
-                  click: () => {
-                    w.state = splitWithTab(w.state, sourceId!, t.id);
-                    layout(w);
-                  },
-                })),
-            ).popup({ window: w.window });
-            return snapshot(w);
-          }
+          // The tab showing `viewId` moves beside the focused group (a group of its own on `edge`).
           case "split": {
-            const target = w.state.tabs.find(
-              (t) =>
-                t.id !== w.state.activeTabId &&
-                t.viewIds.length === 1 &&
-                (p.viewId === activeWorkspaceTab(w.state)?.activeViewId ||
-                  t.viewIds.includes(p.viewId)),
-            );
-            const edge = ["left", "right", "top", "bottom"].includes(p.edge) ? p.edge : "right";
-            if (target) w.state = splitWithTab(w.state, w.state.activeTabId!, target.id, edge);
+            const found = findViewTab(w.state, String(p.viewId));
+            if (found) w.state = splitWorkspaceTab(w.state, found.tab.id, activeGroup(w.state).id, p.edge === "left" ? "left" : "right");
             break;
           }
-          case "separate":
-            w.state = separateWorkspaceTab(w.state, w.state.activeTabId!);
-            break;
-          case "swap":
-            w.state = swapWorkspaceSplit(w.state, w.state.activeTabId!);
-            break;
-          case "resize-split":
-            w.state = setWorkspaceSplitRatio(
-              w.state,
-              w.state.activeTabId!,
-              Number(p.ratio),
-              typeof p.path === "string" ? p.path : "",
-            );
-            break;
-          case "reset-splits":
-            w.state = resetWorkspaceSplits(w.state, w.state.activeTabId!);
-            break;
-          // Panes: a new Home pane beside the focused one, moving focus, closing one pane.
-          case "split-pane":
-            if (["left", "right", "top", "bottom"].includes(p.edge)) splitPane(w, p.edge);
-            break;
-          case "focus-pane":
-            if (["left", "right", "top", "bottom"].includes(p.direction)) focusPane(w, p.direction);
-            return snapshot(w);
-          case "close-pane":
-            await closePane(w, String(p.viewId ?? activeWorkspaceTab(w.state)?.activeViewId));
-            return snapshot(w);
-          case "move-pane":
-            if (["left", "right", "top", "bottom"].includes(p.direction))
-              movePane(w, String(p.viewId ?? activeWorkspaceTab(w.state)?.activeViewId), p.direction);
+          // Closes the tab showing `viewId`, or the panel when it is one.
+          case "close-view":
+            await closeView(w, String(p.viewId ?? activeViewId(w)));
             return snapshot(w);
           case "pin":
             pinTab(w, String(p.tabId), Boolean(p.pinned));
@@ -2557,18 +2661,12 @@ else
           case "switch-workspace":
             await switchWorkspace(w, String(p.workspaceId), Boolean(p.newWindow));
             break;
-          // A pane or tab dragged out of the window opens in a new window near the pointer.
+          // A tab dragged out of the window opens in a new window near the pointer.
           case "tear-off": {
-            const tab = w.state.tabs.find((t) => t.viewIds.includes(String(p.viewId)) || t.id === p.tabId);
-            if (!tab) break;
-            let tabId = tab.id;
-            if (p.viewId && tab.viewIds.length > 1) {
-              w.state = applyWorkspaceViewDrop(w.state, { kind: "detach", viewId: String(p.viewId), index: w.state.tabs.length });
-              tabId = w.state.tabs.find((t) => t.viewIds.length === 1 && t.viewIds[0] === p.viewId)!.id;
-            }
-            if (w.state.tabs.length === 1 && liveShells().length === 1 && tab.viewIds.length === 1) break;
+            const found = findTab(w.state, String(p.tabId));
+            if (!found || (allTabs(w.state).length === 1 && liveShells().length === 1)) break;
             const at = screen.getCursorScreenPoint();
-            moveTab(w, tabId, undefined, { x: at.x - 120, y: at.y - 20 });
+            moveTab(w, found.tab.id, undefined, { x: at.x - 120, y: at.y - 20 });
             return snapshot(w);
           }
           case "create-office":
@@ -2617,7 +2715,7 @@ else
       });
       // Tabs exist before the page loads, so nothing opened early lands in front of them.
       if (restoring[0]) await restoreTabs(first, restoring[0].tabs);
-      if (!first.state.tabs.length) home(first);
+      if (!allTabs(first.state).length) home(first);
       await loadShell(first);
       layout(first);
       for (const saved of restoring.slice(1)) createShell({ saved });

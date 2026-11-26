@@ -55,11 +55,13 @@ This extends the existing two-pane split tabs instead of replacing them. All exi
 
 ## Decision
 
-**B + D: each window is bound to one workspace and switches in place, and each tab holds a freely nested split layout.**
+**B + C: each window is bound to one workspace and switches in place, and its content area holds VS Code-style editor groups side by side. A tab always shows exactly one view.**
 
-VS Code's model is good for code, where one file is edited at a time. Key's unit of work is a reader beside its notes, which is an arrangement, so tabs should hold arrangements. Option D gives arbitrary nested splits, drag-to-split from any edge, and moving panes between tabs and windows. It keeps the macOS title-bar strip and the native view geometry we already verify, and it does not add a tab strip to every pane.
+The first version chose D (tabs holding nested split layouts). In use, split tabs made a tab mean two different things, and the reader beside its notes (the case D was meant for) is better served by a panel inside the reader's own tab. So D was replaced:
 
-The one thing D lacks is a stack of tabs inside a single pane, as VS Code groups have. In practice that is covered by opening into a Home pane (below) and by Cmd-1…9. If people ask for it, it can be added later as "pane history".
+- Split tabs, pane headers, swap and the split badge are gone. A tab is one view.
+- A reader's details and notes are a **panel in the reader's tab**, not a second view in the tab model (see below).
+- Side-by-side work uses **editor groups** (C), horizontally only: each group has its own strip and active tab.
 
 ## Behaviour
 
@@ -71,67 +73,51 @@ The one thing D lacks is a stack of tabs inside a single pane, as VS Code groups
 - Cmd-click or Option-click a workspace in the switcher, use its "open in new window" button, or use **File › Open Workspace in New Window** to open it in a separate window.
 - **File › New Window** (Cmd-Shift-N) opens a window on the current workspace. Popping a tab out keeps its workspace, so several windows can share one workspace. Each window still shows only one.
 
-### Panes
+### Editor groups
 
-- **Split.** Drop a tab or pane on the left, right, top or bottom edge of a pane. The edge band is a quarter of the pane, at most 80 px. A translucent preview shows the half the pane will take. Pressing a tab shows it, so a tab dragged below the strip brings back the tab it was dragged from, which is the one you are dropping into. While a drag is over the content, native views are swapped for still frames so the preview can be drawn over them. **View › Split Right** (Cmd-\\) and **Split Down** (Cmd-Shift-\\) add a Home pane beside the focused one.
-- **Home panes are launchers.** Anything opened while a Home pane in a split has focus replaces that Home pane in place, like a browser's new-tab page. Otherwise it opens in a new tab.
-- **Swap.** Drop a tab onto the centre of a pane, or onto a pane chip in the strip.
-- **Separate.** Drag a pane out of its group, use Alt-Shift-Down on its chip, use **View › Move Pane to New Tab**, or use the Separate button, which separates every pane.
-- **Resize.** Each divider can be dragged. Arrow keys move a focused divider and double-click resets it to half. **View › Reset Pane Sizes** resets every divider in the tab.
-- **Focus.** Use Cmd-Option-arrows to move to a neighbouring pane, chosen by position. Clicking a pane also focuses it.
-- **Close.** Cmd-W closes the focused pane, or the tab if it has a single pane. **File › Close Tab** (Cmd-Option-W) closes the whole tab, and **Close Window** is Cmd-Shift-W.
-- **Tabs.** Cmd-1…8 selects a tab, Cmd-9 selects the last tab, and Cmd-Shift-[ and ] select the previous and next tabs.
-- **Office editors.** While a Docs, Sheets or Slides editor has focus, it installs its own menu bar, so these View shortcuts are not available until focus leaves it.
-- **Windows.** Moving a tab to another window works from the tab context menu and **Move Tab to New Window**. Dragging a tab or pane out of the window tears it off into a new window.
-- A tab holds at most 8 panes. Each split ratio is kept between 10 % and 90 %.
+- **Split Right** (Cmd-\\, the strip's split button, the tab context menu) moves the tab into a new group to its group's right. A group's only tab stays, and the new group opens on a Home launcher instead: what it opens takes its place.
+- **Drag** a tab to another group's strip to move it there (an insertion marker shows where), onto another group's content to move it into that group, or to the left or right third (at most 140 px) of any group's content to open a new group on that side. A translucent preview shows where it lands; native views are swapped for still frames meanwhile. Dragged out of the window, a tab tears off into a new window.
+- **Sash.** Drag the sash between two groups to resize those two (never below 240 px); arrow keys move a focused sash; double-click (or **View › Equalize Group Widths**) makes all groups the same width. Native views follow once per frame while dragging.
+- **Focus.** The focused group gets new tabs, Cmd-1…9, Cmd-Shift-[ / ] and Cmd-W. Clicking a group's strip or content focuses it; Cmd-Option-Left/Right moves focus between groups and Cmd-Option-Shift-Left/Right moves the tab into the neighbouring group (or a new one at the edge). Only the focused group's active tab is drawn at full strength.
+- **Close.** Cmd-W closes the focused tab; closing a group's last tab closes the group and gives its width to its neighbour. **File › Close Group** (Cmd-Option-W) closes all of a group's tabs.
+- **Open beside** (Option-click a link, ⌥↩) opens in the group to the right of the current one, creating it if needed. Search results open beside the search the same way.
+- An already open document is focused in its group (and window) instead of being opened twice. Pinning, reordering, Close Other Tabs and Close Tabs to the Right act within a group.
+- At most 6 groups.
+
+### A reader's details and notes
+
+- The reader's **Details & notes** button shows the source's page as a panel to the right of the PDF, inside the same tab. The sash between them resizes it (20–80 %, double-click resets).
+- The panel's **Open in its own tab** button moves the page into a tab right after the reader's; **Details & notes** (or the page's **Read** button) docks it back, closing that tab. **Add to note** docks it too, unless the page is already visible in another group.
+- The panel closes with the reader, moves with it between groups and windows, and is restored with it.
 
 ### Persistence
 
 `window-state.json` in the user-data folder stores:
 
-- each window's workspace, frame, sidebar width and tabs;
+- each window's workspace, frame, sidebar width and groups;
 - the arrangement last left behind in each workspace;
 - a list of recently used workspaces, shown in the File menu.
 
-Each tab is saved as a layout tree of descriptors: Home; a content view (section, workspace, project, note, source or record id, and title); a PDF (workspace and content hash); or an Office file (kind and path). Unsaved new records and untitled Office documents are not saved.
+Each group is saved with its share of the width, its active tab and its tabs; each tab as a view descriptor (Home; a content view; a PDF with its panel and the panel's share; or an Office file). Version 1 files, whose tabs held split layouts, are read too: each split tab comes back as its views, each a tab of its own, in its place.
 
-The file is written shortly after every change and once more when quitting, before any window starts closing its tabs. At launch every saved window is restored on its workspace. A saved frame that no longer fits a connected display keeps its size, and the window opens at the default position. Views that can no longer be resolved, such as deleted notes, are dropped. A window that ends up empty gets Home. `KEY_NO_WINDOW_RESTORE=1` starts without restoring, for tests that reuse a profile.
+The file is written shortly after every change and once more when quitting, before any window starts closing its tabs. At launch every saved window is restored on its workspace. Views that can no longer be resolved, such as deleted notes, are dropped. A window that ends up empty gets Home. `KEY_NO_WINDOW_RESTORE=1` starts without restoring, for tests that reuse a profile.
 
 ## Implementation map
 
-- `src/shared/tab-model.ts`:
-  - The `PaneLayout` binary tree on each `WorkspaceTab`. `viewIds` lists its leaves in reading order, and `splitRatio` mirrors the root split.
-  - Pure operations: split at an edge, remove, swap, set a ratio by path, find a neighbour, and compute pane and divider rectangles.
-  - The main process (for native bounds) and the renderer (for DOM panes, dividers and drop zones) use the same `layoutPanes()`, so the two always agree to the pixel.
-- `src/main/window-state.ts`: reads, validates and atomically writes the saved state, and clamps frames to displays.
+- `src/shared/tab-model.ts`: `WorkspaceTabsState` (`groups`, `activeGroupId`; each group has `tabs`, `activeTabId`, `size`), pure operations (add, close, move, split into a new group, reorder, pin, sizes), and the geometry that main (native bounds) and the renderer (strips, DOM views, sashes, drop zones) share: `layoutGroups()`, `groupBody()`, `layoutPanel()`, `dragGroupSash()`.
+- `src/main/window-state.ts`: reads (and migrates), validates and atomically writes the saved state.
 - `src/main/index.ts`:
-  - `ShellWindow.workspaceId`, `switchWorkspace()`, and serialising and restoring tabs.
-  - Pane actions, plus the File and View menus with their shortcuts.
-  - The window title, and recently used workspaces.
-- `src/renderer/App.tsx`:
-  - The sidebar's workspace comes from the window.
-  - DOM panes and dividers are placed from the layout.
-  - Drag targets in the content area are worked out here, with captured frames over native views while dragging.
-- `src/renderer/TabBar.tsx`: pane chips for any number of panes, dragging into the content area, and tearing a tab off into a new window.
-- `src/renderer/WorkspaceSwitcher.tsx`: open in a new window, and marks workspaces already open in another window.
+  - `nativeKinds` / `registerNativeKind()`: how each native tab kind (PDF, Office editors) creates and disposes its `WebContentsView`. Kinds not registered (`"home"`) are drawn by the shell renderer from `content`.
+  - `add(record, w, { groupId?, index? })` opens any view as a tab (focused group by default); `focus(viewId)` shows an open one; `placeViews()` positions native views per group.
+  - The reader panel: `OwnedView.panel`, `dockPanel()`, `closePanel()`, `popOutPanel()`.
+  - Tab actions (`key:tab-action`): `split-right`, `drop-tab`, `focus-group`, `resize-groups`, `equalize-groups`, `panel-resize`, `panel-pop-out`, `panel-close`, plus the existing ones; the File and View menus.
+- `src/renderer/App.tsx`: one strip per group, sashes, DOM views (and panels) placed per group, drop location.
+- `src/renderer/TabBar.tsx`: one group's strip: reorder, drag to other groups or out of the window.
 
 ## Verification
 
-- `smoke-tabs.cjs`:
-  - nested splits: three panes, horizontal and vertical;
-  - native bounds against every divider;
-  - resizing a nested divider, with the mouse and the keyboard;
-  - moving focus between panes by direction;
-  - a Home pane replaced by what it opens;
-  - Cmd-W closing one pane;
-  - the menu shortcuts.
-- `smoke-tab-drops.cjs`:
-  - dropping a tab on a reader's right edge splits beside it;
-  - the preview is drawn over a still frame while the native view is hidden;
-  - dragging a pane to a bottom edge re-arranges its own group.
-- `smoke-windows.cjs`:
-  - windows bound to a workspace;
-  - switching in place and back restores the arrangement;
-  - opening in a new window, and focusing a window that already shows the workspace;
-  - tearing a tab off into a new window;
-  - restoring windows, frames, layouts and ratios after relaunch.
+- `smoke-tab-groups.cjs`: Split Right; native bounds against the sash (also mid-drag); double-click to equalize; focus and Cmd-1 per group; dragging between strips and to a group's side; a group closing with its last tab; an open document focused where it is; the reader panel, popping out and docking back; restoring groups, sizes and the panel after relaunch; reading a version 1 file.
+- `smoke-tabs.cjs`: reorder without recreating views; native bounds with the sidebar collapsed and a moved sash; menu shortcuts; next tab and Close Other Tabs within a group.
+- `smoke-source-page.cjs`: the source page as the reader's panel, its toggle in both directions.
+- `smoke-mixed-tabs.cjs`: DOM and native groups side by side, unsaved drafts and close guards.
+- `smoke-windows.cjs`: windows bound to a workspace; switching in place and back restores the groups; tear-off; restoring windows, frames and groups after relaunch.

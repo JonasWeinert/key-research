@@ -145,6 +145,8 @@ export default function PdfReader() {
   // the document, so a second try lights the highlight up if the first was too early.
   const [focus, setFocus] = useState<Focus>();
   useEffect(() => bridge().on("reader-focus", (payload) => setFocus({ ...(payload as Focus) })), []);
+  // The panel also opens and closes from the shell (its own buttons, Add to note).
+  useEffect(() => bridge().on("reader-notes", (open) => setNotesOpen(Boolean(open))), []);
   useEffect(() => {
     if (!focus || !chrome?.ready) return;
     const go = () => reader.current?.focusAnnotation(focus.annotationId, focus.page);

@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("key", {
         "annotations-changed",
         "search-target",
         "reader-focus",
+        "reader-notes",
         "search-navigation",
         "operation-error",
         "focus-pane",

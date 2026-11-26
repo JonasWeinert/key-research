@@ -1,5 +1,5 @@
 // Run serially: native windows and focus are shared with other GUI checks.
-// A source opens as one page beside its PDF: details that fold, highlights above the note
+// A source opens as one page beside its PDF, as the reader's panel in the same tab: details that fold, highlights above the note
 // that quote into it in their colour, "Add to note" from a PDF selection, live updates
 // from elsewhere, the reader's "Details & notes" button to hide and show the page, and a
 // header and properties laid out like a note's.
@@ -44,7 +44,7 @@ const assert = require("node:assert/strict");
     await page.locator(".kx-source-page[data-side=false] .kx-source-page-title").waitFor();
     const tabs = await page.evaluate(() => window.key.tabs());
     const tab = tabs.tabs.find((t) => t.id === tabs.activeTabId);
-    assert.deepEqual(tab.views.map((v) => v.kind), ["pdf", "page"]);
+    assert.deepEqual([tab.views[0].kind, tab.panel?.kind], ["pdf", "page"], "the page is the reader's panel, in the same tab");
     assert.equal(await page.locator(".kx-source-page[data-side=false] .kx-source-page-title").inputValue(), "Health versus income");
     await page.locator(".kx-source-page[data-side=false] .kx-page-details-toggle").waitFor();
     // Highlights sit above the note.
@@ -127,13 +127,20 @@ const assert = require("node:assert/strict");
     await reader.getByRole("button", { name: "Details & notes" }).click();
     await page.waitForFunction(async () => {
       const t = await window.key.tabs();
-      return t.tabs.find((x) => x.id === t.activeTabId).views.length === 1;
+      return !t.tabs.find((x) => x.id === t.activeTabId).panel;
     });
     await reader.getByRole("button", { name: "Details & notes" }).click();
     await page.waitForFunction(async () => {
       const t = await window.key.tabs();
-      return t.tabs.find((x) => x.id === t.activeTabId).views.map((v) => v.kind).join() === "pdf,page";
+      const tab = t.tabs.find((x) => x.id === t.activeTabId);
+      return tab.views[0].kind === "pdf" && tab.panel?.kind === "page";
     });
+    await reader.getByRole("button", { name: "Details & notes", pressed: true }).waitFor();
+    // Hidden from the panel itself, the reader's button follows.
+    await page.getByRole("button", { name: "Hide details and notes" }).click();
+    await reader.getByRole("button", { name: "Details & notes", pressed: false }).waitFor();
+    await reader.getByRole("button", { name: "Details & notes" }).click();
+    await page.locator(".kx-source-page[data-side=false] .kx-page-details-toggle").waitFor();
 
     // Everything between the title and the highlights folds under one control beneath the
     // title, folded at first with a one-line summary; opened, Author comes first.

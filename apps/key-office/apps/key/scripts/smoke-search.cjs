@@ -94,9 +94,10 @@ const assert = require("node:assert/strict");
     await study.locator(".kx-passage").first().click();
     await page.waitForFunction(async () => {
       const t = await window.key.tabs();
-      // In the search's own tab, beside it: no tab of its own.
-      const tab = t.tabs.find((x) => x.views.some((v) => v.kind === "search"));
-      return t.activeTabId === tab?.id && tab.views.map((v) => v.kind).join() === "search,pdf" && !t.tabs.some((x) => x.views.length === 1 && x.views[0].kind === "pdf");
+      // In a group beside the search's: one reader tab, focused.
+      const search = t.tabs.find((x) => x.views[0].kind === "search");
+      const readers = t.tabs.filter((x) => x.views[0].kind === "pdf");
+      return !!search && readers.length === 1 && readers[0].groupId !== search.groupId && t.activeTabId === readers[0].id;
     });
     let reader;
     for (let i = 0; i < 100 && !reader; i++) {

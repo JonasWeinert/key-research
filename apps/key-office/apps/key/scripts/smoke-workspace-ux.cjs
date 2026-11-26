@@ -80,14 +80,15 @@ const assert = require("node:assert/strict");
     await page.locator(".kx-hover-card", { hasText: "Zebrafish" }).waitFor();
     await shot(page, "1-hover");
 
-    // Open Beta; right-click Alpha → Open beside: one tab, two panes.
+    // Open Beta; right-click Alpha → Open beside: Alpha in a group of its own, right of Beta's.
     await row("Beta").click();
     await until(async () => (await tabs()).tabs.some((t) => t.title === "Beta"), "Beta to open");
     await row("Alpha").click({ button: "right" });
     await page.locator(".kx-item-menu").getByRole("menuitem", { name: /Open beside/ }).click();
     await until(async () => {
       const t = await tabs();
-      return t.tabs.find((x) => x.id === t.activeTabId)?.views.length === 2;
+      const active = t.tabs.find((x) => x.id === t.activeTabId);
+      return t.groups.length === 2 && active?.title === "Alpha" && active.groupId === t.groups[1].id;
     }, "Alpha beside Beta");
 
     // Space on a hovered item: quick look.

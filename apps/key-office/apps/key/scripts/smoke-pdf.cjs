@@ -120,12 +120,11 @@ const { tmpdir } = require("node:os");
     console.log("RAIL", JSON.stringify({ labels, preview, jumpedTo: target }));
     await shell.evaluate(async (source) => {
       await window.key.openSource(source);
-      const t = await window.key.tabs();
-      await window.key.tabAction("split", { viewId: t.activeViewId });
+      await window.key.tabAction("split-right");
     }, opened[1]);
     const split = await shell.evaluate(() => window.key.tabs());
-    if (split.tabs.find((t) => t.id === split.activeTabId).views.length !== 2)
-      throw Error("Split did not produce two views");
+    if (split.groups.length !== 2)
+      throw Error("Split Right did not produce two groups");
     await shell.evaluate((source) => window.key.openSource(source), opened[2]);
     const resident = await app.evaluate(
       ({ webContents }) =>
