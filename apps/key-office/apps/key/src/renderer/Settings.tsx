@@ -12,6 +12,7 @@ import { ZoteroSettings } from "./ZoteroSyncSettings";
 import type { Mode as ZoteroMode } from "./zotero-sheet-model";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import WebSearchSettings from "./WebSearchSettings";
+import BrowserSettings from "./BrowserSettings";
 
 export type SettingsSection = "general" | "libraries" | "search" | "ai" | "about";
 const SECTIONS: [SettingsSection, string, IconName][] = [
@@ -152,6 +153,7 @@ function General({ settings, onSettings, onShowWelcome }: { settings: AppSetting
         </Row>
         <Row label="Keyboard" detail="⌘F search the library · ⌘T new tab · ⌘, settings" />
       </Group>
+      <BrowserSettings />
     </>
   );
 }

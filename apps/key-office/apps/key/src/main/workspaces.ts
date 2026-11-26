@@ -9,6 +9,9 @@ export interface WorkspaceInfo {
   icon?: string
   color?: string
 }
+/** A library the app keeps for itself (the browser's temporary PDFs): never listed,
+ * searched or switched to, reached only by its id. */
+type HiddenWorkspace = WorkspaceInfo & { env?: Record<string, string> }
 export interface RegistryOptions {
   registryDir: string
   defaultWorkspaceParent: string
@@ -30,6 +33,7 @@ const LIST_COMMANDS = new Set([
 /** Registry JSON locates workspaces; canonical identity and all content stay in each SQLite DB. */
 export class Registry {
   private entries: WorkspaceInfo[] = []
+  private hidden = new Map<string, HiddenWorkspace>()
   private hosts = new Map<string, RustHost>()
   private lastUsed = new Map<string, number>()
   private retiring = false
@@ -166,6 +170,36 @@ export class Registry {
     this.mutations = result.catch(() => undefined)
     return result
   }
+  /** Opens (creating it on first use) a library that stays out of the registry's list. */
+  async addHidden(root: string, name: string, env?: Record<string, string>): Promise<WorkspaceInfo> {
+    await this.ready
+    if (this.closed) throw new Error('Workspace registry is closed')
+    await mkdir(resolve(root), { recursive: true })
+    const canonical = await realpath(resolve(root))
+    const known = [...this.hidden.values()].find((w) => w.root === canonical)
+    if (known) return { id: known.id, name: known.name, root: known.root }
+    const host = new RustHost({
+      executable: this.options.hostExecutable,
+      libraryRoot: join(canonical, '.key'),
+      pdfiumPath: this.options.pdfiumPath,
+      env,
+    })
+    try {
+      const info = await host.invoke<WorkspaceInfo>('workspace_initialize', { name, workspaceRoot: canonical })
+      if (this.entries.some((w) => w.id === info.id)) throw new Error('This library is already a workspace')
+      const entry: HiddenWorkspace = { id: info.id, name: info.name, root: canonical, env }
+      this.hidden.set(entry.id, entry)
+      this.hosts.set(entry.id, host)
+      this.lastUsed.set(entry.id, Date.now())
+      return { id: entry.id, name: entry.name, root: entry.root }
+    } catch (error) {
+      host.close()
+      throw error
+    }
+  }
+  isHidden(id: string | undefined): boolean {
+    return !!id && this.hidden.has(id)
+  }
   private host(workspace: WorkspaceInfo): RustHost {
     if (this.closed) throw new Error('Workspace registry is closed')
     this.lastUsed.set(workspace.id, Math.max(this.lastUsed.get(workspace.id) ?? 0, Date.now()))
@@ -175,6 +209,7 @@ export class Registry {
         executable: this.options.hostExecutable,
         libraryRoot: join(workspace.root, '.key'),
         pdfiumPath: this.options.pdfiumPath,
+        env: (workspace as HiddenWorkspace).env,
       })
       this.hosts.set(workspace.id, host)
     }
@@ -224,7 +259,7 @@ export class Registry {
       headers: options.headers ?? headers,
     }
     if (workspaceId && workspaceId !== 'all') {
-      const workspace = entries.find((w) => w.id === workspaceId)
+      const workspace = entries.find((w) => w.id === workspaceId) ?? this.hidden.get(workspaceId)
       if (!workspace) throw new Error('Workspace is not registered')
       const value = await this.host(workspace).invoke(
         command,

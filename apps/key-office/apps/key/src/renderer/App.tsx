@@ -26,6 +26,7 @@ import Inspector from "./Inspector";
 import CommandCenter from "./CommandCenter";
 import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
+import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 interface Workspace {
   id: string;
@@ -60,6 +61,9 @@ interface ViewState {
   forward?: string;
   /** Bumped each time a link is followed in this view (or Back/Forward). */
   nav?: number;
+  /** A browser tab: its bar, and the site's icon for its tab. */
+  web?: WebBarState;
+  favicon?: string;
 }
 /** Main's snapshot of this window (see `snapshot` in main/index.ts). */
 interface TabState {
@@ -154,6 +158,7 @@ const groupSummaries = (state: TabState) =>
             id: tab.id,
             title: tab.title,
             kind: (tab.views[0]?.kind as TabSummary["kind"]) || "home",
+            favicon: tab.views[0]?.favicon,
             active: tab.id === group.activeTabId,
             closable: !tab.pinned,
             pinned: Boolean(tab.pinned),
@@ -523,6 +528,8 @@ export default function App() {
     void api().tabAction("inspector-width", { width: inspectorWidth });
   }, [inspectorOpen, inspectorWidth]);
   useEffect(() => onShowInInspector(() => setInspectorOpen(true)), []);
+  // The browser's quiet notes: a finished download, a PDF that could not be opened.
+  useEffect(() => api().on("browser-notice", (value) => toast(String((value as { message?: string })?.message ?? ""))), []);
   useEffect(() => api().on("toggle-inspector", () => setInspectorOpen((open) => !open)), []);
   const switchWorkspace = (id: string, newWindow = false) =>
     task(() => api().tabAction("switch-workspace", { workspaceId: id, newWindow }));
@@ -1113,6 +1120,20 @@ export default function App() {
                 </div>
               );
             })}
+          {/* Browser tabs: the bar above the page (the page is a native view below it). */}
+          {tabs.tabs.map((t) => {
+            const v = t.views[0];
+            const rect = v?.web && placed.get(v.id);
+            if (!v?.web || !rect) return null;
+            return (
+              <BrowserBar
+                key={v.id}
+                state={v.web}
+                style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT, width: rect.width }}
+                onStep={(step) => action("history", { viewId: v.id, step })}
+              />
+            );
+          })}
           {error && (
             <div className="key-shell-error" role="alert">
               <span>{error}</span>

@@ -24,7 +24,10 @@ export interface TabSummary {
     | "slides"
     | "pdf"
     | "markdown"
-    | "html";
+    | "html"
+    | "web";
+  /** A browser tab's site icon (a data URL), shown in place of the kind's icon. */
+  favicon?: string;
   /** The tab its group shows. */
   active: boolean;
   closable: boolean;
@@ -227,6 +230,7 @@ const KIND_ICON: Record<TabSummary["kind"], ReactElement> = {
   pdf: <PdfIcon />,
   markdown: <MarkdownIcon />,
   html: <HtmlIcon />,
+  web: <Icon name="globe" size={15} />,
 };
 
 /** The icon a tab shows for a view of `kind`. */
@@ -627,7 +631,7 @@ export function TabBar({
             >
               {/* highlight plate behind the content — hover capsule / active body */}
               <span className="tab-plate" aria-hidden="true" />
-              <span className="tab-icon">{KIND_ICON[tab.kind] || KIND_ICON.page}</span>
+              <span className="tab-icon">{tab.favicon ? <img className="key-favicon" src={tab.favicon} alt="" draggable={false} /> : KIND_ICON[tab.kind] || KIND_ICON.page}</span>
               {!tab.pinned && <span className="tab-title">{tab.title}</span>}
               {tab.closable && (
                 <button
