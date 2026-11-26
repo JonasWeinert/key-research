@@ -175,7 +175,7 @@ export function canvasMetrics(): FontMetricsProvider | null {
 
 /** Korean font names (Windows/Noto/Source Han/Nanum faces + bundled subsets) */
 const KO_FONT_RE =
-  /malgun|맑은|batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서|gulim|굴림|dotum|돋움|nanum|나눔|genoffice (sans|serif) kr|(noto|source han) (sans|serif)[^,]*\bk(r|orean)?\b/i
+  /malgun|맑은|batang|바탕|myeongjo|myungjo|명조|gungsuh|궁서|gulim|굴림|dotum|돋움|nanum|나눔|key (sans|serif) kr|(noto|source han) (sans|serif)[^,]*\bk(r|orean)?\b/i
 
 /**
  * Per-font single-spacing line-height factor. Re-baselined against Word for
@@ -739,12 +739,7 @@ export function cssFontFamily(font: string, followAltName = true): string {
   // 'Key *' entries are CJK-only local() aliases (fonts.css): the underlying
   // system faces draw Cyrillic/Greek fullwidth, so those scripts must pass through
   const JA_SANS = ['Yu Gothic', 'Key Hiragino Sans', 'Meiryo', 'Noto Sans JP']
-  const JA_SERIF = [
-    'Yu Mincho',
-    'Key Hiragino Mincho',
-    'Key MS Mincho',
-    'Noto Serif JP',
-  ]
+  const JA_SERIF = ['Yu Mincho', 'Key Hiragino Mincho', 'Key MS Mincho', 'Noto Serif JP']
   const KO_SANS = ['Malgun Gothic', 'Key Sans KR', 'Apple SD Gothic Neo', 'Noto Sans KR']
   const KO_SERIF = ['Key Batang', 'Key Serif KR', 'Key Myungjo', 'Noto Serif KR']
   const TC_SANS = ['Microsoft JhengHei', 'PingFang TC', 'Key Heiti TC', 'Noto Sans TC']
