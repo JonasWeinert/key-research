@@ -263,13 +263,18 @@ export default function ReferenceLibrary({
   const activity = status?.activity;
   const knownCount = useRef<number | undefined>(undefined);
   const lastRefresh = useRef(0);
+  const wasWorking = useRef(false);
   useEffect(() => {
     if (!status || search) return;
     // Sources added elsewhere (another window, the agent, a direct import) appear without a reload.
     const known = knownCount.current;
     knownCount.current = status.counts.all;
     if (known !== undefined && known !== status.counts.all) return void load(0);
-    if ((status.busy || status.counts.indexing > 0) && Date.now() - lastRefresh.current > 3000) {
+    // One more refresh when work (indexing, metadata lookups) settles, so the last results show.
+    const working = !!status.busy || status.counts.indexing > 0 || (status.enrichment ?? 0) > 0;
+    const settled = wasWorking.current && !working;
+    wasWorking.current = working;
+    if (settled || (working && Date.now() - lastRefresh.current > 3000)) {
       lastRefresh.current = Date.now();
       void invoke<SourcePage>("store_sources", { ...query, offset: 0, limit: Math.max(PAGE, items.length) }, workspaceId)
         .then((page) => {

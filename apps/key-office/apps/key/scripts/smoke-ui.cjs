@@ -52,10 +52,32 @@ const assert = require("node:assert/strict");
     await page
       .getByRole("textbox", { name: "Page content", exact: true })
       .fill("Canonical database UI validation.");
-    await page.getByText("Custom properties", { exact: true }).click();
-    await page
-      .getByRole("textbox", { name: "Custom properties JSON", exact: true })
-      .fill('{"reviewed":true,"year":2026}');
+    // Properties are added through the property sheet: a name, a type and a value for this page.
+    const addProperty = async (name, type, setValue) => {
+      await page
+        .locator("[data-content-view]:visible")
+        .getByRole("region", { name: "Item properties", exact: true })
+        .getByRole("button", { name: /Add property/ })
+        .click();
+      const sheet = page.getByRole("dialog", { name: "New property", exact: true });
+      await sheet.waitFor();
+      await sheet.getByRole("textbox", { name: "Property name", exact: true }).fill(name);
+      await sheet.getByRole("group", { name: "Property type" }).getByRole("button", { name: type }).click();
+      await sheet.getByRole("checkbox", { name: /Set a value on 1 selected item/ }).check();
+      await setValue(sheet);
+      await sheet.getByRole("button", { name: "Create property", exact: true }).click();
+      await sheet.waitFor({ state: "detached" });
+    };
+    await addProperty("reviewed", /Checkbox$/, (sheet) =>
+      sheet.getByRole("combobox", { name: "Value", exact: true }).selectOption("true"),
+    );
+    await addProperty("year", /Number$/, (sheet) =>
+      sheet.locator('input[type="number"]').fill("2026"),
+    );
+    const properties = page.locator("[data-content-view]:visible .key-record-properties");
+    assert.equal(await properties.getByRole("checkbox", { name: "reviewed", exact: true }).isChecked(), true);
+    await properties.locator('.key-record-property-row', { hasText: "year" }).locator('input[type="number"]').waitFor();
+    assert.equal(await properties.locator('.key-record-property-row', { hasText: "year" }).locator('input[type="number"]').inputValue(), "2026");
     await page
       .getByRole("button", { name: "Save changes", exact: true })
       .click();
@@ -103,6 +125,7 @@ const assert = require("node:assert/strict");
     });
     const note = persisted.find((r) => r.title === "Qualifying research note");
     assert.equal(note.properties.reviewed, true);
+    assert.equal(note.properties.year, 2026);
     await page.reload();
     await page
       .getByRole("textbox", { name: "Page title", exact: true })

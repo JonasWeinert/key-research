@@ -50,7 +50,8 @@ const assert = require("node:assert/strict");
     await page.getByRole("heading", { name: /^(All sources|Sources)$/ }).waitFor();
     await welcome.waitFor({ state: "detached" });
     const stored = JSON.parse(await readFile(path.join(temp, "profile", "app-settings.json"), "utf8"));
-    assert.deepEqual(stored, { theme: "dark", onboarded: true, layoutModel: true });
+    // The welcome's choices are stored; other settings keep their defaults and are not pinned here.
+    assert.deepEqual({ theme: stored.theme, onboarded: stored.onboarded, layoutModel: stored.layoutModel }, { theme: "dark", onboarded: true, layoutModel: true });
 
     // Settings: sidebar button, sections, pause indexing, appearance back to automatic.
     await page.locator(".key-sidebar").getByRole("button", { name: "Settings", exact: true }).click();

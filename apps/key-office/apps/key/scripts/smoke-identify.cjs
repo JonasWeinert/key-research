@@ -82,6 +82,9 @@ const fixtures = path.resolve(__dirname, "../../../../../tests/fixtures");
     });
     await writeFile(printed, Buffer.from(pdf, "base64"));
     const draft = await call("library_import_file", { path: printed });
+    // The library is open while the lookups run, so its rows have to follow them.
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
+    await page.getByRole("heading", { name: "All sources", exact: true }).waitFor();
 
     // Each is looked up by what it carries; the file-name title gives way to the work's.
     let s = await until(jama.id, (x) => x.enrichStatus === "done", "JAMA by its printed DOI");
@@ -118,8 +121,9 @@ const fixtures = path.resolve(__dirname, "../../../../../tests/fixtures");
     assert.equal(s.openalexId, undefined);
     assert.equal(s.title, "scientific unlinked");
 
-    // The sidebar's list follows the background lookups.
-    await page.locator(".kx-sidebar, nav, aside").getByText("Big data, medicines safety and pharmacovigilance").first().waitFor({ timeout: 12000 });
+    // The library's list follows the background lookups.
+    await page.locator(".kx-row", { hasText: "Big data, medicines safety and pharmacovigilance" }).first().waitFor({ timeout: 12000 });
+    await page.locator(".kx-row", { hasText: "Deep learning of HIV field-based rapid tests" }).first().waitFor({ timeout: 12000 });
 
     // The source page says how it was identified.
     await page.evaluate(({ workspaceId, sourceId }) => window.key.tabAction("open-source-page", { workspaceId, sourceId, title: "JAMA", read: false }), { workspaceId: ws.id, sourceId: jama.id });

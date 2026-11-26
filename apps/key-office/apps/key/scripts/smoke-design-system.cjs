@@ -47,7 +47,10 @@ const assert = require("node:assert/strict");
     const [ws] = await page.evaluate(() => window.key.workspaces());
     await page.getByRole("button", { name: "Workspace", exact: true }).click();
     await page.locator(`[data-workspace-id="${ws.id}"]`).click();
-    await page.getByRole("heading", { name: /^(All sources|Sources)$/ }).waitFor();
+    // Switching workspace lands on Home; the sidebar's Library row opens this workspace's library.
+    await page.locator(".kx-sidebar-titlebar .key-workspace-home strong", { hasText: ws.name }).waitFor();
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
+    await page.getByRole("heading", { name: "All sources", exact: true }).waitFor();
     await page.locator('summary[aria-label="More ways to add"]:visible').click();
     await page.getByRole("button", { name: /Add by DOI, ISBN or URL/ }).click();
     const dialog = page.getByRole("dialog", {
