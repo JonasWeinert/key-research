@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>A research blog</title>
+  <link href="https://blog.example.org/"/>
+  <link rel="self" href="https://blog.example.org/atom.xml"/>
+  <updated>2025-05-02T10:00:00Z</updated>
+  <entry>
+    <title type="html">Symmetry &amp;amp; conservation</title>
+    <link rel="alternate" href="/posts/first"/>
+    <id>tag:blog.example.org,2025:first</id>
+    <published>2025-05-01T09:00:00Z</published>
+    <updated>2025-05-02T09:00:00Z</updated>
+    <author><name>Emmy Noether</name></author>
+    <summary type="html">&lt;p&gt;Symmetry and conservation laws, revisited.&lt;/p&gt;</summary>
+  </entry>
+</feed>

@@ -9,7 +9,7 @@ use super::types::{Ids, WebPage, WebResult, bare_doi, short_id, snippet_of};
 use key_safe_http::CancellationToken;
 use serde_json::Value as Json;
 
-const FIELDS: &str = "id,doi,display_name,publication_year,type,authorships,primary_location,best_oa_location,open_access,ids,cited_by_count,abstract_inverted_index";
+pub const FIELDS: &str = "id,doi,display_name,publication_year,type,authorships,primary_location,best_oa_location,open_access,ids,cited_by_count,abstract_inverted_index";
 
 pub fn base() -> Base {
     Base::from_env("KEY_WEB_OPENALEX_URL", "https://api.openalex.org")

@@ -93,7 +93,7 @@ pub fn send(base: &Base, url: &Url, headers: &[(&str, &str)], cancel: &Cancellat
     safe_get(url, headers, cancel)
 }
 
-fn is_loopback(url: &Url) -> bool {
+pub(crate) fn is_loopback(url: &Url) -> bool {
     match url.host() {
         Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
         Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
@@ -158,8 +158,57 @@ fn safe_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> 
     })
 }
 
+/// Content a feed can come as: RSS, Atom, RDF or plain XML, or the page that links to it
+/// (feed discovery). Some servers send feeds as text/plain.
+const FEED_TYPES: &[&str] = &["application/rss+xml", "application/atom+xml", "application/rdf+xml", "application/xml", "text/xml", "text/html", "application/xhtml+xml", "text/plain", "application/x-rss+xml", "application/feed+json"];
+
+/// One GET of a feed or a page that may link to one, through the safe client: any public
+/// host over HTTP or HTTPS (many journal feeds are still plain HTTP), following redirects to
+/// other public hosts a few times. Conditional headers (If-None-Match, If-Modified-Since) are
+/// passed on; a 304 comes back as it is.
+pub fn feed_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> Result<Response, SendError> {
+    let failed = |e: HttpError| match e {
+        HttpError::Cancelled => SendError::Cancelled,
+        HttpError::Timeout(_) => SendError::Timeout,
+        other => SendError::Failed(other.to_string()),
+    };
+    let host = url.host_str().ok_or_else(|| SendError::Failed("The address has no host".into()))?;
+    let rules = FEED_TYPES.iter().filter_map(|t| ContentTypeRule::exact(*t).ok()).chain(ContentTypeRule::structured_suffix("xml").ok());
+    let types = ContentTypePolicy::new(rules, true).map_err(failed)?;
+    let limits = HttpLimits {
+        max_response_bytes: MAX_BYTES,
+        max_redirects: 5,
+        max_concurrent: 1,
+        request_timeout: TIMEOUT,
+        rate: RateLimit::new(30, Duration::from_secs(60)).map_err(failed)?,
+        ..HttpLimits::default()
+    };
+    let mut hosts = vec![host.to_string()];
+    let response = loop {
+        let policy = HttpPolicy::new(ExactHostAllowlist::new(&hosts).map_err(failed)?, types.clone())
+            .with_schemes(SchemePolicy::HttpAndHttps)
+            .with_limits(limits.clone())
+            .map_err(failed)?;
+        let mut request = HttpRequest::get(url.as_str()).and_then(|r| r.with_header("user-agent", FEED_AGENT)).map_err(failed)?;
+        for (name, value) in headers {
+            request = request.with_header(*name, *value).map_err(failed)?;
+        }
+        match SafeHttpClient::new(policy).execute(request, cancel) {
+            Ok(response) => break response,
+            Err(HttpError::HostDenied(next)) if hosts.len() < 4 && !hosts.contains(&next) => hosts.push(next),
+            Err(error) => return Err(failed(error)),
+        }
+    };
+    Ok(Response {
+        status: response.status(),
+        headers: response.headers().iter().filter_map(|h| Some((h.name().to_string(), h.value_str()?.to_string()))).collect(),
+        body: response.body().to_vec(),
+    })
+}
+const FEED_AGENT: &str = "Key/0.1 (feed reader; +https://github.com/key-app)";
+
 /// A plain HTTP/1.0 GET to a loopback mock (tests and smokes only).
-fn loopback_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> Result<Response, SendError> {
+pub(crate) fn loopback_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> Result<Response, SendError> {
     let failed = |e: std::io::Error| match e.kind() {
         std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => SendError::Timeout,
         _ => SendError::Failed(format!("Couldn't reach {}: {e}", url.host_str().unwrap_or(""))),

@@ -348,6 +348,11 @@ pub struct Counts {
     /// Flagged as retracted and not dismissed.
     #[serde(default)]
     pub retracted: i64,
+    /// Queued to read, and read at some point (reading.rs).
+    #[serde(default)]
+    pub to_read: i64,
+    #[serde(default)]
+    pub recent: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1682,9 +1687,7 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
                 // Reading (reading.rs): what was read lately, and what is queued: in progress,
                 // or marked unread by hand.
                 "recent" => conditions.push(format!("{} IS NOT NULL", reading::LAST_READ_SQL)),
-                "toread" => conditions.push(
-                    "(s.read_state = 'reading' OR (coalesce(nullif(s.read_state, ''), 'unread') = 'unread' AND EXISTS (SELECT 1 FROM source_reading r WHERE r.source_id = s.id AND r.manual = 1)))".into(),
-                ),
+                "toread" => conditions.push(TO_READ.into()),
                 _ => {}
             }
         }
@@ -1739,6 +1742,9 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
     (format!("WHERE {}", conditions.join(" AND ")), values)
 }
 
+/// Queued to read: in progress, or marked unread by hand (reading.rs).
+const TO_READ: &str = "(s.read_state = 'reading' OR (coalesce(nullif(s.read_state, ''), 'unread') = 'unread' AND EXISTS (SELECT 1 FROM source_reading r WHERE r.source_id = s.id AND r.manual = 1)))";
+
 fn counts(db: &Connection, query: &ListQuery) -> Result<Counts> {
     // Counts describe the current collection/tag/text filter, independent of scope.
     let mut base = query.clone();
@@ -1755,13 +1761,16 @@ fn counts(db: &Connection, query: &ListQuery) -> Result<Counts> {
                sum(s.trashed_at IS NULL AND s.index_status = 'ready'),
                sum(s.trashed_at IS NULL AND s.index_status IN ('pending','indexing')),
                sum(s.trashed_at IS NULL AND s.index_status IN ('failed','missing','no_text')),
-               sum(s.trashed_at IS NULL AND s.retracted = 1 AND s.retraction_dismissed = 0)
-             FROM sources s {clause}"
+               sum(s.trashed_at IS NULL AND s.retracted = 1 AND s.retraction_dismissed = 0),
+               sum(s.trashed_at IS NULL AND {TO_READ}),
+               sum(s.trashed_at IS NULL AND {} IS NOT NULL)
+             FROM sources s {clause}",
+            reading::LAST_READ_SQL
         ),
         params_from_iter(values.iter()),
         |r| {
             let n = |i: usize| r.get::<_, Option<i64>>(i).map(|v| v.unwrap_or(0));
-            Ok(Counts { all: n(0)?, trashed: n(1)?, starred: n(2)?, unfiled: n(3)?, ready: n(4)?, indexing: n(5)?, attention: n(6)?, retracted: n(7)? })
+            Ok(Counts { all: n(0)?, trashed: n(1)?, starred: n(2)?, unfiled: n(3)?, ready: n(4)?, indexing: n(5)?, attention: n(6)?, retracted: n(7)?, to_read: n(8)?, recent: n(9)? })
         },
     )
     .map_err(e)

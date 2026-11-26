@@ -471,6 +471,23 @@ impl Library {
                 json_output(json!({ "layoutModel": self.indexer.layout_model(), "outdated": self.store.outdated_analyses(engine)? }))
             })(),
             "store_provenance" => arg::<String>(args, "id").and_then(|id| json_output(self.store.property_provenance(&id)?)),
+            // Reading status and history (key-store reading.rs): by id, or by a reader's hash.
+            "store_reading" => arg::<String>(args, "id").and_then(|id| json_output(self.store.reading(&self.reading_id(&id)?)?)),
+            "store_reading_event" => (|| {
+                let id = self.reading_id(&arg::<String>(args, "id")?)?;
+                let kind = arg::<Option<String>>(args, "kind")?.unwrap_or_else(|| "page".into());
+                json_output(self.store.reading_event(&id, &kind, arg(args, "page")?, arg(args, "pageCount")?)?)
+            })(),
+            "store_set_reading_status" => (|| {
+                let ids: Vec<String> = arg(args, "ids")?;
+                json_output(self.store.set_reading_status(&ids, arg::<Option<String>>(args, "status")?.as_deref())?)
+            })(),
+            // Related items: linked by hand (journaled), and what the library knows on its own.
+            "store_related" => arg::<String>(args, "id").and_then(|id| json_output(self.store.related_sources(&self.store.resolve_source_id(&id)?)?)),
+            "store_link_related" => (|| {
+                let linked = arg::<Option<bool>>(args, "linked")?.unwrap_or(true);
+                json_output(self.store.link_related(&arg::<String>(args, "a")?, &arg::<String>(args, "b")?, linked)?)
+            })(),
             _ => {
                 return super::openalex::dispatch(self, command, args)
                     .or_else(|| super::hygiene::dispatch(self, command, args))
@@ -481,6 +498,14 @@ impl Library {
             }
         };
         Some(result)
+    }
+
+    /// A source id from an id or a reader's content hash.
+    fn reading_id(&self, id: &str) -> Result<String, String> {
+        match self.store.source_by_hash(id)? {
+            Some(source) => Ok(source.id),
+            None => Err("Source not found".into()),
+        }
     }
 
     fn parse<T: serde::de::DeserializeOwned>(&self, args: &Json) -> Result<T, String> {

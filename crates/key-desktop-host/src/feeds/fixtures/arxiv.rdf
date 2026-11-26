@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="http://arxiv.org/">
+    <title>cs.LG updates on arXiv.org</title>
+    <link>http://arxiv.org/</link>
+  </channel>
+  <item rdf:about="http://arxiv.org/abs/2506.01234v2">
+    <title>Sparse attention at scale. (arXiv:2506.01234v2 [cs.LG] UPDATED)</title>
+    <link>http://arxiv.org/abs/2506.01234v2</link>
+    <description rdf:parseType="Literal">&lt;p&gt;We study sparse attention.&lt;/p&gt;</description>
+    <dc:creator> &lt;a href="http://arxiv.org/find/cs/1/au:+Doe_J/0/1/0/all/0/1"&gt;Jane Doe&lt;/a&gt;, &lt;a href="http://arxiv.org/find/cs/1/au:+Smith_J/0/1/0/all/0/1"&gt;John Smith&lt;/a&gt;</dc:creator>
+  </item>
+  <item rdf:about="http://arxiv.org/abs/2506.05678">
+    <title>Another preprint on graphs</title>
+    <link>http://arxiv.org/abs/2506.05678</link>
+    <dc:creator>Solo Author</dc:creator>
+  </item>
+</rdf:RDF>

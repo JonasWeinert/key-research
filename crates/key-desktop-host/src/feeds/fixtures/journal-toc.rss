@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:prism="http://prismstandard.org/namespaces/basic/2.0/" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Nature Methods: latest research</title>
+    <link>https://www.nature.com/nmeth</link>
+    <description>Latest research articles</description>
+    <item>
+      <title><![CDATA[Deep learning for cell segmentation & tracking]]></title>
+      <link>https://www.nature.com/articles/s41592-025-01234-5</link>
+      <description>&lt;p&gt;We present a method for &lt;b&gt;segmenting&lt;/b&gt; cells.&lt;/p&gt;</description>
+      <dc:creator>Ada Lovelace</dc:creator>
+      <dc:creator>Grace Hopper</dc:creator>
+      <pubDate>Tue, 10 Jun 2025 04:00:00 +0000</pubDate>
+      <prism:doi>10.1038/s41592-025-01234-5</prism:doi>
+      <prism:publicationName>Nature Methods</prism:publicationName>
+      <guid isPermaLink="false">s41592-025-01234-5</guid>
+    </item>
+    <item>
+      <title>Tracking without labels</title>
+      <link>https://www.nature.com/articles/s41592-025-09999-x</link>
+      <author>alan@example.org (Alan Turing)</author>
+      <dc:date>2025-06-09</dc:date>
+    </item>
+  </channel>
+</rss>
