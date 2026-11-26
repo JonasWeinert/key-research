@@ -11,6 +11,8 @@ export interface Source extends CitableSource {
   collections: string[];
   starred: boolean;
   indexStatus: string;
+  /** For a Zotero item, its Zotero key. */
+  originKey?: string | null;
   indexError?: string | null;
   indexedChunks: number;
   indexTotal: number;
@@ -231,6 +233,8 @@ export interface Collection {
   name: string;
   position: number;
   sourceCount: number;
+  /** "zotero:KEY" for a collection mirrored from Zotero. */
+  originKey?: string | null;
 }
 export interface Note {
   id: string;
@@ -344,6 +348,8 @@ export interface AppSettings {
   openalexApiKey: string;
   /** Web search providers by id: turned off, or given an API key. */
   webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
+  /** A work added from another source's context: ask, use the origin's collections, or the library only. */
+  addFromSource: "ask" | "origin" | "library";
 }
 export interface AppInfo {
   version: string;

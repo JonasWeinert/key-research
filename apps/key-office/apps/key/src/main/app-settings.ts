@@ -22,12 +22,15 @@ export interface AppSettings {
   openalexApiKey: string
   /** Web search providers by id (see main/web-search): turned off, or given an API key. */
   webProviders: Record<string, WebProviderSetting>
+  /** A work added from another source's context (its references, a citation card): ask which
+   *  collections, put it in the origin source's collections, or in the library only. */
+  addFromSource: 'ask' | 'origin' | 'library'
 }
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {} }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask' }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -67,6 +70,7 @@ function sanitize(input: AppSettings): AppSettings {
     openalexMailto: typeof input.openalexMailto === 'string' && /^[^\s@]+@[^\s@]+$/.test(input.openalexMailto.trim()) ? input.openalexMailto.trim() : '',
     openalexApiKey: typeof input.openalexApiKey === 'string' ? input.openalexApiKey.trim().slice(0, 200) : '',
     webProviders: webProviders(input.webProviders),
+    addFromSource: (['ask', 'origin', 'library'] as const).includes(input.addFromSource) ? input.addFromSource : 'ask',
   }
 }
 

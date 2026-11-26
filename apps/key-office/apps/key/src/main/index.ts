@@ -2985,6 +2985,8 @@ else
             return snapshot(w);
           }
           case "open-url": {
+            // "Open in Zotero" on a synced source: selects the item in Zotero.
+            if (/^zotero:\/\/select\/library\/items\/[A-Z0-9]{8}$/.test(String(p.url))) return void (await systemShell.openExternal(String(p.url)));
             if (!webUrl(p.url) && !systemUrl(p.url)) throw Error("Unsupported link");
             if (p.external) await systemShell.openExternal(String(webUrl(p.url) ?? systemUrl(p.url)));
             else openLink(p.url, w, { background: Boolean(p.background) });

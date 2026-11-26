@@ -37,9 +37,14 @@ export function ItemPage({
   titleText,
   details,
   notice,
+  stickyBar,
   children,
   ...rest
 }: {
+  /** The bar itself stays at the top while the page scrolls (a side panel: its close button
+   *  stays in reach), showing the title in its middle once the title has scrolled away. Its
+   *  `.kx-bar-title` element takes the title. */
+  stickyBar?: boolean;
   kind: ItemKind;
   className: string;
   innerClassName: string;
@@ -104,14 +109,21 @@ export function ItemPage({
   }, []);
   return (
     <article ref={setArticle} className={`kx-item-page ${className}`} data-kind={kind} data-cover={!!appearance.cover} data-icon={!!appearance.icon} {...rest}>
-      {titleText !== undefined && (
+      {titleText !== undefined && !stickyBar && (
         <div className="kx-page-pinned" aria-hidden={!pinned} data-visible={pinned}>
           <button tabIndex={pinned ? 0 : -1} onClick={() => article.current?.scrollTo({ top: 0, behavior: "smooth" })} title="Back to the top">
             {titleText || "Untitled"}
           </button>
         </div>
       )}
-      <div className={`${innerClassName} kx-item-page-toprow`}>{bar}</div>
+      <div
+        className={`${innerClassName} kx-item-page-toprow`}
+        data-sticky={stickyBar || undefined}
+        data-pinned={stickyBar ? pinned : undefined}
+        onClick={stickyBar && pinned ? (e) => (e.target as HTMLElement).closest(".kx-bar-title") && article.current?.scrollTo({ top: 0, behavior: "smooth" }) : undefined}
+      >
+        {bar}
+      </div>
       {background && <PageCover background={background} appearance={appearance} onAppearance={onAppearance} media={media} />}
       <div className={`${innerClassName} kx-item-page-body`} {...innerProps}>
         <PageHeading appearance={appearance} onAppearance={onAppearance} media={media} defaultIcon={defaultIcon} />

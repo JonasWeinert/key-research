@@ -2228,3 +2228,50 @@
 .kx-page-highlights li[draggable="true"] {
   cursor: grab;
 }
+
+/* The file card opens the file in its reader; its own small buttons stay separate. */
+.kx-file-card {
+  position: relative;
+}
+.kx-file-card[data-openable] {
+  cursor: default;
+  transition: box-shadow 140ms var(--kx-ease), background 140ms var(--kx-ease);
+}
+.kx-file-card[data-openable]:hover {
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-card), 0 0 0 1px var(--kx-line);
+}
+.kx-file-card[data-openable]:focus-visible {
+  outline: none;
+  box-shadow: var(--kx-shadow-card), 0 0 0 3px var(--kx-accent-soft), 0 0 0 1px var(--kx-accent);
+}
+.kx-file-card-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.kx-file-card-actions > .kx-icon-button {
+  opacity: 0;
+  transition: opacity 140ms var(--kx-ease);
+}
+.kx-file-card:hover .kx-file-card-actions > .kx-icon-button,
+.kx-file-card:focus-within .kx-file-card-actions > .kx-icon-button {
+  opacity: 1;
+}
+.kx-file-card-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  color: var(--kx-text-3);
+  font: 500 12px var(--kx-font);
+}
+.kx-file-card[data-openable]:hover .kx-file-card-open {
+  color: var(--kx-accent);
+}
+.kx-file-card > .kx-file-name {
+  padding-right: 92px;
+}

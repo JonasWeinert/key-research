@@ -21,6 +21,7 @@ import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
+import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
 
 interface Highlight {
@@ -79,6 +80,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
   const { definitions, reload: reloadDefinitions } = usePropertyDefinitions(invoke, workspaceId);
+  const zotero = useZoteroSync(invoke, workspaceId);
   const sources = useMemo(() => noteSources(invoke, workspaceId), [invoke, workspaceId]);
   // The page's own note is the source's first note; it is created on the first keystroke.
   const page = notes[0];
@@ -336,6 +338,10 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
 
   const status = indexLabel(source);
   const progress = side?.progress;
+  const reindex = () => void invoke("store_index_control", { action: "reindex", ids: [sourceId] }, workspaceId).then(() => void loadSource());
+  /** The file card opens the file in its reader: the PDF (beside this page, or its tab when docked
+   *  beside it already), the saved web page, or any other file in its own app. */
+  const openFile = !source.filePath ? undefined : isPdf ? (docked ? openReaderTab : openReader) : isSavedPage ? () => readPage() : () => void libraryBridge().openPath(source.filePath!);
 
   // Everything between the title and the highlights folds under "Details" (see ItemPage).
   const details = (
@@ -356,6 +362,14 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               onCommit={(value) => void save({ [key]: kind === "number" ? (value === "" ? null : Number(value)) : value })} />
           ))}
           <ResearchRows source={source} graph={graph} onEnrich={() => void enrich()} />
+          {isZoteroSource(source) && (
+            <div className="kx-field-row kx-page-chips kx-research-row" data-research="Zotero">
+              <span>Zotero</span>
+              <div className="kx-research-values">
+                <ZoteroSourceLine source={source} status={zotero} />
+              </div>
+            </div>
+          )}
           <div className="kx-field-row kx-page-chips">
             <span>Tags</span>
             <TagEditor tags={source.tags} suggestions={tagSuggestions} onCommit={(tags) => void save({ tags })} />
@@ -367,6 +381,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                 <span className="kx-chip" key={id}>
                   <Icon name="folder" size={11} />
                   <FilterLink filter={sourceFilter.collection(id, names.get(id) ?? "Collection")}>{names.get(id) ?? "Collection"}</FilterLink>
+                  {zotero && collections.some((c) => c.id === id && isZoteroCollection(c)) && <ZoteroMark status={zotero} what="Collection" size={10} />}
                   <button
                     aria-label={`Remove from ${names.get(id) ?? "collection"}`}
                     onClick={() =>
@@ -437,7 +452,24 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         </section>
         {(source.filePath || source.indexStatus !== "skipped") && (
           <section className="kx-page-file" aria-label="File and search">
-            <div className="kx-file-card">
+            <div
+              className="kx-file-card"
+              {...(openFile
+                ? {
+                    role: "button",
+                    tabIndex: 0,
+                    "data-openable": true,
+                    title: isPdf ? "Read the PDF" : isSavedPage ? "Read the saved page" : "Open the file",
+                    "aria-label": isPdf ? "Read the PDF" : isSavedPage ? "Read the saved page" : "Open the file",
+                    onClick: (e: React.MouseEvent) => !(e.target as HTMLElement).closest("button, a") && openFile(),
+                    onKeyDown: (e: React.KeyboardEvent) => {
+                      if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                      e.preventDefault();
+                      openFile();
+                    },
+                  }
+                : {})}
+            >
               {source.filePath ? (
                 <>
                   <div className="kx-file-name" title={source.filePath}>
@@ -458,10 +490,27 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   <span style={{ width: `${progress.fraction * 100}%` }} />
                 </div>
               )}
+              <span className="kx-file-card-actions">
+                {source.filePath && (
+                  <button className="kx-icon-button" title="Show in Finder" aria-label="Show in Finder" onClick={() => void libraryBridge().revealPath(source.filePath!)}>
+                    <Icon name="folder" size={13} />
+                  </button>
+                )}
+                {source.indexStatus !== "skipped" && (
+                  <button className="kx-icon-button" title="Re-index" aria-label="Re-index" onClick={reindex}>
+                    <Icon name="retry" size={13} />
+                  </button>
+                )}
+                {openFile && (
+                  <span className="kx-file-card-open" aria-hidden="true">
+                    {isPdf || isSavedPage ? "Read" : "Open"}
+                    <Icon name="chevronRight" size={11} />
+                  </span>
+                )}
+              </span>
             </div>
             <footer className="kx-inspector-foot">
               Added {readableDate(source.addedAt)} · Modified {readableDate(source.updatedAt)}
-              {source.origin === "zotero" ? " · from Zotero" : ""}
             </footer>
           </section>
         )}
@@ -487,6 +536,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
       data-narrow={width !== "wide"}
       data-tight={width === "tight"}
       data-side={!!side}
+      stickyBar={!!side}
       appearance={readAppearance(source.appearance)}
       onAppearance={(appearance) => void save({ appearance })}
       media={sources.media}
@@ -505,7 +555,13 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               ))}
             </select>
           </span>
-          <span className="kx-spacer" />
+          {side ? (
+            <span className="kx-spacer kx-bar-title" title="Back to the top">
+              {source.title || "Untitled"}
+            </span>
+          ) : (
+            <span className="kx-spacer" />
+          )}
           {copied && (
             <span className="kx-note-saved" aria-live="polite">
               Copied {copied}
@@ -547,7 +603,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void findPdf()}>Find PDF</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
-              <button onClick={() => void invoke("store_index_control", { action: "reindex", ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Re-index</button>
+              <button onClick={reindex}>Re-index</button>
             </div>
           </details>
           {docked?.onClose && (
