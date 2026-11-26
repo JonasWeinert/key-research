@@ -36,6 +36,9 @@
   background: var(--kx-bg);
   box-shadow: 0 0 0 3px var(--kx-accent-soft);
 }
+.kx-search-input::placeholder {
+  color: var(--kx-text-muted);
+}
 .kx-library .kx-search {
   width: clamp(200px, 30vw, 340px);
 }

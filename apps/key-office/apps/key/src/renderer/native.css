@@ -26,6 +26,13 @@
   --kx-amber: #c77700;
   --kx-red: #d93a30;
   --kx-indigo: #5b5bd6;
+  /* Readable roles that hold WCAG AA on every surface (bg, raised, sunken, tinted):
+     quiet text that still carries meaning (hints, markers, meta), accent text on its soft
+     fill, inline code, and lines that are part of content (rules, table grids, 3:1). */
+  --kx-text-muted: #6b6b70;
+  --kx-accent-text: #0a5fd6;
+  --kx-code-ink: #c42f25;
+  --kx-line-content: rgb(0 0 0 / 0.44);
   --kx-shadow-sm: 0 0.5px 1px rgb(0 0 0 / 0.08), 0 0 0 0.5px rgb(0 0 0 / 0.07);
   --kx-shadow-card: 0 1px 2px rgb(0 0 0 / 0.05), 0 0 0 0.5px rgb(0 0 0 / 0.08);
   --kx-shadow-lift: 0 8px 24px -8px rgb(0 0 0 / 0.18), 0 0 0 0.5px rgb(0 0 0 / 0.08);
@@ -60,6 +67,10 @@
   --kx-amber: #ffb340;
   --kx-red: #ff6961;
   --kx-indigo: #8e8cf5;
+  --kx-text-muted: #929299;
+  --kx-accent-text: #6aa5ff;
+  --kx-code-ink: #ff6961;
+  --kx-line-content: rgb(255 255 255 / 0.35);
   --kx-shadow-sm: 0 0 0 0.5px rgb(255 255 255 / 0.1);
   --kx-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 0 0 0.5px rgb(255 255 255 / 0.08);
   --kx-shadow-lift: 0 10px 28px -8px rgb(0 0 0 / 0.6), 0 0 0 0.5px rgb(255 255 255 / 0.1);
@@ -93,6 +104,10 @@
     --kx-amber: #ffb340;
     --kx-red: #ff6961;
     --kx-indigo: #8e8cf5;
+    --kx-text-muted: #929299;
+    --kx-accent-text: #6aa5ff;
+    --kx-code-ink: #ff6961;
+    --kx-line-content: rgb(255 255 255 / 0.35);
     --kx-shadow-sm: 0 0 0 0.5px rgb(255 255 255 / 0.1);
     --kx-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 0 0 0.5px rgb(255 255 255 / 0.08);
     --kx-shadow-lift: 0 10px 28px -8px rgb(0 0 0 / 0.6), 0 0 0 0.5px rgb(255 255 255 / 0.1);
@@ -4437,7 +4452,7 @@ html.kx-modal-open :is(.tab-bar, .tab-strip, .kx-sidebar-titlebar) {
   gap: 8px;
   min-height: 28px;
   margin-bottom: 28px;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   font-size: 12px;
 }
 .kx-note-source {
@@ -4493,7 +4508,7 @@ button.kx-note-source:hover {
   padding-left: 20px;
 }
 .kx-note-title::placeholder {
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 .kx-note-page-error {
   margin: 80px auto;

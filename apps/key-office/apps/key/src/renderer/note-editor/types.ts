@@ -1,3 +1,5 @@
+import type { Ref } from "react";
+
 /** What a link can point at. Highlights and pages are a source with an anchor; `file` is a
  * file in a linked folder. */
 export type ItemKind = "source" | "note" | "canvas" | "record" | "file" | "person" | "venue" | "topic";
@@ -37,6 +39,23 @@ export interface NoteMediaHost {
   url(src: string): string;
 }
 
+/** A passage quoted from a source, with the page it is on and a highlight's colour. */
+export interface QuoteInsert {
+  source: string;
+  page?: number | null;
+  color?: string | null;
+  text: string;
+}
+
+/** What a host can do with a mounted editor (the note's library panel). */
+export interface NoteEditorHandle {
+  /** A citation (sources and highlights) or a link at the cursor, or where it last was. */
+  insertReference(ref: SourceRef, mode: "cite" | "link"): void;
+  /** A quote block after the cursor's block (or in place of an empty line). */
+  insertQuote(quote: QuoteInsert): void;
+  focus(): void;
+}
+
 export interface NoteEditorProps {
   /** Markdown (GFM plus the note fences). */
   value: string;
@@ -63,6 +82,8 @@ export interface NoteEditorProps {
   /** Narrow inspector panel: smaller type, gutter tucked closer. */
   compact?: boolean;
   className?: string;
+  /** Receives the editor's handle once it is mounted. */
+  apiRef?: Ref<NoteEditorHandle>;
 }
 
 export type CalloutTone = "info" | "tip" | "warning" | "note";

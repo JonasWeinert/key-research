@@ -88,7 +88,7 @@
 .kx-kind-chips button[aria-pressed="true"] {
   border-color: transparent;
   background: var(--kx-accent-soft);
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
 }
 .kx-kind-chips button:disabled {
   opacity: 0.45;

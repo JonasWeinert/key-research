@@ -91,7 +91,7 @@
   font-weight: 650;
 }
 .ne-prose a {
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, var(--kx-accent) 40%, transparent);
   text-underline-offset: 2px;
@@ -103,7 +103,7 @@
   padding: 0.12em 0.36em;
   border-radius: 5px;
   background: var(--kx-fill);
-  color: var(--kx-red);
+  color: var(--kx-code-ink);
 }
 
 .ne-prose blockquote:not(.ne-squote-text) {
@@ -115,7 +115,7 @@
 
 .ne-prose hr {
   border: 0;
-  border-top: 1px solid var(--kx-line-strong);
+  border-top: 1px solid var(--kx-line-content);
   margin: 1.2em 0;
 }
 .ne-prose hr.ProseMirror-selectednode {
@@ -183,7 +183,7 @@
   line-height: 1.3;
   border-radius: var(--ne-radius);
   background: var(--kx-fill);
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 .ne-image-caption {
   width: 100%;
@@ -201,7 +201,7 @@
   outline: none;
 }
 .ne-image-caption input::placeholder {
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   opacity: 0;
   transition: opacity 0.15s var(--kx-ease);
 }
@@ -299,7 +299,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   cursor: pointer;
 }
 .ne-video-poster img {
@@ -381,7 +381,7 @@
   margin: 0.12em 0;
 }
 .ne-prose li::marker {
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 .ne-prose ul[data-type="taskList"] {
   list-style: none;
@@ -411,9 +411,9 @@
   cursor: pointer;
 }
 .ne-prose ul[data-type="taskList"] li[data-checked="true"] > div > p {
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   text-decoration: line-through;
-  text-decoration-color: var(--kx-text-3);
+  text-decoration-color: var(--kx-text-muted);
 }
 
 /* ── code ────────────────────────────────────────────────────────────────── */
@@ -450,7 +450,7 @@
 }
 .ne-prose th,
 .ne-prose td {
-  border: 1px solid var(--kx-line-strong);
+  border: 1px solid var(--kx-line-content);
   padding: 6px 10px;
   vertical-align: top;
   text-align: left;
@@ -487,7 +487,7 @@
   position: absolute;
   inset: 0 0 auto;
   overflow: hidden;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   white-space: nowrap;
   text-overflow: ellipsis;
   pointer-events: none;
@@ -614,7 +614,7 @@
   line-height: var(--ne-line);
 }
 .ne-toggle-title::placeholder {
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   font-weight: 500;
 }
 .ne-toggle-body {
@@ -685,7 +685,7 @@
   text-overflow: ellipsis;
 }
 .ne-source-card-detail.is-missing {
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 .ne-source-card-open {
   display: grid;
@@ -697,7 +697,7 @@
   border: 0;
   border-radius: 7px;
   background: none;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   cursor: pointer;
 }
 .ne-source-card-open:hover {
@@ -777,7 +777,7 @@
 }
 .ne-squote-link:hover {
   background: var(--kx-fill);
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
 }
 
 /* ── source mention chip ─────────────────────────────────────────────────── */
@@ -787,14 +787,16 @@
   padding: 0.05em 0.4em;
   border-radius: 5px;
   background: var(--kx-accent-soft);
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
   font-weight: 500;
   text-decoration: none;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
 .ne-prose a[href^="key://source/"]:hover {
-  background: color-mix(in srgb, var(--kx-accent) 20%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--kx-accent-text) 50%, transparent);
+  text-underline-offset: 2px;
 }
 .ne-prose a[href^="key://source/"]:has(.is-missing) {
   background: var(--kx-fill);
@@ -802,7 +804,7 @@
 }
 
 .ne-prose .suggestion {
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
 }
 
 /* ── selection of atoms / drag ───────────────────────────────────────────── */
@@ -834,7 +836,7 @@
   border: 0;
   border-radius: 5px;
   background: none;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   cursor: pointer;
   transition: background-color 0.12s var(--kx-ease), color 0.12s var(--kx-ease);
 }
@@ -899,7 +901,7 @@
   padding: 5px 8px 3px;
   font-size: 11px;
   font-weight: 600;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   letter-spacing: 0.01em;
 }
 .ne-menu-item {
@@ -918,6 +920,10 @@
 }
 .ne-menu-item.is-active {
   background: var(--kx-fill-2);
+}
+/* On the active row's fill the hint reads a step stronger, so it keeps 4.5:1. */
+.ne-menu-item.is-active .ne-menu-hint {
+  color: color-mix(in srgb, var(--kx-text-2), var(--kx-text) 35%);
 }
 .ne-menu-icon {
   display: grid;
@@ -956,7 +962,7 @@
 }
 .ne-menu-empty {
   padding: 8px 10px;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 
 .ne-menu-row {
@@ -1073,7 +1079,7 @@
   color: var(--kx-text);
 }
 .ne-tool.is-active {
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
   background: var(--kx-accent-soft);
 }
 .ne-tool-text {
@@ -1159,7 +1165,7 @@
 .ne-item-embed-missing {
   display: block;
   padding: 10px 12px;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 
 /* Picker sections and passages */
@@ -1187,7 +1193,7 @@
 .ne-menu-foot {
   padding: 6px 8px 2px;
   border-top: 0.5px solid var(--kx-line);
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
   font-size: 11px;
 }
 
@@ -1203,7 +1209,7 @@
   background: var(--kx-bg-raised);
   box-shadow: var(--kx-shadow-pop);
   font-size: 12px;
-  color: var(--kx-text-3);
+  color: var(--kx-text-muted);
 }
 .ne-drop-choice span {
   margin-right: 6px;
@@ -1221,5 +1227,5 @@
 }
 .ne-drop-choice button[aria-pressed="true"] {
   background: var(--kx-accent-soft);
-  color: var(--kx-accent);
+  color: var(--kx-accent-text);
 }
