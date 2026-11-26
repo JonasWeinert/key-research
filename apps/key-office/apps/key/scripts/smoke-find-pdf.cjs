@@ -231,6 +231,8 @@ const PUBMED = {
     await page.locator(".kx-identifier-sheet textarea").waitFor();
     assert.equal(await page.locator(".kx-identifier-sheet textarea").inputValue(), "10.5555/pasted-doi");
     report.searchOffer = true;
+    await page.locator(".kx-identifier-sheet").getByRole("button", { name: "Cancel" }).click();
+    await page.locator(".kx-identifier-sheet").waitFor({ state: "detached" });
 
     // 7. Workspace Settings: the automatic Find PDF switch (off by default, per workspace).
     const [workspace] = await page.evaluate(() => window.key.workspaces());
