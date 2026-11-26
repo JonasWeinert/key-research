@@ -6,7 +6,7 @@
 import { useLayoutEffect, type RefObject } from "react";
 
 const VIEW = "[data-modal-view]";
-const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reduced = () => typeof matchMedia !== "function" || matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export function useStableModalSize(ref: RefObject<HTMLElement | null>, enabled: boolean) {
   useLayoutEffect(() => {

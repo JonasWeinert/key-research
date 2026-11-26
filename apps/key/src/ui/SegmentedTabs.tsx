@@ -79,7 +79,7 @@ export function SegmentedTabs<T extends string = string>({
 
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el) return;
+    if (!el || typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     for (const child of Array.from(el.children)) observer.observe(child);
