@@ -23,6 +23,7 @@ const SOURCES = Number(opt("--sources", 5000));
 const IDLE_MS = Number(opt("--idle-minutes", QUICK ? 0.5 : 10)) * 60_000;
 const RUNS = Number(opt("--runs", QUICK ? 1 : 3));
 const RATES = QUICK ? [1, 4] : [1, 4, 6];
+const APP = process.env.KEY_BENCH_APP ?? path.resolve(__dirname, "..");
 const median = (xs) => {
   const v = xs.filter((x) => x != null).sort((a, b) => a - b);
   return v.length ? v[Math.floor(v.length / 2)] : null;
@@ -62,7 +63,7 @@ async function seed(shell, workspaceId, count) {
 }
 
 async function bundle() {
-  const dir = path.resolve(__dirname, "../out/renderer/assets");
+  const dir = path.join(APP, "out/renderer/assets");
   const files = [];
   for (const name of await readdir(dir).catch(() => [])) {
     if (!/\.(js|mjs|css)$/.test(name)) continue;
@@ -70,17 +71,18 @@ async function bundle() {
     files.push({ name, kB: Math.round(bytes.length / 1024), gzipKB: Math.round(gzipSync(bytes).length / 1024) });
   }
   files.sort((a, b) => b.kB - a.kB);
-  const html = async (n) => (await readFile(path.resolve(__dirname, "../out/renderer", n), "utf8").catch(() => "")).match(/assets\/[^"]+/g) ?? [];
+  const html = async (n) => (await readFile(path.join(APP, "out/renderer", n), "utf8").catch(() => "")).match(/assets\/[^"]+/g) ?? [];
   return { files, shellHtmlRefs: await html("index.html"), pdfHtmlRefs: await html("pdf.html") };
 }
 
+/** JS heap and DOM size of a page now (durations need the domain enabled before the work: see shellLoadWork). */
 async function scriptMetrics(page) {
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Performance.enable");
   const { metrics } = await cdp.send("Performance.getMetrics");
   const m = Object.fromEntries(metrics.map((x) => [x.name, x.value]));
   await cdp.detach().catch(() => {});
-  return { scriptMs: Math.round(m.ScriptDuration * 1000), taskMs: Math.round(m.TaskDuration * 1000), layoutMs: Math.round(m.LayoutDuration * 1000), styleMs: Math.round(m.RecalcStyleDuration * 1000), jsHeapMiB: Math.round(m.JSHeapUsedSize / 1048576), nodes: m.Nodes };
+  return { jsHeapMiB: Math.round(m.JSHeapUsedSize / 1048576), nodes: m.Nodes };
 }
 
 async function pdfReady(app, hash, start) {
@@ -204,7 +206,6 @@ async function serveWeb() {
     const summarize = (runs) => ({ runs, median: Object.fromEntries(["spawnToMainMs", "mainToRendererMs", "firstPaintMs", "firstContentfulPaintMs", "domContentLoadedMs", "interactiveMs"].map((k) => [k, median(runs.map((r) => r[k]))])) });
     result.startup.fresh = summarize(fresh);
     result.startup.warm = summarize(warm);
-    result.startup.shellScriptAtInteractive = await scriptMetrics(shell);
 
     const stage = async (name, ms = 3000) => {
       await delay(ms);
@@ -249,9 +250,17 @@ async function serveWeb() {
       await delay(1000);
     }
     {
+      // Script, style and layout time of a shell load (V8 code cache warm, as on every launch after the first).
+      const cdp = await shell.context().newCDPSession(shell);
+      await cdp.send("Performance.enable");
+      const before = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((x) => [x.name, x.value]));
       const t = Date.now();
       await shell.reload();
       result.startup.unthrottledShellReload = await until(shell, () => document.querySelector('[aria-label="Home"]') && document.querySelector(".key-sidebar"), null, t);
+      const after = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((x) => [x.name, x.value]));
+      const d = (k) => Math.round(((after[k] ?? 0) - (before[k] ?? 0)) * 1000);
+      result.startup.shellLoadWork = { scriptMs: d("ScriptDuration"), taskMs: d("TaskDuration"), layoutMs: d("LayoutDuration"), styleMs: d("RecalcStyleDuration"), jsHeapMiB: Math.round(after.JSHeapUsedSize / 1048576) };
+      await cdp.detach().catch(() => {});
     }
     await delay(1500);
     // One PDF.
@@ -350,10 +359,11 @@ function table(r) {
   lines.push("— startup (median ms from launch) —");
   for (const kind of ["fresh", "warm"]) {
     const m = r.startup[kind].median;
-    row(`${kind}: first contentful paint / interactive`, `${m.firstContentfulPaintMs} / ${m.interactiveMs}  (main ready +${m.spawnToMainMs}, renderer +${m.mainToRendererMs})`);
+    row(`${kind}: first paint / interactive`, `${m.firstPaintMs} / ${m.interactiveMs}  (main ready +${m.spawnToMainMs}, renderer +${m.mainToRendererMs})`);
   }
   row("shell reload to interactive 1× / throttled", `${r.startup.unthrottledShellReload} / ${Object.entries(r.startup.throttledShellReload).map(([k, v]) => `${k} ${v}`).join(", ")}`);
-  row("shell script/task ms at interactive", `${r.startup.shellScriptAtInteractive.scriptMs} / ${r.startup.shellScriptAtInteractive.taskMs}`);
+  const w = r.startup.shellLoadWork ?? {};
+  row("shell load: script / task / layout / style ms", `${w.scriptMs} / ${w.taskMs} / ${w.layoutMs} / ${w.styleMs}  (JS heap ${w.jsHeapMiB} MiB)`);
   lines.push("— memory (MiB footprint / RSS) —");
   for (const [name, s] of Object.entries(r.stages)) {
     row(name, `${s.totalFootprintMiB} / ${s.totalRssMiB}`);

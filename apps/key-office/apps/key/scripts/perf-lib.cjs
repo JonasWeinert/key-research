@@ -13,8 +13,10 @@ async function launch({ profile, workspaces, env = {}, size = [1280, 820] }) {
   const t0 = Date.now();
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
-    args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
+    // KEY_BENCH_APP: another copy of the app folder (package.json + out/), e.g. a saved build to compare against.
+    args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [process.env.KEY_BENCH_APP ?? path.resolve(__dirname, "..")],
     env: {
+      PDFIUM_DYNAMIC_LIB_PATH: path.resolve(__dirname, "../../../../../vendor/pdfium/lib/libpdfium.dylib"),
       ...process.env,
       KEY_SKIP_ONBOARDING: "1",
       KEY_NO_WINDOW_RESTORE: "1",
@@ -130,7 +132,7 @@ async function processes(app, mainPid, { footprint = true } = {}) {
     else if (m?.type === "Tab" || m?.type === "Renderer" || pages.length)
       role = `renderer:${pages.map((x) => pageName(x.url)).join("+") || "spare"}`;
     else if (m) role = m.type.toLowerCase();
-    else role = `native:${path.basename(p.command.split(" ")[0])}`;
+    else role = `native:${path.basename(p.command.split(" ")[0])}${p.command.match(/\s(--key-[a-z-]+)/)?.[1]?.replace("--key-", " ") ?? ""}`;
     return { pid: p.pid, role, rssMiB: mib(p.rssKiB * 1024), footprintMiB: fp[p.pid] == null ? null : mib(fp[p.pid]), cpuSec: p.cpuSec, wakeupsPerSec: m?.wakeups };
   });
   const sum = (k) => Math.round(roles.reduce((s, r) => s + (r[k] ?? 0), 0) * 10) / 10;

@@ -44,6 +44,16 @@ Existing Tauri libraries are preserved in place; they are not silently moved int
 
 This is an unsigned development application, not a qualified cross-platform release. Stress tests measure responsiveness and memory on this Mac; they do not guarantee uninterrupted frame rates. Upstream attribution is preserved in `../../UPSTREAM.md`, LICENSE/NOTICE and packaged third-party notices.
 
+## Performance
+
+Key should feel instant on low-end machines. After `npm run build -w @key/electron` (with `KEY_HOST_EXECUTABLE` and `KEY_OFFICE_APPS_ROOT` set as for the smokes):
+
+- `node scripts/bench-electron.cjs [--quick] [--label name] [--out file.json]` — startup (fresh and warm profile, main-process steps from `src/main/startup-marks.ts`), RSS and macOS footprint per process (main, GPU, shell, each PDF/web view, the Rust host and its workers) at idle Home, a 5,000-source library, one PDF, three PDFs + a note + a web page, after closing them and after 10 minutes idle; idle CPU and wakeups; latencies (open library, type-to-search, palette, Settings, tag manager on 5,000 tags, open PDF, tab switch); scroll frame times and long tasks; bundle sizes. Renderer measurements repeat with Chromium CPU throttling at 4× and 6× to stand in for a slow machine. `KEY_ELECTRON_EXECUTABLE` benchmarks a packaged Key.app; `KEY_BENCH_APP` another build folder.
+- `node scripts/bench-host.cjs <host> [<host> …]` — the Rust host alone: startup, library commands on 5,000 sources, indexing three PDFs with peak memory per worker. Compares debug and release builds.
+- `node scripts/perf-budget.cjs` — a quick smoke with generous budgets (startup, idle CPU and memory, opening a 2,000-source library, main and renderer bundle sizes). `KEY_PERF_SLACK=2` loosens the time budgets on slow machines.
+
+Startup stays light by loading on first use what most sessions never open: the Office editors' main-process code (`office-editors.ts` → `office-impl.ts`), the note editor (`note-editor/LazyNoteEditor.tsx`), Settings, onboarding, the tag manager, canvas and other rare pages (`lazy.tsx`). Library and model status come from one shared poller per workspace that pauses while the window is hidden (`status-poll.ts`). Live blur is dropped under "Reduce transparency" and on machines with four cores or 4 GB or less (`reduced-effects.ts`).
+
 ## Verification
 
 `npm run typecheck -w @key/electron` and `npm test -w @key/electron` validate the shell. Scripts in `scripts/` exercise real Electron windows and real Rust IPC, using isolated temporary workspace/profile directories: library/record persistence, PDF ownership and rendering, canonical search highlights, Office view loading, unsaved-close/save, saved database filters, and repeated PDF interaction. Backend storage tests cover workspace membership, file registration and migration invariants.
