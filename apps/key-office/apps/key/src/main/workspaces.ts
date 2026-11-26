@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, realpath, rename } from 'node:fs/promises'
+import { access, mkdir, open, readFile, realpath, rename } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { RustHost, type HostRequest, type InvokeOptions } from './rust-bridge'
 
@@ -104,6 +104,69 @@ export class Registry {
     if (!this.entries.length)
       await this.add(join(this.options.defaultWorkspaceParent, 'Personal'), 'Personal')
     return this.entries.map((w) => ({ ...w }))
+  }
+  /** The registered workspaces, without creating the default one when there are none. */
+  async known(): Promise<WorkspaceInfo[]> {
+    await this.ready
+    return this.entries.map((w) => ({ ...w }))
+  }
+  /** Whether a workspace's host is running now (asking it never starts one). */
+  isRunning(id: string): boolean {
+    return !!this.hosts.get(id)?.isRunning()
+  }
+  /** Runs `change` on a registered entry, in turn with other registry changes, and saves. */
+  private mutate<T>(id: string, change: (workspace: WorkspaceInfo) => Promise<T>): Promise<T> {
+    const action = async () => {
+      await this.ready
+      const workspace = this.entries.find((w) => w.id === id)
+      if (!workspace) throw Error('This workspace is no longer in the list')
+      const result = await change(workspace)
+      await this.persist()
+      return result
+    }
+    const result = this.mutations.then(action, action)
+    this.mutations = result.catch(() => undefined)
+    return result
+  }
+  /** Renames a workspace: its display name only, the folder stays as it is. */
+  rename(id: string, name: string): Promise<WorkspaceInfo> {
+    return this.mutate(id, async (workspace) => {
+      if (!name.trim() || name.length > 256) throw Error('Enter a workspace name')
+      const updated = await this.host(workspace).invoke<WorkspaceInfo>('workspace_rename', { name: name.trim() })
+      workspace.name = updated.name
+      return { ...workspace }
+    })
+  }
+  /** Takes a workspace off the list. Its folder and everything in it stay on disk. */
+  forget(id: string): Promise<void> {
+    return this.mutate(id, async (workspace) => {
+      this.hosts.get(id)?.close()
+      this.hosts.delete(id)
+      this.lastUsed.delete(id)
+      this.entries = this.entries.filter((w) => w !== workspace)
+    })
+  }
+  /** Points a workspace at the folder it now lives in (found again, or moved there by
+   * `move`). The folder must hold this very workspace. */
+  relocate(id: string, root: string, move?: (from: string, to: string) => Promise<void>): Promise<WorkspaceInfo> {
+    return this.mutate(id, async (workspace) => {
+      const target = resolve(root)
+      if (!move) await access(join(target, '.key')).catch(() => { throw Error('This folder is not a Key workspace') })
+      if (this.entries.some((w) => w !== workspace && w.root === target)) throw Error('Another workspace already uses this folder')
+      this.hosts.get(id)?.close()
+      this.hosts.delete(id)
+      if (move) await move(workspace.root, target)
+      const canonical = await realpath(target)
+      const probe = new RustHost({ executable: this.options.hostExecutable, libraryRoot: join(canonical, '.key'), pdfiumPath: this.options.pdfiumPath })
+      try {
+        const info = await probe.invoke<WorkspaceInfo | null>('workspace_info', {})
+        if (info?.id !== id) throw Error('This folder holds a different workspace')
+      } finally {
+        probe.close()
+      }
+      workspace.root = canonical
+      return { ...workspace }
+    })
   }
   async setAppearance(
     id: string,
