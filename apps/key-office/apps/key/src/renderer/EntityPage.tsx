@@ -28,6 +28,7 @@ import {
 import { itemHref } from "./note-editor";
 import { YearBars } from "./work-references";
 import MergeReview from "./MergeReview";
+import { openTagManager } from "./tag-manager-open";
 import RelationMap from "./RelationMap";
 import "./entity.css";
 
@@ -163,6 +164,7 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
               <button onClick={() => void newNote()}>New note about {kind === "person" ? "them" : "it"}</button>
               <button onClick={() => void copyItemLink([{ item: { kind, id }, title: name }])}>Copy link</button>
               {inOpenAlex && <button onClick={refresh}>Refresh from OpenAlex</button>}
+              {kind === "tag" && <button onClick={() => openTagManager(workspaceId, name)}>Organise tags…</button>}
             </div>
           </details>
         </header>
