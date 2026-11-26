@@ -78,8 +78,19 @@ const { RustHost } = require(path.join(tmp, "rust-bridge.js"));
       await host.invoke("native_cancel_render", { requestId: "x" }),
       { requestId: "x" },
     );
+    // Every regular slot hangs: a user's call still goes (interactive headroom), background
+    // work waits, and a newer keystroke's query replaces the older one still queued.
+    let background = "waiting";
+    const queuedBackground = host.invoke("echo", { $background: true }).then(() => (background = "answered"), () => (background = "closed"));
+    assert.deepEqual(await host.invoke("echo", { click: 1 }, { priority: "interactive" }), { click: 1 });
+    assert.deepEqual(await host.invoke("echo", { key: 1 }, { gesture: true }), { key: 1 });
+    assert.equal(background, "waiting");
+    const older = host.invoke("echo", { q: "ec", $supersede: "search" });
+    const newer = host.invoke("echo", { q: "eco", $supersede: "search" }).catch(() => undefined);
+    await assert.rejects(older, /Superseded/);
     host.close();
-    await Promise.all(busy);
+    await Promise.all([...busy, queuedBackground, newer]);
+    assert.equal(background, "closed");
     console.log(
       "Rust bridge: fragmented frames, binary transport, concurrent requests, timeout/exit restart, and cancellation bypass passed",
     );

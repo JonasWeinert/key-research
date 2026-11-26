@@ -43,6 +43,23 @@ use std::{
 };
 
 pub type Result<T> = std::result::Result<T, String>;
+use key_store::priority::{self, Class};
+
+/// The class a document is indexed at: what the user opened or selected is foreground work,
+/// rows on screen visible work, the rest background.
+pub fn job_class(priority: Option<Priority>) -> Class {
+    match priority {
+        Some(Priority::Opened | Priority::Selected) => Class::Foreground,
+        Some(Priority::Visible) => Class::Visible,
+        None => Class::Background,
+    }
+}
+
+/// A checkpoint for long steps of indexing (between pages): pauses background documents
+/// while a user action runs.
+pub fn checkpoint() {
+    priority::yield_if_needed();
+}
 
 /// Page text for a PDF on disk. Implemented by the host, which owns PDFium.
 /// `progress(done, total)` is called as pages are read.
@@ -175,11 +192,20 @@ pub struct Indexer {
     /// Embed passages for semantic search (on by default). Off (`KEY_INDEX_EMBEDDINGS=0`),
     /// sources are still analysed and keyword-indexed, but no model is loaded or fetched.
     embeddings: Arc<AtomicBool>,
+    /// Sources being indexed now, by either lane.
+    working: Arc<Mutex<std::collections::HashSet<String>>>,
+    /// The opened-document lane: a document the user opens while bulk indexing reads another
+    /// one is indexed at once beside it instead of after it.
+    opened_lane: Arc<AtomicBool>,
+    pdf: Arc<Mutex<Option<Arc<dyn PdfText>>>>,
 }
 
 impl Indexer {
     pub fn start(store: Store, models: ModelDir, pdf: Arc<dyn PdfText>) -> Self {
         let indexer = Self {
+            working: Arc::default(),
+            opened_lane: Arc::default(),
+            pdf: Arc::new(Mutex::new(Some(pdf.clone()))),
             store,
             models,
             embedder: Arc::default(),
@@ -236,6 +262,55 @@ impl Indexer {
         }
         drop(wanted);
         self.wake();
+        if priority == Priority::Opened {
+            self.start_opened_lane();
+        }
+    }
+
+    /// Claims a source for indexing; false when a lane already has it.
+    fn claim(&self, id: &str) -> bool {
+        self.working.lock().map(|mut w| w.insert(id.to_string())).unwrap_or(false)
+    }
+    fn release(&self, id: &str) {
+        if let Ok(mut working) = self.working.lock() {
+            working.remove(id);
+        }
+    }
+    fn working(&self) -> Vec<String> {
+        self.working.lock().map(|w| w.iter().cloned().collect()).unwrap_or_default()
+    }
+
+    /// While bulk indexing is busy with another document, indexes the opened ones on a lane
+    /// of their own at foreground priority (one lane at most).
+    fn start_opened_lane(&self) {
+        if !self.is_busy() || self.is_paused() || self.opened_lane.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let Some(pdf) = self.pdf.lock().ok().and_then(|p| p.clone()) else {
+            self.opened_lane.store(false, Ordering::SeqCst);
+            return;
+        };
+        let lane = self.clone();
+        let spawned = thread::Builder::new().name("key-index-opened".into()).spawn(move || {
+            priority::set_thread_class(Class::Foreground);
+            while let Some(id) = lane.next_opened() {
+                if let Err(error) = lane.index(&id, pdf.as_ref()) {
+                    let _ = lane.store.set_index_status(&id, "failed", Some(&error), 0, 0);
+                }
+                lane.release(&id);
+                lane.wake();
+            }
+            lane.opened_lane.store(false, Ordering::SeqCst);
+        });
+        if spawned.is_err() {
+            self.opened_lane.store(false, Ordering::SeqCst);
+        }
+    }
+
+    /// The next opened source no lane has, claimed.
+    fn next_opened(&self) -> Option<String> {
+        let (id, _) = self.queue(1, &self.working()).into_iter().find(|(_, p)| *p == Some(Priority::Opened))?;
+        self.claim(&id).then_some(id)
     }
 
     /// The stage `id` is in right now (reading before embedding), if it is being indexed.
@@ -430,6 +505,9 @@ impl Indexer {
             .expect("spawn embedder");
         let mut in_flight: Vec<String> = Vec::new();
         loop {
+            // Between documents: bulk indexing makes way for what the user is doing.
+            priority::set_thread_class(Class::Background);
+            priority::yield_if_needed();
             if self.paused.load(Ordering::SeqCst) {
                 self.wait(Duration::from_secs(30));
                 continue;
@@ -439,7 +517,12 @@ impl Indexer {
             }
             self.index_stale_notes();
             let read_files = self.index_linked_files(pdf.as_ref());
-            let next = self.queue(1, &in_flight).into_iter().next().map(|(id, _)| id);
+            let mut skip = self.working();
+            skip.extend(in_flight.iter().cloned());
+            let next = self.queue(1, &skip).into_iter().next().map(|(id, _)| id);
+            if next.as_ref().is_some_and(|id| !self.claim(id)) {
+                continue;
+            }
             let Some(id) = next else {
                 if read_files {
                     continue;
@@ -460,6 +543,8 @@ impl Indexer {
                 continue;
             };
             self.busy.store(true, Ordering::SeqCst);
+            // The document the user opened is read as foreground work (its layout helper too).
+            priority::set_thread_class(job_class(self.priority_of(&id)));
             match self.prepare(&id, pdf.as_ref()) {
                 Ok(Some(prepared)) => {
                     in_flight.push(id);
@@ -467,15 +552,17 @@ impl Indexer {
                         return;
                     }
                 }
-                Ok(None) => {}
+                Ok(None) => self.release(&id),
                 Err(error) => {
                     let _ = self.store.set_index_status(&id, "failed", Some(&error), 0, 0);
+                    self.release(&id);
                 }
             }
         }
     }
 
     fn embed_stage(self, receiver: mpsc::Receiver<Prepared>) {
+        priority::set_thread_class(Class::Background);
         loop {
             match receiver.recv_timeout(Duration::from_secs(3)) {
                 Ok(prepared) => {
@@ -511,6 +598,7 @@ impl Indexer {
                 live.finishes.pop_front();
             }
         }
+        self.release(&id);
         if let Ok(mut done) = self.finished.lock() {
             done.push(id);
         }
@@ -814,7 +902,9 @@ impl Indexer {
                 live.embedding = Some(job.clone());
             }
             let mut done = 0;
+            let class = job_class(job.priority);
             for batch in prepared.chunks.chunks_mut(32) {
+                priority::with_class(class, priority::yield_if_needed);
                 let items: Vec<(&str, &str)> = batch.iter().map(|c| (prepared.title.as_str(), c.text.as_str())).collect();
                 let vectors = embedder.embed_documents(&items)?;
                 for (chunk, vector) in batch.iter_mut().zip(vectors) {
@@ -951,7 +1041,31 @@ mod tests {
             layout_model: Arc::new(AtomicBool::new(true)),
             // No model downloads from unit tests.
             embeddings: Arc::new(AtomicBool::new(false)),
+            working: Arc::default(),
+            opened_lane: Arc::default(),
+            pdf: Arc::default(),
         }
+    }
+
+    #[test]
+    fn an_opened_document_is_claimed_once_and_ahead_of_bulk_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let add = |title: &str| {
+            let input = serde_json::from_value(serde_json::json!({"kind": "reference", "title": title, "indexStatus": "pending"})).unwrap();
+            store.insert_source(input).unwrap().id
+        };
+        let (bulk, opened) = (add("Bulk"), add("Opened"));
+        let indexer = idle(&store, dir.path());
+        // Bulk indexing has the first one; the user opens the second.
+        assert!(indexer.claim(&bulk));
+        indexer.prioritize(std::slice::from_ref(&opened), Priority::Opened);
+        assert_eq!(indexer.next_opened().as_deref(), Some(opened.as_str()));
+        // Neither lane takes what the other has.
+        assert_eq!(indexer.next_opened(), None);
+        assert!(!indexer.claim(&opened));
+        assert_eq!(job_class(indexer.priority_of(&opened)), Class::Foreground);
+        assert_eq!(job_class(indexer.priority_of(&bulk)), Class::Background);
     }
 
     #[test]

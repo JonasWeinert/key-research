@@ -393,14 +393,35 @@ pub trait Library {
     fn attach(&self, _id: &str, _path: &std::path::Path) -> Result<Json, String> {
         Err("This library cannot attach files".into())
     }
+    /// Whether metadata lookups can be queued for after the answer (`enrich_later`); where
+    /// not (tests' shelves), "add with lookup" looks the DOI up at once.
+    fn queues_lookups(&self) -> bool {
+        false
+    }
+    /// Queues the source's metadata lookup (by its DOI), first in line.
+    fn enrich_later(&self, _id: &str) {}
 }
 
 /// Adds the work as a reference, or answers the source it already is. With `lookup`, a work
 /// with a DOI is first looked up in OpenAlex, whose record (when it has one) is what is added.
 pub fn add_to_library(web: &WebSearch, library: &dyn Library, work: WebResult, collection: Option<&str>, lookup: bool) -> Result<Json, String> {
     let mut work = work;
+    let doi = types::bare_doi(work.doi.as_deref()).filter(|d| d.starts_with("10."));
+    // "Add" answers as soon as the row is written: a work that already has a title is added
+    // as it is and looked up right after, in the background (first in the lookup queue).
+    if lookup && doi.is_some() && !work.title.trim().is_empty() && library.queues_lookups() {
+        let existing = library::existing(library, &[library::Asked::from(&work)], true);
+        if let Some(id) = existing.get("work").and_then(Json::as_str) {
+            return Ok(json!({ "source": library.source(id)?, "existed": true, "work": work }));
+        }
+        let source = library.create(library::source_input(&work, collection))?;
+        if let Some(id) = source["id"].as_str() {
+            library.enrich_later(id);
+        }
+        return Ok(json!({ "source": source, "existed": false, "work": work, "lookup": "queued" }));
+    }
     if lookup {
-        if let Some(doi) = types::bare_doi(work.doi.as_deref()).filter(|d| d.starts_with("10.")) {
+        if let Some(doi) = doi {
             if let Ok(Some(found)) = web.lookup("openalex", &doi) {
                 if !found.title.trim().is_empty() {
                     work = found;
@@ -506,6 +527,13 @@ impl Library for StoreLibrary<'_> {
     }
     fn attach(&self, id: &str, path: &std::path::Path) -> Result<Json, String> {
         self.call("store_attach_file", json!({ "id": id, "path": path }))
+    }
+    fn queues_lookups(&self) -> bool {
+        true
+    }
+    fn enrich_later(&self, id: &str) {
+        self.library.openalex.focus(id);
+        let _ = self.call("store_enrich", json!({ "ids": [id] }));
     }
 }
 

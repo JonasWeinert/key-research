@@ -30,6 +30,7 @@ pub mod web_pages;
 mod html_dom;
 pub mod feeds;
 pub mod reading;
+pub mod priority;
 pub use analysis::{CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -56,7 +57,7 @@ use serde_json::{Map, Value as Json};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, Once},
+    sync::{Arc, Mutex, Once},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -439,13 +440,19 @@ pub struct Passage {
 #[derive(Clone)]
 pub struct Store {
     root: PathBuf,
-    conn: Arc<Mutex<Connection>>,
-    /// A second, read-only connection for lists and search, so they never wait behind
-    /// the indexer's writes on `conn` (WAL lets readers run alongside a writer).
-    reader: Arc<Mutex<Connection>>,
+    /// The one writer, handed out by class (priority.rs): a user's edit goes before the
+    /// indexer's next transaction.
+    conn: Arc<priority::PriorityPool<Connection>>,
+    /// Read-only connections for lists and search, so they never wait behind the
+    /// indexer's writes on `conn` (WAL lets readers run alongside a writer), nor behind
+    /// one another's long queries (a duplicate recount).
+    reader: Arc<priority::PriorityPool<Connection>>,
     /// The duplicate matcher's index of the library (duplicates.rs), rebuilt when it changed.
     duplicates: Arc<Mutex<duplicates::Cache>>,
 }
+
+/// Read-only connections: a user's list or search never waits for one background query.
+const READERS: usize = 3;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -510,22 +517,27 @@ impl Store {
         reading::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
         formula::register(&conn)?;
-        let reader = Connection::open(root.join("key.db")).map_err(e)?;
-        formula::register(&reader)?;
-        reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
-        Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
+        let readers = (0..READERS)
+            .map(|_| {
+                let reader = Connection::open(root.join("key.db")).map_err(e)?;
+                formula::register(&reader)?;
+                reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
+                Ok(reader)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default() })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
     }
 
-    fn db(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.conn.lock().map_err(|_| "Library database lock poisoned".to_string())
+    fn db(&self) -> Result<priority::Guard<'_, Connection>> {
+        self.conn.lock()
     }
 
-    fn read(&self) -> Result<MutexGuard<'_, Connection>> {
-        self.reader.lock().map_err(|_| "Library database lock poisoned".to_string())
+    fn read(&self) -> Result<priority::Guard<'_, Connection>> {
+        self.reader.lock()
     }
 
     pub fn meta(&self, key: &str) -> Result<Option<String>> {

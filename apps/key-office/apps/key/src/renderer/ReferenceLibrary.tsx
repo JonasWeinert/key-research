@@ -427,6 +427,8 @@ export default function ReferenceLibrary({
 
   // Search follows typing: metadata and full text together, newest request wins.
   const searchRequest = useRef(0);
+  // A newer keystroke's search replaces this view's older one still waiting for the host.
+  const searchKey = useRef(`search:${Math.random().toString(36).slice(2)}`);
   const runSearch = useCallback(
     async (value: string, limit = 60) => {
       const id = ++searchRequest.current;
@@ -435,7 +437,7 @@ export default function ReferenceLibrary({
       try {
         const result = await invoke<SearchResult>(
           "store_search",
-          { text: value, collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), limit, passagesPerSource: 3 },
+          { text: value, collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), limit, passagesPerSource: 3, $supersede: searchKey.current },
           workspaceId,
         );
         if (id === searchRequest.current) setSearch({ query: value, result, busy: false, limit, terms });

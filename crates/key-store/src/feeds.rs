@@ -291,7 +291,7 @@ pub fn identity(kind: &str, config: &Map<String, Json>) -> String {
 }
 
 impl Store {
-    fn feeds_db(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
+    fn feeds_db(&self) -> Result<crate::priority::Guard<'_, Connection>> {
         let db = self.db()?;
         ensure_schema(&db)?;
         Ok(db)

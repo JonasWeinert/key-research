@@ -97,7 +97,7 @@ fn pages_count(seen: &str) -> i64 {
 }
 
 impl Store {
-    fn reading_db(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
+    fn reading_db(&self) -> Result<crate::priority::Guard<'_, Connection>> {
         let db = self.db()?;
         ensure_schema(&db)?;
         Ok(db)

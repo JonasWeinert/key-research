@@ -61,7 +61,9 @@ impl ReferenceWorker {
     }
 
     fn run(self, store: Store, native: NativePdfService, cache: key_library::Library) {
+        key_store::priority::set_thread_class(key_store::priority::Class::Background);
         loop {
+            key_store::priority::yield_if_needed();
             let focus = self.focus.lock().map(|f| f.clone()).unwrap_or_default();
             match store.next_reference_job(&focus, CITATIONS_VERSION) {
                 Ok(Some(id)) => {

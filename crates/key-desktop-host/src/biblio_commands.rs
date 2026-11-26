@@ -132,6 +132,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json, root: &Path) -> O
 /// Watches the library: keys for new sources, then the auto-export files.
 pub fn start_watcher(store: Store) {
     let _ = std::thread::Builder::new().name("key-biblio-watch".into()).spawn(move || {
+        key_store::priority::set_thread_class(key_store::priority::Class::Background);
         let mut seen = String::new();
         let mut changed_at: Option<Instant> = None;
         // Keys for sources added before keys existed.

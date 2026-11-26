@@ -7,7 +7,9 @@ contextBridge.exposeInMainWorld("key", {
     args?: unknown,
     workspaceId?: string,
     options?: unknown,
-  ) => ipcRenderer.invoke("key:invoke", command, args, workspaceId, options),
+  ) =>
+    // A call made right after a click or key press is the user's: the host serves it first.
+    ipcRenderer.invoke("key:invoke", command, args, workspaceId, navigator.userActivation?.isActive ? { ...(options as object | undefined), gesture: true } : options),
   workspaces: () => ipcRenderer.invoke("key:workspaces"),
   addWorkspace: () => ipcRenderer.invoke("key:add-workspace"),
   // The workspaces window (main/launcher.ts); "show" works from any window.

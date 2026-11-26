@@ -22,7 +22,16 @@ export interface InvokeOptions {
   binary?: Uint8Array;
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** The call follows a click or keystroke (the preload passes `navigator.userActivation`). */
+  gesture?: boolean;
+  /** A priority class for this call (see the host's priority.rs); else the host's table. */
+  priority?: PriorityClass;
 }
+/** The host's priority classes, best first (crates/key-store/src/priority.rs). */
+export type PriorityClass = "interactive" | "foreground" | "visible" | "background" | "idle";
+const CLASSES: PriorityClass[] = ["interactive", "foreground", "visible", "background", "idle"];
+/** The host's table of command classes (`host_priority_table`, crates/key-desktop-host/src/priority.rs). */
+type PriorityTable = { default: PriorityClass; classes: Record<string, PriorityClass>; slowPrefixes: string[]; quick: string[] };
 type Response = {
   id: number;
   ok: boolean;
@@ -43,6 +52,13 @@ type Pending = {
   urgent: boolean;
   /** Work nobody is waiting on (polls, cache refreshes): never ahead of a user action. */
   background: boolean;
+  /** Index into CLASSES: lower goes first. */
+  rank: number;
+  /** Waits on the network or runs long: a few at a time, so quick calls always find a slot. */
+  slow: boolean;
+  queuedAt: number;
+  /** A newer request with the same key replaces this one while it waits (`$supersede`). */
+  supersede?: string;
   /** Identical background requests waiting together share one answer. */
   key?: string;
   followers?: { resolve: (value: any) => void; reject: (error: Error) => void }[];
@@ -55,11 +71,17 @@ const URGENT = new Set(["native_cancel_render", "processing_interaction"]);
 /** Commands that are always background work. Any other call can mark itself with
  *  `$background: true` in its arguments (taken out before it is sent). */
 const BACKGROUND = new Set(["store_status", "store_refresh", "store_zotero_sync", "store_zotero_progress", "store_zotero_status", "store_zotero_plugin_status", "store_linked_sync", "store_index_priority", "store_enrich_options"]);
-/** In flight at once: regular requests, and how many of those may be background work, so a
- *  user action always finds a free slot. */
+/** In flight at once: regular requests, and how many of those may be background or slow work,
+ *  so a user action always finds a free slot; interactive calls have headroom beyond that. */
 const IN_FLIGHT = 6;
+const INTERACTIVE_HEADROOM = 4;
 const BACKGROUND_IN_FLIGHT = 2;
+const SLOW_IN_FLIGHT = 3;
 const BACKGROUND_QUEUED = 64;
+/** Waiting this long counts as one class better, so background work still moves. */
+const AGING_MS = 2000;
+/** Network commands, until the host's table says otherwise. */
+const SLOW_FALLBACK = /^(web_search|web_lookup|web_find_pdf|web_add_identifiers|scholarly_|global_search|store_zotero_|store_import_zotero|feeds_refresh|feeds_discover|feeds_subscribe|store_openalex_)/;
 
 /** One supervised host per workspace. Failed operations are never replayed implicitly. */
 export class RustHost {
@@ -75,7 +97,24 @@ export class RustHost {
   private available = 0;
   private headerLength?: number;
   private response?: Response;
+  private table?: PriorityTable;
   constructor(private readonly options: RustHostOptions) {}
+
+  /** The class and lane of a call: the caller's hint, then the host's table. */
+  private classify(command: string, args: Record<string, unknown>, options: InvokeOptions): { rank: number; slow: boolean } {
+    const table = this.table;
+    const slow = table ? !table.quick.includes(command) && table.slowPrefixes.some((p) => command.startsWith(p)) : SLOW_FALLBACK.test(command);
+    let name: PriorityClass | undefined =
+      (typeof args.$priority === "string" && CLASSES.includes(args.$priority as PriorityClass) ? (args.$priority as PriorityClass) : undefined) ?? options.priority;
+    if (!name && args.$background === true) name = "background";
+    // The host's table first (status polls drive what is on screen: "visible"); the bridge's
+    // own list of background commands stands in for an older host.
+    if (!name) name = table?.classes[command] ?? (BACKGROUND.has(command) ? "background" : table?.default ?? "foreground");
+    if (options.gesture && (name === "foreground" || name === "visible")) name = "interactive";
+    // Network work never counts as interactive (it would hold the user's lane for seconds).
+    if (slow && name === "interactive") name = "foreground";
+    return { rank: CLASSES.indexOf(name), slow };
+  }
 
   /** Replaces the requests sent on (re)start; a running process is not told (send it yourself). */
   setPrelude(prelude: () => HostRequest[]): void {
@@ -106,13 +145,25 @@ export class RustHost {
     if (bytes - (binary?.length ?? 0) > MAX_JSON - 1024)
       return Promise.reject(new Error("Control request exceeds 1 MiB"));
     const urgent = URGENT.has(command);
-    const background = !urgent && (BACKGROUND.has(command) || args.$background === true);
-    if ("$background" in args) {
+    const { rank, slow } = this.classify(command, args, options);
+    const background = !urgent && rank >= CLASSES.indexOf("background");
+    const supersede = typeof args.$supersede === "string" ? args.$supersede : undefined;
+    if ("$background" in args || "$priority" in args || "$supersede" in args) {
       args = { ...args };
       delete args.$background;
+      delete args.$priority;
+      delete args.$supersede;
     }
-    // The same background request already waiting: share its answer.
-    const key = background ? `${command}\u0000${JSON.stringify(args)}` : undefined;
+    // A newer keystroke's query replaces the one still waiting to be sent.
+    if (supersede)
+      for (const old of this.queue.filter((p) => p.supersede === supersede)) {
+        this.queue.splice(this.queue.indexOf(old), 1);
+        this.queuedBytes -= old.bytes;
+        clearTimeout(old.timer);
+        this.settle(old, undefined, new Error("Superseded by a newer request"));
+      }
+    // The same poll or background request already waiting: share its answer.
+    const key = background || BACKGROUND.has(command) ? `${command}\u0000${JSON.stringify(args)}` : undefined;
     const twin = key && this.queue.find((p) => p.key === key);
     if (twin)
       return new Promise<T>((resolve, reject) => (twin.followers ??= []).push({ resolve, reject }));
@@ -137,6 +188,10 @@ export class RustHost {
         reject,
         urgent,
         background,
+        rank,
+        slow,
+        queuedAt: Date.now(),
+        supersede,
         key,
         bytes,
       };
@@ -159,12 +214,12 @@ export class RustHost {
         options.timeoutMs ??
           (command === "workspace_scan_linked_folder" ? 300_000 : 60_000),
       );
-      // Urgent first, then user actions in order, then background work.
+      // Urgent first, then by class (interactive, foreground, visible, background, idle),
+      // in order within a class.
       if (request.urgent) this.queue.unshift(request);
-      else if (request.background) this.queue.push(request);
       else {
-        const firstBackground = this.queue.findIndex((p) => p.background);
-        this.queue.splice(firstBackground < 0 ? this.queue.length : firstBackground, 0, request);
+        const after = this.queue.findIndex((p) => !p.urgent && p.rank > request.rank);
+        this.queue.splice(after < 0 ? this.queue.length : after, 0, request);
       }
       try {
         this.start();
@@ -197,6 +252,7 @@ export class RustHost {
     );
     this.child = child;
     this.queuePrelude();
+    this.fetchTable();
     child.stdout.on("data", (data: Buffer) => {
       if (this.child !== child) return;
       this.chunks.push(data);
@@ -234,8 +290,38 @@ export class RustHost {
     for (const { command, args } of requests.reverse()) {
       const bytes = Buffer.byteLength(JSON.stringify(args));
       this.queuedBytes += bytes;
-      this.queue.unshift({ id: this.nextId++, command, args, options: {}, resolve: () => {}, reject: () => {}, urgent: true, background: false, bytes });
+      this.queue.unshift({ id: this.nextId++, command, args, options: {}, resolve: () => {}, reject: () => {}, urgent: true, background: false, rank: 0, slow: false, queuedAt: Date.now(), bytes });
     }
+  }
+  /** Asks the host for its priority table (an older host does not know it: the fallbacks stay). */
+  private fetchTable(): void {
+    const child = this.child;
+    const request: Pending = {
+      id: this.nextId++,
+      command: "host_priority_table",
+      args: {},
+      options: {},
+      resolve: (value: unknown) => {
+        const table = value as Partial<PriorityTable> | undefined;
+        if (this.child === child && table && typeof table.classes === "object" && Array.isArray(table.slowPrefixes) && Array.isArray(table.quick))
+          this.table = { default: table.default ?? "foreground", classes: table.classes, slowPrefixes: table.slowPrefixes, quick: table.quick };
+      },
+      reject: () => {},
+      urgent: true,
+      background: false,
+      rank: 0,
+      slow: false,
+      queuedAt: Date.now(),
+      bytes: 2,
+    };
+    this.queuedBytes += request.bytes;
+    this.queue.unshift(request);
+  }
+  /** The class a waiting request goes at now: one better per AGING_MS waited, up to foreground
+   *  (never level with a user action, which would let a pile of older background work go first). */
+  private effectiveRank(request: Pending, now: number): number {
+    if (request.rank === 0) return 0;
+    return Math.max(1, request.rank - Math.floor((now - request.queuedAt) / AGING_MS));
   }
   private drain(): void {
     if (!this.child) return;
@@ -243,11 +329,25 @@ export class RustHost {
       const sent = [...this.pending.values()];
       const regular = sent.filter((p) => !p.urgent).length;
       const background = sent.filter((p) => p.background).length;
+      const slow = sent.filter((p) => p.slow && !p.urgent).length;
       const urgent = sent.length - regular;
-      // The first request that may go now, in queue order (urgent, user, background).
-      const index = this.queue.findIndex((p) =>
-        p.urgent ? urgent < 8 : p.background ? regular < IN_FLIGHT && background < BACKGROUND_IN_FLIGHT : regular < IN_FLIGHT,
-      );
+      const allowed = (p: Pending) =>
+        p.urgent
+          ? urgent < 8
+          : p.slow && slow >= SLOW_IN_FLIGHT
+            ? false
+            : p.background
+              ? regular < IN_FLIGHT && background < BACKGROUND_IN_FLIGHT
+              : regular < IN_FLIGHT + (p.rank === 0 && !p.slow ? INTERACTIVE_HEADROOM : 0);
+      // The best request that may go now: urgent, then by class with aging, then in order.
+      const now = Date.now();
+      let index = -1;
+      for (let i = 0; i < this.queue.length; i++) {
+        const p = this.queue[i];
+        if (!allowed(p)) continue;
+        if (index < 0 || (!this.queue[index].urgent && (p.urgent || this.effectiveRank(p, now) < this.effectiveRank(this.queue[index], now)))) index = i;
+        if (p.urgent) break;
+      }
       if (index < 0) break;
       const [request] = this.queue.splice(index, 1);
       // Once sent it is no longer a twin later requests can join.
@@ -258,7 +358,7 @@ export class RustHost {
           id: request.id,
           command: request.command,
           args: request.args,
-          headers: request.options.headers ?? {},
+          headers: { "x-key-class": request.urgent ? "interactive" : CLASSES[request.rank], ...(request.supersede ? { "x-key-supersede": request.supersede } : {}), ...(request.options.headers ?? {}) },
           binaryLength: request.options.binary?.length ?? 0,
         }),
       );
