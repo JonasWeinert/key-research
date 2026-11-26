@@ -338,6 +338,15 @@ export default function App() {
     return () => window.removeEventListener("key:open-settings-section", open);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // An explainer's link opened the in-app browser: either settings window steps aside.
+  useEffect(() => {
+    const close = () => {
+      setSettingsSectionState(undefined);
+      setWorkspaceSettings(undefined);
+    };
+    window.addEventListener("key:help-navigated", close);
+    return () => window.removeEventListener("key:help-navigated", close);
+  }, []);
   const updatePrefs = (patch: Partial<AppSettings>) =>
     void bridge()
       .setAppSettings(patch)
