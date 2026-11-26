@@ -579,3 +579,20 @@
   color: var(--kx-accent-text);
   font-size: 12px;
 }
+
+/* Text segmented controls in the builder and the fill sheet. */
+.kx-fb .kx-segmented button,
+.kx-fill .kx-segmented button {
+  width: auto;
+  padding: 0 10px;
+  font: 12px var(--kx-font);
+  white-space: nowrap;
+}
+.kx-fb-head {
+  position: relative;
+  padding-right: 52px;
+}
+.kx-fb-pill[data-kind="field"] {
+  field-sizing: content;
+  min-width: 48px;
+}

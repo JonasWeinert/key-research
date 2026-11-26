@@ -517,6 +517,7 @@ export default function FormulaBuilder({
   const [drafting, setDrafting] = useState(false);
   const [ai, setAi] = useState<{ configured: boolean; providerName?: string; local?: boolean }>();
   const [error, setError] = useState("");
+  const tree = useRef<Block>(undefined);
 
   useEffect(() => {
     void invoke<Catalog>("store_formula_catalog", {}, workspaceId).then(setCatalog).catch((e) => setError(errorText(e)));
@@ -531,7 +532,11 @@ export default function FormulaBuilder({
     let live = true;
     const timer = setTimeout(() => {
       void invoke<Analysis>("store_formula_analyze", { formula, name: name || null }, workspaceId)
-        .then((a) => live && setAnalysis(a))
+        .then((a) => {
+          if (!live) return;
+          setAnalysis(a);
+          if (a.blocks) tree.current = a.blocks;
+        })
         .catch(() => {});
       void invoke<{ rows: PreviewRow[] }>("store_formula_preview", { formula, ids: sampleIds?.length ? sampleIds.slice(0, 6) : null, limit: 6 }, workspaceId)
         .then((r) => live && setRows(r.rows))
@@ -547,10 +552,13 @@ export default function FormulaBuilder({
   const resultType = analysis?.resultType ?? "any";
   const displays = displaysFor(resultType);
   const shownDisplay = displays.some((d) => d.id === display) ? display : displays[0].id;
-  const setBlocks = (next: Block) =>
+  // Edits build on the newest tree, not on the last analysis (which may lag one edit behind).
+  const setBlocks = (next: Block) => {
+    tree.current = next;
     void invoke<{ formula: string }>("store_formula_print", { blocks: next }, workspaceId)
       .then((r) => setFormula(r.formula))
       .catch((e) => setError(errorText(e)));
+  };
   const start = (text: string, display?: string) => {
     setFormula(text);
     if (display) setDisplay(display);
@@ -560,10 +568,11 @@ export default function FormulaBuilder({
   const insert = async (text: string) => {
     if (!formula.trim()) return start(text);
     if (mode === "text") return setFormula(`${formula}${/\s$/.test(formula) ? "" : " "}${text}`);
-    const slot = analysis?.blocks ? firstEmpty(analysis.blocks) : undefined;
-    if (!slot || !analysis?.blocks) return start(text);
+    const root = tree.current;
+    const slot = root ? firstEmpty(root) : undefined;
+    if (!slot || !root) return start(text);
     const piece = await invoke<Analysis>("store_formula_analyze", { formula: text }, workspaceId).catch(() => undefined);
-    if (piece?.blocks) setBlocks(setAt(analysis.blocks, slot, piece.blocks));
+    if (piece?.blocks && tree.current) setBlocks(setAt(tree.current, slot, piece.blocks));
   };
   const draftFromWords = async () => {
     setDrafting(true);
@@ -587,13 +596,13 @@ export default function FormulaBuilder({
   const ctx: BlockContext = {
     catalog,
     functions,
-    replace: (path, next) => analysis?.blocks && setBlocks(setAt(analysis.blocks, path, next)),
-    remove: (path) => analysis?.blocks && setBlocks(removeAt(analysis.blocks, path)),
+    replace: (path, next) => tree.current && setBlocks(setAt(tree.current, path, next)),
+    remove: (path) => tree.current && setBlocks(removeAt(tree.current, path)),
   };
   const groups = [...new Set(catalog.blocks.map((b) => b.group))];
   const problem = analysis?.error;
   return (
-    <div className="kx-fb" role="dialog" aria-label="Formula builder" data-modal-view="formula-builder">
+    <div className="kx-fb" data-modal-view="formula-builder">
       <header className="kx-fb-head">
         <div>
           <h2>

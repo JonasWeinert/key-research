@@ -11,6 +11,7 @@ import { bridge, type Collection, type Invoke } from "./library-api";
 import { Explain, Hint } from "./explain";
 import { FormulaValue } from "./formula-display";
 import type { PropertyDefinition } from "./PropertySheets";
+import "./formula-builder.css";
 import "./fill.css";
 
 export interface Recipe {
@@ -490,7 +491,7 @@ export default function FillSheet({
 
   return (
     <GlobalDrawer presentation="window" label="Fill a property" onClose={onClose} busy={busy}>
-      <div className="kx-fill" role="dialog" aria-label="Fill a property" data-modal-view={fullRun ? "fill-review" : `fill-${step}`}>
+      <div className="kx-fill" data-modal-view={fullRun ? "fill-review" : `fill-${step}`}>
         <header className="kx-fb-head">
           <div>
             <h2>
