@@ -1,11 +1,10 @@
 // EmbeddingGemma 2 for search, served by llama.cpp's `llama-server`, which uses Metal
-// on macOS and CUDA, Vulkan or the CPU elsewhere. The GGUF model is downloaded once
-// into a shared models directory; one server per machine is shared by all workspace
-// hosts and is restarted on demand if it goes away.
+// on macOS and CUDA, Vulkan or the CPU elsewhere. The GGUF model is downloaded once, on
+// first need, into the shared models directory (key-models); one server per machine is
+// shared by all workspace hosts and is restarted on demand if it goes away.
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
-    io::{Read, Write},
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -15,11 +14,10 @@ use std::{
 
 pub type Result<T> = std::result::Result<T, String>;
 
-pub const MODEL_REPO: &str = "ggml-org/embeddinggemma-2-GGUF";
+pub const MODEL_REPO: &str = "google/embeddinggemma-2";
 pub const MODEL_NAME: &str = "embeddinggemma-2";
 pub const DIMENSIONS: usize = 768;
-const MODEL_FILE: &str = "model.gguf";
-const REMOTE_FILE: &str = "embeddinggemma-2-Q8_0.gguf";
+const MODEL_FILE: &str = "embeddinggemma-2-Q8_0.gguf";
 const BATCH: usize = 32;
 /// Each of the server's 8 slots holds 4,096 tokens; longer inputs are rejected. Text past
 /// this many characters (roughly 2,000–2,700 tokens) adds little to one passage's meaning.
@@ -42,45 +40,34 @@ pub struct ModelStatus {
     pub accelerator: Option<String>,
 }
 
-/// Where the model lives. One directory is shared by every workspace host.
+/// Where the model lives: the shared models folder (key-models), one copy per machine,
+/// downloaded on first need from its pinned Hugging Face revision.
 #[derive(Clone, Debug)]
-pub struct ModelDir(PathBuf);
+pub struct ModelDir(key_models::Models);
 
 impl ModelDir {
     pub fn new(models_root: impl AsRef<Path>) -> Self {
-        Self(models_root.as_ref().join(MODEL_NAME))
+        Self(key_models::Models::new(models_root.as_ref()))
     }
     /// `KEY_MODEL_DIR` if the shell set it, otherwise the user's application data folder.
     pub fn from_env() -> Self {
-        let root = std::env::var_os("KEY_MODEL_DIR").map(PathBuf::from).unwrap_or_else(|| {
-            let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-            if cfg!(target_os = "macos") {
-                home.join("Library/Application Support/Key/models")
-            } else if cfg!(windows) {
-                std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or(home).join("Key/models")
-            } else {
-                home.join(".local/share/key/models")
-            }
-        });
-        Self::new(root)
+        Self(key_models::Models::from_env())
     }
-    pub fn path(&self) -> &Path {
+    pub fn models(&self) -> &key_models::Models {
         &self.0
     }
+    /// The model's folder (its server state and log live here too).
+    pub fn path(&self) -> PathBuf {
+        self.0.root().join(key_models::EMBEDDINGS)
+    }
     pub fn model(&self) -> PathBuf {
-        self.0.join(MODEL_FILE)
+        self.0.dir(key_models::EMBEDDINGS).map(|d| d.join(MODEL_FILE)).unwrap_or_default()
     }
     pub fn is_ready(&self) -> bool {
-        self.model().is_file()
-    }
-    fn lock(&self) -> PathBuf {
-        self.0.join(".download.lock")
-    }
-    fn progress_file(&self) -> PathBuf {
-        self.0.join(".download.json")
+        self.0.ready(key_models::EMBEDDINGS)
     }
     fn server_file(&self) -> PathBuf {
-        self.0.join(".server.json")
+        self.path().join(".server.json")
     }
 
     pub fn status(&self) -> ModelStatus {
@@ -100,88 +87,16 @@ impl ModelDir {
                 .and_then(|info| info.accelerator);
             return ModelStatus { state: "ready".into(), model, accelerator, ..Default::default() };
         }
-        let progress: Option<ModelStatus> = fs::read(self.progress_file()).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok());
-        match progress {
-            Some(status) if status.state == "downloading" && !self.lock_is_live() => ModelStatus { state: "missing".into(), model, ..status },
-            Some(status) => status,
-            None => ModelStatus { state: "missing".into(), model, ..Default::default() },
+        match self.0.status(key_models::EMBEDDINGS) {
+            Ok(status) => ModelStatus { state: status.state, model, received: status.received, total: status.total, error: status.error, accelerator: None },
+            Err(error) => ModelStatus { state: "failed".into(), model, error: Some(error), ..Default::default() },
         }
     }
 
-    fn lock_is_live(&self) -> bool {
-        // A lock untouched for two minutes belongs to a host that went away mid-download.
-        fs::metadata(self.lock())
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| SystemTime::now().duration_since(t).ok())
-            .is_some_and(|age| age < Duration::from_secs(120))
-    }
-
-    fn write_progress(&self, status: &ModelStatus) {
-        if let Ok(bytes) = serde_json::to_vec(status) {
-            let _ = fs::write(self.progress_file(), bytes);
-        }
-        let _ = fs::write(self.lock(), b"");
-    }
-
-    /// Downloads the model if missing. Returns Ok(false) when another process already
-    /// holds the download, so callers can poll `status()` and try again later.
-    pub fn download(&self) -> Result<bool> {
-        if self.is_ready() {
-            return Ok(true);
-        }
-        fs::create_dir_all(&self.0).map_err(|e| e.to_string())?;
-        if self.lock_is_live() {
-            return Ok(false);
-        }
-        let mut status = ModelStatus { state: "downloading".into(), model: MODEL_REPO.into(), ..Default::default() };
-        self.write_progress(&status);
-        let result = self.fetch(&mut status);
-        if let Err(error) = &result {
-            status.state = "failed".into();
-            status.error = Some(error.clone());
-            self.write_progress(&status);
-        } else {
-            let _ = fs::remove_file(self.progress_file());
-        }
-        let _ = fs::remove_file(self.lock());
-        result.map(|()| true)
-    }
-
-    fn fetch(&self, status: &mut ModelStatus) -> Result<()> {
-        let client = reqwest::blocking::Client::builder()
-            .user_agent("Key/0.1 (+desktop research workspace)")
-            .connect_timeout(Duration::from_secs(20))
-            .timeout(None)
-            .build()
-            .map_err(|e| e.to_string())?;
-        let url = format!("https://huggingface.co/{MODEL_REPO}/resolve/main/{REMOTE_FILE}");
-        let mut response = client.get(&url).send().map_err(|e| format!("{REMOTE_FILE}: {e}"))?;
-        if !response.status().is_success() {
-            return Err(format!("{REMOTE_FILE}: HTTP {}", response.status()));
-        }
-        status.total = response.content_length().unwrap_or(0);
-        let partial = self.0.join(format!("{MODEL_FILE}.part"));
-        let mut out = fs::File::create(&partial).map_err(|e| e.to_string())?;
-        let mut buffer = vec![0u8; 1 << 20];
-        let mut last_report = Instant::now();
-        loop {
-            let read = response.read(&mut buffer).map_err(|e| format!("{REMOTE_FILE}: {e}"))?;
-            if read == 0 {
-                break;
-            }
-            out.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
-            status.received += read as u64;
-            if last_report.elapsed() > Duration::from_millis(400) {
-                self.write_progress(status);
-                last_report = Instant::now();
-            }
-        }
-        out.sync_all().map_err(|e| e.to_string())?;
-        if status.total > 0 && status.received != status.total {
-            return Err("The model download was incomplete".into());
-        }
-        fs::rename(&partial, self.model()).map_err(|e| e.to_string())
+    /// Asks for the model in the background (when automatic downloads are on, or `explicit`);
+    /// `then` runs once it is ready. Returns whether it is ready now.
+    pub fn request(&self, explicit: bool, then: Option<Box<dyn FnOnce() + Send>>) -> bool {
+        self.0.request(key_models::EMBEDDINGS, explicit, then)
     }
 }
 

@@ -1,6 +1,7 @@
 // File naming rules and the readable mirror folder (key-biblio filenames.rs, file_mirror.rs
-// in the host): Settings › Files, the rename confirmation (in Settings, or a sheet for the
+// in the host): Workspace Settings › Files, the rename confirmation (in Settings, or a sheet for the
 // library's selection), and readable names for files dragged out of the app.
+import { openWorkspaceSettings } from "./settings-catalog";
 import { Button } from "@key/design-system";
 import { useEffect, useState } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
@@ -8,7 +9,7 @@ import type { FileRenameRequest } from "./export-events";
 import { Icon } from "./icons";
 import { toast } from "./item-actions";
 import { libraryChanged } from "./library-nav";
-import { bridge, type Invoke, type WorkspaceSummary } from "./library-api";
+import { bridge, type Invoke } from "./library-api";
 import { ago } from "./markdown-export";
 import { Group, Row } from "./Settings";
 import "./markdown-export.css";
@@ -112,9 +113,9 @@ async function applyRenames(invoke: Invoke, workspaceId: string | undefined, pla
   );
 }
 
-/** Settings › Files. */
-export function FileSettings({ invoke, workspaces }: { invoke: Invoke; workspaces: WorkspaceSummary[] }) {
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id);
+/** Workspace Settings › Files. */
+/** For one workspace (Workspace Settings keys it by workspace, so state starts fresh). */
+export function FileSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: string }) {
   const [rules, setRules] = useState<NamingRules>();
   const [fallback, setFallback] = useState<NamingRules>();
   const [examples, setExamples] = useState<Example[]>([]);
@@ -171,19 +172,6 @@ export function FileSettings({ invoke, workspaces }: { invoke: Invoke; workspace
   const last = mirror?.last;
   return (
     <div className="kx-files-settings">
-      {workspaces.length > 1 && (
-        <Group>
-          <Row label="Library">
-            <select className="kx-settings-select" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="Library">
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </Row>
-        </Group>
-      )}
       {plan && (
         <section className="kx-files-confirm" role="dialog" aria-label="Rename files">
           <h3>{plan.renames.length ? `Rename ${plural(plan.renames.length, "file")} on disk?` : "No files to rename"}</h3>
@@ -359,7 +347,7 @@ function RenameSheet({ invoke, workspaceId, ids, onClose }: { invoke: Invoke; wo
       <div className="key-property-editor kx-files-rename" role="dialog" aria-label="Rename files" data-modal-view="rename">
         <header>
           <h2>{plan?.renames.length ? `Rename ${plural(plan.renames.length, "file")}?` : "Rename files"}</h2>
-          <p>By the rule in Settings › Files. Linked files are renamed where they are; Undo puts the names back.</p>
+          <p>By the rule in Workspace Settings › Files. Linked files are renamed where they are; Undo puts the names back.</p>
           <button className="kx-sheet-close" aria-label="Close" onClick={onClose}>
             <Icon name="close" size={10} />
           </button>
@@ -376,7 +364,7 @@ function RenameSheet({ invoke, workspaceId, ids, onClose }: { invoke: Invoke; wo
           {error && <p className="kx-inline-error">{error}</p>}
         </div>
         <footer>
-          <Button type="button" onClick={() => (onClose(), window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "files" })))}>
+          <Button type="button" onClick={() => (onClose(), openWorkspaceSettings("files", workspaceId))}>
             Change the rule…
           </Button>
           <span className="kx-footer-spacer" />

@@ -79,6 +79,8 @@ export interface StyleList {
   folder?: string;
   style: string;
   locale?: string;
+  /** The shipped styles and locales (data files beside the app); missing means only Key's basic style. */
+  data?: { available: boolean; dir?: string; error?: string; styles: number; locales: number };
 }
 export const listStyles = (invoke: Invoke, workspaceId?: string) => invoke<StyleList>("store_cite_styles", {}, workspaceId);
 export const installStyle = (invoke: Invoke, workspaceId: string | undefined, from: { xml: string } | { url: string }) =>

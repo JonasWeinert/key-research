@@ -142,7 +142,7 @@ export function GlobalDrawerHost() {
   useEffect(() => {
     // The modal covers the whole window, so all of the shell behind it goes inert.
     const behind = Array.from(
-      document.querySelectorAll<HTMLElement>(".key-shell-body, .key-sidebar-slot, .tab-bar"),
+      document.querySelectorAll<HTMLElement>(".key-shell-body, .key-sidebar-slot, .kx-tabs"),
     );
     behind.forEach((el) => (el.inert = ready));
     document.documentElement.classList.toggle("kx-modal-open", ready);

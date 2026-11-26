@@ -15,8 +15,7 @@
   },
   "dependencies": {
     "@key/ai-provider": "*",
-    "@key/electron-utils": "*",
-    "@genspark/cli": "^1.4.2"
+    "@key/electron-utils": "*"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

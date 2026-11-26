@@ -17,8 +17,7 @@ const agentHarness = vi.hoisted(() => ({
 }))
 
 vi.mock('@key/agent-core', async () => {
-  const actual =
-    await vi.importActual<typeof import('@key/agent-core')>('@key/agent-core')
+  const actual = await vi.importActual<typeof import('@key/agent-core')>('@key/agent-core')
   return {
     ...actual,
     AgentLoop: class MockAgentLoop {
@@ -117,7 +116,6 @@ function installSlidesApi(): void {
   Object.defineProperty(window, 'slidesApi', {
     configurable: true,
     value: {
-      aiGskStatus: vi.fn(async () => ({ loggedIn: true })),
       beginHistoryBatch: vi.fn(async () => false),
       endHistoryBatch: vi.fn(async () => null),
       aiLogRunFailure: vi.fn(async () => undefined),

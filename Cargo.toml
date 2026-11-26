@@ -6,6 +6,7 @@ members = [
     "crates/key-biblio",
     "crates/key-cite",
     "crates/key-embed",
+    "crates/key-models",
     "crates/key-index",
     "crates/key-zotero",
     "experiments/gpui-pdf-reader",

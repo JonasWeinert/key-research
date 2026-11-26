@@ -22,17 +22,22 @@ The package includes:
   HTML renderer/preload outputs.
 - `Resources/backend/key-desktop-host` and PDFium's native library.
 - `Resources/native/xlsx-sidecar` for spreadsheet formulas and workbook I/O.
-- The pinned quantized Arctic embedding model in `Resources/models`, keeping
-  semantic indexing available offline. Key's host resolves this location when
-  launched from `Resources/backend`.
+- No machine-learning models. The search model (EmbeddingGemma 2), the PDF
+  layout model (PP-DocLayoutV3) and the reader search model (Arctic Embed XS)
+  are downloaded on first need from Key's pinned Hugging Face repositories
+  (`JonasWeinert/key-*`, listed with sizes and SHA-256 in
+  `crates/key-models/manifest.json`), verified and kept once per machine in
+  `~/Library/Application Support/Key/models`. Settings › Search & indexing can
+  download, remove or add them from a file (for computers without internet);
+  `tools/models/README.md` covers publishing and the dev cache.
 - Third-party notices for imported npm packages and both native dependency
   graphs, Chromium notices, the original Apache attribution, PDFium license
   and Key's license. Original attribution is intentionally preserved.
 - The upstream AI search CLI and its runtime dependencies. Account-backed
   functionality still requires the user's own configured provider access.
 
-The preparation step checks every resource before packaging. It does not
-silently download missing models or replace an existing source library.
+The preparation step checks every resource before packaging and refuses to
+package model weights. It does not replace an existing source library.
 Workspaces and their SQLite databases live outside the application bundle.
 
 The former GenOffice PDF renderer, converters and Node PDF extraction engine

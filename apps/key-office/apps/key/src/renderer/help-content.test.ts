@@ -30,7 +30,7 @@ function attributes(text: string, from: number) {
   }
   return text.slice(from);
 }
-const COMPONENT_KIND: Record<string, HelpEntry["kind"]> = { Hint: "hint", Explain: "explain", EmptyState: "empty", Guide: "empty", FirstUseTip: "tip", Group: "explain", Row: "explain" };
+const COMPONENT_KIND: Record<string, HelpEntry["kind"]> = { Hint: "hint", Explain: "explain", EmptyState: "empty", Guide: "empty", FirstUseTip: "tip", Group: "explain", Row: "explain", SettingsFrame: "explain" };
 
 /** Ids by the prop or call that names them, so each can be checked for its kind. */
 function referenced() {
@@ -38,10 +38,10 @@ function referenced() {
   for (const { path, text } of sources) {
     const where = path.slice(root.length + 1);
     // <Hint help=…>, <Explain help=…>, <EmptyState help=…> (also as Guide), <FirstUseTip help=…>,
-    // Group/Row help= and intro=, EmptyState learnMore=.
-    for (const tag of text.matchAll(/<(Hint|Explain|EmptyState|Guide|FirstUseTip|Group|Row)\b/g)) {
+    // Group/Row help= and intro=, EmptyState learnMore=, SettingsFrame scopeHelp=.
+    for (const tag of text.matchAll(/<(Hint|Explain|EmptyState|Guide|FirstUseTip|Group|Row|SettingsFrame)\b/g)) {
       const attrs = attributes(text, tag.index! + tag[0].length);
-      for (const m of attrs.matchAll(/(?:^|\s)(help|intro|learnMore)=("[^"]*"|\{[^}]*\})/g)) {
+      for (const m of attrs.matchAll(/(?:^|\s)(help|intro|learnMore|scopeHelp)=("[^"]*"|\{[^}]*\})/g)) {
         const kind = m[1] === "intro" ? "hint" : m[1] === "learnMore" ? "explain" : COMPONENT_KIND[tag[1]];
         for (const id of m[2].matchAll(ID)) found.push({ id: id[1], kind, where });
       }
@@ -72,9 +72,8 @@ describe("help content", () => {
 
   it("uses every entry somewhere", () => {
     const used = new Set(refs.map((r) => r.id));
-    // Read by the glossary and the services page by kind or by a built id; the model
-    // download explainer waits for the model rows that will show it.
-    const unused = Object.entries(HELP).filter(([id, e]) => e.kind !== "term" && !id.startsWith("settings.services.") && id !== "model.download" && !used.has(id));
+    // Terms are read by the glossary, services' explainers by a built id.
+    const unused = Object.entries(HELP).filter(([id, e]) => e.kind !== "term" && !id.startsWith("settings.services.") && !used.has(id));
     expect(unused.map(([id]) => id)).toEqual([]);
   });
 

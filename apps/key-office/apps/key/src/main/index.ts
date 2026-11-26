@@ -2093,7 +2093,8 @@ function baseMenu() {
         submenu: [
           { role: "about" },
           { type: "separator" },
-          { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
+          { label: "Key Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
+          { label: "Workspace Settings…", accelerator: "CmdOrCtrl+Alt+,", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           { type: "separator" },
           { role: "services" },
           { type: "separator" },
@@ -2113,6 +2114,7 @@ function baseMenu() {
           { label: "Switch Workspace…", accelerator: "CmdOrCtrl+Shift+O", click: () => emitTo(focusedShell(), "open-workspace-switcher") },
           { label: "Switch to Workspace", submenu: workspaceItems(false) },
           { label: "Open Workspace in New Window", submenu: workspaceItems(true) },
+          { label: "Workspace Settings…", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           { type: "separator" },
           {
             label: "Open…",
@@ -2277,6 +2279,8 @@ else
       // installed styles in one app-wide folder.
       process.env.KEY_APP_SETTINGS_FILE = join(app.getPath("userData"), "app-settings.json");
       process.env.KEY_CITATION_STYLES_DIR = join(app.getPath("userData"), "citation-styles");
+      // The shipped CSL styles and locales (CC BY-SA data files, read by the host on demand).
+      process.env.KEY_CITATION_DATA_DIR ??= app.isPackaged ? join(process.resourcesPath, "citation") : join(root, "data/citation");
       registry = new Registry({
         registryDir: join(app.getPath("userData"), "workspaces"),
         defaultWorkspaceParent: workspaceParent,
@@ -2355,8 +2359,6 @@ else
       startupMark("settings-loaded");
       keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
       startupMark("keys-loaded");
-      // The bundled layout model, for packaged builds (development finds it in the crate).
-      if (app.isPackaged) process.env.KEY_LAYOUT_MODEL ??= join(process.resourcesPath, "models/layout/model_fp16.onnx");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
       windowState = await windowStore.load();
       await refreshWorkspaces();
@@ -2477,6 +2479,12 @@ else
           if (command === "workspace_set_appearance") {
             shell(event.sender.id);
             return registry.setAppearance(workspaceId, args.icon, args.color);
+          }
+          if (command === "workspace_rename") {
+            shell(event.sender.id);
+            const renamed = await registry.rename(workspaceId, args.name);
+            await refreshWorkspaces();
+            return renamed;
           }
           if (command === "agent_fill_status") return agentFill.status();
           if (command === "agent_fill_configure")
@@ -2614,6 +2622,9 @@ else
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
+        if (before.modelsAutoDownload !== next.modelsAutoDownload)
+          for (const workspace of await registry.list())
+            void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});
         if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders)) pushHostKeys();
         if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
@@ -2639,6 +2650,25 @@ else
         await refreshWorkspaces();
         return added;
       });
+      // Workspace Settings › Remove from Key: the folder and its files stay where they are.
+      // The asking window moves to another workspace first; another window showing it stops it.
+      ipcMain.handle("key:remove-workspace", async (event, workspaceId: string) => {
+        const w = shell(event.sender.id);
+        const list = await registry.list();
+        if (!list.some((k) => k.id === workspaceId)) throw Error("This workspace is no longer available");
+        if (liveShells().some((s) => s !== w && s.workspaceId === workspaceId)) throw Error("Close the other window showing this workspace first");
+        const other = list.find((k) => k.id !== workspaceId);
+        if (!other) throw Error("Key needs at least one workspace");
+        if (w.workspaceId === workspaceId) {
+          await switchWorkspace(w, other.id);
+          if (w.workspaceId === workspaceId) throw Error("Close the open tabs first");
+        }
+        await registry.remove(workspaceId);
+        windowState.recent = windowState.recent.filter((id) => id !== workspaceId);
+        delete windowState.layouts[workspaceId];
+        await refreshWorkspaces();
+        return { workspaceId: w.workspaceId };
+      });
       ipcMain.handle("key:tabs", (event) => snapshot(shell(event.sender.id)));
       ipcMain.handle("key:reader-back", (event) => {
         const v = bound(event.sender.id);
@@ -2655,18 +2685,18 @@ else
         } else home(w);
       });
       // A file to read or write (bibliography import, export and auto-export targets).
-      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }) => {
+      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[]; filterName?: string; allowFolders?: boolean }) => {
         const w = shell(event.sender.id);
         if (request.mode === "folder") {
           const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, buttonLabel: "Choose", properties: ["openDirectory", "createDirectory"] });
           return result.canceled ? null : result.filePaths[0] ?? null;
         }
-        const filters = request.extensions?.length ? [{ name: "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
+        const filters = request.extensions?.length ? [{ name: request.filterName ?? "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
         if (request.mode === "save") {
           const result = await dialog.showSaveDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["createDirectory", "showOverwriteConfirmation"] });
           return result.canceled ? null : result.filePath ?? null;
         }
-        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["openFile"] });
+        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: request.allowFolders ? ["openFile", "openDirectory"] : ["openFile"] });
         return result.canceled ? null : result.filePaths[0] ?? null;
       });
       ipcMain.handle("key:add-files", async (event, workspaceId, collectionId) => {
@@ -3222,7 +3252,7 @@ else
             placeViews(w);
             return snapshot(w);
           // A tab dropped from a drag: into a group's strip at `index`, or into a new group
-          // on a group's `side` (see TabBar).
+          // on a group's `side` (see tab-strip.tsx).
           case "drop-tab": {
             const tabId = String(p.tabId),
               groupId = String(p.groupId);

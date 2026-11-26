@@ -1,12 +1,12 @@
 // What the Inbox follows, and how: add a feed by its address (or a page's, whose feed is
 // found), change how often each is checked, pause, remove; OPML in and out; how long items
-// are kept. Shown as a sheet from the Inbox and as Settings › Feeds & alerts.
+// are kept. Shown as a sheet from the Inbox and as Workspace Settings › Feeds & alerts.
 import { useCallback, useEffect, useState } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { FEED_KIND_ICON, INTERVALS, KIND_LABEL, feedsChanged, intervalLabel, onFeedsChanged, type Subscription } from "./feeds-ui";
 import { Icon } from "./icons";
 import { toast } from "./item-actions";
-import { bridge, relativeDate, type Invoke, type WorkspaceSummary } from "./library-api";
+import { bridge, relativeDate, type Invoke } from "./library-api";
 import "./inbox.css";
 import { EmptyState, Explain, Hint } from "./explain";
 
@@ -212,39 +212,6 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
         </section>
       )}
     </div>
-  );
-}
-
-/** Settings › Feeds & alerts: each library follows its own feeds; pick which. */
-export function FeedsSettings({ invoke, workspaces }: { invoke: Invoke; workspaces: WorkspaceSummary[] }) {
-  const [chosen, setChosen] = useState<string>();
-  const workspaceId = workspaces.find((w) => w.id === chosen)?.id ?? workspaces[0]?.id;
-  if (!workspaceId) return <p className="kx-settings-footnote">Add a library first.</p>;
-  return (
-    <>
-      {workspaces.length > 1 && (
-        <section className="kx-settings-group">
-          <div className="kx-settings-rows">
-            <div className="kx-settings-row">
-              <div>
-                <span>Library</span>
-                <small>Each library has its own Inbox.</small>
-              </div>
-              <div className="kx-settings-control">
-                <select className="kx-settings-select" aria-label="Library" value={workspaceId} onChange={(e) => setChosen(e.target.value)}>
-                  {workspaces.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-      <FeedsManager key={workspaceId} invoke={invoke} workspaceId={workspaceId} />
-    </>
   );
 }
 

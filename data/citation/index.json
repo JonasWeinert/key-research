@@ -1,0 +1,1079 @@
+{
+  "styles": [
+    {
+      "file": "acm-sig-proceedings.csl",
+      "id": "acm-sig-proceedings",
+      "title": "ACM SIG Proceedings (\"et al.\" for 3+ authors)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science",
+        "engineering"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-anthropological-association.csl",
+      "id": "american-anthropological-association",
+      "title": "American Anthropological Association",
+      "shortTitle": "AAA",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "anthropology"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-chemical-society.csl",
+      "id": "american-chemical-society",
+      "title": "ACS Guide 2026 revision",
+      "shortTitle": "American Chemical Society",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "chemistry"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-geophysical-union.csl",
+      "id": "american-geophysical-union",
+      "title": "American Geophysical Union",
+      "shortTitle": "AGU",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "geology"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-institute-of-physics.csl",
+      "id": "american-institute-of-physics",
+      "title": "AIP Style Manual 4th edition",
+      "shortTitle": "American Institute of Physics",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "physics"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-journal-of-political-science.csl",
+      "id": "american-journal-of-political-science",
+      "title": "American Journal of Political Science",
+      "shortTitle": "AJPS",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "political_science"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-mathematical-society-numeric.csl",
+      "id": "american-mathematical-society-numeric",
+      "title": "American Mathematical Society (numeric)",
+      "shortTitle": "AMS",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "math"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-medical-association.csl",
+      "id": "american-medical-association",
+      "title": "AMA Manual of Style 11th edition",
+      "shortTitle": "American Medical Association (numeric/Vancouver/citation-sequence)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "medicine"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-meteorological-society.csl",
+      "id": "american-meteorological-society",
+      "title": "American Meteorological Society",
+      "shortTitle": "AMS",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "geography"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "american-physics-society.csl",
+      "id": "american-physics-society",
+      "title": "American Physical Society",
+      "shortTitle": "APS",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "physics"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-political-science-association.csl",
+      "id": "american-political-science-association",
+      "title": "APSA Style Manual revised 2018 edition",
+      "shortTitle": "American Political Science Association",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "political_science"
+      ]
+    },
+    {
+      "file": "american-society-for-microbiology.csl",
+      "id": "american-society-for-microbiology",
+      "title": "American Society for Microbiology",
+      "shortTitle": "ASM",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "biology"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-society-of-civil-engineers.csl",
+      "id": "american-society-of-civil-engineers",
+      "title": "American Society of Civil Engineers",
+      "shortTitle": "ASCE",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "engineering"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "american-sociological-association.csl",
+      "id": "american-sociological-association",
+      "title": "ASA Style Guide 6th/7th edition",
+      "shortTitle": "American Sociological Association",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "sociology"
+      ]
+    },
+    {
+      "file": "annual-reviews.csl",
+      "id": "annual-reviews",
+      "title": "Annual Reviews (sorted by order of appearance)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "apa-6th-edition.csl",
+      "id": "apa-6th-edition",
+      "title": "APA Style 6th edition",
+      "shortTitle": "Publication Manual of the American Psychological Association (6th ed.)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "psychology",
+        "generic-base"
+      ]
+    },
+    {
+      "file": "apa.csl",
+      "id": "apa",
+      "title": "APA Style 7th edition",
+      "shortTitle": "Publication Manual of the American Psychological Association, with Bluebook",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "anthropology",
+        "communications",
+        "generic-base",
+        "law",
+        "medicine",
+        "psychology",
+        "social_science",
+        "sociology"
+      ]
+    },
+    {
+      "file": "association-for-computing-machinery.csl",
+      "id": "association-for-computing-machinery",
+      "title": "Association for Computing Machinery",
+      "shortTitle": "ACM",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "engineering"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "bibtex.csl",
+      "id": "bibtex",
+      "title": "BibTeX generic citation style",
+      "format": "label",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "biomed-central.csl",
+      "id": "biomed-central",
+      "title": "BioMed Central",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "medicine",
+        "biology"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "bluebook-inline.csl",
+      "id": "bluebook-inline",
+      "title": "Bluebook Inline",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "law"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "bluebook-law-review.csl",
+      "id": "bluebook-law-review",
+      "title": "Bluebook Law Review",
+      "format": "note",
+      "class": "note",
+      "bundled": true,
+      "fields": [
+        "law"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "bmj.csl",
+      "id": "bmj",
+      "title": "BMJ",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "medicine"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "cambridge-university-press-author-date.csl",
+      "id": "cambridge-university-press-author-date",
+      "title": "Cambridge University Press, CambridgeB (author-date)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "cell.csl",
+      "id": "cell",
+      "title": "Cell",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "biology"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "chicago-author-date-17th-edition.csl",
+      "id": "chicago-author-date-17th-edition",
+      "title": "Chicago Manual of Style 17th edition (author-date)",
+      "shortTitle": "CMOS/CMS 17e with Bluebook (author-date/AD [15.5])",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "anthropology",
+        "communications",
+        "generic-base",
+        "geography",
+        "history",
+        "humanities",
+        "law",
+        "linguistics",
+        "literature",
+        "philosophy",
+        "political_science",
+        "science",
+        "social_science",
+        "sociology",
+        "theology"
+      ]
+    },
+    {
+      "file": "chicago-author-date.csl",
+      "id": "chicago-author-date",
+      "title": "Chicago Manual of Style 18th edition (author-date)",
+      "shortTitle": "CMOS/CMS with Bluebook (author-date/AD [13.102])",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "anthropology",
+        "communications",
+        "generic-base",
+        "geography",
+        "history",
+        "humanities",
+        "law",
+        "linguistics",
+        "literature",
+        "philosophy",
+        "political_science",
+        "science",
+        "social_science",
+        "sociology",
+        "theology"
+      ]
+    },
+    {
+      "file": "chicago-notes-bibliography-17th-edition.csl",
+      "id": "chicago-notes-bibliography-17th-edition",
+      "title": "Chicago Manual of Style 17th edition (notes and bibliography)",
+      "shortTitle": "CMOS/CMS 17e with Bluebook (notes and bibliography/NB [14.19])",
+      "format": "note",
+      "class": "note",
+      "bundled": true,
+      "fields": [
+        "anthropology",
+        "communications",
+        "generic-base",
+        "geography",
+        "history",
+        "humanities",
+        "law",
+        "linguistics",
+        "literature",
+        "philosophy",
+        "political_science",
+        "science",
+        "social_science",
+        "sociology",
+        "theology"
+      ]
+    },
+    {
+      "file": "chicago-notes-bibliography.csl",
+      "id": "chicago-notes-bibliography",
+      "title": "Chicago Manual of Style 18th edition (notes and bibliography)",
+      "shortTitle": "CMOS/CMS with Bluebook (full notes and bibliography/NB [13.18])",
+      "format": "note",
+      "class": "note",
+      "bundled": true,
+      "fields": [
+        "anthropology",
+        "communications",
+        "generic-base",
+        "geography",
+        "history",
+        "humanities",
+        "law",
+        "linguistics",
+        "literature",
+        "philosophy",
+        "political_science",
+        "science",
+        "social_science",
+        "sociology",
+        "theology"
+      ]
+    },
+    {
+      "file": "chicago-shortened-notes-bibliography.csl",
+      "id": "chicago-shortened-notes-bibliography",
+      "title": "Chicago Manual of Style 18th edition (shortened notes and bibliography)",
+      "shortTitle": "CMOS/CMS with Bluebook (shortened author-title notes [13.32])",
+      "format": "note",
+      "class": "note",
+      "bundled": true,
+      "fields": [
+        "anthropology",
+        "communications",
+        "generic-base",
+        "geography",
+        "history",
+        "humanities",
+        "law",
+        "linguistics",
+        "literature",
+        "philosophy",
+        "political_science",
+        "science",
+        "social_science",
+        "sociology",
+        "theology"
+      ]
+    },
+    {
+      "file": "copernicus-publications.csl",
+      "id": "copernicus-publications",
+      "title": "Copernicus Publications",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "deutsche-gesellschaft-fur-psychologie.csl",
+      "id": "deutsche-gesellschaft-fur-psychologie",
+      "title": "Deutsche Gesellschaft für Psychologie 5. Auflage (Deutsch)",
+      "shortTitle": "DGP 5. Auflage",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "psychology"
+      ],
+      "defaultLocale": "de-DE"
+    },
+    {
+      "file": "din-1505-2.csl",
+      "id": "din-1505-2",
+      "title": "DIN 1505-2 (author-date, Deutsch) - standard superseded by ISO-690",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base"
+      ],
+      "defaultLocale": "de-DE"
+    },
+    {
+      "file": "elsevier-harvard.csl",
+      "id": "elsevier-harvard",
+      "title": "Elsevier (author-date/Harvard, with titles)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "biology"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "elsevier-vancouver.csl",
+      "id": "elsevier-vancouver",
+      "title": "Elsevier - NLM/Vancouver (citation-sequence)",
+      "shortTitle": "Elsevier - Vancouver",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "elsevier-with-titles.csl",
+      "id": "elsevier-with-titles",
+      "title": "Elsevier (numeric, with titles)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "frontiers.csl",
+      "id": "frontiers",
+      "title": "Frontiers journals",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "harvard-anglia-ruskin-university.csl",
+      "id": "harvard-anglia-ruskin-university",
+      "title": "Anglia Ruskin University (author-date/Harvard)",
+      "shortTitle": "ARU",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "harvard-cite-them-right.csl",
+      "id": "harvard-cite-them-right",
+      "title": "Cite Them Right 12th edition (author-date/Harvard)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base"
+      ]
+    },
+    {
+      "file": "ieee.csl",
+      "id": "ieee",
+      "title": "IEEE Reference Guide version 11.29.2023",
+      "shortTitle": "Institute of Electrical and Electronics Engineers",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "engineering",
+        "generic-base"
+      ]
+    },
+    {
+      "file": "iso690-author-date-en.csl",
+      "id": "iso690-author-date-en",
+      "title": "ISO-690 (author-date, English)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "iso690-numeric-en.csl",
+      "id": "iso690-numeric-en",
+      "title": "ISO-690 (numeric, English)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "modern-language-association-notes.csl",
+      "id": "modern-language-association-notes",
+      "title": "MLA Handbook 9th edition (notes)",
+      "shortTitle": "Modern Language Association (notes)",
+      "format": "note",
+      "class": "note",
+      "bundled": true,
+      "fields": [
+        "generic-base",
+        "humanities",
+        "literature"
+      ]
+    },
+    {
+      "file": "modern-language-association.csl",
+      "id": "modern-language-association",
+      "title": "MLA Handbook 9th edition (in-text citations)",
+      "shortTitle": "Modern Language Association (in-text citations)",
+      "format": "author",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base",
+        "humanities",
+        "literature"
+      ]
+    },
+    {
+      "file": "multidisciplinary-digital-publishing-institute.csl",
+      "id": "multidisciplinary-digital-publishing-institute",
+      "title": "Multidisciplinary Digital Publishing Institute",
+      "shortTitle": "MDPI",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "nature.csl",
+      "id": "nature",
+      "title": "Nature",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science",
+        "generic-base"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "nlm-citation-sequence.csl",
+      "id": "nlm-citation-sequence",
+      "title": "NLM/Vancouver: Citing Medicine 2nd edition (citation-sequence)",
+      "shortTitle": "National Library of Medicine, ANSI/NISO Z39.29-2005 (R2010), ICMJE Recommendations/URMs (C-S)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base",
+        "medicine",
+        "science"
+      ]
+    },
+    {
+      "file": "nlm-name-year.csl",
+      "id": "nlm-name-year",
+      "title": "NLM/Vancouver: Citing Medicine 2nd edition (name-year)",
+      "shortTitle": "National Library of Medicine, ANSI/NISO Z39.29-2005 (R2010), ICMJE Recommendations/URMs (author-date)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "generic-base",
+        "medicine",
+        "science"
+      ]
+    },
+    {
+      "file": "oscola.csl",
+      "id": "oscola",
+      "title": "OSCOLA 4th edition",
+      "shortTitle": "Oxford University Standard for Citation of Legal Authorities",
+      "format": "note",
+      "class": "note",
+      "bundled": true,
+      "fields": [
+        "law"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "plos.csl",
+      "id": "plos",
+      "title": "Public Library of Science",
+      "shortTitle": "PLOS",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "pnas.csl",
+      "id": "pnas",
+      "title": "Proceedings of the National Academy of Sciences of the United States of America",
+      "shortTitle": "PNAS",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "royal-society-of-chemistry.csl",
+      "id": "royal-society-of-chemistry",
+      "title": "Royal Society of Chemistry",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "chemistry"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "sage-harvard.csl",
+      "id": "sage-harvard",
+      "title": "SAGE (author-date/Harvard)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "sage-vancouver.csl",
+      "id": "sage-vancouver",
+      "title": "SAGE - NLM/Vancouver",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "medicine"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "science.csl",
+      "id": "science",
+      "title": "Science",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "science"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "springer-basic-author-date.csl",
+      "id": "springer-basic-author-date",
+      "title": "Springer - Basic (author-date)",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "springer-basic-brackets.csl",
+      "id": "springer-basic-brackets",
+      "title": "Springer - Basic (numeric, brackets)",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "springer-lecture-notes-in-computer-science.csl",
+      "id": "springer-lecture-notes-in-computer-science",
+      "title": "Springer - Lecture Notes in Computer Science",
+      "shortTitle": "Springer LNCS",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "engineering"
+      ],
+      "defaultLocale": "en-US"
+    },
+    {
+      "file": "taylor-and-francis-chicago-author-date.csl",
+      "id": "taylor-and-francis-chicago-author-date",
+      "title": "Taylor & Francis Journals Standard Reference Style Guide: Chicago author-date version 2.0",
+      "shortTitle": "TF-Standard Chicago AD",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": []
+    },
+    {
+      "file": "the-lancet.csl",
+      "id": "the-lancet",
+      "title": "The Lancet",
+      "format": "numeric",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "medicine"
+      ],
+      "defaultLocale": "en-GB"
+    },
+    {
+      "file": "unified-style-sheet-for-linguistics.csl",
+      "id": "unified-style-sheet-for-linguistics",
+      "title": "Unified style sheet for linguistics",
+      "format": "author-date",
+      "class": "in-text",
+      "bundled": true,
+      "fields": [
+        "linguistics"
+      ],
+      "defaultLocale": "en-US"
+    }
+  ],
+  "locales": [
+    {
+      "code": "af-ZA",
+      "file": "locales-af-ZA.xml"
+    },
+    {
+      "code": "ar",
+      "file": "locales-ar.xml"
+    },
+    {
+      "code": "bal-PK",
+      "file": "locales-bal-PK.xml"
+    },
+    {
+      "code": "bg-BG",
+      "file": "locales-bg-BG.xml"
+    },
+    {
+      "code": "brh-PK",
+      "file": "locales-brh-PK.xml"
+    },
+    {
+      "code": "ca-AD",
+      "file": "locales-ca-AD.xml"
+    },
+    {
+      "code": "cs-CZ",
+      "file": "locales-cs-CZ.xml"
+    },
+    {
+      "code": "cy-GB",
+      "file": "locales-cy-GB.xml"
+    },
+    {
+      "code": "da-DK",
+      "file": "locales-da-DK.xml"
+    },
+    {
+      "code": "de-AT",
+      "file": "locales-de-AT.xml"
+    },
+    {
+      "code": "de-CH",
+      "file": "locales-de-CH.xml"
+    },
+    {
+      "code": "de-DE",
+      "file": "locales-de-DE.xml"
+    },
+    {
+      "code": "el-GR",
+      "file": "locales-el-GR.xml"
+    },
+    {
+      "code": "en-GB",
+      "file": "locales-en-GB.xml"
+    },
+    {
+      "code": "en-US",
+      "file": "locales-en-US.xml"
+    },
+    {
+      "code": "es-CL",
+      "file": "locales-es-CL.xml"
+    },
+    {
+      "code": "es-ES",
+      "file": "locales-es-ES.xml"
+    },
+    {
+      "code": "es-MX",
+      "file": "locales-es-MX.xml"
+    },
+    {
+      "code": "et-EE",
+      "file": "locales-et-EE.xml"
+    },
+    {
+      "code": "eu",
+      "file": "locales-eu.xml"
+    },
+    {
+      "code": "fa-IR",
+      "file": "locales-fa-IR.xml"
+    },
+    {
+      "code": "fi-FI",
+      "file": "locales-fi-FI.xml"
+    },
+    {
+      "code": "fr-CA",
+      "file": "locales-fr-CA.xml"
+    },
+    {
+      "code": "fr-FR",
+      "file": "locales-fr-FR.xml"
+    },
+    {
+      "code": "gl-ES",
+      "file": "locales-gl-ES.xml"
+    },
+    {
+      "code": "he-IL",
+      "file": "locales-he-IL.xml"
+    },
+    {
+      "code": "hi-IN",
+      "file": "locales-hi-IN.xml"
+    },
+    {
+      "code": "hr-HR",
+      "file": "locales-hr-HR.xml"
+    },
+    {
+      "code": "hu-HU",
+      "file": "locales-hu-HU.xml"
+    },
+    {
+      "code": "hy-AM",
+      "file": "locales-hy-AM.xml"
+    },
+    {
+      "code": "id-ID",
+      "file": "locales-id-ID.xml"
+    },
+    {
+      "code": "is-IS",
+      "file": "locales-is-IS.xml"
+    },
+    {
+      "code": "it-IT",
+      "file": "locales-it-IT.xml"
+    },
+    {
+      "code": "ja-JP",
+      "file": "locales-ja-JP.xml"
+    },
+    {
+      "code": "km-KH",
+      "file": "locales-km-KH.xml"
+    },
+    {
+      "code": "ko-KR",
+      "file": "locales-ko-KR.xml"
+    },
+    {
+      "code": "la",
+      "file": "locales-la.xml"
+    },
+    {
+      "code": "lij-IT",
+      "file": "locales-lij-IT.xml"
+    },
+    {
+      "code": "lt-LT",
+      "file": "locales-lt-LT.xml"
+    },
+    {
+      "code": "lv-LV",
+      "file": "locales-lv-LV.xml"
+    },
+    {
+      "code": "mn-MN",
+      "file": "locales-mn-MN.xml"
+    },
+    {
+      "code": "ms-MY",
+      "file": "locales-ms-MY.xml"
+    },
+    {
+      "code": "nb-NO",
+      "file": "locales-nb-NO.xml"
+    },
+    {
+      "code": "nl-NL",
+      "file": "locales-nl-NL.xml"
+    },
+    {
+      "code": "nn-NO",
+      "file": "locales-nn-NO.xml"
+    },
+    {
+      "code": "pa-PK",
+      "file": "locales-pa-PK.xml"
+    },
+    {
+      "code": "pl-PL",
+      "file": "locales-pl-PL.xml"
+    },
+    {
+      "code": "pt-BR",
+      "file": "locales-pt-BR.xml"
+    },
+    {
+      "code": "pt-PT",
+      "file": "locales-pt-PT.xml"
+    },
+    {
+      "code": "ro-RO",
+      "file": "locales-ro-RO.xml"
+    },
+    {
+      "code": "ru-RU",
+      "file": "locales-ru-RU.xml"
+    },
+    {
+      "code": "sk-SK",
+      "file": "locales-sk-SK.xml"
+    },
+    {
+      "code": "sl-SI",
+      "file": "locales-sl-SI.xml"
+    },
+    {
+      "code": "sr-Cyrl-RS",
+      "file": "locales-sr-Cyrl-RS.xml"
+    },
+    {
+      "code": "sr-Latn-RS",
+      "file": "locales-sr-Latn-RS.xml"
+    },
+    {
+      "code": "sv-SE",
+      "file": "locales-sv-SE.xml"
+    },
+    {
+      "code": "th-TH",
+      "file": "locales-th-TH.xml"
+    },
+    {
+      "code": "tl-PH",
+      "file": "locales-tl-PH.xml"
+    },
+    {
+      "code": "tr-TR",
+      "file": "locales-tr-TR.xml"
+    },
+    {
+      "code": "uk-UA",
+      "file": "locales-uk-UA.xml"
+    },
+    {
+      "code": "vi-VN",
+      "file": "locales-vi-VN.xml"
+    },
+    {
+      "code": "zh-CN",
+      "file": "locales-zh-CN.xml"
+    },
+    {
+      "code": "zh-TW",
+      "file": "locales-zh-TW.xml"
+    }
+  ]
+}

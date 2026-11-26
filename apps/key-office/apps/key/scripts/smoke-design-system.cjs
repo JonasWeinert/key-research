@@ -24,7 +24,7 @@ const assert = require("node:assert/strict");
       .getByRole("heading", { name: "All sources", exact: true })
       .waitFor();
     const chrome = () =>
-      page.locator(".tab-bar").evaluate((el) => {
+      page.locator(".kx-tabs").evaluate((el) => {
         const s = getComputedStyle(el);
         return {
           height: el.getBoundingClientRect().height,

@@ -60,6 +60,28 @@ export const HELP = {
   "settings.general.tips": hint("Short tips point out features that are easy to miss, once each. Show again brings back the ones you closed."),
   "settings.general.glossary": hint("Words Key uses, in plain terms."),
 
+  "settings.scope.app": explain(
+    "Key Settings and Workspace Settings",
+    [
+      "Key Settings apply to Key on this Mac, whichever workspace is open: appearance, models, privacy, web, API keys and the AI assistant.",
+      "Workspace Settings apply to one workspace only: its Zotero link, indexing, citation keys, exports, files and feeds. Open them from a workspace’s window or from Workspaces here.",
+    ],
+  ),
+  "settings.scope.workspace": explain(
+    "Settings for this workspace",
+    [
+      "These settings belong to this workspace alone and travel with its folder. Other workspaces keep their own.",
+      "Where a row says Using app default, the workspace follows Key Settings until you choose Change.",
+    ],
+  ),
+  "settings.override": explain(
+    "App default or this workspace’s own",
+    [
+      "Some settings, such as the citation style or automatic lookups, have a default in Key Settings that every workspace follows.",
+      "Change gives this workspace its own value without touching the others. Use app default makes it follow Key Settings again.",
+    ],
+  ),
+
   // ── Settings: Libraries ──────────────────────────────────────────────────────────────
   "settings.libraries.intro": hint("A library is a folder on this Mac that holds your sources, notes and collections."),
   "settings.libraries.what": explain(
@@ -87,14 +109,6 @@ export const HELP = {
   ),
 
   // ── Settings: Search & indexing ─────────────────────────────────────────────────────
-  "settings.search.model": explain(
-    "The search model",
-    [
-      "Key reads your PDFs and notes and builds an index, a lookup table that makes searching instant. Besides matching words, a small AI model (EmbeddingGemma) lets you search by meaning, so “sleep and memory” also finds “consolidation during rest”.",
-      "The model is downloaded once (about 300 MB) and then runs on this Mac. It needs no account and no internet after that.",
-    ],
-    { privacy: "Nothing leaves this Mac. Your files, notes and searches are never sent anywhere." },
-  ),
   "settings.search.indexing": explain(
     "Indexing",
     [
@@ -444,7 +458,7 @@ export const HELP = {
   "model.download": explain(
     "Model download",
     [
-      "Some features use small AI models that run on this Mac: one to search by meaning (about 310 MB), one to understand PDF layouts (about 66 MB) and one for search inside the reader (about 24 MB). Each is downloaded once, the first time it is needed, from Hugging Face, a public site that hosts models, and checked before use.",
+      "Some features use small AI models that run on this Mac: one to search by meaning (so “sleep and memory” also finds “consolidation during rest”) (about 310 MB), one to understand PDF layouts (about 66 MB) and one for search inside the reader (about 24 MB). Each is downloaded once, the first time it is needed, from Hugging Face, a public site that hosts models, and checked before use.",
       "After that they work without the internet. Remove deletes them; Key downloads them again when needed. On a Mac without internet, add a model from a file.",
     ],
     { privacy: "Downloading is a plain file download. Nothing about you or your library is sent, and the models never send anything." },

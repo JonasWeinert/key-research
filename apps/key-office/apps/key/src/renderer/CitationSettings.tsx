@@ -34,17 +34,30 @@ const SAMPLE = {
   doi: "10.1001/jamacardio.2021.0185",
 };
 
+type StylePatch = Partial<Pick<AppSettings, "citationStyle" | "citationLocale">>;
+
+/** The style picker, language and preview; with `installed`, also the installed styles
+ *  (shared by every workspace, so only Key Settings shows them). */
 export default function CitationSettings({
   invoke,
   workspaceId,
-  settings,
-  onSettings,
+  style,
+  locale,
+  onChange,
+  installed: manage = true,
+  title = "Citation style",
+  footer = "Used for copied references and in-text citations (⌘⇧C, ⌘⇧A), quotes from the reader, notes and bibliographies.",
 }: {
   invoke: Invoke;
   workspaceId?: string;
-  settings: AppSettings;
-  onSettings: (patch: Partial<AppSettings>) => void;
+  style: string;
+  locale: string;
+  onChange: (patch: StylePatch) => void;
+  installed?: boolean;
+  title?: string;
+  footer?: string;
 }) {
+  const onSettings = onChange;
   const [list, setList] = useState<StyleList>();
   const [error, setError] = useState("");
   const [picking, setPicking] = useState(false);
@@ -53,8 +66,6 @@ export default function CitationSettings({
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState("");
   const file = useRef<HTMLInputElement>(null);
-  const style = settings.citationStyle || "apa";
-  const locale = settings.citationLocale || "en-US";
 
   const loads = useRef(0);
   const load = () => {
@@ -85,7 +96,8 @@ export default function CitationSettings({
     };
   }, [invoke, workspaceId, style, locale, list]);
 
-  const current = list?.styles.find((s) => s.id === style);
+  // Without the shipped styles the host renders with its basic one, whatever was chosen.
+  const current = list?.styles.find((s) => s.id === style) ?? (list?.data?.available === false ? list.styles.find((s) => s.id === list.style) : undefined);
   const installed = list?.styles.filter((s) => !s.bundled) ?? [];
   const shown = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -122,9 +134,29 @@ export default function CitationSettings({
       </Group>
     );
   }
+  const missing = list?.data && !list.data.available ? list.data : undefined;
   return (
     <>
-      <Group title="Citation style" help="settings.citations.style" footer="Used for copied references and in-text citations (⌘⇧C, ⌘⇧A), quotes from the reader, notes and bibliographies.">
+      {missing && (
+        <Group title="Citation data">
+          <div className="kx-settings-row kx-cite-missing" role="alert">
+            <Icon name="warning" size={16} />
+            <div>
+              <span>Citation styles not found</span>
+              <small>
+                Key’s styles and languages are missing{missing.dir ? " from the app’s resources" : ""}, so citations use a basic author–date
+                style in English. Reinstall Key to restore them.
+              </small>
+              {missing.dir && (
+                <small className="kx-settings-path" title={missing.dir}>
+                  {missing.dir}
+                </small>
+              )}
+            </div>
+          </div>
+        </Group>
+      )}
+      <Group title={title} help="settings.citations.style" footer={footer}>
         <Row label="Style" detail={current ? `${FORMAT_LABEL[current.format]}${current.bundled ? "" : " · installed"}` : undefined}>
           <button className="kx-settings-button kx-cite-current" aria-expanded={picking} aria-label="Citation style" onClick={() => setPicking(!picking)}>
             <span>{current?.title ?? style}</span>
@@ -180,7 +212,7 @@ export default function CitationSettings({
           <p data-preview="reference" dangerouslySetInnerHTML={{ __html: preview?.reference || "…" }} />
         </div>
       </Group>
-      <Group
+      {manage && <Group
         title="Installed styles"
         footer={
           <>
@@ -240,7 +272,7 @@ export default function CitationSettings({
             }}
           />
         </div>
-      </Group>
+      </Group>}
       {error && (
         <p className="kx-settings-footnote kx-cite-error" role="alert">
           {error}

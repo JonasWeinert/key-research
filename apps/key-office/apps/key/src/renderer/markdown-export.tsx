@@ -1,6 +1,7 @@
 // Markdown export of highlights and notes (key-biblio md_export.rs in the host): Settings ›
 // Markdown export, the "Export highlights" sheet for a selection or collection, the status
 // bar item, and key:// links opened from other apps (an Obsidian note's highlight links).
+import { openWorkspaceSettings } from "./settings-catalog";
 import { Button } from "@key/design-system";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { useEffect, useRef, useState } from "react";
@@ -8,7 +9,7 @@ import { GlobalDrawer } from "./GlobalDrawer";
 import type { HighlightExportRequest } from "./export-events";
 import { Icon } from "./icons";
 import { openItemAt } from "./item-actions";
-import { bridge, type Collection, type Invoke, type WorkspaceSummary } from "./library-api";
+import { bridge, type Collection, type Invoke } from "./library-api";
 import { itemFromHref } from "./note-editor/types";
 import { Group, Row } from "./Settings";
 import type { StatusItem } from "../shared/status-items";
@@ -104,9 +105,9 @@ async function chooseFolder(title: string, current?: string | null) {
   return bridge().choosePath?.({ mode: "folder", title, defaultPath: current ?? undefined });
 }
 
-/** Settings › Markdown export. */
-export function MarkdownExportSettings({ invoke, workspaces }: { invoke: Invoke; workspaces: WorkspaceSummary[] }) {
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id);
+/** Workspace Settings › Markdown export. */
+/** For one workspace (Workspace Settings keys it by workspace, so state starts fresh). */
+export function MarkdownExportSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: string }) {
   const [config, setConfig] = useState<MarkdownConfig>();
   const [defaults, setDefaults] = useState<{ template: string; pattern: string; fields: string[] }>();
   const [draft, setDraft] = useState("");
@@ -191,19 +192,6 @@ export function MarkdownExportSettings({ invoke, workspaces }: { invoke: Invoke;
     void save({ frontMatter: config.frontMatter.includes(field) ? config.frontMatter.filter((f) => f !== field) : [...defaults.fields.filter((f) => f === field || config.frontMatter.includes(f))] });
   return (
     <div className="kx-md-settings">
-      {workspaces.length > 1 && (
-        <Group>
-          <Row label="Library">
-            <select className="kx-settings-select" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="Library">
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </Row>
-        </Group>
-      )}
       <Group
         title="Highlights"
         help="settings.markdown.what"
@@ -410,14 +398,14 @@ function HighlightExportSheet({ invoke, workspaceId, request, onClose }: { invok
       <div className="key-property-editor kx-md-export" role="dialog" aria-label="Export highlights" data-modal-view="highlights">
         <header>
           <h2>Export highlights</h2>
-          <p>The highlights and comments of {what} as Markdown, from the template in Settings › Markdown export.</p>
+          <p>The highlights and comments of {what} as Markdown, from the template in Workspace Settings › Markdown export.</p>
           <button className="kx-sheet-close" aria-label="Close" onClick={onClose}>
             <Icon name="close" size={10} />
           </button>
         </header>
         <div className="key-property-body">
           <div className="kx-md-export-choices">
-            <button type="button" disabled={busy || folder === undefined} onClick={() => (folder ? void act("folder") : (onClose(), window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "markdown" }))))}>
+            <button type="button" disabled={busy || folder === undefined} onClick={() => (folder ? void act("folder") : (onClose(), openWorkspaceSettings("markdown", workspaceId)))}>
               <Icon name="folder" size={16} />
               <span>
                 <strong>{folder ? "Update in the export folder" : "Set up an export folder…"}</strong>
@@ -491,7 +479,7 @@ export function useMarkdownExportStatus(invoke: Invoke, workspaceId?: string): S
   }, [invoke, workspaceId]);
   if (!status || status.mode === "off" || !status.folder) return undefined;
   const last = status.last;
-  const open = "\n\nOpen Settings › Markdown export";
+  const open = "\n\nOpen Workspace Settings › Markdown export";
   if (status.conflicts.length)
     return {
       id: "md-export",

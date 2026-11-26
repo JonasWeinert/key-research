@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Part of Key (MIT). The terms Key uses when its citation data files are missing. -->
+<locale xmlns="http://purl.org/net/xbiblio/csl" version="1.0" xml:lang="en-US">
+  <style-options punctuation-in-quote="true"/>
+  <date form="text">
+    <date-part name="month" suffix=" "/>
+    <date-part name="day" suffix=", "/>
+    <date-part name="year"/>
+  </date>
+  <date form="numeric">
+    <date-part name="month" form="numeric" suffix="/"/>
+    <date-part name="day" suffix="/"/>
+    <date-part name="year"/>
+  </date>
+  <terms>
+    <term name="and">and</term>
+    <term name="et-al">et al.</term>
+    <term name="in">in</term>
+    <term name="accessed">accessed</term>
+    <term name="no date">no date</term>
+    <term name="no date" form="short">n.d.</term>
+    <term name="open-quote">“</term>
+    <term name="close-quote">”</term>
+    <term name="open-inner-quote">‘</term>
+    <term name="close-inner-quote">’</term>
+    <term name="page-range-delimiter">–</term>
+    <term name="page" form="short">
+      <single>p.</single>
+      <multiple>pp.</multiple>
+    </term>
+    <term name="chapter" form="short">
+      <single>chap.</single>
+      <multiple>chaps.</multiple>
+    </term>
+    <term name="section" form="short">
+      <single>sec.</single>
+      <multiple>secs.</multiple>
+    </term>
+    <term name="paragraph" form="short">
+      <single>para.</single>
+      <multiple>paras.</multiple>
+    </term>
+    <term name="figure" form="short">
+      <single>fig.</single>
+      <multiple>figs.</multiple>
+    </term>
+    <term name="volume" form="short">
+      <single>vol.</single>
+      <multiple>vols.</multiple>
+    </term>
+    <term name="editor" form="short">
+      <single>ed.</single>
+      <multiple>eds.</multiple>
+    </term>
+    <term name="month-01">January</term>
+    <term name="month-02">February</term>
+    <term name="month-03">March</term>
+    <term name="month-04">April</term>
+    <term name="month-05">May</term>
+    <term name="month-06">June</term>
+    <term name="month-07">July</term>
+    <term name="month-08">August</term>
+    <term name="month-09">September</term>
+    <term name="month-10">October</term>
+    <term name="month-11">November</term>
+    <term name="month-12">December</term>
+  </terms>
+</locale>

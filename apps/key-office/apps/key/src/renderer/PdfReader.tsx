@@ -246,7 +246,7 @@ export default function PdfReader() {
         call<{ items: { collections?: string[] }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then(
           (found) => found.items[0]?.collections ?? [],
         ),
-      // Asks which collections, beside this PDF's by default (Settings › Libraries).
+      // Asks which collections, beside this PDF's by default (Workspace Settings › General).
       addFrom:
         workspaceId && bridge().addFromSource
           ? async (work) => bridge().addFromSource!({ origin: { workspaceId, sourceId: await sourceId().catch(() => null) }, work: { ...work } })

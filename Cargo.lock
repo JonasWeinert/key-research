@@ -4430,6 +4430,7 @@ dependencies = [
 name = "key-embed"
 version = "0.1.0"
 dependencies = [
+ "key-models",
  "serde",
  "serde_json",
  "zed-reqwest",
@@ -4515,6 +4516,18 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tempfile",
+]
+
+[[package]]
+name = "key-models"
+version = "0.1.0"
+dependencies = [
+ "key-safe-http",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "url",
 ]
 
 [[package]]
@@ -4612,6 +4625,7 @@ dependencies = [
  "frankensearch",
  "frankensearch-core",
  "key-library",
+ "key-models",
  "key-processing",
  "opendataloader-pdf",
  "serde",

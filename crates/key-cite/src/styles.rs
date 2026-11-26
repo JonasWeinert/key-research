@@ -1,16 +1,17 @@
-//! The styles Key knows: the bundled set (CSL repository files, kept as data) and the ones a
-//! user installs (`.csl` files in an app-level folder). Locales are all bundled.
-use crate::bundled;
-use citationberg::{CitationFormat, IndependentStyle, InfoLinkRel, Locale, LocaleCode, LocaleFile, Style, StyleCategory, StyleClass};
-use serde::Serialize;
+//! The styles Key knows: the bundled set (CSL repository files, shipped as data files beside
+//! the app, see `data`) and the ones a user installs (`.csl` files in an app-level folder).
+//! Locales are all bundled.
+use crate::data::CitationData;
+use citationberg::{CitationFormat, IndependentStyle, InfoLinkRel, LocaleCode, Style, StyleCategory, StyleClass};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex},
 };
 
 /// What the style picker shows for a style.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct StyleSummary {
     /// The short id: the last segment of the style's CSL id, e.g. `apa`.
@@ -23,10 +24,12 @@ pub struct StyleSummary {
     /// `in-text` or `note`.
     pub class: String,
     /// Shipped with Key (cannot be removed).
+    #[serde(default)]
     pub bundled: bool,
     /// For a dependent style, the style it renders with.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    #[serde(default)]
     pub fields: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_locale: Option<String>,
@@ -41,7 +44,7 @@ fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 200 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') && !id.starts_with('.')
 }
 
-fn summarize(style: &Style, bundled: bool) -> StyleSummary {
+pub(crate) fn summarize(style: &Style, bundled: bool) -> StyleSummary {
     let (info, default_locale, parent) = match style {
         Style::Independent(s) => (&s.info, s.default_locale.as_ref(), None),
         Style::Dependent(d) => (
@@ -86,12 +89,6 @@ fn summarize(style: &Style, bundled: bool) -> StyleSummary {
     }
 }
 
-/// Every bundled locale, parsed once.
-pub fn locales() -> &'static [Locale] {
-    static LOCALES: OnceLock<Vec<Locale>> = OnceLock::new();
-    LOCALES.get_or_init(|| bundled::LOCALES.iter().filter_map(|(_, xml)| LocaleFile::from_xml(xml).ok().map(Locale::from)).collect())
-}
-
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocaleSummary {
@@ -102,7 +99,7 @@ pub struct LocaleSummary {
 
 /// The bundled locale codes with display names (English names; Key's UI is English).
 pub fn locale_list() -> Vec<LocaleSummary> {
-    bundled::LOCALES.iter().map(|(code, _)| LocaleSummary { code: code.to_string(), name: locale_name(code) }).collect()
+    CitationData::global().locale_codes().into_iter().map(|code| LocaleSummary { name: locale_name(&code), code }).collect()
 }
 
 fn locale_name(code: &str) -> String {
@@ -133,18 +130,34 @@ fn locale_name(code: &str) -> String {
 
 /// The locale codes Key has, for checking a requested one.
 pub fn has_locale(code: &str) -> bool {
-    bundled::LOCALES.iter().any(|(c, _)| c.eq_ignore_ascii_case(code)) || bundled::LOCALES.iter().any(|(c, _)| c.split('-').next() == Some(code))
+    let codes = CitationData::global().locale_codes();
+    codes.iter().any(|c| c.eq_ignore_ascii_case(code)) || codes.iter().any(|c| c.split('-').next() == Some(code))
 }
 
 /// The bundled styles plus those installed in `dir`; parsed styles are cached.
 pub struct Styles {
     dir: Option<PathBuf>,
+    data: Arc<CitationData>,
     cache: Mutex<HashMap<String, Arc<IndependentStyle>>>,
 }
 
 impl Styles {
+    /// Installed styles in `dir`, bundled ones from the app's data folder.
     pub fn new(dir: Option<PathBuf>) -> Self {
-        Self { dir, cache: Mutex::new(HashMap::new()) }
+        Self::with_data(dir, CitationData::global())
+    }
+
+    pub fn with_data(dir: Option<PathBuf>, data: Arc<CitationData>) -> Self {
+        Self { dir, data, cache: Mutex::new(HashMap::new()) }
+    }
+
+    pub fn data(&self) -> &CitationData {
+        &self.data
+    }
+
+    /// APA, or Key's own basic style when the shipped styles are missing.
+    pub fn default_id(&self) -> &'static str {
+        if self.data.style_summary(crate::DEFAULT_STYLE).is_some() { crate::DEFAULT_STYLE } else { crate::data::FALLBACK_STYLE }
     }
 
     pub fn dir(&self) -> Option<&Path> {
@@ -162,17 +175,15 @@ impl Styles {
         if let Some(xml) = self.installed_xml(id) {
             return Some((xml, false));
         }
-        bundled::STYLES.iter().find(|(name, _)| *name == id).map(|(_, xml)| (xml.to_string(), true))
+        self.data.style_xml(id).map(|xml| (xml, true))
     }
 
     /// Bundled styles first (alphabetical by title), then installed ones; an installed style
     /// with a bundled style's id replaces it.
     pub fn list(&self) -> Vec<StyleSummary> {
-        // The bundled set never changes: summarized once.
-        static BUNDLED: OnceLock<Vec<StyleSummary>> = OnceLock::new();
-        let bundled = BUNDLED.get_or_init(|| bundled::STYLES.iter().filter_map(|(_, xml)| Style::from_xml(xml).ok().map(|s| summarize(&s, true))).collect());
+        // The bundled set comes from the data folder's index: nothing to parse.
         let installed = self.installed();
-        let mut out: Vec<StyleSummary> = bundled.iter().filter(|b| !installed.iter().any(|s| s.id == b.id)).cloned().collect();
+        let mut out: Vec<StyleSummary> = self.data.style_summaries().into_iter().filter(|b| !installed.iter().any(|s| s.id == b.id)).collect();
         out.extend(installed);
         out.sort_by(|a, b| b.bundled.cmp(&a.bundled).then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase())));
         out
@@ -190,8 +201,10 @@ impl Styles {
     }
 
     pub fn summary(&self, id: &str) -> Option<StyleSummary> {
-        let (xml, bundled) = self.xml(id)?;
-        Style::from_xml(&xml).ok().map(|s| summarize(&s, bundled))
+        if let Some(xml) = self.installed_xml(id) {
+            return Style::from_xml(&xml).ok().map(|s| summarize(&s, false));
+        }
+        self.data.style_summary(id)
     }
 
     /// The style to render with: an independent style, or a dependent one's parent with the

@@ -1,4 +1,4 @@
-// The on-device search model downloads once, on first launch. One poller feeds the
+// The on-device search model downloads once, when first needed. One poller feeds the
 // sidebar pill, the Home card and the Sources card with progress, speed and time left.
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
@@ -52,7 +52,8 @@ function timeLeft(seconds?: number, short = false) {
   if (seconds < 90) return short ? `${Math.round(seconds / 5) * 5} s` : `about ${Math.round(seconds / 5) * 5} s left`;
   return short ? `${Math.round(seconds / 60)} min` : `about ${Math.round(seconds / 60)} min left`;
 }
-const pending = (p?: ModelProgress): p is ModelProgress => !!p && ["downloading", "missing", "failed"].includes(p.state);
+// Not downloaded yet is not shown: the model comes on first need (or from Settings).
+const pending = (p?: ModelProgress): p is ModelProgress => !!p && ["downloading", "failed"].includes(p.state);
 
 /** A card for Home and Sources while the model is downloading or retrying. */
 export function ModelProgressCard({ progress, compact }: { progress?: ModelProgress; compact?: boolean }) {

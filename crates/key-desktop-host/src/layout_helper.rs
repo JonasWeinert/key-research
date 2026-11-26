@@ -19,12 +19,17 @@ const FLAG: &str = "--key-layout-helper";
 /// A document that takes longer than this falls back to plain PDF text.
 const TIMEOUT: Duration = Duration::from_secs(600);
 
-/// The layout model: `KEY_LAYOUT_MODEL` (set by the app for packaged builds), else the
-/// copy next to the extraction crate in development.
+/// The layout model's file in the shared models folder (key-models).
+pub const MODEL_FILE: &str = "model_fp16.onnx";
+
+/// The layout model: `KEY_LAYOUT_MODEL` (a developer's own copy), else the downloaded one
+/// in the shared models folder, else a copy a developer put next to the extraction crate.
+/// None until it has been downloaded: analysis then runs without it.
 pub fn model_path() -> Option<PathBuf> {
     env::var_os("KEY_LAYOUT_MODEL")
         .map(PathBuf::from)
         .into_iter()
+        .chain(key_models::Models::from_env().file(key_models::LAYOUT, MODEL_FILE))
         .chain([opendataloader_pdf::bundled_onnx_model_path()])
         .find(|path| path.is_file())
 }

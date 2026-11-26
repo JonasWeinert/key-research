@@ -35,3 +35,9 @@ __pycache__/
 
 # Local build-in-public content planning.
 /content/
+
+# ML models are downloaded on demand (crates/key-models, tools/models/fetch.mjs), never committed.
+/crates/opendataloader-pdf-rs/models/
+/crates/key-semantic-search/resources/snowflake-arctic-embed-xs-q/
+*.onnx
+*.gguf

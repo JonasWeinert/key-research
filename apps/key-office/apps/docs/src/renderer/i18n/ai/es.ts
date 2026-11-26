@@ -8,7 +8,6 @@ export const es = {
   aiStarterPolishAll: 'Pulir todo el documento para un tono más profesional',
   aiStarterContinue: 'Continúa escribiendo desde donde termina el documento',
   aiStarterFillTemplate: 'Encuentra y completa los marcadores de posición del documento',
-  aiGskLoginBtn: 'Iniciar sesión en Genspark',
   aiPanelTitle: 'Key AI',
   aiOpenAssistant: 'Abrir el asistente de IA',
   aiSummarizeBtn: 'Resumen IA',
@@ -109,7 +108,7 @@ export const es = {
   aiNetworkError:
     'Problema de red: no se pudo conectar con el servicio de IA. Comprueba tu conexión e inténtalo de nuevo',
   aiCreditsExhausted:
-    'Tus créditos de Genspark se han agotado. Recarga en genspark.ai/pricing e inténtalo de nuevo',
+    'Se han agotado los créditos de tu proveedor de IA. Recarga con tu proveedor y vuelve a intentarlo',
   aiSumReadAttachment: 'Leer dato adjunto',
   aiSumImageAttachment: 'Imagen adjunta {name}',
   aiSumRead: 'Leer {name}',

@@ -593,7 +593,11 @@ mod tests {
             library.passage(&keyword[0].id).unwrap().unwrap().rects,
             vec![[1, 2, 3, 4]]
         );
-        let model = default_model_dir().expect("bundled model");
+        // The model is downloaded on demand: `node tools/models/fetch.mjs` and KEY_MODEL_DIR.
+        let Ok(model) = default_model_dir() else {
+            eprintln!("skipped the embedding half: the reader search model is not downloaded");
+            return;
+        };
         let stats = index_document(&root, &model, &chunks, |_, _| {}).unwrap();
         assert_eq!(stats.embedded_chunks, 2);
         let hits = search_index_at(&root, &chunk_root, &model, &ids, "memory safety", 5).unwrap();
@@ -655,7 +659,11 @@ mod segment_tests {
         let temp = tempfile::tempdir().unwrap();
         let library = key_library::Library::open(temp.path()).unwrap();
         let hash = library.store_source(b"segments", "Segments", 1).unwrap();
-        let model = ArcticEmbedder::load(&crate::embedder::default_model_dir().unwrap()).unwrap();
+        let Ok(dir) = crate::embedder::default_model_dir() else {
+            eprintln!("skipped: the reader search model is not downloaded (node tools/models/fetch.mjs)");
+            return;
+        };
+        let model = ArcticEmbedder::load(&dir).unwrap();
         let text = "Scientific methods and experimental evidence.";
         let vector = model.embed_texts(&[text]).unwrap().remove(0);
         library
