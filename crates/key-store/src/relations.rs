@@ -190,6 +190,38 @@ pub struct TagPage {
 }
 
 impl Store {
+    /// People, journals, topics and tags whose name has a word starting with `text`, with
+    /// how many live sources have each, most first (for choosing what a map centres on).
+    pub fn find_map_centers(&self, text: &str, limit: usize) -> Result<Vec<MapNode>> {
+        let typed = text.trim().to_lowercase();
+        if typed.is_empty() {
+            return Ok(Vec::new());
+        }
+        let escaped = typed.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let (starts, inner) = (format!("{escaped}%"), format!("% {escaped}%"));
+        let db = self.read()?;
+        let word = |column: &str| format!("(lower({column}) LIKE ?1 ESCAPE '\\' OR lower({column}) LIKE ?2 ESCAPE '\\')");
+        let queries = [
+            ("person", format!("SELECT p.id, p.name, count(DISTINCT s.id) n FROM people p JOIN source_people sp ON sp.person_id = p.id JOIN sources s ON s.id = sp.source_id AND s.trashed_at IS NULL WHERE {} GROUP BY p.id", word("p.name"))),
+            ("venue", format!("SELECT v.id, v.name, count(*) n FROM venues v JOIN sources s ON s.venue_id = v.id AND s.trashed_at IS NULL WHERE {} GROUP BY v.id", word("v.name"))),
+            ("topic", format!("SELECT t.id, t.name, count(DISTINCT s.id) n FROM topics t JOIN source_topics st ON st.topic_id = t.id JOIN sources s ON s.id = st.source_id AND s.trashed_at IS NULL WHERE {} GROUP BY t.id", word("t.name"))),
+            ("tag", format!("SELECT j.value, j.value, count(DISTINCT s.id) n FROM sources s, json_each(s.tags) j WHERE s.trashed_at IS NULL AND {} GROUP BY j.value", word("j.value"))),
+        ];
+        let mut out = Vec::new();
+        for (kind, sql) in queries {
+            let mut statement = db.prepare(&format!("{sql} ORDER BY n DESC LIMIT {limit}")).map_err(e)?;
+            let found = statement
+                .query_map([&starts, &inner], |r| Ok(MapNode { kind: kind.into(), id: r.get(0)?, name: r.get(1)?, count: r.get(2)?, detail: None }))
+                .map_err(e)?;
+            for node in found {
+                out.push(node.map_err(e)?);
+            }
+        }
+        out.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+        out.truncate(limit);
+        Ok(out)
+    }
+
     /// `None` when no source in the library (outside the Trash) has the tag.
     pub fn tag_page(&self, name: &str) -> Result<Option<TagPage>> {
         let db = self.read()?;
@@ -408,6 +440,9 @@ mod tests {
         assert_eq!(tag.center.count, 2);
         assert_eq!(store.tag_page("graphs").unwrap().unwrap().source_count, 2);
         assert!(store.tag_page("nothing").unwrap().is_none());
+        let found = store.find_map_centers("gra", 8).unwrap();
+        assert_eq!(found.first().map(|n| (n.kind.as_str(), n.count)), Some(("tag", 2)));
+        assert!(store.find_map_centers("science", 8).unwrap().iter().any(|n| n.kind == "topic" && n.name == "Open science"));
         assert!(tag.nodes.iter().all(|n| !(n.kind == "tag" && n.id == "graphs")));
 
         let paper = store.relation_map("source", &a, 8).unwrap().unwrap();
