@@ -187,6 +187,17 @@ const BUBBLE_PROBES = [
   { name: "toolbar button", selector: ".ne-bubble .ne-tool:not(.ne-tool-text):not(.is-active)", min: UI },
   { name: "toolbar block menu", selector: ".ne-bubble .ne-tool-text", min: TEXT },
 ];
+const PANEL_PROBES = [
+  { name: "library title", selector: ".kx-note-library-title", min: TEXT },
+  { name: "library search hint", selector: ".kx-note-library .kx-search-input", pseudo: "::placeholder", min: TEXT },
+  { name: "library kind chip", selector: '.kx-note-library .kx-kind-chips button[aria-pressed="false"]:not(:disabled)', min: TEXT },
+  { name: "library chosen chip", selector: '.kx-note-library .kx-kind-chips button[aria-pressed="true"]', min: TEXT },
+  { name: "library result", selector: ".kx-note-library .kx-hit-title", min: TEXT },
+  { name: "library byline", selector: ".kx-note-library .kx-hit-meta", min: TEXT },
+  { name: "library keys", selector: ".kx-note-library-foot", min: TEXT },
+  { name: "library close", selector: ".kx-note-library-head .kx-icon-button", min: UI },
+  { name: "library button", selector: ".kx-library-fab", min: UI },
+];
 const FOCUS_PROBES = [{ name: "focus ring", selector: ".ne-toggle-chevron:focus-visible", prop: "outlineColor", min: UI }];
 
 (async () => {
@@ -220,7 +231,7 @@ const FOCUS_PROBES = [{ name: "focus ring", selector: ".ne-toggle-chevron:focus-
       prose = notePage.locator(".ne-prose");
       await prose.waitFor();
       await page.evaluate(() => document.querySelector("[data-contrast-root]")?.removeAttribute("data-contrast-root"));
-      await notePage.evaluate((el) => el.setAttribute("data-contrast-root", ""));
+      await notePage.evaluate((el) => (el.closest(".kx-note-shell") ?? el).setAttribute("data-contrast-root", ""));
       await notePage.locator(".ne-source-card-title", { hasText: "Health versus income" }).waitFor();
     };
 
@@ -302,11 +313,21 @@ const FOCUS_PROBES = [{ name: "focus ring", selector: ".ne-toggle-chevron:focus-
         return { style: s.outlineStyle, width: parseFloat(s.outlineWidth) };
       });
       assert.ok(ring.style !== "none" && ring.width >= 2, `${theme}: keyboard focus shows a ring (${JSON.stringify(ring)})`);
+
+      // The library panel beside the note, and the button that opens it.
+      await page.locator(".kx-note-shell:visible .kx-library-fab").click();
+      const panel = page.locator(".kx-note-shell:visible .kx-note-library");
+      await panel.locator(".kx-found-hit").first().waitFor();
+      await page.waitForTimeout(600);
+      await check(theme, PANEL_PROBES);
+      await shot(page, `${theme}-library`);
+      await page.keyboard.press("Escape");
+      await panel.waitFor({ state: "detached" });
     }
 
     assert.deepEqual(errors, []);
     assert.deepEqual(failures, [], `contrast below WCAG AA:\n${failures.join("\n")}`);
-    console.log(JSON.stringify({ ok: true, temp, themes: ["light", "dark"], probes: EDITOR_PROBES.length + GUTTER_PROBES.length + SLASH_PROBES.length + PICKER_PROBES.length + BUBBLE_PROBES.length + FOCUS_PROBES.length }));
+    console.log(JSON.stringify({ ok: true, temp, themes: ["light", "dark"], probes: EDITOR_PROBES.length + GUTTER_PROBES.length + SLASH_PROBES.length + PICKER_PROBES.length + BUBBLE_PROBES.length + FOCUS_PROBES.length + PANEL_PROBES.length }));
   } catch (e) {
     await app.windows()[0]?.screenshot({ path: path.join(temp, "failure.png") }).catch(() => {});
     console.error("Artifacts", temp);

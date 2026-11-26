@@ -7,7 +7,8 @@ import "./entity.css";
 import { ItemPage, ItemProperties, type AppearancePatch } from "./ItemPage";
 import { shortCreators, type Invoke, type Note, type Source } from "./library-api";
 import type { Creator } from "./citation";
-import NoteEditor from "./note-editor";
+import NoteEditor, { type NoteEditorHandle } from "./note-editor";
+import { LibraryButton, NoteLibraryPanel, isLibraryShortcut, useFadingButton } from "./NoteLibrary";
 import { noteSources } from "./note-sources";
 import LinkedFrom from "./LinkedFrom";
 import { readAppearance } from "./page-appearance";
@@ -30,6 +31,17 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
   const titleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const sources = useMemo(() => noteSources(invoke, workspaceId), [invoke, workspaceId]);
   const { definitions, reload: reloadDefinitions } = usePropertyDefinitions(invoke, workspaceId);
+  // The library panel beside the note, and the button that opens it.
+  const [library, setLibrary] = useState(false);
+  const editorApi = useRef<NoteEditorHandle>(null);
+  const libraryButton = useRef<HTMLButtonElement>(null);
+  const librarySearch = useRef<HTMLInputElement>(null);
+  const fading = useFadingButton(libraryButton, library);
+  const closeLibrary = () => {
+    setLibrary(false);
+    editorApi.current?.focus();
+  };
+  const toggleLibrary = () => (library ? closeLibrary() : setLibrary(true));
 
   useEffect(() => {
     let current = true;
@@ -87,115 +99,134 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
   if (error && !note) return <p className="kx-note-page-error">{error}</p>;
   if (!note) return <div className="kx-note-page" aria-busy="true" />;
   return (
-    <ItemPage
-      kind="note"
-      className="kx-note-page"
-      innerClassName="kx-note-page-inner"
-      appearance={readAppearance(note.appearance)}
-      onAppearance={(appearance) => void saveMeta({ appearance })}
-      media={sources.media}
-      defaultIcon="note"
-      bar={
-        <header className="kx-note-page-head">
-          {source ? (
-            <button className="kx-note-source" onClick={() => sources.onOpenSource(source.id)}>
-              <Icon name="quote" size={12} />
-              Note on <strong>{source.title || "Untitled"}</strong>
-            </button>
-          ) : (
-            <span className="kx-note-source">
-              <Icon name="note" size={12} />
-              Note
-            </span>
-          )}
-          <span className="kx-spacer" />
-          <span className="kx-note-saved" aria-live="polite">
-            {saved === "saving" ? "Saving…" : `Saved · ${new Date(note.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`}
-          </span>
-          <details className="kx-menu kx-source-more">
-            <summary className="kx-icon-button" title="More" aria-label="More">
-              <Icon name="more" size={14} />
-            </summary>
-            <div className="kx-menu-popover" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
-              <button
-                onClick={async () => {
-                  if (!window.confirm("Delete this note? This cannot be undone.")) return;
-                  await invoke("store_note_delete", { id: noteId }, workspaceId);
-                  notesChanged();
-                  setError("This note was deleted.");
-                  setNote(undefined);
-                }}
-              >
-                Delete note…
-              </button>
-            </div>
-          </details>
-        </header>
-      }
-      titleText={note.title}
-      details={{
-        summary: noteSummary(note.fields ?? {}, note.properties ?? {}),
-        content: (
-          <ItemProperties
-            id={note.id}
-            fields={note.fields ?? {}}
-            properties={note.properties ?? {}}
-            definitions={definitions}
-            onFields={(fields) => void saveMeta({ fields })}
-            onProperties={(properties) => void saveMeta({ properties })}
-            onEditDefinition={(definition) => setSheet({ mode: "edit", definition, targets: [] })}
-            onNewProperty={() => setSheet({ mode: "new", targets: [] })}
-          />
-        ),
+    <div
+      className="kx-note-shell"
+      onPointerMove={fading.onPointerMove}
+      onKeyDown={(e) => {
+        fading.onKeyDown(e);
+        if (!isLibraryShortcut(e)) return;
+        e.preventDefault();
+        // From the note it opens the panel, or goes back to it; from inside the panel it closes.
+        if (!library) setLibrary(true);
+        else if ((e.target as HTMLElement).closest(".kx-note-library")) closeLibrary();
+        else librarySearch.current?.focus();
       }}
-      title={
-        <input
-          className="kx-note-title"
-          aria-label="Note title"
-          placeholder="Untitled"
-          defaultValue={note.title}
-          onChange={(e) => {
-            const title = e.target.value;
-            clearTimeout(titleTimer.current);
-            titleTimer.current = setTimeout(() => void save({ title }), 300);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.currentTarget.closest(".kx-note-page-inner")?.querySelector<HTMLElement>(".ProseMirror")?.focus();
-            }
-          }}
-          autoFocus={!note.title && !note.body}
-        />
-      }
     >
-      {error && <p className="kx-inline-error">{error}</p>}
-      <NoteEditor
-        value={note.body}
-        onChange={(body) => void save({ body })}
-        searchSources={sources.searchSources}
-        resolveSource={sources.resolveSource}
-        onOpenSource={sources.onOpenSource}
-        media={sources.media}
-        searchItems={sources.searchItems}
-        searchItemsMore={sources.searchItemsMore}
-        citeLabel={sources.citeLabel}
-        onOpenItem={sources.onOpenItem}
-        className="kx-note-page-editor"
-      />
-      <LinkedFrom invoke={invoke} workspaceId={workspaceId} item={{ kind: "note", id: noteId }} />
-      {sheet && (
-        <PropertySheet
-          state={sheet}
-          invoke={invoke}
-          workspaceId={workspaceId}
-          definitions={definitions}
-          onClose={() => setSheet(undefined)}
-          onSaved={reloadDefinitions}
-          onCreated={(name) => void saveMeta({ properties: { [name]: "" } })}
-        />
-      )}
-    </ItemPage>
+      {library && <NoteLibraryPanel invoke={invoke} workspaceId={workspaceId} editor={editorApi} onClose={closeLibrary} searchRef={librarySearch} />}
+      <div className="kx-note-shell-main">
+        <LibraryButton open={library} awake={fading.awake} onToggle={toggleLibrary} buttonRef={libraryButton} />
+        <ItemPage
+          kind="note"
+          className="kx-note-page"
+          innerClassName="kx-note-page-inner"
+          appearance={readAppearance(note.appearance)}
+          onAppearance={(appearance) => void saveMeta({ appearance })}
+          media={sources.media}
+          defaultIcon="note"
+          bar={
+            <header className="kx-note-page-head">
+              {source ? (
+                <button className="kx-note-source" onClick={() => sources.onOpenSource(source.id)}>
+                  <Icon name="quote" size={12} />
+                  Note on <strong>{source.title || "Untitled"}</strong>
+                </button>
+              ) : (
+                <span className="kx-note-source">
+                  <Icon name="note" size={12} />
+                  Note
+                </span>
+              )}
+              <span className="kx-spacer" />
+              <span className="kx-note-saved" aria-live="polite">
+                {saved === "saving" ? "Saving…" : `Saved · ${new Date(note.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}`}
+              </span>
+              <details className="kx-menu kx-source-more">
+                <summary className="kx-icon-button" title="More" aria-label="More">
+                  <Icon name="more" size={14} />
+                </summary>
+                <div className="kx-menu-popover" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
+                  <button
+                    onClick={async () => {
+                      if (!window.confirm("Delete this note? This cannot be undone.")) return;
+                      await invoke("store_note_delete", { id: noteId }, workspaceId);
+                      notesChanged();
+                      setError("This note was deleted.");
+                      setNote(undefined);
+                    }}
+                  >
+                    Delete note…
+                  </button>
+                </div>
+              </details>
+            </header>
+          }
+          titleText={note.title}
+          details={{
+            summary: noteSummary(note.fields ?? {}, note.properties ?? {}),
+            content: (
+              <ItemProperties
+                id={note.id}
+                fields={note.fields ?? {}}
+                properties={note.properties ?? {}}
+                definitions={definitions}
+                onFields={(fields) => void saveMeta({ fields })}
+                onProperties={(properties) => void saveMeta({ properties })}
+                onEditDefinition={(definition) => setSheet({ mode: "edit", definition, targets: [] })}
+                onNewProperty={() => setSheet({ mode: "new", targets: [] })}
+              />
+            ),
+          }}
+          title={
+            <input
+              className="kx-note-title"
+              aria-label="Note title"
+              placeholder="Untitled"
+              defaultValue={note.title}
+              onChange={(e) => {
+                const title = e.target.value;
+                clearTimeout(titleTimer.current);
+                titleTimer.current = setTimeout(() => void save({ title }), 300);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.closest(".kx-note-page-inner")?.querySelector<HTMLElement>(".ProseMirror")?.focus();
+                }
+              }}
+              autoFocus={!note.title && !note.body}
+            />
+          }
+        >
+          {error && <p className="kx-inline-error">{error}</p>}
+          <NoteEditor
+            value={note.body}
+            onChange={(body) => void save({ body })}
+            searchSources={sources.searchSources}
+            resolveSource={sources.resolveSource}
+            onOpenSource={sources.onOpenSource}
+            media={sources.media}
+            searchItems={sources.searchItems}
+            searchItemsMore={sources.searchItemsMore}
+            citeLabel={sources.citeLabel}
+            onOpenItem={sources.onOpenItem}
+            className="kx-note-page-editor"
+            apiRef={editorApi}
+          />
+          <LinkedFrom invoke={invoke} workspaceId={workspaceId} item={{ kind: "note", id: noteId }} />
+          {sheet && (
+            <PropertySheet
+              state={sheet}
+              invoke={invoke}
+              workspaceId={workspaceId}
+              definitions={definitions}
+              onClose={() => setSheet(undefined)}
+              onSaved={reloadDefinitions}
+              onCreated={(name) => void saveMeta({ properties: { [name]: "" } })}
+            />
+          )}
+        </ItemPage>
+      </div>
+    </div>
   );
 }
 
