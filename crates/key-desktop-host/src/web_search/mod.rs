@@ -400,6 +400,10 @@ pub trait Library {
     }
     /// Queues the source's metadata lookup (by its DOI), first in line.
     fn enrich_later(&self, _id: &str) {}
+    /// Adds a tag to the source (database search: "tag with the search's name").
+    fn tag(&self, _id: &str, _tag: &str) -> Result<Json, String> {
+        Err("This library cannot tag".into())
+    }
 }
 
 /// Adds the work as a reference, or answers the source it already is. With `lookup`, a work
@@ -534,6 +538,9 @@ impl Library for StoreLibrary<'_> {
     fn enrich_later(&self, id: &str) {
         self.library.openalex.focus(id);
         let _ = self.call("store_enrich", json!({ "ids": [id] }));
+    }
+    fn tag(&self, id: &str, tag: &str) -> Result<Json, String> {
+        self.call("store_bulk_tag", json!({ "ids": [id], "add": [tag] }))
     }
 }
 

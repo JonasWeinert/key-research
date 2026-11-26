@@ -518,6 +518,9 @@ pub struct When {
     /// Fetch when the field is shorter than this (missing counts as empty).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_length: Option<usize>,
+    /// Fetch only when the field has at least this many characters (a cut-off text).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_least: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

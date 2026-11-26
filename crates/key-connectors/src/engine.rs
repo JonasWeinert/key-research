@@ -179,6 +179,9 @@ pub struct SearchState {
     pub requests: u32,
     /// Replaces the plan's page size (tests record small fixtures).
     pub page_size: Option<u64>,
+    /// Stop reading (and fetching details) after this many records (tests).
+    pub record_cap: Option<usize>,
+    pub kept: usize,
 }
 
 impl SearchState {
@@ -203,6 +206,8 @@ impl SearchState {
             split_years: false,
             requests: 0,
             page_size: None,
+            record_cap: None,
+            kept: 0,
         }
     }
 
@@ -538,6 +543,10 @@ impl Engine {
         let mut new_any = false;
         let year_asked = state.query.filters.year_from.is_some() || state.query.filters.year_to.is_some();
         for mut record in records {
+            if state.record_cap.is_some_and(|cap| state.kept + kept.len() >= cap) {
+                state.done = true;
+                break;
+            }
             if record.source_id.is_empty() {
                 record.source_id = record.doi.clone().or_else(|| record.url.clone()).unwrap_or_else(|| query::fold(&record.title));
             }
@@ -560,6 +569,7 @@ impl Engine {
             }
             kept.push(record);
         }
+        state.kept += kept.len();
         if !state.done && out.raw > 0 {
             let stop = (plan.paging.stop_when_no_new && !new_any) || (plan.paging.stop_when_no_local_match && chunk.local_filter && !matched_any);
             if stop {
@@ -573,7 +583,13 @@ impl Engine {
     fn per_record(&self, spec: &Spec, detail: &Detail, record: &mut Record, chunk: &Chunk, creds: &Credentials, state: &mut SearchState, ctl: &RunControl, out: &mut Fetched) -> Result<(), EngineError> {
         if let Some(when) = &detail.when {
             let have = record.get(&when.field);
-            if when.min_length.is_some_and(|m| have.chars().count() >= m) || (when.min_length.is_none() && !have.is_empty()) {
+            let n = have.chars().count();
+            let skip = match (when.min_length, when.at_least) {
+                (_, Some(least)) => n < least,
+                (Some(m), None) => n >= m,
+                (None, None) => n > 0,
+            };
+            if skip {
                 return Ok(());
             }
         }
@@ -803,6 +819,9 @@ impl Engine {
         let mut records = Vec::new();
         // A few item pages per call, so progress shows and cancel is quick.
         for _ in 0..size.min(10) {
+            if state.record_cap.is_some_and(|cap| state.kept + records.len() >= cap) {
+                break;
+            }
             let Some(link) = state.links.pop_front() else { break };
             let mut v = vars.clone();
             v.insert("link".into(), link.to_string());

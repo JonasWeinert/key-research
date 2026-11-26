@@ -2,7 +2,7 @@
   "$schema": "../schema/connector-1.schema.json",
   "format": 1,
   "id": "crossref-series",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minEngine": "1.0.0",
   "name": "Working-paper series (Crossref)",
   "description": "Working papers and reports that institutions register with Crossref, found by DOI prefix: useful for series whose own websites cannot be searched.",
@@ -65,6 +65,8 @@
         "filter": { "join": ",", "parts": ["prefix:{opt.prefix}", "{dateFrom?}", "{dateTo?}"] },
         "rows": "{pageSize}",
         "cursor": "{cursor}",
+        "sort": "score",
+        "order": "desc",
         "select": "DOI,title,author,issued,published,abstract,type,container-title,group-title,URL,publisher,subject,link",
         "mailto": "{mailto?}"
       },

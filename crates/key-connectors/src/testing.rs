@@ -58,6 +58,7 @@ pub fn run_test(engine: &Engine, spec: &Spec, test: &TestSpec, creds: &Credentia
     }
     let mut state = SearchState::new(&translation, &query, &options);
     state.page_size = test.page_size;
+    state.record_cap = test.max_records;
     let mut records: Vec<Record> = Vec::new();
     let cap = test.max_records.unwrap_or(usize::MAX);
     for _ in 0..test.pages.max(1) {
