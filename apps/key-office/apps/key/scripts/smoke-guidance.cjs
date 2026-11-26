@@ -162,7 +162,8 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
     await theme(true);
     await shot("feeds-manager-dark");
     await theme(false);
-    await sheet.getByLabel("Feed or page address").fill(`${mock}/feed.xml`);
+    await sheet.getByLabel("Follow a journal, author, topic or search").fill(`${mock}/feed.xml`);
+    await sheet.getByLabel("Follow a journal, author, topic or search").press("Enter");
     await sheet.getByRole("button", { name: "Follow", exact: true }).click();
     await sheet.locator(".kx-feeds-row", { hasText: "Journal of Guidance" }).waitFor();
     await sheet.getByRole("button", { name: "Close", exact: true }).click();

@@ -23,7 +23,6 @@ import { useWebSearch, openWebLink, errorText, type WebHit, type WebSearchState 
 import { useWebAdd, WebAddButton, type WebAdd } from "./WebAddButton";
 import { WebPill, copyCitation, webLink } from "./WebResults";
 import { shortAuthors, snippetOf } from "../shared/web-search";
-import { addToInbox } from "./web-inbox";
 import { Snippet } from "./search-highlight";
 import "./palette.css";
 import "./search-popup.css";
@@ -465,8 +464,6 @@ function ItemPreview({ group, invoke, workspaceId, pattern, onOpen }: { group: I
 
 function WebDetail({ hit, invoke, workspaceId, web, adder, pattern, query }: { hit: WebHit; invoke: Invoke; workspaceId: string; web: WebSearchState; adder: WebAdd; pattern?: RegExp; query: string }) {
   const link = webLink(hit);
-  const [inbox, setInbox] = useState<"saving" | "inbox" | "library">();
-  useEffect(() => setInbox(undefined), [hit.key]);
   const abstract = snippetOf(hit.abstract, 1400);
   const inLibrary = !!web.inLibrary[hit.key];
   return (
@@ -482,28 +479,6 @@ function WebDetail({ hit, invoke, workspaceId, web, adder, pattern, query }: { h
       <p className="kx-spot-meta">{[hit.venue, hit.year].filter(Boolean).join(" · ")}</p>
       <div className="kx-spot-actions">
         <WebAddButton hit={hit} web={web} adder={adder} large />
-        {!inLibrary && (
-          <button
-            type="button"
-            className="kx-web-preview-button"
-            disabled={!!inbox}
-            title="Keep it in the Inbox to decide later"
-            onClick={() => {
-              setInbox("saving");
-              addToInbox(invoke, workspaceId, hit, query)
-                .then((saved) => {
-                  setInbox(saved.state);
-                  toast(saved.state === "library" ? "Already in your library" : saved.existed ? "Already in the Inbox" : "Added to the Inbox");
-                })
-                .catch((e) => {
-                  setInbox(undefined);
-                  toast(`Couldn't add it to the Inbox: ${errorText(e)}`);
-                });
-            }}
-          >
-            <Icon name="inbox" size={12} /> {inbox === "saving" ? "Adding…" : inbox === "inbox" ? "In Inbox" : inbox === "library" ? "In library" : "Add to Inbox"}
-          </button>
-        )}
         {link && (
           <button type="button" className="kx-web-preview-button" title={`Open ${link} in the browser`} onClick={() => openWebLink(link)}>
             <Icon name="external" size={12} /> Open page
