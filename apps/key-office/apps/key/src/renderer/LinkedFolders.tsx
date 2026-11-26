@@ -11,7 +11,8 @@ import { ensureFileId, fileShowsAs, linkedEntries, linkedFolders, type LinkedEnt
 import { setItemDrag } from "./note-editor";
 import "./linked-folders.css";
 
-const indent = (depth: number) => `min(${4 + depth * 14}px, 40%)`;
+/** The sidebar's grid, as in the Workspace section: 2px, then 12px per level. */
+const indent = (depth: number) => `min(${2 + depth * 12}px, 40%)`;
 const FILE_ICON: Record<string, IconName> = { markdown: "note", text: "doc", pdf: "doc", image: "image", other: "doc" };
 
 const readOpen = (key: string) => {
@@ -131,7 +132,7 @@ export default function LinkedFolders({ invoke, workspaceId }: { invoke?: Invoke
                   : "";
             return (
               <div key={folder.id} role="treeitem" aria-expanded={expanded} aria-level={1} data-folder-id={folder.id}>
-                <div className="kx-tree-row" style={{ paddingLeft: 4 }} data-missing={folder.missing || undefined} onContextMenu={(e) => folderMenu(folder, e)}>
+                <div className="kx-tree-row" style={{ paddingLeft: indent(0) }} data-missing={folder.missing || undefined} onContextMenu={(e) => folderMenu(folder, e)}>
                   <button className="kx-tree-disclosure" aria-label={expanded ? `Collapse ${folder.name}` : `Expand ${folder.name}`} tabIndex={-1} onClick={() => toggle(folder.id)}>
                     <Icon name="chevronRight" size={10} style={{ transform: expanded ? "rotate(90deg)" : undefined }} />
                   </button>
