@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { AnyExtension } from "@tiptap/core";
 import { EditorContent, ReactNodeViewRenderer, useEditor } from "@tiptap/react";
@@ -7,6 +7,7 @@ import { Placeholder } from "@tiptap/extensions";
 import { BlockGutter } from "./blockGutter";
 import { BubbleToolbar, normalizeUrl } from "./BubbleToolbar";
 import { NoteKeymap, SourceLinks } from "./behaviors";
+import { LibraryDrop, insertQuoteAt, insertReferenceAt } from "./insertions";
 import { NoteMenus } from "./menus";
 import type { MenuController, MenuState } from "./menus";
 import { NoteMedia } from "./mediaBehaviors";
@@ -17,7 +18,7 @@ import { Callout, ItemEmbed, NoteImage, SourceEmbed, SourceQuote, Toggle, VideoE
 import { resolveSourceCached } from "./sourceCache";
 import { SuggestionMenu, usePopoverPosition } from "./SuggestionMenu";
 import type { SuggestionMenuHandle } from "./SuggestionMenu";
-import type { DraggedItem, NoteEditorProps } from "./types";
+import type { DraggedItem, NoteEditorHandle, NoteEditorProps } from "./types";
 import { insertDroppedItems, insertLinks, type DropMode } from "./mediaBehaviors";
 import { editorTargetFocused, registerEditorTarget, type EditorTarget } from "./targets";
 import "./note-editor.css";
@@ -37,6 +38,7 @@ function buildEditorExtensions(runtime: NoteRuntime, controller: MenuController)
       image: NoteImage.extend({ addNodeView: () => ReactNodeViewRenderer(ImageView) }).configure({ inline: false }),
     }),
     NoteMedia,
+    LibraryDrop,
     NoteRuntimeExtension.configure({ runtime }),
     Placeholder.configure({
       includeChildren: true,
@@ -279,6 +281,43 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
     // A view that becomes editable to be written in (a canvas card) takes the cursor.
     if (!props.readOnly && props.autoFocus) editor.commands.focus("end");
   }, [editor, props.readOnly]);
+
+  // The host inserts at the cursor, or at the end of a note that was never written in.
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!editor) return;
+    const mark = () => {
+      touched.current = true;
+    };
+    editor.on("focus", mark);
+    return () => {
+      editor.off("focus", mark);
+    };
+  }, [editor]);
+  useImperativeHandle(
+    props.apiRef,
+    (): NoteEditorHandle => {
+      const ready = () => {
+        if (!editor || editor.isDestroyed || !editor.isEditable) return null;
+        if (!touched.current) editor.commands.focus("end");
+        return editor;
+      };
+      return {
+        insertReference: (ref, mode) => {
+          const e = ready();
+          if (e) insertReferenceAt(e, ref, mode);
+        },
+        insertQuote: (quote) => {
+          const e = ready();
+          if (e) insertQuoteAt(e, quote);
+        },
+        focus: () => {
+          if (editor && !editor.isDestroyed) editor.commands.focus(touched.current ? undefined : "end");
+        },
+      };
+    },
+    [editor],
+  );
 
   // Editable notes take citations from outside at the cursor (or where it last was).
   const rootRef = useRef<HTMLDivElement>(null);

@@ -359,7 +359,8 @@ export function insertSource(editor: Editor, range: Range, ref: SourceRef, mode:
     const text = item.anchor?.startsWith("highlight:") && ref.title ? `“${ref.title}” ${cite}` : cite;
     editor
       .chain()
-      .insertContentAt({ from, to }, [{ type: "text", text, marks: [{ type: "link", attrs: { href } }] }])
+      // The cursor stays where the writer is (mapped past the longer label), not at the link's end.
+      .insertContentAt({ from, to }, [{ type: "text", text, marks: [{ type: "link", attrs: { href } }] }], { updateSelection: false })
       .run();
   });
 }
