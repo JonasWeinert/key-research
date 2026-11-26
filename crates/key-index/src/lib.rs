@@ -159,6 +159,9 @@ pub struct Indexer {
     priorities: Arc<Mutex<HashMap<String, (Priority, Instant)>>>,
     /// Run the layout model during layout analysis (on by default).
     layout_model: Arc<AtomicBool>,
+    /// Embed passages for semantic search (on by default). Off (`KEY_INDEX_EMBEDDINGS=0`),
+    /// sources are still analysed and keyword-indexed, but no model is loaded or fetched.
+    embeddings: Arc<AtomicBool>,
 }
 
 impl Indexer {
@@ -174,6 +177,7 @@ impl Indexer {
             live: Arc::default(),
             priorities: Arc::default(),
             layout_model: Arc::new(AtomicBool::new(true)),
+            embeddings: Arc::new(AtomicBool::new(std::env::var("KEY_INDEX_EMBEDDINGS").map_or(true, |v| v != "0"))),
         };
         let worker = indexer.clone();
         thread::Builder::new()
@@ -300,6 +304,9 @@ impl Indexer {
 
     /// The loaded embedder, loading it once the files exist.
     pub fn embedder(&self) -> Option<Arc<Embedder>> {
+        if !self.embeddings.load(Ordering::SeqCst) {
+            return None;
+        }
         let mut slot = self.embedder.lock().ok()?;
         if slot.is_none() && self.models.is_ready() {
             match Embedder::load(&self.models) {
@@ -371,7 +378,11 @@ impl Indexer {
         // Start the model download in the background so text indexing never waits on it.
         let models = self.models.clone();
         let signal = self.clone();
+        let fetch = self.embeddings.load(Ordering::SeqCst);
         thread::spawn(move || {
+            if !fetch {
+                return;
+            }
             loop {
                 match models.download() {
                     Ok(true) => {
@@ -842,6 +853,7 @@ mod tests {
             live: Arc::default(),
             priorities: Arc::default(),
             layout_model: Arc::new(AtomicBool::new(true)),
+            embeddings: Arc::new(AtomicBool::new(true)),
         }
     }
 
