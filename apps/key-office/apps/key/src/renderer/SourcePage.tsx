@@ -12,6 +12,7 @@ import { ITEM_TYPES, KIND_ICON, OA_LABEL, bridge as libraryBridge, fetchedAgo, f
 import { libraryChanged } from "./library-nav";
 import { FilterButton, FilterLink, FilterLinks, fieldFilter, showInLibrary, sourceFilter } from "./filter-links";
 import { EntityLink } from "./entity-ui";
+import { PaperRelations } from "./RelationMap";
 import { WorkReferences } from "./work-references";
 import NoteEditor from "./note-editor";
 import { noteSources } from "./note-sources";
@@ -655,6 +656,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
 
         <LinkedFrom invoke={invoke} workspaceId={workspaceId} item={{ kind: "source", id: sourceId }} />
         {graph && <WorkReferences invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} graph={graph} hasWork={!!source.openalexId} onChanged={() => void loadGraph()} />}
+        {(!!graph?.topics.length || !!graph?.people.length || source.tags.length > 0) && <PaperRelations invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} title={source.title || "Untitled"} />}
 
         {notes.length > 1 && (
           <section className="kx-page-section" data-part-of="notes">
