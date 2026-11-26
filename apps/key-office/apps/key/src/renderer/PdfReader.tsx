@@ -16,6 +16,7 @@ import "./pdf-reader.css";
 import "./pdf-ui-adapter.css";
 import { Icon } from "./icons";
 import { PdfRail } from "./PdfRail";
+import { WebPdfControl, type WebPdfInfo } from "./WebPdfControl";
 
 
 type Target = {
@@ -33,6 +34,8 @@ interface Ready {
   viewState?: PdfJsViewState;
   searchTarget?: Target;
   searchNavigation?: Navigation;
+  /** A PDF opened from the in-app browser (or one just added from there). */
+  web?: WebPdfInfo;
 }
 type Navigation = { index: number; total: number; shared?: boolean; query?: string };
 interface ReaderBridge {
@@ -311,7 +314,7 @@ export default function PdfReader() {
               {chrome?.referenceCount ? <span className="key-pdf-count">{chrome.referenceCount}</span> : null}
             </button>
           </span>
-          {bridge().readerNotes && (
+          {bridge().readerNotes && !(document.initial.web && "url" in document.initial.web) && (
             <button
               className="key-pdf-details"
               aria-pressed={notesOpen}
@@ -377,6 +380,7 @@ export default function PdfReader() {
         </form>
       )}
       <section className="key-pdf-surface">
+        <WebPdfControl info={document.initial.web} />
         {notice && (
           <div className="key-pdf-notice" role="alert">
             {notice}

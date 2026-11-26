@@ -1,0 +1,106 @@
+/* The floating pill over a PDF from the web (WebPdfControl.tsx): the same translucent
+   capsule as the reader's search result bar, at the top right of the page area. */
+.key-web-pdf {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: calc(100% - 28px);
+  height: 32px;
+  padding: 0 3px 0 4px;
+  border-radius: 12px;
+  /* The reader's floating material, where it defines one. */
+  background: var(--key-pdf-material, color-mix(in srgb, var(--key-ui-surface) 72%, transparent));
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow: var(
+    --key-pdf-material-shadow,
+    0 0 0 0.5px var(--key-ui-border),
+    0 8px 24px -8px color-mix(in srgb, var(--key-ui-text) 28%, transparent),
+    0 2px 6px -2px color-mix(in srgb, var(--key-ui-text) 14%, transparent)
+  );
+  color: var(--key-ui-text);
+  font: 12.5px/1 var(--key-ui-font, sans-serif);
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
+  animation: key-web-pdf-in 0.24s ease-out;
+}
+.key-web-pdf[data-gone] {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+}
+@keyframes key-web-pdf-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+.key-web-pdf button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: default;
+}
+.key-web-pdf-source {
+  min-width: 0;
+  max-width: 220px;
+  color: var(--key-ui-muted) !important;
+}
+.key-web-pdf-source > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.key-web-pdf-source:hover {
+  background: color-mix(in srgb, var(--key-ui-text) 7%, transparent) !important;
+  color: var(--key-ui-text) !important;
+}
+.key-web-pdf-action {
+  background: var(--key-ui-primary) !important;
+  color: var(--key-ui-primary-ink) !important;
+  font-weight: 500 !important;
+}
+.key-web-pdf-action:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.key-web-pdf-action:disabled {
+  opacity: 0.6;
+}
+.key-web-pdf-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px 0 10px;
+  color: var(--key-ui-text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.key-web-pdf-done > svg {
+  color: var(--key-ui-success, var(--key-ui-primary));
+}
+.key-web-pdf-error {
+  max-width: 220px;
+  overflow: hidden;
+  padding: 0 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--key-ui-danger, var(--key-ui-text));
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-web-pdf {
+    animation: none;
+    transition: none;
+  }
+}
