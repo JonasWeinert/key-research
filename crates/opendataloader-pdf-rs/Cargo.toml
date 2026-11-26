@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 description = "Standalone PDFium-backed academic PDF extraction in Rust"
+# Rust port of opendataloader-pdf (Java) version 2.0 or later, Apache-2.0 (owner-confirmed
+# 2026-11-26); see README.md, "Provenance".
 license = "Apache-2.0"
 readme = "README.md"
 include = ["build.rs", "Cargo.toml", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "models/model_fp16.onnx", "src/**", "tests/**"]
