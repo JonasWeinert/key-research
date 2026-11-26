@@ -9,16 +9,19 @@ import "./entity.css";
 import MergeReview from "./MergeReview";
 import { ZoteroImport } from "./ZoteroImport";
 import { ZoteroSettings } from "./ZoteroSyncSettings";
+import { ADD_MODES } from "./add-from-source";
 import type { Mode as ZoteroMode } from "./zotero-sheet-model";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
+import ServiceKeys from "./ServiceKeys";
 
-export type SettingsSection = "general" | "libraries" | "search" | "ai" | "about";
+export type SettingsSection = "general" | "libraries" | "search" | "services" | "ai" | "about";
 const SECTIONS: [SettingsSection, string, IconName][] = [
   ["general", "General", "gear"],
   ["libraries", "Libraries", "books"],
   ["search", "Search & indexing", "search"],
+  ["services", "Services & API keys", "key"],
   ["ai", "AI assistant", "sparkle"],
   ["about", "About Key", "info"],
 ];
@@ -49,7 +52,7 @@ export default function Settings({
   const [section, setSection] = useState<SettingsSection>(initial);
   return (
     <GlobalDrawer presentation="window" label="Settings" onClose={onClose}>
-      <div className="kx-settings">
+      <div className="kx-settings" data-modal-view={section}>
         <nav className="kx-settings-nav" aria-label="Settings sections">
           <h2>Settings</h2>
           {SECTIONS.map(([id, label, icon]) => (
@@ -74,6 +77,7 @@ export default function Settings({
               <Libraries invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpenLibrary={onOpenLibrary} onChanged={onWorkspacesChanged} />
             )}
             {section === "search" && <SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
+            {section === "services" && <ServiceKeys invoke={invoke} />}
             {section === "ai" && <AiSettings invoke={invoke} workspaceId={workspaces[0]?.id} />}
             {section === "about" && <About info={info} />}
           </div>
@@ -219,6 +223,17 @@ function Libraries({
           <button className="kx-settings-button" onClick={() => void bridge().addWorkspace().then((added) => added && onChanged())}>
             Choose folder…
           </button>
+        </Row>
+      </Group>
+      <Group title="Adding sources" footer="For works added from another source: from its references, related works or a citation card in its PDF.">
+        <Row label="Put them in" detail="Asking offers the source's own collections first; you can pick several.">
+          <select className="kx-settings-select" aria-label="Where sources added from another source go" value={settings.addFromSource ?? "ask"} onChange={(e) => onSettings({ addFromSource: e.target.value as AppSettings["addFromSource"] })}>
+            {ADD_MODES.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
         </Row>
       </Group>
       <ZoteroSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />
@@ -426,15 +441,7 @@ function SearchSettings({
             onBlur={(e) => e.target.value.trim() !== settings.openalexMailto && onSettings({ openalexMailto: e.target.value.trim() })}
           />
         </Row>
-        <Row label="API key" detail="Optional. A free key gives you a daily budget of your own.">
-          <input
-            className="kx-settings-select"
-            type="password"
-            aria-label="OpenAlex API key"
-            defaultValue={settings.openalexApiKey}
-            onBlur={(e) => e.target.value.trim() !== settings.openalexApiKey && onSettings({ openalexApiKey: e.target.value.trim() })}
-          />
-        </Row>
+        <Row label="API key" detail="Optional, used when requests without it are limited. Set it under Services & API keys." />
         <PossibleDuplicates invoke={invoke} workspaceId={workspaceId} />
       </Group>
       <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />

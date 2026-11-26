@@ -4,11 +4,13 @@ import { bridge } from "./library-api";
 import { shellContext, toast } from "./item-actions";
 import { openWebPage } from "./web-page-open";
 import "./web-page.css";
+import "./web-reader-panel.css";
 
 /** The browser bar's "Save to library": saves the page offline as a source; on a page that
  * is saved already it says so, and opens the saved copy. */
-export function WebSaveButton({ viewId, url, loading }: { viewId: string; url: string; loading?: boolean }) {
-  const [found, setFound] = useState<{ id: string; saved: boolean } | null>(null);
+export function WebSaveButton({ viewId, url, loading, doi }: { viewId: string; url: string; loading?: boolean; doi?: string }) {
+  // `into`: the page is a library source that has no file yet (by its DOI or address).
+  const [found, setFound] = useState<{ id: string; saved: boolean; into?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const workspaceId = shellContext().workspaceId;
@@ -17,20 +19,21 @@ export function WebSaveButton({ viewId, url, loading }: { viewId: string; url: s
     if (!workspaceId || !/^https?:/i.test(url)) return setFound(null);
     let live = true;
     void shellContext()
-      .invoke!("saved_page_find", { url }, workspaceId)
-      .then((value) => live && setFound((value as { id: string; saved: boolean } | null) ?? null))
+      .invoke!("saved_page_find", { url, ...(doi ? { doi } : {}) }, workspaceId)
+      .then((value) => live && setFound((value as { id: string; saved: boolean; into?: string } | null) ?? null))
       .catch(() => live && setFound(null));
     return () => {
       live = false;
     };
-  }, [url, workspaceId, revision]);
+  }, [url, doi, workspaceId, revision]);
   if (!workspaceId || !/^https?:/i.test(url)) return null;
   const save = async () => {
     setBusy(true);
     try {
-      const saved = (await shellContext().invoke!("saved_page_save", { viewId }, workspaceId)) as { id: string };
+      const into = found?.into ? found.id : undefined;
+      const saved = (await shellContext().invoke!("saved_page_save", { viewId, ...(into ? { sourceId: into } : {}) }, workspaceId)) as { id: string };
       setFound({ id: saved.id, saved: true });
-      toast("Saved to your library");
+      toast(into ? `Saved the page to “${found!.into}”` : "Saved to your library");
     } catch (error) {
       toast(`Could not save the page: ${String(error).replace(/^Error: /, "")}`);
     } finally {
@@ -48,6 +51,13 @@ export function WebSaveButton({ viewId, url, loading }: { viewId: string; url: s
           <Icon name="retry" size={12} />
         </button>
       </span>
+    );
+  if (found?.into)
+    return (
+      <button type="button" className="key-web-save" data-into title={`Save this page to “${found.into}” in your library, readable offline`} disabled={busy || loading} aria-busy={busy || undefined} onClick={() => void save()}>
+        <Icon name="bookmark" size={12} />
+        <span className="key-web-save-label">{busy ? "Saving…" : `Save page to ${found.into}`}</span>
+      </button>
     );
   return (
     <button type="button" className="key-web-save" title="Save this page to your library, readable offline (⌘D)" disabled={busy || loading} aria-busy={busy || undefined} onClick={() => void save()}>

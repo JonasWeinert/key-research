@@ -6,11 +6,13 @@
 // AbortSignal, and Node's fetch does what they need. The polite `mailto` and the API keys
 // come from the app settings the Rust OpenAlex worker also uses. Nothing here runs unless
 // the user chose the Web pill.
+import { LOCAL_WEB_FILTERS, activeWebFilters, meetsWebFilters, type WebFilterKey, type WebFilters } from "../../shared/web-filters";
 import { bareDoi, titleKey, type WebPage, type WebProviderInfo, type WebResult } from "../../shared/web-search";
 import type { AppSettings } from "../app-settings";
 import { ProviderError, TtlCache, isAbort, withRetry, type Fetch } from "./http";
 import type { SearchRequest, WebProvider } from "./provider";
 import { PROVIDERS } from "./registry";
+import { withKeyFallback, type ServiceKeys } from "../services/fallback";
 
 const DEFAULT_MAILTO = "key-app@users.noreply.github.com";
 type Invoke = (command: string, args: Record<string, unknown>, workspaceId: string) => Promise<any>;
@@ -76,6 +78,21 @@ export function matchSource(work: Pick<WebResult, "doi" | "title" | "year"> & { 
   return sources.find((s) => !(doi && s.doi && bareDoi(s.doi) !== doi) && s.title && titleKey(s.title) === title && (!work.year || !s.year || Math.abs(work.year - s.year) <= 1));
 }
 
+/** The filters a provider can apply: in its request, or on the results it returns. */
+export const applicable = (provider: WebProvider): WebFilterKey[] => [...new Set([...provider.capabilities.filters, ...LOCAL_WEB_FILTERS])];
+
+/** How a provider handles these filters: what it asks for itself, what is checked on its
+ *  results, and what it cannot do at all (it is then left out of the search). */
+export function filterPlan(provider: WebProvider, filters: WebFilters | undefined) {
+  const active = activeWebFilters(filters);
+  const own = provider.capabilities.filters;
+  return {
+    active,
+    local: active.filter((k) => !own.includes(k) && LOCAL_WEB_FILTERS.includes(k)),
+    unsupported: active.filter((k) => !own.includes(k) && !LOCAL_WEB_FILTERS.includes(k)),
+  };
+}
+
 export class WebSearch {
   private cache = new TtlCache<WebPage>();
   private running = new Map<string, AbortController>();
@@ -87,8 +104,11 @@ export class WebSearch {
       emit: (event: string, value?: unknown) => void;
       providers?: WebProvider[];
       fetch?: Fetch;
+      /** User-supplied API keys (Settings → Services & API keys), used as a fallback. */
+      keys?: ServiceKeys;
     },
   ) {}
+  private fallbacks = new Map<string, Promise<WebPage | undefined>>();
 
   private get providers() {
     return this.deps.providers ?? PROVIDERS;
@@ -97,13 +117,34 @@ export class WebSearch {
     return this.deps.settings().webProviders?.[provider.id] ?? {};
   }
   private enabled(provider: WebProvider) {
-    return this.entry(provider).enabled ?? provider.capabilities.enabledByDefault;
+    const service = provider.capabilities.service;
+    if (provider.capabilities.keyRequired && !this.keyOf(provider)) return false;
+    return this.entry(provider).enabled ?? (!!(service && provider.capabilities.keyRequired && this.deps.keys?.mode(service) === "always") || provider.capabilities.enabledByDefault);
   }
-  private context(provider: WebProvider) {
+  /** The provider's key: from the secret store, else (older settings, tests) the settings file. */
+  private keyOf(provider: WebProvider) {
+    const service = provider.capabilities.service;
+    if (this.deps.keys && service) return this.deps.keys.key(service);
     const settings = this.deps.settings();
-    // OpenAlex shares its key with the library's OpenAlex lookups (Settings → OpenAlex).
-    const apiKey = this.entry(provider).apiKey || (provider.id === "openalex" ? settings.openalexApiKey : "") || undefined;
+    return this.entry(provider).apiKey || (provider.id === "openalex" ? settings.openalexApiKey : "") || undefined;
+  }
+  private context(provider: WebProvider, apiKey?: string) {
+    const settings = this.deps.settings();
     return { apiKey, mailto: settings.openalexMailto || DEFAULT_MAILTO, fetch: this.deps.fetch };
+  }
+  /** Keyless first; with the key only when that fails in a way a key helps (or always, if chosen). */
+  private keyed<T>(provider: WebProvider, signal: AbortSignal | undefined, task: (context: ReturnType<WebSearch["context"]>) => Promise<T>) {
+    const service = provider.capabilities.service;
+    const key = this.keyOf(provider);
+    const keys = this.deps.keys;
+    if (!keys || !service) return task(this.context(provider, key));
+    return withKeyFallback({
+      key,
+      mode: provider.capabilities.keyRequired ? "always" : keys.mode(service),
+      signal,
+      run: (k) => task(this.context(provider, k)),
+      record: (outcome) => keys.record(service, outcome),
+    });
   }
 
   handles(command: string) {
@@ -118,11 +159,13 @@ export class WebSearch {
             id: p.id,
             label: p.label,
             icon: p.icon,
-            apiKey: p.capabilities.apiKey && p.id !== "openalex",
+            // Keys are set under Services & API keys when the provider has a service there.
+            apiKey: p.capabilities.apiKey && p.id !== "openalex" && !(this.deps.keys && p.capabilities.service),
             keyRequired: p.capabilities.keyRequired,
             keyHelp: p.capabilities.keyHelp,
             enabled: this.enabled(p),
             lookup: !!p.lookup,
+            filters: applicable(p),
           }),
         );
       case "web_search":
@@ -133,7 +176,8 @@ export class WebSearch {
       case "web_lookup": {
         const provider = this.provider(String(args.provider));
         if (!provider.lookup) throw Error(`${provider.label} cannot look works up`);
-        return provider.lookup(String(args.id), this.context(provider));
+        const lookup = provider.lookup.bind(provider);
+        return this.keyed(provider, undefined, (context) => withRetry(() => lookup(String(args.id), context), { attempts: 2, maxWaitMs: 5000 }));
       }
       case "web_library_match":
         return this.match(workspaceId, (args.works ?? []).slice(0, 100));
@@ -154,24 +198,64 @@ export class WebSearch {
     const provider = this.provider(id);
     if (!this.enabled(provider)) throw Error(`${provider.label} is turned off in Settings`);
     const q = query.trim().slice(0, 300);
-    if (q.length < 2) return { results: [] };
-    const context = this.context(provider);
-    const key = JSON.stringify([id, q.toLowerCase(), request.limit, request.cursor ?? "", request.filters ?? null, !!context.apiKey]);
+    const plan = filterPlan(provider, request.filters);
+    if (q.length < 2 && !plan.active.length) return { results: [] };
+    if (plan.unsupported.length) return { results: [], skipped: plan.unsupported };
+    // Results checked here come in larger pages, so a page still has some left.
+    if (plan.local.length) request = { ...request, limit: Math.min(50, request.limit * 2) };
+    const key = JSON.stringify([id, q.toLowerCase(), request.limit, request.cursor ?? "", request.filters ?? null]);
     const cached = this.cache.get(key);
     if (cached) return cached;
     const controller = new AbortController();
     if (requestId) this.running.set(requestId, controller);
     try {
-      const page = await withRetry(() => provider.search(q, { ...request, signal: controller.signal }, context), { signal: controller.signal, maxWaitMs: Number(process.env.KEY_WEB_MAX_RETRY_WAIT_MS) || 10_000 });
+      const ask = (p: WebProvider) =>
+        this.keyed(p, controller.signal, (context) => withRetry(() => p.search(q.length < 2 ? "" : q, { ...request, signal: controller.signal }, context), { signal: controller.signal, maxWaitMs: Number(process.env.KEY_WEB_MAX_RETRY_WAIT_MS) || 10_000 }));
+      let page: WebPage;
+      try {
+        page = await ask(provider);
+      } catch (error) {
+        const fallback = controller.signal.aborted ? undefined : await this.fallback(provider, q, request, ask);
+        if (!fallback) throw error;
+        page = fallback;
+      }
+      // Nothing found: a keyed Scholar search may know the work.
+      if (!page.results.length) page = (await this.fallback(provider, q, request, ask)) ?? page;
+      if (plan.local.length) page = { ...page, results: page.results.filter((r) => meetsWebFilters(r, request.filters!, plan.local)), total: undefined };
       this.cache.set(key, page);
       return page;
     } catch (error) {
-      if (controller.signal.aborted || isAbort(error)) throw Error("Cancelled");
+      if (controller.signal.aborted || (isAbort(error) && !(error instanceof Error && error.name === "TimeoutError"))) throw Error("Cancelled");
       if (error instanceof ProviderError) throw Error(error.message);
       throw error;
     } finally {
       if (requestId) this.running.delete(requestId);
     }
+  }
+
+  /** A first page from the keyed provider kept for when others fail (Google Scholar via SerpApi):
+   *  only when it has a key and the user has not turned it on as a provider of its own. Two
+   *  providers failing on the same query share one request. */
+  private async fallback(failed: WebProvider, q: string, request: Omit<SearchRequest, "signal">, ask: (p: WebProvider) => Promise<WebPage>) {
+    if (request.cursor || !this.deps.keys) return undefined;
+    const spare = this.providers.find((p) => p.id !== failed.id && p.capabilities.keyRequired && p.capabilities.service && this.keyOf(p) && !this.enabled(p));
+    if (!spare) return undefined;
+    const key = JSON.stringify([spare.id, q.toLowerCase(), request.limit, request.filters ?? null]);
+    const cached = this.cache.get(key);
+    if (cached) return cached;
+    let running = this.fallbacks.get(key);
+    if (!running) {
+      running = ask(spare)
+        .then((page) => {
+          this.cache.set(key, page);
+          return page;
+        })
+        .catch(() => undefined)
+        .finally(() => this.fallbacks.delete(key));
+      this.fallbacks.set(key, running);
+    }
+    const page = await running;
+    return page?.results.length ? { ...page, results: page.results.map((r) => ({ ...r, fallbackFor: failed.id })), cursor: undefined } : undefined;
   }
 
   /** Which of these works the library already has: key → source id. */

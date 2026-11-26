@@ -6,7 +6,7 @@
 
 # JavaScript dependency trees. Individual apps may add narrower frontend
 # outputs in their own ignore files.
-node_modules/
+node_modules
 
 # Python tooling caches produced by packaging helpers.
 __pycache__/

@@ -1,0 +1,30 @@
+{
+  "search_metadata": { "id": "6745f0c0e0a1b2c3d4e5f601", "status": "Success" },
+  "search_parameters": { "engine": "google_scholar", "q": "attention" },
+  "search_information": { "total_results": 4560000 },
+  "organic_results": [
+    {
+      "position": 0,
+      "title": "Attention is all you need",
+      "result_id": "5Gohgn6QFikJ",
+      "link": "https://proceedings.neurips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html",
+      "snippet": "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks in an encoder-decoder configuration.",
+      "publication_info": {
+        "summary": "A Vaswani, N Shazeer, N Parmar… - Advances in neural …, 2017 - proceedings.neurips.cc",
+        "authors": [{ "name": "A Vaswani" }, { "name": "N Shazeer" }, { "name": "N Parmar" }]
+      },
+      "resources": [{ "title": "arxiv.org", "file_format": "PDF", "link": "https://arxiv.org/pdf/1706.03762" }],
+      "inline_links": { "cited_by": { "total": 150000 } }
+    },
+    {
+      "position": 1,
+      "title": "Neural machine translation by jointly learning to align and translate",
+      "result_id": "x3kQ1bOmgdwJ",
+      "link": "https://arxiv.org/abs/1409.0473",
+      "snippet": "Neural machine translation is a recently proposed approach to machine translation.",
+      "publication_info": { "summary": "D Bahdanau, K Cho, Y Bengio - arXiv preprint arXiv:1409.0473, 2014 - arxiv.org" },
+      "inline_links": { "cited_by": { "total": 33000 } }
+    }
+  ],
+  "serpapi_pagination": { "current": 1, "next": "https://serpapi.com/search.json?engine=google_scholar&q=attention&start=10" }
+}

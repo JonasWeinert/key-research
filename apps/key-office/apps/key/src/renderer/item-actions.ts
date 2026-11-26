@@ -383,12 +383,14 @@ export interface Toast {
   id: number;
   message: string;
   undo?: () => void;
+  /** A button other than Undo ("Organise…"); the toast then stays a while longer. */
+  action?: { label: string; run: () => void };
 }
 const toastListeners = new Set<(toast: Toast) => void>();
 let toastId = 0;
 /** A short message at the bottom of the window, with Undo when the action can be taken back. */
-export function toast(message: string, undo?: () => void) {
-  const next = { id: ++toastId, message, undo };
+export function toast(message: string, undo?: () => void, action?: Toast["action"]) {
+  const next = { id: ++toastId, message, undo, action };
   toastListeners.forEach((listener) => listener(next));
 }
 export function onToast(listener: (toast: Toast) => void) {

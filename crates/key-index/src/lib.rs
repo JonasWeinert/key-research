@@ -646,7 +646,10 @@ impl Indexer {
             analysis = Some((engine, markdown, source.kind == "pdf"));
         }
         self.store.replace_chunks(id, &chunks)?;
-        if let Some((engine, markdown, references)) = analysis {
+        // A saved web page's references come from its HTML (the shell stores them as "html"):
+        // indexing its text again keeps them.
+        let html_references = source.kind == "web" && self.store.analysis(id)?.is_some_and(|a| a.engine == "html");
+        if let Some((engine, markdown, references)) = analysis.filter(|_| !html_references) {
             self.store.set_analysis(id, &engine, markdown.as_deref(), references && status == "ready")?;
         }
         self.store.set_index_status(id, "indexing", None, 0, chunks.len() as i64)?;

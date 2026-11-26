@@ -11,6 +11,7 @@ mod openalex;
 mod properties;
 mod relations;
 mod search;
+mod tag_ops;
 pub use analysis::{CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -26,6 +27,7 @@ pub use properties::PropertyOption;
 pub use relations::{MapLink, MapNode, RelationMap, TagPage};
 pub use linked::{LinkedDir, LinkedEntries, LinkedFile, LinkedFolder, MAX_PDF_BYTES, MAX_TEXT_BYTES, SyncReport, file_kind};
 pub use links::{Canvas, CanvasSummary, HighlightUse, ItemLinks, ItemRef, Link, LinkEnd, LinkInput, LinkTarget, canvas_links, note_title};
+pub use tag_ops::{SourceTags, TagOperation, TagProperty, TagReplace, TagResult, TagSnapshot};
 pub use search::{FileHit, NoteHit, SearchHit, SearchPassage, SearchQuery, SearchResult};
 
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, types::Value};

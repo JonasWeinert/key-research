@@ -6,7 +6,8 @@ import './reference-list.css';
 
 export interface ReferenceListItem {
   number: number;
-  page: number;
+  /** Where it is printed; none for a web page's list. */
+  page?: number;
   text: string;
   xFraction?: number;
   yFraction?: number;
@@ -36,10 +37,14 @@ export function ReferenceList<T extends ReferenceListItem>({
         <ol className="key-ref-list" aria-label="References">
           {references.map(reference => (
             <li key={`${reference.number}-${reference.page}`}>
-              <button type="button" title={`Go to reference ${reference.number} on page ${reference.page + 1}`} onClick={() => onSelect(reference)}>
+              <button
+                type="button"
+                title={reference.page == null ? `Go to reference ${reference.number}` : `Go to reference ${reference.number} on page ${reference.page + 1}`}
+                onClick={() => onSelect(reference)}
+              >
                 <span className="key-ref-number">{reference.number}</span>
                 <span className="key-ref-text">{strip(reference)}</span>
-                <span className="key-ref-page">p. {reference.page + 1}</span>
+                {reference.page != null && <span className="key-ref-page">p. {reference.page + 1}</span>}
               </button>
               {aside?.(reference)}
             </li>

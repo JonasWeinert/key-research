@@ -18,16 +18,19 @@ export interface AppSettings {
   openalex: boolean
   /** Sent with OpenAlex requests (their polite pool); empty uses the app's own address. */
   openalexMailto: string
-  /** An OpenAlex API key, for a daily budget of one's own. */
+  /** Only in settings files from before the secret store (moved there on load; always blank now). */
   openalexApiKey: string
   /** Web search providers by id (see main/web-search): turned off, or given an API key. */
   webProviders: Record<string, WebProviderSetting>
+  /** A work added from another source's context (its references, a citation card): ask which
+   *  collections, put it in the origin source's collections, or in the library only. */
+  addFromSource: 'ask' | 'origin' | 'library'
 }
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {} }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask' }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -67,6 +70,7 @@ function sanitize(input: AppSettings): AppSettings {
     openalexMailto: typeof input.openalexMailto === 'string' && /^[^\s@]+@[^\s@]+$/.test(input.openalexMailto.trim()) ? input.openalexMailto.trim() : '',
     openalexApiKey: typeof input.openalexApiKey === 'string' ? input.openalexApiKey.trim().slice(0, 200) : '',
     webProviders: webProviders(input.webProviders),
+    addFromSource: (['ask', 'origin', 'library'] as const).includes(input.addFromSource) ? input.addFromSource : 'ask',
   }
 }
 
@@ -90,7 +94,9 @@ function apply(settings: AppSettings) {
   process.env.KEY_LAYOUT_MODEL_ENABLED = settings.layoutModel ? '1' : '0'
   process.env.KEY_OPENALEX_ENABLED = settings.openalex ? '1' : '0'
   process.env.KEY_OPENALEX_MAILTO = settings.openalexMailto
-  process.env.KEY_OPENALEX_API_KEY = settings.openalexApiKey
+  // API keys never go through the environment (children would inherit them): hosts get the
+  // OpenAlex key over their IPC channel (see services/ and the registry's prelude).
+  delete process.env.KEY_OPENALEX_API_KEY
 }
 
 /** Versions, data locations and whether a Zotero library is present on this Mac. */

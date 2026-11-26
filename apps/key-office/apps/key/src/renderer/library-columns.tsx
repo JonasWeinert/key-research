@@ -6,6 +6,8 @@ import { Icon } from "./icons";
 import { KIND_ICON, bridge, itemTypeLabel, relativeDate, shortCreators, type Collection, type Source } from "./library-api";
 import { formulaValue, type PropertyDefinition } from "./PropertySheets";
 import { indexLabel } from "./SourceInspector";
+import { ZoteroMark, isZoteroSource } from "./zotero-badge";
+import type { ZoteroSyncStatus } from "./library-api";
 
 export const SOURCE_SORTS: [string, string][] = [
   ["added", "Date added"],
@@ -25,11 +27,14 @@ export function useSourceColumns({
   collections,
   onCommit,
   onEditProperty,
+  zotero = null,
 }: {
   definitions: PropertyDefinition[];
   collections: Collection[];
   onCommit: (source: Source, name: string, value: unknown) => void;
   onEditProperty: (definition: PropertyDefinition) => void;
+  /** The workspace's Zotero sync: items it keeps in step carry its mark. */
+  zotero?: ZoteroSyncStatus | null;
 }): DatabaseColumn<Source>[] {
   // Handlers change every render; the columns only when what they show changes.
   const latest = useRef({ onCommit, onEditProperty });
@@ -49,6 +54,7 @@ export function useSourceColumns({
               <Icon name={KIND_ICON[s.kind] ?? "doc"} size={12} />
             </span>
             <span>{s.title || "Untitled"}</span>
+            {zotero && isZoteroSource(s) && <ZoteroMark status={zotero} what="Item" size={10} className="kx-cell-zotero" />}
           </span>
         ),
       },
@@ -61,6 +67,13 @@ export function useSourceColumns({
       { id: "tags", label: "Tags", width: 160, hidden: true, render: (s) => s.tags.join(", ") },
       { id: "collections", label: "Collections", width: 160, hidden: true, render: (s) => s.collections.map((id) => names.get(id)).filter(Boolean).join(", ") },
       { id: "status", label: "Search readiness", width: 150, hidden: true, render: (s) => <ReadinessCell source={s} /> },
+      {
+        id: "zotero",
+        label: "Zotero",
+        width: 90,
+        hidden: true,
+        render: (s) => (isZoteroSource(s) ? <span className="kx-cell-muted">{zotero ? "Synced" : "Imported"}</span> : ""),
+      },
       { id: "updated", label: "Modified", width: 100, hidden: true, sortField: "updated", render: (s) => <span className="kx-cell-muted">{relativeDate(s.updatedAt)}</span> },
     ];
     const properties = definitions.map<DatabaseColumn<Source>>((d) => ({
@@ -75,7 +88,7 @@ export function useSourceColumns({
       render: (s) => <PropertyCell definition={d} source={s} onCommit={(value) => latest.current.onCommit(s, d.name, value)} />,
     }));
     return [...builtIn, ...properties];
-  }, [definitions, collections]);
+  }, [definitions, collections, zotero]);
 }
 
 /** Older libraries remembered their shown properties separately; they become shown columns. */

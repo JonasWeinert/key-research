@@ -1,6 +1,7 @@
 // Web search across scholarly catalogues (OpenAlex, Semantic Scholar …): the shapes the
 // main process answers with, and how the search page merges what each provider found.
 // The providers themselves live in src/main/web-search (they reach the network there).
+import type { WebFilterKey } from "./web-filters";
 
 /** What the Settings page and the search page know about a provider. */
 export interface WebProviderInfo {
@@ -16,12 +17,16 @@ export interface WebProviderInfo {
   enabled: boolean;
   /** Supports lookups by id (DOI …) as well as search. */
   lookup: boolean;
+  /** The search filters it can apply (shared/web-filters.ts). */
+  filters?: WebFilterKey[];
 }
 
 /** One work as any provider describes it. */
 export interface WebResult {
   /** The provider that found it, and its id there. */
   provider: string;
+  /** Found by this (keyed) provider in the place of the one asked, which failed. */
+  fallbackFor?: string;
   providerId: string;
   title: string;
   authors: string[];
@@ -44,6 +49,8 @@ export interface WebResult {
 
 export interface WebPage {
   results: WebResult[];
+  /** Filters the provider cannot apply, so it was not asked. */
+  skipped?: WebFilterKey[];
   /** Pass back to get the next page; absent at the end. */
   cursor?: string;
   total?: number;
@@ -95,8 +102,10 @@ export function mergeWeb(lists: { provider: string; results: WebResult[] }[]): W
   const byArxiv = new Map<string, WebHit>();
   const byTitle = new Map<string, WebHit[]>();
   const order = lists.map((l) => l.provider);
-  lists.forEach(({ provider, results }) => {
+  lists.forEach(({ provider: asked, results }) => {
     results.forEach((result, rank) => {
+      // A fallback provider can answer in the place of the one asked (Google Scholar).
+      const provider = result.fallbackFor ? result.provider : asked;
       const title = titleKey(result.title);
       const arxiv = result.ids.arxiv?.toLowerCase();
       let hit = result.doi ? byDoi.get(result.doi) : undefined;

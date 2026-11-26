@@ -1,0 +1,55 @@
+/* The saved web page's panel (WebReaderPanel), its citation card, and the browser bar's
+   "Save page to …" (WebSaveButton). */
+.kx-web-panel .key-side-panel-body[data-section="highlights"] {
+  overflow: hidden;
+}
+.kx-web-highlights.kx-web-reader-panel {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border-left: 0;
+  background: var(--kx-bg);
+  padding-top: 8px;
+}
+.kx-web-highlights footer {
+  margin-top: 6px;
+  color: var(--kx-text-muted);
+  font-size: 11px;
+}
+
+/* The PDF reader's citation card, in the shell's tokens. */
+.kx-web-cite-card.pdfjs-cite-card {
+  --key-text: var(--kx-text);
+  --key-text-secondary: var(--kx-text-2);
+  --key-accent: var(--kx-accent);
+  --key-hover: var(--kx-fill);
+  --key-press: var(--kx-fill-2);
+  --key-hairline: var(--kx-line);
+  --key-elevation-3: var(--kx-shadow-pop);
+  background: var(--kx-bg-raised);
+  border: 0.5px solid var(--kx-line);
+  font-family: var(--kx-font);
+}
+
+/* A source page's offer to save the web page when no PDF was found. */
+.kx-save-page-offer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 8px 10px 8px 12px;
+  border-radius: 10px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-save-page-offer > span {
+  flex: 1;
+}
+
+.key-web-save[data-into] .key-web-save-label {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

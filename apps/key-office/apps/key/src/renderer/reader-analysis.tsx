@@ -33,6 +33,7 @@ const ENGINES: Record<string, string> = {
   "layout-onnx": "Layout analysis with the layout model",
   layout: "Layout analysis",
   pdfium: "Plain PDF text",
+  html: "Read from the page",
 };
 export const working = (report: AnalysisReport | null | undefined) =>
   !!report &&
@@ -43,7 +44,8 @@ const STEPS = 3;
 
 /** How far analysis has got (stage, counts and a bar where the total is known), and a
  *  way to run it again. Reading the PDF, finding its references, looking them up. */
-export function AnalysisStatus({ report, onRerun }: { report: AnalysisReport | null | undefined; onRerun: () => void }) {
+export function AnalysisStatus({ report, onRerun, subject = "pdf" }: { report: AnalysisReport | null | undefined; onRerun: () => void; subject?: "pdf" | "page" }) {
+  const it = subject === "page" ? "page" : "PDF";
   if (report === undefined) return null;
   const a = report?.analysis;
   const indexing = ["pending", "indexing"].includes(report?.indexStatus ?? "");
@@ -52,13 +54,13 @@ export function AnalysisStatus({ report, onRerun }: { report: AnalysisReport | n
   let detail: string | undefined;
   let progress: number | undefined;
   let step: number | undefined;
-  if (!report) line = "This PDF is not in a library, so it is analysed only while open.";
+  if (!report) line = `This ${it} is not in a library, so it is analysed only while open.`;
   else if (indexing) {
     step = 1;
     if (job && job.stage !== "queued") {
       line = stageLabel(job);
       progress = jobFraction(job);
-    } else line = report.indexStatus === "pending" ? "Waiting to read this PDF…" : report.layoutModel ? "Analysing the layout of this PDF…" : "Reading this PDF…";
+    } else line = report.indexStatus === "pending" ? `Waiting to read this ${it}…` : subject === "page" ? "Reading this page…" : report.layoutModel ? "Analysing the layout of this PDF…" : "Reading this PDF…";
     detail = "then its references are found and looked up";
   } else if (!a) line = "Not analysed with the current method yet.";
   else if (a.referencesStatus === "detecting" || a.referencesStatus === "pending") {
@@ -98,7 +100,7 @@ export function AnalysisStatus({ report, onRerun }: { report: AnalysisReport | n
         )}
       </div>
       {report && !indexing && (
-        <button type="button" onClick={onRerun} title="Read this PDF again and look up its references">
+        <button type="button" onClick={onRerun} title={`Read this ${it} again and look up its references`}>
           {a ? "Re-run" : "Analyse"}
         </button>
       )}

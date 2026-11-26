@@ -8,19 +8,21 @@ import { Icon } from "./icons";
 import { bridge, type Invoke, type Source } from "./library-api";
 import { openItemAt, toast } from "./item-actions";
 import { describeRange, locate, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
-import { takeWebFocus, WEB_FOCUS_EVENT } from "./web-page-open";
+import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT } from "./web-page-open";
 import { writeQuoteClipboard } from "./quote-clipboard";
 import { AnnotationText } from "./annotation-text";
 import { drawHighlightMarkers, inFrameView } from "./web-highlight-markers";
 import { highlightUsage } from "./highlight-usage";
 import { openNoteAt } from "./note-reveal";
 import { HighlightInfo } from "@key-reader/pdfjs/HighlightInfo";
+import { useStatusItems } from "./status-bar";
+import { useWebReferences } from "./web-reader-references";
 import "./web-page.css";
 
 export const HIGHLIGHT_COLORS = ["orange", "green", "blue", "pink", "purple"] as const;
 type Color = (typeof HIGHLIGHT_COLORS)[number];
 /** Highlight colours on the page: document content, the same in both themes (as the PDF reader's). */
-const PAGE_RGB: Record<Color, string> = { orange: "255 185 60", green: "94 210 129", blue: "80 158 255", pink: "244 104 172", purple: "164 110 244" };
+export const PAGE_RGB: Record<Color, string> = { orange: "255 185 60", green: "94 210 129", blue: "80 158 255", pink: "244 104 172", purple: "164 110 244" };
 
 export interface WebAnnotation {
   id: string;
@@ -89,12 +91,26 @@ const host = (url?: string) => {
   }
 };
 
-export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invoke: Invoke; workspaceId: string; sourceId: string; viewId?: string }) {
+type PanelTab = "details" | "highlights" | "references";
+
+export function WebPageReader({
+  invoke,
+  workspaceId,
+  sourceId,
+  viewId,
+  panelTab,
+}: {
+  invoke: Invoke;
+  workspaceId: string;
+  sourceId: string;
+  viewId?: string;
+  /** What the panel docked beside the reader in its tab shows (see WebReaderPanel). */
+  panelTab?: PanelTab;
+}) {
   const [source, setSource] = useState<Source | null>(null);
   const [page, setPage] = useState<{ html: string; info: { url?: string; capturedAt?: string } } | null>(null);
   const [error, setError] = useState("");
   const [annotations, setAnnotations] = useState<WebAnnotation[]>([]);
-  const [panel, setPanel] = useState(true);
   const [context, setContext] = useState<Context | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [doc, setDoc] = useState<Document | null>(null);
@@ -394,30 +410,35 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
     void save([], [id]);
     setContext(null);
   };
-  const showAnnotation = (a: WebAnnotation) => {
-    if (!doc) return;
-    if (!flash(doc, a.id)) return toast("This highlight’s text is no longer on the page");
-    setTimeout(() => {
-      const mark = marksOf(doc, a.id)[0];
-      if (mark) setContext({ kind: "annotation", id: a.id, rect: toBody(mark.getBoundingClientRect()) });
-    }, 450);
-  };
-
-  const sorted = [...annotations].sort((x, y) => (order.get(x.id) ?? Infinity) - (order.get(y.id) ?? Infinity));
   const url = page?.info.url || source?.url || "";
   const captured = (source?.properties?.webSnapshot as { capturedAt?: string } | undefined)?.capturedAt ?? page?.info.capturedAt;
   const place = (rect: DOMRect, width: number, height: number) => {
     const b = body.current?.getBoundingClientRect();
-    const maxX = (b?.width ?? 800) - (panel ? 300 : 0) - width - 12;
+    const maxX = (b?.width ?? 800) - width - 12;
     const left = Math.max(12, Math.min(maxX, rect.left + rect.width / 2 - width / 2));
     const below = rect.bottom + 10;
     const top = below + height < (b?.height ?? 600) ? below : Math.max(8, rect.top - height - 10);
     return { left, top };
   };
 
+  // The panel beside the page in its tab: details, highlights, references (as a PDF's).
+  const showPanel = (tab: PanelTab) => {
+    if (viewId) void bridge().tabAction("web-panel", { viewId, tab });
+  };
+  useStatusItems(viewId, webPanelStatusItems(panelTab), (id) => showPanel(id as PanelTab));
+  const citationCard = useWebReferences({
+    doc,
+    frame,
+    source,
+    invoke,
+    workspaceId,
+    sourceId,
+    onFlash: (el) => void (el as HTMLElement).animate?.([{ backgroundColor: "rgb(255 185 60 / 0.45)" }, { backgroundColor: "transparent" }], { duration: 1800, easing: "ease-out" }),
+  });
+
   if (error) return <div className="kx-web-reader"><p className="kx-web-reader-error">{error}</p></div>;
   return (
-    <div className="kx-web-reader" data-panel={panel || undefined}>
+    <div className="kx-web-reader">
       <header className="kx-web-reader-bar">
         <Icon name="globe" size={13} className="kx-web-reader-kind" />
         <div className="kx-web-reader-title">
@@ -434,10 +455,10 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
             <span>Live page</span>
           </button>
         )}
-        <button type="button" className="kx-icon-button" title="Details and notes" aria-label="Details and notes" onClick={() => openItemAt({ kind: "source", id: sourceId }, "split", source?.title, workspaceId, invoke)}>
+        <button type="button" className="kx-icon-button" title="Details and notes" aria-label="Details and notes" aria-pressed={panelTab === "details"} data-active={panelTab === "details" || undefined} onClick={() => showPanel("details")}>
           <Icon name="info" size={14} />
         </button>
-        <button type="button" className="kx-icon-button" title={panel ? "Hide highlights" : "Show highlights"} aria-label="Highlights" aria-pressed={panel} data-active={panel || undefined} onClick={() => setPanel((p) => !p)}>
+        <button type="button" className="kx-icon-button" title={panelTab ? "Hide the panel" : "Show highlights"} aria-label="Highlights" aria-pressed={panelTab === "highlights"} data-active={panelTab === "highlights" || undefined} onClick={() => showPanel(panelTab ? panelTab : "highlights")}>
           <Icon name="panelRight" size={14} />
         </button>
       </header>
@@ -454,30 +475,7 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
             />
           )}
         </div>
-        {panel && (
-          <aside className="kx-web-reader-panel" aria-label="Highlights">
-            <h3>
-              Highlights <span className="kx-count">{annotations.length}</span>
-            </h3>
-            {sorted.length === 0 ? (
-              <p className="kx-web-reader-empty">Select text on the page to highlight it, add a comment or cite it in a note.</p>
-            ) : (
-              <ul>
-                {sorted.map((a) => (
-                  <li key={a.id} data-color={a.color} data-missing={!order.has(a.id) || undefined} data-active={(context?.kind === "annotation" && context.id === a.id) || undefined}>
-                    <button type="button" onClick={() => showAnnotation(a)} title={order.has(a.id) ? "Show on the page" : "Not found on the page"}>
-                      <AnnotationText text={a.text} comment={a.comment} color={`rgb(${PAGE_RGB[a.color]})`} />
-                      <footer>
-                        {formatDate(a.updatedAt || a.createdAt)}
-                        {!order.has(a.id) && <> · Not found on the page</>}
-                      </footer>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </aside>
-        )}
+        {citationCard}
         {context && !draft && active && (
           <HighlightInfo
             className="kx-web-highlight-info"

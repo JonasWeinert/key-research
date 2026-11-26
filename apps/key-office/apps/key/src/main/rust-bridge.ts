@@ -6,7 +6,16 @@ export interface RustHostOptions {
   pdfiumPath?: string;
   /** Extra environment for this host only (e.g. KEY_INDEX_EMBEDDINGS=0). */
   env?: Record<string, string>;
+  /** Requests sent first whenever the process starts (again): how the host learns the
+   *  user's API keys, which never go through its environment. */
+  prelude?: () => HostRequest[];
 }
+export interface HostRequest {
+  command: string;
+  args: Record<string, unknown>;
+}
+/** Never inherited by a host (or what it starts): keys travel over the IPC channel. */
+const SECRET_ENV = /^(KEY_OPENALEX_API_KEY|KEY_.*_API_KEY|KEY_SECRET_.*)$/;
 export interface InvokeOptions {
   binary?: Uint8Array;
   headers?: Record<string, string>;
@@ -65,6 +74,14 @@ export class RustHost {
   private headerLength?: number;
   private response?: Response;
   constructor(private readonly options: RustHostOptions) {}
+
+  /** Replaces the requests sent on (re)start; a running process is not told (send it yourself). */
+  setPrelude(prelude: () => HostRequest[]): void {
+    this.options.prelude = prelude;
+  }
+  isRunning(): boolean {
+    return !!this.child;
+  }
 
   invoke<T = unknown>(
     command: string,
@@ -164,7 +181,7 @@ export class RustHost {
       {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
-          ...process.env,
+          ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !SECRET_ENV.test(name))),
           ...(this.options.pdfiumPath
             ? {
                 PDFIUM_DYNAMIC_LIB_PATH: this.options.pdfiumPath,
@@ -177,6 +194,7 @@ export class RustHost {
       },
     );
     this.child = child;
+    this.queuePrelude();
     child.stdout.on("data", (data: Buffer) => {
       if (this.child !== child) return;
       this.chunks.push(data);
@@ -204,6 +222,18 @@ export class RustHost {
     child.stdin.on("error", (error) => {
       if (this.child === child) this.fail(error);
     });
+  }
+  /** The prelude goes ahead of everything waiting; its answers are not awaited by anyone. */
+  private queuePrelude(): void {
+    let requests: HostRequest[] = [];
+    try {
+      requests = this.options.prelude?.() ?? [];
+    } catch {}
+    for (const { command, args } of requests.reverse()) {
+      const bytes = Buffer.byteLength(JSON.stringify(args));
+      this.queuedBytes += bytes;
+      this.queue.unshift({ id: this.nextId++, command, args, options: {}, resolve: () => {}, reject: () => {}, urgent: true, background: false, bytes });
+    }
   }
   private drain(): void {
     if (!this.child) return;

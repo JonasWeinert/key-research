@@ -6,6 +6,7 @@ import type { Collection, Invoke } from "./library-api";
 import { hasExternalDrop, hasItemDrag, importDrop, readItemDrag } from "./item-links";
 import { toast } from "./item-actions";
 import { sidebarClick } from "./sidebar-intent";
+import { ZoteroMark, isZoteroCollection, useZoteroSync } from "./zotero-badge";
 import { SOURCE_DRAG_TYPE, currentSelection, libraryChanged, onLibraryChanged, onLibrarySelection, selectLibrary } from "./library-nav";
 
 /** Nesting indent, capped so deep levels still leave room for the name in a narrow sidebar. */
@@ -49,6 +50,7 @@ export default function CollectionTree({
 }) {
   const [showAll, setShowAll] = useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const zotero = useZoteroSync(invoke, workspaceId);
   const [selection, setSelection] = useState(currentSelection(workspaceId));
   const openKey = `key.collections.open:${workspaceId}`;
   const [expanded, setExpanded] = useState<Set<string>>(() => readSet(openKey));
@@ -272,6 +274,7 @@ export default function CollectionTree({
             >
               <Icon name="folder" />
               <span>{c.name}</span>
+              {zotero && isZoteroCollection(c) && <ZoteroMark status={zotero} what="Collection" size={10} />}
               <small>{c.sourceCount || ""}</small>
             </button>
           )}
@@ -356,6 +359,7 @@ export default function CollectionTree({
             >
               <Icon name="books" />
               <span>Library</span>
+              {zotero && <ZoteroMark status={zotero} what="Library" size={10} />}
             </button>
             <span className="kx-tree-actions">
               <button aria-label="New collection" title="New collection" disabled={!workspaceId} onClick={() => startCreate()}>

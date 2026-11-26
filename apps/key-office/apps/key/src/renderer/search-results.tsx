@@ -4,7 +4,8 @@ import type { DragEvent, MouseEvent, ReactNode } from "react";
 import { kindOf, type FindKind } from "./global-search";
 import { Icon } from "./icons";
 import { itemAttrs } from "./item-ui";
-import { Snippet, foundIcon } from "./search-sections";
+import { Highlight, Snippet } from "./search-highlight";
+import { foundIcon } from "./search-sections";
 import type { Found } from "./unified-search";
 
 export const KIND_ONE: Record<FindKind, string> = { source: "Source", note: "Note", record: "Page", canvas: "Canvas", highlight: "Highlight" };
@@ -44,6 +45,7 @@ export function FoundHit({
   onDragStart,
   onMatchDragStart,
   id,
+  pattern,
 }: {
   group: ItemGroup;
   index: number;
@@ -60,6 +62,8 @@ export function FoundHit({
   onDragStart?: (event: DragEvent) => void;
   onMatchDragStart?: (match: Found, event: DragEvent) => void;
   id?: string;
+  /** The query's words (and filter values), marked in the title and byline as in passages. */
+  pattern?: RegExp;
 }) {
   const { item } = group;
   const kind = kindOf(item);
@@ -82,10 +86,16 @@ export function FoundHit({
       </span>
       <div className="kx-hit-body">
         <button type="button" className="kx-found-open" title={titleHint} tabIndex={compact ? -1 : undefined} onClick={(e) => onPick(item, e)}>
-          <strong className="kx-hit-title">{item.title}</strong>
+          <strong className="kx-hit-title">
+            <Highlight text={item.title} pattern={pattern} />
+          </strong>
           {!compact && <span className="kx-found-kind">{KIND_ONE[kind]}</span>}
         </button>
-        {meta && <span className="kx-hit-meta">{meta}</span>}
+        {meta && (
+          <span className="kx-hit-meta">
+            <Highlight text={meta} pattern={pattern} />
+          </span>
+        )}
         {matches.length > 0 && (
           <ul className="kx-hit-matches">
             {matches.map((match, i) => (
@@ -102,7 +112,7 @@ export function FoundHit({
                   {match.where && <span className="kx-match-where">{match.where}</span>}
                   {match.snippet && (
                     <span className="kx-match-text">
-                      <Snippet text={match.snippet} />
+                      <Snippet snippet={match.snippet} pattern={pattern} />
                     </span>
                   )}
                 </button>

@@ -2,6 +2,7 @@
 // merged as they arrive, checked against the library, and added to it on request.
 // Nothing here touches the network unless the Web pill is on.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { activeWebFilters, pickWebFilters, toWebFilters, webFilterKey, type FilterToken, type WebFilterKey, type WebFilters } from "../shared/web-filters";
 import { mergeWeb, type WebHit, type WebPage, type WebProviderInfo, type WebResult } from "../shared/web-search";
 import { bridge, type Invoke } from "./library-api";
 
@@ -22,6 +23,8 @@ export interface ProviderState {
   /** A further page is on its way. */
   more: boolean;
   error?: string;
+  /** Filters it cannot apply, so it was not asked. */
+  skipped?: WebFilterKey[];
 }
 
 /** IPC errors arrive as "Error invoking remote method 'key:invoke': Error: …". */
@@ -29,7 +32,15 @@ export const errorText = (error: unknown) => String((error as Error)?.message ??
 
 let counter = 0;
 
-export function useWebSearch(invoke: Invoke, workspaceId: string, query: string, active: boolean) {
+/** Why a token does nothing for the web, or undefined when some provider applies it. */
+export function webTokenNote(token: FilterToken, applicable: Set<WebFilterKey>) {
+  const key = webFilterKey(token);
+  if (key && applicable.has(key)) return undefined;
+  if (token.field === "collection") return "Not available for web search. Works you add go into this collection.";
+  return "Not available for web search";
+}
+
+export function useWebSearch(invoke: Invoke, workspaceId: string, query: string, active: boolean, tokens: FilterToken[] = []) {
   const [providers, setProviders] = useState<ProviderState[]>([]);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [inLibrary, setInLibrary] = useState<Record<string, string>>({});
@@ -54,7 +65,7 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
 
   /** One page from one provider; stale answers (an older query) are dropped. */
   const fetchPage = useCallback(
-    async (info: WebProviderInfo, text: string, gen: number, cursor?: string) => {
+    async (info: WebProviderInfo, text: string, filters: WebFilters, gen: number, cursor?: string) => {
       const requestId = `web-${++counter}`;
       requests.current.add(requestId);
       const apply = (change: (p: ProviderState) => ProviderState) => {
@@ -62,8 +73,8 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
         setProviders((list) => list.map((p) => (p.info.id === info.id ? change(p) : p)));
       };
       try {
-        const page = await invoke<WebPage>("web_search", { provider: info.id, query: text, limit: PAGE, cursor, requestId });
-        apply((p) => ({ ...p, status: "done", more: false, error: undefined, results: cursor ? [...p.results, ...page.results] : page.results, cursor: page.cursor }));
+        const page = await invoke<WebPage>("web_search", { provider: info.id, query: text, limit: PAGE, cursor, requestId, filters });
+        apply((p) => ({ ...p, status: "done", more: false, error: undefined, skipped: page.skipped, results: cursor ? [...p.results, ...page.results] : page.results, cursor: page.cursor }));
       } catch (error) {
         const message = errorText(error);
         if (message === "Cancelled") return;
@@ -85,6 +96,16 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
   }, [active, invoke]);
   const enabled = useMemo(() => (infos ?? []).filter((p) => p.enabled), [infos]);
   const enabledKey = enabled.map((p) => p.id).join();
+  // The tokens some provider can apply; the others are left to the library.
+  const applicable = useMemo(() => new Set(enabled.flatMap((p) => p.filters ?? [])), [enabled]);
+  const tokensKey = JSON.stringify(tokens.map(({ field, op, value, label }) => [field, op, value, label]));
+  const filters = useMemo(() => {
+    const all = toWebFilters(tokens);
+    return pickWebFilters(all, activeWebFilters(all).filter((k) => applicable.has(k)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokensKey, applicable]);
+  const filtersKey = JSON.stringify(filters);
+  const filtered = activeWebFilters(filters).length > 0;
 
   const run = useCallback(
     (only?: string) => {
@@ -99,14 +120,14 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
           ? list.map((p) => (p.info.id === only ? { ...p, status: "loading", results: [], cursor: undefined, error: undefined } : p))
           : enabled.map((info) => ({ info, status: "loading", results: [], more: false })),
       );
-      for (const info of asked) void fetchPage(info, q, gen);
+      for (const info of asked) void fetchPage(info, q, filters, gen);
     },
-    [enabled, fetchPage, cancelAll, q],
+    [enabled, fetchPage, cancelAll, q, filters],
   );
 
   useEffect(() => {
     if (!active || !infos) return;
-    if (q.length < 2 || !online) {
+    if ((q.length < 2 && !filtered) || !online) {
       cancelAll();
       generation.current++;
       setProviders(enabled.map((info) => ({ info, status: "idle", results: [], more: false })));
@@ -117,7 +138,7 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     const timer = setTimeout(() => run(), DEBOUNCE);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, q, online, enabledKey, !!infos]);
+  }, [active, q, online, enabledKey, !!infos, filtersKey]);
 
   // Leaving the pill cancels whatever is still running.
   useEffect(() => {
@@ -134,8 +155,8 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     const next = latest.current.filter((p) => p.status === "done" && p.cursor && !p.more);
     if (!next.length) return;
     setProviders((list) => list.map((p) => (next.some((n) => n.info.id === p.info.id) ? { ...p, more: true } : p)));
-    for (const p of next) void fetchPage(p.info, q, gen, p.cursor);
-  }, [fetchPage, q]);
+    for (const p of next) void fetchPage(p.info, q, filters, gen, p.cursor);
+  }, [fetchPage, q, filters]);
 
   const hits = useMemo(() => mergeWeb(providers.filter((p) => p.results.length).map((p) => ({ provider: p.info.id, results: p.results }))), [providers]);
 
@@ -168,14 +189,24 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     setInLibrary({});
   }, [workspaceId]);
 
+  const noted = useCallback((key: string, sourceId: string) => setInLibrary((m) => ({ ...m, [key]: sourceId })), []);
+
   return {
     providers,
     hits,
+    /** Filter kinds some provider applies. */
+    applicable,
+    /** Web filters are set (a search can run without words). */
+    filtered,
+    /** Which providers are on is known. */
+    ready: !!infos,
     online,
     inLibrary,
-    noted: (key: string, sourceId: string) => setInLibrary((m) => ({ ...m, [key]: sourceId })),
+    noted,
     loadMore,
     retry: (id: string) => run(id),
+    /** Every provider, on or not: a fallback (Google Scholar) may answer in another's place. */
+    infos: infos ?? [],
     /** No provider is on (all turned off in Settings). */
     none: !!infos && !enabled.length,
     canLoadMore: providers.some((p) => p.status === "done" && p.cursor),

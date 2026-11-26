@@ -1,0 +1,69 @@
+/* Every modal's frame (GlobalDrawer → motion/Drawer): sized to its content, never past the
+   window less --kx-modal-gap on each side, scrolling inside when taller. The height is held
+   by modal-size.ts: it only grows within one view and settles (animated) when the view,
+   marked by a `data-modal-view` attribute inside the modal, changes.
+
+   Hosts tune a modal with custom properties on it (e.g. from a `:has()` rule):
+     --kx-modal-width       preferred width (capped to the window)
+     --kx-modal-min-height  a floor, for views that should open tall (capped too) */
+:root {
+  --kx-modal-gap: 32px;
+}
+@media (max-width: 900px), (max-height: 640px) {
+  :root {
+    --kx-modal-gap: 24px;
+  }
+}
+.key-global-drawer.key-modal[data-presentation] {
+  --kx-modal-top: var(--kx-modal-gap);
+  --kx-modal-max-width: calc(100vw - 2 * var(--kx-modal-gap));
+  --kx-modal-max-height: calc(100vh - var(--kx-modal-top) - var(--kx-modal-gap));
+  left: 0;
+  right: 0;
+  translate: none;
+  box-sizing: border-box;
+  width: min(var(--kx-modal-width, 520px), var(--kx-modal-max-width));
+  max-width: var(--kx-modal-max-width);
+  min-height: min(var(--kx-modal-min-height, 0px), var(--kx-modal-max-height));
+  max-height: var(--kx-modal-max-height);
+  margin: 0 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+/* Sheets hang from just under the title bar; dialogs and window-sized sheets sit centred. */
+.key-global-drawer.key-modal[data-presentation="sheet"] {
+  --kx-modal-top: max(var(--kx-modal-gap), 48px);
+  top: var(--kx-modal-top);
+  bottom: auto;
+  transform-origin: 50% 0;
+}
+.key-global-drawer.key-modal:is([data-presentation="dialog"], [data-presentation="window"]) {
+  top: 0;
+  bottom: 0;
+  margin-block: auto;
+}
+.key-global-drawer.key-modal[data-presentation="dialog"] {
+  --kx-modal-width: 600px;
+}
+.key-global-drawer.key-modal[data-presentation="window"] {
+  --kx-modal-width: 880px;
+  --kx-modal-min-height: 560px;
+  overflow: hidden;
+}
+/* Content fills the held height, so a view that shrinks (filtering, a shorter step) leaves
+   the frame still; scroll regions inside take the slack. */
+.key-modal > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.key-modal .key-drawer-slides {
+  display: flex;
+  flex-direction: column;
+}
+.key-modal .key-drawer-slide:first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.key-modal .kx-palette {
+  max-height: min(520px, var(--kx-modal-max-height));
+}

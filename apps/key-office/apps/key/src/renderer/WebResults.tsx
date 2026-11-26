@@ -1,12 +1,14 @@
 // The Web pill and its results on the search page: works found by the web providers,
-// merged, each with who found it, whether it is free to read, and "Add to library".
-import { useState } from "react";
+// merged, each with who found it, whether it is free to read, and "Add to library". A click
+// shows the work in the preview beside the results (WebPreview); its page opens only when asked.
+import type { WebFilterKey } from "../shared/web-filters";
 import { shortAuthors, snippetOf, type WebHit } from "../shared/web-search";
 import { apa, type CitableSource } from "./citation";
 import { Icon, type IconName } from "./icons";
-import { openItemAt, toast } from "./item-actions";
-import type { Invoke, Source } from "./library-api";
-import { errorText, openWebLink, type WebSearchState } from "./web-search";
+import { toast } from "./item-actions";
+import { Highlight } from "./search-highlight";
+import { WebAddButton, type WebAdd } from "./WebAddButton";
+import { openWebLink, type WebSearchState } from "./web-search";
 import "./web-search.css";
 
 export function WebPill({ pressed, onClick }: { pressed: boolean; onClick: (e: React.MouseEvent) => void }) {
@@ -36,7 +38,7 @@ const citable = (hit: WebHit): CitableSource => ({
   url: hit.doi ? undefined : hit.landingUrl,
 });
 
-async function copyCitation(hit: WebHit) {
+export async function copyCitation(hit: WebHit) {
   const source = citable(hit);
   try {
     await navigator.clipboard.write([
@@ -48,47 +50,59 @@ async function copyCitation(hit: WebHit) {
   toast("Citation copied");
 }
 
-type Adding = "adding" | "pdf";
+/** The work's page: its DOI, else the provider's landing page. */
+export const webLink = (hit: WebHit) => hit.landingUrl ?? (hit.doi ? `https://doi.org/${hit.doi}` : undefined);
+
+export const FILTER_NAME: Record<WebFilterKey, string> = {
+  year: "year",
+  author: "author",
+  title: "title",
+  venue: "journal",
+  doi: "DOI",
+  arxiv: "arXiv id",
+  pmid: "PubMed id",
+  pmcid: "PMC id",
+  openAccess: "open access",
+  type: "work type",
+  citations: "citations",
+  abstract: "abstract",
+  language: "language",
+  retracted: "retraction",
+};
 
 export default function WebResults({
   web,
-  invoke,
-  workspaceId,
-  collectionId,
+  adder,
   query,
+  pattern,
+  offset,
+  current,
+  previewKey,
+  onActive,
+  onOpen,
 }: {
   web: WebSearchState;
-  invoke: Invoke;
-  workspaceId: string;
-  /** New references go into this collection (the search's collection filter). */
-  collectionId?: string;
+  adder: WebAdd;
   query: string;
+  /** Query words and filter values, marked in each result. */
+  pattern?: RegExp;
+  /** Rows are numbered from here, after the workspace's own results. */
+  offset: number;
+  current: number;
+  /** The work shown in the preview. */
+  previewKey?: string;
+  onActive: (index: number) => void;
+  /** Show the work in the preview beside the results. */
+  onOpen: (hit: WebHit) => void;
 }) {
-  const [adding, setAdding] = useState<Record<string, Adding>>({});
-  const label = (id: string) => web.providers.find((p) => p.info.id === id)?.info.label ?? id;
+  const label = (id: string) => (web.providers.find((p) => p.info.id === id)?.info ?? web.infos.find((p) => p.id === id))?.label ?? id;
   const names = web.providers.map((p) => p.info.label).join(" and ");
-
-  const add = async (hit: WebHit) => {
-    setAdding((a) => ({ ...a, [hit.key]: "adding" }));
-    try {
-      const { source, existed } = await invoke<{ source: Source; existed: boolean }>("web_add_to_library", { work: hit, collectionId: collectionId ?? null }, workspaceId);
-      web.noted(hit.key, source.id);
-      if (!existed && hit.pdfUrl) {
-        // The PDF follows in the background; the reference is already in the library.
-        setAdding((a) => ({ ...a, [hit.key]: "pdf" }));
-        await invoke("library_download_pdf", { url: hit.pdfUrl, sourceId: source.id }, workspaceId).catch((e) => toast(`Added without the PDF: ${errorText(e)}`));
-      } else if (existed) toast("Already in your library");
-    } catch (e) {
-      toast(`Couldn't add it: ${errorText(e)}`);
-    } finally {
-      setAdding(({ [hit.key]: _, ...rest }) => rest);
-    }
-  };
-  const openSource = (hit: WebHit, newTab = false) => openItemAt({ kind: "source", id: web.inLibrary[hit.key] }, newTab ? "tab" : "split", hit.title, workspaceId, invoke);
 
   const loading = web.providers.filter((p) => p.status === "loading");
   const failed = web.providers.filter((p) => p.error && p.status !== "loading");
   const done = web.providers.filter((p) => p.status === "done");
+  const skipped = done.filter((p) => p.skipped?.length);
+  const skipNote = (keys: WebFilterKey[]) => keys.map((k) => FILTER_NAME[k]).join(" or ");
 
   return (
     <section className="kx-found-group kx-web" data-group="web" aria-label="On the web">
@@ -98,7 +112,7 @@ export default function WebResults({
         <span className="kx-count">{web.hits.length || (loading.length ? "…" : 0)}</span>
         <span className="kx-web-sources">
           {web.providers.map((p) => (
-            <span key={p.info.id} className="kx-web-source" data-status={p.status} title={p.error}>
+            <span key={p.info.id} className="kx-web-source" data-status={p.skipped?.length ? "skipped" : p.status} title={p.error ?? (p.skipped?.length ? `Not asked: it can't filter by ${skipNote(p.skipped)}` : undefined)}>
               {p.info.label}
               {p.status === "loading" && <span className="kx-search-spinner" aria-hidden="true" />}
             </span>
@@ -109,17 +123,28 @@ export default function WebResults({
         <p className="kx-web-note">You're offline. Web results come back when you reconnect.</p>
       ) : web.none ? (
         <p className="kx-web-note">Every web source is turned off in Settings.</p>
-      ) : query.trim().length < 2 ? (
+      ) : query.trim().length < 2 && !web.filtered ? (
         <p className="kx-web-note">Type to search {names || "the web"}.</p>
       ) : (
         <>
-          {web.hits.map((hit) => {
+          {web.hits.map((hit, i) => {
+            const index = offset + i;
             const sourceId = web.inLibrary[hit.key];
-            const state = adding[hit.key];
             const meta = [shortAuthors(hit.authors), hit.year, hit.venue].filter(Boolean);
-            const link = hit.landingUrl ?? (hit.doi ? `https://doi.org/${hit.doi}` : undefined);
+            const link = webLink(hit);
             return (
-              <article key={hit.key} className="kx-hit kx-found-hit kx-web-hit" data-web-key={hit.key} data-in-library={!!sourceId}>
+              <article
+                key={hit.key}
+                role="option"
+                aria-selected={index === current}
+                data-index={index}
+                data-previewed={hit.key === previewKey || undefined}
+                className="kx-hit kx-found-hit kx-web-hit"
+                data-web-key={hit.key}
+                data-in-library={!!sourceId}
+                onMouseMove={() => index !== current && onActive(index)}
+                onClick={(e) => !(e.target as HTMLElement).closest("button, a") && !window.getSelection()?.toString() && onOpen(hit)}
+              >
                 <span className="kx-row-kind" data-kind="web">
                   <Icon name={(hit.type === "book" ? "book" : "doc") as IconName} size={15} />
                 </span>
@@ -127,19 +152,31 @@ export default function WebResults({
                   <button
                     type="button"
                     className="kx-found-open"
-                    title={sourceId ? "Open in your library (⌘-click: in a new tab)" : link ? `Open ${link}` : undefined}
-                    onClick={(e) => (sourceId ? openSource(hit, e.metaKey) : link && openWebLink(link))}
+                    title={sourceId ? "Show details (⌘-click: open it from your library in a new tab)" : link ? `Show details (⌘-click: open ${link})` : "Show details"}
+                    onClick={(e) => {
+                      if (e.metaKey && sourceId) adder.openSource(hit, true);
+                      else if (e.metaKey && link) openWebLink(link);
+                      else onOpen(hit);
+                    }}
                   >
-                    <strong className="kx-hit-title">{hit.title}</strong>
+                    <strong className="kx-hit-title">
+                      <Highlight text={hit.title} pattern={pattern} />
+                    </strong>
                   </button>
                   {meta.length > 0 && (
                     <span className="kx-hit-meta">
                       {meta.map((m, i) => (
-                        <span key={i}>{m}</span>
+                        <span key={i}>
+                          <Highlight text={String(m)} pattern={pattern} />
+                        </span>
                       ))}
                     </span>
                   )}
-                  {hit.abstract && <p className="kx-web-abstract">{snippetOf(hit.abstract, 260)}</p>}
+                  {hit.abstract && (
+                    <p className="kx-web-abstract">
+                      <Highlight text={snippetOf(hit.abstract, 260)} pattern={pattern} />
+                    </p>
+                  )}
                   <div className="kx-web-facts">
                     {hit.foundBy.map((id) => (
                       <span key={id} className="kx-web-badge" data-provider={id}>
@@ -154,30 +191,14 @@ export default function WebResults({
                     )}
                     {hit.citedBy != null && hit.citedBy > 0 && <span className="kx-web-fact">{hit.citedBy.toLocaleString()} citations</span>}
                     {hit.doi && (
-                      <button type="button" className="kx-web-link" onClick={() => openWebLink(`https://doi.org/${hit.doi}`)}>
-                        {hit.doi}
+                      <button type="button" className="kx-web-link" title={`Open https://doi.org/${hit.doi}`} onClick={() => openWebLink(`https://doi.org/${hit.doi}`)}>
+                        <Highlight text={hit.doi} pattern={pattern} />
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="kx-web-actions">
-                  {state ? (
-                    <span className="kx-web-progress" role="status">
-                      <span className="kx-search-spinner" aria-hidden="true" />
-                      {state === "pdf" ? "Fetching PDF…" : "Adding…"}
-                    </span>
-                  ) : sourceId ? (
-                    <button type="button" className="kx-web-in" title="In your library: open it" onClick={(e) => openSource(hit, e.metaKey)}>
-                      <Icon name="check" size={11} />
-                      In library
-                      <span className="kx-web-in-open">Open</span>
-                    </button>
-                  ) : (
-                    <button type="button" className="kx-web-add" onClick={() => void add(hit)}>
-                      <Icon name="plus" size={11} />
-                      Add to library
-                    </button>
-                  )}
+                  <WebAddButton hit={hit} web={web} adder={adder} />
                   <span className="kx-web-tools">
                     <button type="button" aria-label="Copy citation" title="Copy citation" onClick={() => void copyCitation(hit)}>
                       <Icon name="quote" size={12} />
@@ -214,7 +235,14 @@ export default function WebResults({
               </button>
             </p>
           ))}
-          {!loading.length && !web.hits.length && !failed.length && done.length > 0 && <p className="kx-web-note">Nothing found on the web.</p>}
+          {skipped.map((p) => (
+            <p key={p.info.id} className="kx-web-note" data-provider={p.info.id} data-skipped role="status">
+              <span>
+                {p.info.label} can't filter by {skipNote(p.skipped!)}, so it wasn't asked.
+              </span>
+            </p>
+          ))}
+          {!loading.length && !web.hits.length && !failed.length && done.length > skipped.length && <p className="kx-web-note">Nothing found on the web.</p>}
           {(web.canLoadMore || web.loadingMore) && web.hits.length > 0 && !loading.length && (
             <button type="button" className="kx-web-more" disabled={web.loadingMore} onClick={web.loadMore}>
               {web.loadingMore ? <span className="kx-search-spinner" aria-hidden="true" /> : null}

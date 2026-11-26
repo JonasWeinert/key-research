@@ -7,7 +7,8 @@
 // same card grows in place into the work's details: summary, abstract, identifiers and links;
 // it then stays until a press outside it or Escape.
 import { invoke } from '@tauri-apps/api/core';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { SegmentedTabs } from '../ui/SegmentedTabs';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ScholarlyMetadata, ScientificCitation, ScientificReference } from '../engines/types';
 import { Icon } from '../ui/Icon';
 import { citationAuthorsSnippet, citationLinks, citationSummary, isNumberedCitation, type CitationLink } from './citation-details';
@@ -36,6 +37,9 @@ export function chipLabel(number: number, numbered: boolean, position: number, m
   if (!numbered) return identity || `Work ${position + 1}`;
   return identity ? `${number} · ${identity}` : String(number);
 }
+
+/** Where the go-to-reference action leads: its page, or the list on a page without pages. */
+const referencePlace = (reference: ScientificReference) => (reference.page >= 0 ? `p. ${reference.page + 1}` : 'References');
 
 /** The reference as printed, without its list number. */
 export function printedReference(reference: ScientificReference) {
@@ -251,56 +255,20 @@ function WorkChips({
   metadataFor: (number: number) => ScholarlyMetadata | undefined;
   idFor: (number: number) => string;
 }) {
-  const strip = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ start: false, end: false });
-  const measure = useCallback(() => {
-    const element = strip.current;
-    if (!element) return;
-    const start = element.scrollLeft > 1;
-    const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
-    setEdges(current => (current.start === start && current.end === end ? current : { start, end }));
-  }, []);
-  useLayoutEffect(measure, [measure, citation.id]);
-  useEffect(() => {
-    strip.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    measure();
-  }, [active, measure]);
   const numbered = isNumberedCitation(citation.source);
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const index = citation.numbers.indexOf(active ?? citation.numbers[0]);
-    const next = citation.numbers[(index + (event.key === 'ArrowRight' ? 1 : -1) + citation.numbers.length) % citation.numbers.length];
-    onSelect(next);
-    requestAnimationFrame(() => strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
-  };
   return (
-    <div
-      ref={strip}
+    <SegmentedTabs
       className="pdfjs-cite-chips"
-      role="tablist"
-      aria-label="Works in this citation"
-      data-fade-start={edges.start || undefined}
-      data-fade-end={edges.end || undefined}
-      onScroll={measure}
-      onKeyDown={onKeyDown}
-    >
-      {citation.numbers.map((number, position) => (
-        <button
-          type="button"
-          key={number}
-          role="tab"
-          aria-selected={active === number}
-          aria-controls={idFor(number)}
-          tabIndex={active === number ? 0 : -1}
-          onClick={() => onSelect(number)}
-        >
-          {chipLabel(number, numbered, position, metadataFor(number))}
-        </button>
-      ))}
-    </div>
+      size="small"
+      label="Works in this citation"
+      value={String(active ?? citation.numbers[0])}
+      onChange={id => onSelect(Number(id))}
+      panelId={id => idFor(Number(id))}
+      tabs={citation.numbers.map((number, position) => ({
+        id: String(number),
+        label: chipLabel(number, numbered, position, metadataFor(number)),
+      }))}
+    />
   );
 }
 
@@ -410,7 +378,7 @@ export function CitationCardBody({
               metadata={metadata}
               title={metadata?.title ?? printedReference(reference)}
               printed={printedReference(reference)}
-              page={reference.page}
+              page={reference.page >= 0 ? reference.page : undefined}
             />
           )}
           <footer className="pdfjs-cite-actions">
@@ -418,7 +386,7 @@ export function CitationCardBody({
             <DetailLinks links={links} />
             <span className="pdfjs-cite-spacer" />
             <button type="button" className="pdfjs-cite-action" title="Go to the reference list" onClick={() => onGoToReference(reference)}>
-              p. {reference.page + 1}
+              {referencePlace(reference)}
               <Icon name="next" />
             </button>
           </footer>
@@ -442,7 +410,7 @@ export function CitationCardBody({
                   title="Go to the reference list"
                   onClick={() => onGoToReference(reference)}
                 >
-                  p. {reference.page + 1}
+                  {referencePlace(reference)}
                   <Icon name="next" />
                 </button>
                 {metadata && (

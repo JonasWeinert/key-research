@@ -555,7 +555,7 @@ function Toasts() {
     () =>
       onToast((next) => {
         setToasts((list) => [...list.slice(-2), next]);
-        setTimeout(() => setToasts((list) => list.filter((t) => t.id !== next.id)), next.undo ? 6000 : 2600);
+        setTimeout(() => setToasts((list) => list.filter((t) => t.id !== next.id)), next.action ? 12000 : next.undo ? 6000 : 2600);
       }),
     [],
   );
@@ -573,6 +573,16 @@ function Toasts() {
               }}
             >
               Undo
+            </button>
+          )}
+          {t.action && (
+            <button
+              onClick={() => {
+                t.action!.run();
+                setToasts((list) => list.filter((x) => x.id !== t.id));
+              }}
+            >
+              {t.action.label}
             </button>
           )}
         </div>

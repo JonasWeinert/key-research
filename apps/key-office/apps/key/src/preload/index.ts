@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld("key", {
   readerOpenInLibrary: () => ipcRenderer.invoke("key:reader-open-in-library"),
   readerOpenPage: () => ipcRenderer.invoke("key:reader-open-page"),
   clearBrowsingData: () => ipcRenderer.invoke("key:clear-browsing-data"),
+  // Add a work to the library from a source's context (renderer/add-from-source.tsx): the
+  // window's shell asks which collections and resolves with the added source, or null.
+  addFromSource: (request: { origin: { workspaceId: string; sourceId?: string | null }; work: Record<string, unknown> }) => ipcRenderer.invoke("key:add-from-source", request),
+  addFromSourceDone: (requestId: string, result: unknown) => ipcRenderer.invoke("key:add-from-source-done", requestId, result),
   proxies: (action: string, payload?: unknown) => ipcRenderer.invoke("key:proxies", action, payload),
   readerState: (state: unknown) => ipcRenderer.send("key:reader-state", state),
   // The status bar (shared/status-items.ts): a native view's own items, and their clicks.
@@ -90,6 +94,8 @@ contextBridge.exposeInMainWorld("key", {
         "status-items",
         "app-notice",
         "proxies-changed",
+        "add-from-source",
+        "full-screen",
       ].includes(event)
     )
       throw Error("Unknown event");

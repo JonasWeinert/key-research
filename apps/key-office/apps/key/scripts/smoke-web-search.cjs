@@ -126,6 +126,41 @@ const fixtures = path.resolve(__dirname, "../src/main/web-search/fixtures");
     await bert.locator(".kx-web-in").waitFor();
     await shot(page, "web-results-light");
 
+    // The query's words are marked in each result's details, as in passages.
+    assert.equal(await attention.locator(".kx-hit-title mark").first().textContent(), "Attention", "title match marked");
+    assert.ok((await web.locator(".kx-web-abstract mark").count()) > 0, "abstract matches marked");
+
+    // A click shows the work beside the results, not in a new tab; arrows step through the rows.
+    const tabsBefore = await page.evaluate(async () => (await window.key.tabs()).tabs.length);
+    const proteinRow = web.locator(".kx-web-hit", { hasText: "Highly accurate protein" });
+    await proteinRow.locator(".kx-found-open").click();
+    const preview = tab.locator(".kx-web-preview");
+    await preview.waitFor();
+    await preview.locator(".kx-web-preview-title", { hasText: "Highly accurate protein" }).waitFor();
+    await preview.locator(".kx-web-add").waitFor();
+    await preview.getByRole("button", { name: "Open page" }).waitFor();
+    assert.ok(await preview.locator(".kx-web-preview-facts", { hasText: "10.1038/s41586-021-03819-2" }).count(), "the DOI is shown");
+    assert.equal(await proteinRow.getAttribute("data-previewed"), "true");
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(async () => (await window.key.tabs()).tabs.length), tabsBefore, "no new tab");
+    await shot(page, "web-preview-light");
+    const previewedTitle = () => preview.locator(".kx-web-preview-title").textContent();
+    const first = await previewedTitle();
+    await tab.locator(".kx-search-page-results").focus();
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction((t) => document.querySelector(".kx-web-preview-title")?.textContent !== t, first);
+    await page.keyboard.press("ArrowUp");
+    await page.waitForFunction((t) => document.querySelector(".kx-web-preview-title")?.textContent === t, first);
+    await theme("dark");
+    await page.waitForTimeout(300);
+    await shot(page, "web-preview-dark");
+    await theme("light");
+    // Bert is in the library: the preview says so and opens it from there.
+    await bert.locator(".kx-found-open").click();
+    await preview.locator(".kx-web-in").waitFor();
+    await page.keyboard.press("Escape");
+    await preview.waitFor({ state: "detached" });
+
     // Add to library: a reference with full details, then its open-access PDF.
     await attention.locator(".kx-web-add").click();
     await attention.locator(".kx-web-in").waitFor({ timeout: 30000 });
@@ -163,6 +198,44 @@ const fixtures = path.resolve(__dirname, "../src/main/web-search/fixtures");
     await web.locator(".kx-web-hit", { hasText: "Page two about attention again" }).waitFor();
     assert.ok(webRequests().some((l) => l.startsWith("/works") && !l.includes("cursor=*")), "asked with the cursor");
 
+    // Filters: an author token goes to OpenAlex as a filter and is checked on Semantic
+    // Scholar's results; a full-text token cannot apply to the web, so it is greyed (and kept).
+    await field.fill("Vaswani");
+    await tab.locator(".kx-suggest-item", { hasText: "Author contains" }).click();
+    await field.fill("deep");
+    await tab.locator(".kx-suggest-item", { hasText: "Full text contains" }).click();
+    const authorToken = tab.locator('.kx-token[data-field="creator"]');
+    const fullText = tab.locator('.kx-token[data-field="fulltext"]');
+    await fullText.waitFor();
+    assert.equal(await authorToken.getAttribute("data-inactive"), null, "the author applies to the web");
+    assert.equal(await fullText.getAttribute("data-inactive"), "true", "full text is not for the web");
+    assert.match(await fullText.getAttribute("title"), /Not available for web search/);
+    await page.waitForFunction(() => document.querySelectorAll(".kx-web-hit").length > 0 && !document.querySelector(".kx-web-skeleton"));
+    await page.waitForTimeout(600);
+    const filtered = webRequests().filter((l) => l.startsWith("/works") && l.includes("filter="));
+    assert.ok(filtered.some((l) => decodeURIComponent(l).includes("raw_author_name.search:Vaswani")), `OpenAlex asked with the author filter: ${filtered}`);
+    assert.ok(filtered.every((l) => !new URL(l, "http://x").searchParams.has("search")), "filters alone need no words");
+    const s2Filtered = webRequests().filter((l) => l.startsWith("/graph/v1/paper/search") && l.includes("Vaswani"));
+    assert.ok(s2Filtered.length, "Semantic Scholar searched by the author's name");
+    assert.ok((await web.locator(".kx-web-hit .kx-hit-meta mark", { hasText: "Vaswani" }).count()) > 0, "the author filter is marked in results");
+    await shot(page, "web-filters-light");
+    await theme("dark");
+    await page.waitForTimeout(300);
+    await shot(page, "web-filters-dark");
+    await theme("light");
+    // Back to the workspace's results: every token applies again.
+    await pill.click();
+    await page.waitForFunction(() => !document.querySelector(".kx-token[data-inactive]"));
+    await pill.click();
+    await tab.locator(".kx-search-clear").click();
+    assert.equal(await tab.locator(".kx-token").count(), 0);
+
+    // The Web pill is remembered for the workspace.
+    assert.equal(await page.evaluate((id) => localStorage.getItem(`key.search.web:${id}`), ws.id), "only");
+    await page.reload();
+    await tab.waitFor();
+    assert.equal(await pill.getAttribute("aria-pressed"), "true", "still on after a reload");
+
     // Semantic Scholar stays down: OpenAlex's results stay, with a quiet note and Retry.
     await field.fill("outage");
     await field.press("Escape");
@@ -195,7 +268,9 @@ const fixtures = path.resolve(__dirname, "../src/main/web-search/fixtures");
     await settings.getByRole("button", { name: "Search & indexing" }).click();
     const s2Switch = settings.getByRole("checkbox", { name: "Search Semantic Scholar" });
     await s2Switch.scrollIntoViewIfNeeded();
-    await settings.getByRole("textbox", { name: "Semantic Scholar API key" }).waitFor();
+    await s2Switch.waitFor();
+    // Keys live under Services & API keys now, not next to the switch.
+    assert.equal(await settings.getByRole("textbox", { name: "Semantic Scholar API key" }).count(), 0);
     await shot(page, "settings-web-light");
     await s2Switch.click();
     await page.waitForFunction(async () => (await window.key.appSettings()).settings.webProviders?.s2?.enabled === false);

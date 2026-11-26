@@ -161,7 +161,8 @@ const want = (name) => !only.length || only.includes(name);
     const cardGeometry = () =>
       pdf.evaluate(() => {
         const c = document.querySelector(".pdfjs-cite-card").getBoundingClientRect();
-        const strip = document.querySelector(".pdfjs-cite-chips");
+        const strip = document.querySelector(".pdfjs-cite-chips [role=tablist]") ?? document.querySelector(".pdfjs-cite-chips");
+        const bar = document.querySelector(".pdfjs-cite-chips");
         const chips = [...document.querySelectorAll(".pdfjs-cite-chips [role=tab]")].map((e) => e.getBoundingClientRect());
         return {
           width: c.width,
@@ -169,7 +170,7 @@ const want = (name) => !only.length || only.includes(name);
           stripOverflows: strip ? strip.scrollWidth > strip.clientWidth : false,
           stripInside: strip ? strip.getBoundingClientRect().right <= c.right + 0.5 : true,
           chips: chips.length,
-          fades: strip ? [strip.dataset.fadeStart, strip.dataset.fadeEnd] : [],
+          fades: bar ? [bar.dataset.fadeStart, bar.dataset.fadeEnd] : [],
         };
       });
     let citations = {};
@@ -199,7 +200,7 @@ const want = (name) => !only.length || only.includes(name);
           await pdf.locator(".pdfjs-cite-chips [aria-selected=true]").focus();
           for (let i = 0; i < geometry.chips - 1; i++) await pdf.keyboard.press("ArrowRight");
           const last = await pdf.evaluate(() => {
-            const strip = document.querySelector(".pdfjs-cite-chips").getBoundingClientRect();
+            const strip = document.querySelector(".pdfjs-cite-chips [role=tablist]").getBoundingClientRect();
             const chip = document.querySelector(".pdfjs-cite-chips [aria-selected=true]").getBoundingClientRect();
             return chip.right <= strip.right + 1 && chip.left >= strip.left - 1;
           });
@@ -285,6 +286,14 @@ const want = (name) => !only.length || only.includes(name);
       await pdf.waitForTimeout(300);
       const ticks = pdf.locator(".key-pdf-rail .key-preview-rail-ticks");
       await ticks.waitFor({ timeout: 10000 });
+      // The dock check wants many ticks: page ticks, not the few chapters analysis may find.
+      if ((await pdf.locator(".key-pdf-rail").getAttribute("data-mode")) !== "pages") {
+        const box = await ticks.boundingBox();
+        await pdf.mouse.click(box.x + 6, box.y + box.height / 2, { button: "right" });
+        await pdf.getByRole("menuitemradio", { name: "Page thumbnails" }).click();
+        await pdf.mouse.move(400, 400);
+        await pdf.waitForTimeout(400);
+      }
       const rest = await ticks.boundingBox();
       await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2);
       await pdf.waitForTimeout(450);

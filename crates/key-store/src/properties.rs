@@ -23,7 +23,7 @@ fn json_path(name: &str) -> String {
 
 /// Brings a select property's option rows in line with its definition and links every
 /// source holding one of them.
-fn sync_options(db: &Connection, name: &str) -> Result<()> {
+pub(crate) fn sync_options(db: &Connection, name: &str) -> Result<()> {
     let config: Option<String> = db.query_row("SELECT config FROM property_definitions WHERE name = ?", [name], |r| r.get(0)).optional().map_err(e)?;
     let config: Json = config.and_then(|c| serde_json::from_str(&c).ok()).unwrap_or_default();
     if config.get("type").and_then(Json::as_str) != Some("select") {

@@ -10,6 +10,7 @@ import {
 import { createPortal } from "react-dom";
 import { Drawer } from "./motion/Drawer";
 import "./global-drawer.css";
+import "./modal.css";
 type Entry = {
   id: string;
   children: ReactNode;
@@ -30,6 +31,19 @@ const subscribe = (fn: () => void) => {
     listeners.delete(fn);
   };
 };
+/** Opens a modal over the whole window (one at a time); the shell behind goes inert and dims.
+ *  `sheet` hangs from the title bar, `dialog` sits centred, `window` is a large centred
+ *  sheet (Settings), `drawer` slides in from the left. Sizing is shared (modal.css,
+ *  modal-size.ts): the frame fits its content up to the window less a margin and scrolls
+ *  inside past that; it holds its height while the content changes within one view. Mark
+ *  views with `data-modal-view="<name>"` on an element inside so the height may settle
+ *  (animated) when switching between them; set `--kx-modal-width` / `--kx-modal-min-height`
+ *  on the modal for a wider or taller one.
+ *
+ *    <GlobalDrawer presentation="sheet" label="Manage tags" onClose={close}>
+ *      <div className="my-sheet" data-modal-view={step}>…</div>
+ *    </GlobalDrawer>
+ */
 export function GlobalDrawer({
   children,
   onClose,

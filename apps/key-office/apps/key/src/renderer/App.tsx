@@ -7,6 +7,7 @@ import { markdownToPlainText } from "./note-editor";
 import Settings, { type SettingsSection } from "./Settings";
 import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api";
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
+import { AddFromSourceHost } from "./add-from-source";
 import type { SearchPreviewState } from "./search-preview";
 import { TabBar, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./TabBar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -26,8 +27,10 @@ import CommandCenter from "./CommandCenter";
 import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
+import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { ZoteroImportSheet } from "./ZoteroImport";
+import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
@@ -732,7 +735,9 @@ export default function App() {
       }}
     >
       <GlobalDrawerHost />
+      <AddFromSourceHost invoke={invoke} />
       <ItemLayer />
+      <TagManagerHost invoke={invoke} />
       <CommandCenter
         invoke={invoke}
         workspaceId={workspaceId}
@@ -741,6 +746,7 @@ export default function App() {
           { id: "new-note", label: "New note", icon: "note", run: createNote },
           { id: "new-canvas", label: "New canvas", icon: "canvas", run: createCanvas },
           { id: "library", label: "Show library", icon: "books", run: () => action("open-content", { section: "sources", workspaceId }) },
+          ...(workspaceId ? [{ id: "tags", label: "Organise tags…", icon: "tag" as const, run: () => openTagManager(workspaceId) }] : []),
           { id: "highlights", label: "All highlights", icon: "quote", shortcut: "⌘⇧H", run: () => action("open-content", { section: "highlights", workspaceId }) },
           { id: "inspector", label: inspectorOpen ? "Hide inspector" : "Show inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => setInspectorOpen((o) => !o) },
           { id: "sidebar", label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: "sidebar", run: () => setSidebarCollapsed((v) => !v) },
@@ -1075,6 +1081,22 @@ export default function App() {
                       />
                     );
                     if (!docked) return content;
+                    const host = tabs.tabs.find((t) => t.views[0]?.id === docked)?.views[0]?.content;
+                    if (host?.section === "webpage" && host.workspaceId && host.sourceId)
+                      return (
+                        <WebReaderPanel
+                          invoke={api().invoke}
+                          viewId={v.id}
+                          readerId={docked}
+                          workspaceId={host.workspaceId}
+                          sourceId={host.sourceId}
+                          tab={((v as { tab?: WebPanelTab }).tab as WebPanelTab) ?? "details"}
+                          details={content}
+                          onTab={(tab) => action("panel-tab", { viewId: docked, tab })}
+                          onPopOut={() => action("panel-pop-out", { viewId: docked })}
+                          onClose={() => action("panel-close", { viewId: docked })}
+                        />
+                      );
                     // A reader's panel: the source's details and note, or the PDF's references.
                     return (
                       <ReaderPanel
@@ -1250,6 +1272,8 @@ export default function App() {
             toast(mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”`);
             selectLibrary({ workspaceId: workspace.id });
             libraryChanged();
+            // Zotero libraries arrive with many, often messy tags: offer to organise them.
+            setTimeout(() => void offerTagCleanup(invoke, workspace.id).catch(() => {}), 2800);
           }}
         />
       )}

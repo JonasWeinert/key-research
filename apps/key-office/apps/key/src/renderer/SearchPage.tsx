@@ -2,7 +2,7 @@
 // kind chips and the library's filter tokens. While the tab is focused, a click in the
 // sidebar narrows the search (a collection, the library, a note …) instead of leaving;
 // clicking the same thing again opens it.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EMPTY_FIND, FIND_KINDS, KIND_LABEL, kindOf, onPendingFind, sidebarFilter, takePendingFind, useFind, type FindKind, type FindResult, type FindState } from "./global-search";
 import { Icon } from "./icons";
 import { openItemAt } from "./item-actions";
@@ -12,7 +12,10 @@ import { FoundHit, byItem, type ItemGroup } from "./search-results";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { claimSidebar } from "./sidebar-intent";
 import { GROUPS, GROUP_LABEL, type Found } from "./unified-search";
-import { useWebSearch } from "./web-search";
+import { filterTerms, queryPattern } from "./search-highlight";
+import { useWebSearch, webTokenNote } from "./web-search";
+import { useWebAdd } from "./WebAddButton";
+import WebPreview from "./WebPreview";
 import WebResults, { WebPill } from "./WebResults";
 import "./reference-library.css";
 import "./search-page.css";
@@ -54,14 +57,38 @@ export function KindChips({ result, kinds, onKinds, none, only = FIND_KINDS }: {
 
 type GroupBy = "section" | "kind";
 const GROUP_BY = "key.search.groupBy";
+type WebMode = "off" | "only" | "with";
+// The Web pill is remembered per workspace.
+const WEB_MODE = (workspaceId: string) => `key.search.web:${workspaceId}`;
+const readWebMode = (workspaceId: string): WebMode => {
+  try {
+    const value = localStorage.getItem(WEB_MODE(workspaceId));
+    return value === "only" || value === "with" ? value : "off";
+  } catch {
+    return "off";
+  }
+};
 
 export default function SearchPage({ invoke, workspaceId, active, viewId }: { invoke: Invoke; workspaceId: string; active: boolean; viewId?: string }) {
   const [state, setState] = useState<FindState>(() => takePendingFind(workspaceId) ?? EMPTY_FIND);
   useEffect(() => onPendingFind(workspaceId, setState), [workspaceId]);
   const result = useFind(invoke, workspaceId, state, 40);
   // The Web pill: web results alone, or (⌘-click) beside the workspace's. Off: no network.
-  const [web, setWeb] = useState<"off" | "only" | "with">("off");
-  const webSearch = useWebSearch(invoke, workspaceId, state.text, web !== "off");
+  const [web, setWebState] = useState<WebMode>(() => readWebMode(workspaceId));
+  useEffect(() => setWebState(readWebMode(workspaceId)), [workspaceId]);
+  const setWeb = (next: WebMode) => {
+    setWebState(next);
+    try {
+      localStorage.setItem(WEB_MODE(workspaceId), next);
+    } catch {}
+  };
+  const webSearch = useWebSearch(invoke, workspaceId, state.text, web !== "off", state.filters);
+  const collectionId = state.filters.find((f) => f.field === "collection")?.value;
+  const adder = useWebAdd(webSearch, invoke, workspaceId, collectionId);
+  const [previewKey, setPreviewKey] = useState<string>();
+  const previewed = previewKey ? webSearch.hits.find((h) => h.key === previewKey) : undefined;
+  const terms = filterTerms(state.filters);
+  const pattern = useMemo(() => queryPattern(state.text, terms), [state.text, terms]);
   const [groupBy, setGroupByState] = useState<GroupBy>(() => {
     try {
       return localStorage.getItem(GROUP_BY) === "kind" ? "kind" : "section";
@@ -119,8 +146,26 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
             entries: shutKinds.includes(kind) ? [] : entries,
           }));
   const grouped = sections.map((section) => ({ ...section, items: byItem(section.entries) }));
-  const visible = grouped.flatMap((s) => s.items);
-  useEffect(() => setCurrent(-1), [state.text, state.kinds.join(), JSON.stringify(state.filters), groupBy]);
+  const visible = web === "only" ? [] : grouped.flatMap((s) => s.items);
+  // Arrow keys go through the workspace's results, then the web's.
+  const total = visible.length + (web !== "off" ? webSearch.hits.length : 0);
+  const webAt = (index: number) => (index >= visible.length ? webSearch.hits[index - visible.length] : undefined);
+  useEffect(() => setCurrent(-1), [state.text, state.kinds.join(), JSON.stringify(state.filters), groupBy, web]);
+  useEffect(() => {
+    if (web === "off") setPreviewKey(undefined);
+  }, [web]);
+  // The preview follows the arrow keys through the web results.
+  useEffect(() => {
+    const hit = webAt(current);
+    if (previewKey && hit && hit.key !== previewKey) setPreviewKey(hit.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
+  const openWeb = (index: number) => {
+    const hit = webAt(index);
+    if (!hit) return;
+    setCurrent(index);
+    setPreviewKey(hit.key);
+  };
   useEffect(() => {
     list.current?.querySelector(`[data-index="${current}"]`)?.scrollIntoView({ block: "nearest" });
   }, [current]);
@@ -152,7 +197,8 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
   const open = (group: ItemGroup | undefined, newTab = false) => group && openMatch(group.matches.find((m) => m.passageId) ?? group.item, newTab);
 
   return (
-    <section className="kx-search-page" aria-label="Search">
+    <section className="kx-search-page" aria-label="Search" data-preview={!!previewed || undefined}>
+      <div className="kx-search-page-main">
       <header className="kx-search-page-head">
         <h1>Search</h1>
         <SearchField
@@ -168,12 +214,17 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
           onKinds={(kinds) => setState((s) => ({ ...s, kinds }))}
           label="Search everything"
           placeholder="Search sources, notes, pages, canvases and highlights"
-          onSubmit={() => web !== "only" && open(visible[Math.max(0, current)])}
+          onSubmit={() => {
+            const at = Math.max(0, current);
+            if (at >= visible.length) openWeb(at);
+            else open(visible[at]);
+          }}
           onArrowIntoResults={() => {
-            if (!visible.length || web === "only") return;
+            if (!total) return;
             setCurrent(0);
             list.current?.focus();
           }}
+          tokenNote={web === "only" && webSearch.ready ? (f) => webTokenNote(f, webSearch.applicable) : undefined}
         />
         <div className="kx-search-page-bar">
           <KindChips
@@ -205,13 +256,16 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
         aria-label="Results"
         tabIndex={-1}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") setCurrent((i) => Math.min(visible.length - 1, i + 1));
+          if (e.key === "ArrowDown") setCurrent((i) => Math.min(total - 1, i + 1));
           else if (e.key === "ArrowUp") {
             if (current <= 0) {
               setCurrent(-1);
               input.current?.focus();
             } else setCurrent((i) => i - 1);
-          } else if (e.key === "Enter") open(visible[current], e.altKey);
+          } else if (e.key === "Enter") {
+            if (current >= visible.length) openWeb(current);
+            else open(visible[current], e.altKey);
+          } else if (e.key === "Escape" && previewKey) setPreviewKey(undefined);
           else return;
           e.preventDefault();
         }}
@@ -232,6 +286,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
                     selected={index === current}
                     onActive={setCurrent}
                     titleHint="Open beside the search (⌘-click: in a new tab)"
+                    pattern={pattern}
                     onPick={(entry, e) => openMatch(entry, e.metaKey)}
                   />
                 );
@@ -239,8 +294,22 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
             </section>
           ))
         )}
-        {web !== "off" && <WebResults web={webSearch} invoke={invoke} workspaceId={workspaceId} query={state.text} collectionId={state.filters.find((f) => f.field === "collection")?.value} />}
+        {web !== "off" && (
+          <WebResults
+            web={webSearch}
+            adder={adder}
+            query={state.text}
+            pattern={pattern}
+            offset={visible.length}
+            current={current}
+            previewKey={previewed?.key}
+            onActive={setCurrent}
+            onOpen={(hit) => openWeb(visible.length + webSearch.hits.indexOf(hit))}
+          />
+        )}
       </div>
+      </div>
+      {previewed && <WebPreview hit={previewed} web={webSearch} adder={adder} pattern={pattern} onClose={() => setPreviewKey(undefined)} />}
     </section>
   );
 }

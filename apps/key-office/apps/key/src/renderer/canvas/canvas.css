@@ -513,29 +513,9 @@ textarea.kx-canvas-text[data-centered] {
   background: var(--kx-fill-2);
   color: var(--kx-text);
 }
-.kx-canvas-card-faces {
-  display: flex;
-  gap: 2px;
+.kx-canvas-card-faces.key-segmented {
   margin: 6px 0 2px;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--kx-fill);
   pointer-events: auto;
-}
-.kx-canvas-card-faces button {
-  flex: 1;
-  padding: 2px 4px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--kx-text-2);
-  font: inherit;
-  font-size: 10.5px;
-}
-.kx-canvas-card-faces button[aria-selected="true"] {
-  background: var(--kx-bg-raised);
-  color: var(--kx-text);
-  box-shadow: var(--kx-shadow-sm);
 }
 .kx-canvas-card-subnote + .kx-canvas-card-subnote {
   margin-top: 8px;

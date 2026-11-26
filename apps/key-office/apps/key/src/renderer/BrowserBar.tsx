@@ -108,7 +108,7 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
           )
         ) : null}
       </span>
-      {viewId && <WebSaveButton viewId={viewId} url={state.url} loading={state.loading} />}
+      {viewId && <WebSaveButton viewId={viewId} url={state.url} loading={state.loading} doi={article?.doi} />}
       {state.loading && <span className="key-web-progress" role="progressbar" aria-label="Loading" />}
     </nav>
   );

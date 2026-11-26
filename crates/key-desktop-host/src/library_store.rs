@@ -168,6 +168,9 @@ impl Library {
                 let remove: Option<Vec<String>> = arg(args, "remove")?;
                 json_output(self.store.bulk_tag(&ids, &add.unwrap_or_default(), &remove.unwrap_or_default())?)
             })(),
+            "store_tag_index" => self.store.tag_index().and_then(json_output),
+            "store_tag_apply" => arg::<key_store::TagOperation>(args, "operation").and_then(|op| json_output(self.store.apply_tags(&op)?)),
+            "store_tag_restore" => arg::<key_store::TagSnapshot>(args, "snapshot").and_then(|s| json_output(self.store.restore_tags(&s)?)),
             "store_retag" => (|| json_output(self.store.retag(&arg::<Vec<String>>(args, "from")?, &arg::<String>(args, "to")?)?))(),
             "store_collections" => json_output(self.store.collections().unwrap_or_default()),
             "store_collection_create" => (|| {
@@ -396,6 +399,22 @@ impl Library {
                     "job": self.indexer.job(&id),
                 }))
             }),
+            // A saved web page's reference list, found in its HTML by the shell: stored as the
+            // PDF analysis' are, then looked up by the reference worker the same way.
+            "store_web_references" => (|| {
+                let id: String = arg(args, "id")?;
+                let references: Vec<key_store::ReferenceInput> = arg(args, "references")?;
+                let source = self.store.source(&id)?.ok_or("Source not found")?;
+                if source.kind != "web" {
+                    return Err("Not a saved web page".to_string());
+                }
+                self.store.set_analysis(&id, "html", None, !references.is_empty())?;
+                self.store.replace_references(&id, &references)?;
+                self.store
+                    .replace_citations(&id, super::reference_worker::CITATIONS_VERSION, !references.is_empty(), None, &[])?;
+                self.references.focus(&id);
+                json_output(self.store.analysis(&id)?)
+            })(),
             "store_markdown" => arg::<String>(args, "id").and_then(|id| json_output(self.store.markdown(&id)?)),
             "store_reanalyze" => arg::<String>(args, "id").and_then(|id| {
                 self.store.reanalyze(&id)?;

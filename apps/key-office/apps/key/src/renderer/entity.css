@@ -416,8 +416,7 @@
 
 /* Possible duplicates: a wider sheet with the two people side by side. */
 .key-global-drawer.key-global-sheet:has(.kx-merge-review) {
-  width: min(780px, calc(100vw - 48px));
-  margin-left: max(calc(min(780px, 100vw - 48px) / -2), -390px);
+  --kx-modal-width: 780px;
 }
 .kx-merge-review .key-property-body {
   padding: 4px 20px 8px;
@@ -560,4 +559,30 @@
   content: ",";
   margin-right: 6px;
   color: var(--kx-text-3);
+}
+
+/* The shared source row (source-list.tsx): a library source's kind, and its people, journal
+   and tags once opened. */
+.kx-source-item-kind {
+  display: grid;
+  flex: none;
+  place-items: center;
+  margin-top: 2px;
+  color: var(--kx-text-2);
+}
+.kx-work-head > .kx-source-item-kind > svg {
+  margin: 0;
+}
+.kx-source-item-entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+.kx-source-item-entities small {
+  color: var(--kx-text-3);
+}
+.kx-source-item[draggable="true"] > .kx-work-head {
+  cursor: default;
 }

@@ -1,0 +1,80 @@
+/* Window chrome: the main tab strips' active tab and the full-screen layout. */
+
+/* ── Active tab ─────────────────────────────────────── */
+/* The focused group's active tab: a raised, accent-tinted plate with an accent underline.
+   An unfocused group's active tab keeps a quiet plate and a neutral underline. */
+.tab-bar .tab-item.active {
+  color: var(--kx-text);
+  font-weight: 500;
+}
+.tab-bar .tab-item.active .tab-plate,
+:root[data-theme="dark"] .tab-bar .tab-item.active .tab-plate {
+  background: var(--kx-accent-soft);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+.tab-bar .tab-item.active .tab-icon {
+  color: var(--kx-accent-text);
+}
+.tab-bar .tab-item.active .tab-plate::after {
+  content: "";
+  display: block;
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--kx-accent);
+}
+.tab-bar:not([data-focused]) .tab-item.active {
+  color: var(--kx-text);
+  font-weight: 400;
+}
+.tab-bar:not([data-focused]) .tab-item.active .tab-plate,
+:root[data-theme="dark"] .tab-bar:not([data-focused]) .tab-item.active .tab-plate {
+  background: var(--kx-fill-2);
+  box-shadow: none;
+}
+.tab-bar:not([data-focused]) .tab-item.active .tab-icon {
+  color: var(--kx-text-2);
+}
+.tab-bar:not([data-focused]) .tab-item.active .tab-plate::after {
+  background: var(--kx-text-3);
+}
+
+/* ── Native full screen ─────────────────────────────── */
+/* No traffic lights: the sidebar's title bar and a leading tab strip start at the margin. */
+html[data-full-screen] .kx-sidebar-titlebar {
+  padding-left: 10px;
+}
+html[data-full-screen] .key-shell[data-sidebar="collapsed"] .tab-bar-drag-spacer,
+html[data-full-screen] body.vib .tab-bar-drag-spacer {
+  width: 6px;
+}
+
+/* ── Secondary tab bars (SegmentedTabs) in the shell ── */
+/* Each takes the full width its row leaves; the row's other controls keep their size. */
+.kx-subnav {
+  align-items: center;
+  padding-bottom: 10px;
+}
+.kx-subnav > .kx-source-tabs,
+.kx-controls > .kx-scope-tabs,
+.kx-filter-bar > .kx-scope-tabs {
+  flex: 1 1 auto;
+}
+.kx-scope-tabs .key-segmented-badge {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--kx-fill-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.kx-zotero-scope-tabs {
+  width: 100%;
+}

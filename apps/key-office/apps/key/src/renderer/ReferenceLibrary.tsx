@@ -1,5 +1,6 @@
 import { apa } from "./citation";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
+import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { itemAttrs, selectItems } from "./item-ui";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { GROUPS, type SearchGroup } from "./unified-search";
@@ -25,11 +26,13 @@ import {
   type SearchResult,
   type Source,
   type SourcePage,
+  type ZoteroSyncStatus,
 } from "./library-api";
+import { ZoteroMark, isZoteroCollection, isZoteroSource, syncTitle, useZoteroSync } from "./zotero-badge";
 import { hasExternalDrop, importDrop, setItemDrag, sourceItem } from "./item-links";
 import { SOURCE_DRAG_TYPE, currentSelection, libraryChanged, onLibraryChanged, onLibrarySelection, selectLibrary } from "./library-nav";
 import type { Creator } from "./citation";
-import { Highlight, Snippet, hasMatch, queryPattern } from "./search-highlight";
+import { Highlight, Snippet, filterTerms, hasMatch, queryPattern } from "./search-highlight";
 import SearchField, { storeFilters, type SearchFilter } from "./search-suggest";
 import SourceItemPage from "./SourcePage";
 import { indexLabel } from "./SourceInspector";
@@ -351,9 +354,11 @@ export default function ReferenceLibrary({
       void load(items.length);
     }
   }, [range, items.length, total, load]);
+  const zotero = useZoteroSync(invoke, workspaceId);
   const columns = useSourceColumns({
     definitions,
     collections,
+    zotero,
     onCommit: (source, name, value) =>
       void invoke<Source>("store_update", { id: source.id, patch: { properties: { [name]: value } } }, workspaceId).then(updateSource),
     onEditProperty: (definition) => setSheet({ mode: "edit", definition, targets: [] }),
@@ -364,14 +369,15 @@ export default function ReferenceLibrary({
   const runSearch = useCallback(
     async (value: string, limit = 60) => {
       const id = ++searchRequest.current;
-      setSearch((previous) => ({ query: value, result: previous?.result, busy: true, limit }));
+      const terms = filterTerms(filters);
+      setSearch((previous) => ({ query: value, result: previous?.result, busy: true, limit, terms }));
       try {
         const result = await invoke<SearchResult>(
           "store_search",
           { text: value, collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), limit, passagesPerSource: 3 },
           workspaceId,
         );
-        if (id === searchRequest.current) setSearch({ query: value, result, busy: false, limit });
+        if (id === searchRequest.current) setSearch({ query: value, result, busy: false, limit, terms });
       } catch (e) {
         // Shown in place of the results, so a failed search never looks like it is still loading.
         if (id === searchRequest.current)
@@ -601,7 +607,17 @@ export default function ReferenceLibrary({
       <div className="kx-library-main">
         <header className="kx-page-head">
           <div className="kx-page-title">
-            <div className="key-library-breadcrumb">{workspaceName}{collectionName ? " · Collection" : ""}</div>
+            <div className="key-library-breadcrumb">
+              {workspaceName}
+              {collectionName ? " · Collection" : ""}
+              {zotero && (collectionId ? collections.some((c) => c.id === collectionId && isZoteroCollection(c)) : scope === "all") && (
+                <span className="kx-library-zotero" title={syncTitle(zotero, collectionId ? "Collection" : "Library")}>
+                  {" · "}
+                  <ZoteroMark status={zotero} what={collectionId ? "Collection" : "Library"} size={10} />
+                  Synced with Zotero
+                </span>
+              )}
+            </div>
             <h1>{title}</h1>
           </div>
           <div className="kx-page-actions">
@@ -656,18 +672,17 @@ export default function ReferenceLibrary({
 
         {(
         <div className="kx-filter-bar" data-searching={!!search}>
-          <div className="kx-scopes" role="group" aria-label="Library views">
-            {SCOPES.map(([value, label]) => {
+          <SegmentedTabs
+            className="kx-scope-tabs"
+            label="Library views"
+            value={scope}
+            onChange={setScope}
+            tabs={SCOPES.flatMap(([value, label]) => {
               const count = value === "all" ? counts?.all : value === "trashed" ? counts?.trashed : value === "starred" ? counts?.starred : value === "unfiled" ? counts?.unfiled : counts?.attention;
-              if (value !== "all" && value !== "trashed" && !count && scope !== value) return null;
-              return (
-                <button key={value} aria-pressed={scope === value} onClick={() => setScope(value)}>
-                  {label}
-                  {!!count && <span className="kx-count">{count.toLocaleString()}</span>}
-                </button>
-              );
+              if (value !== "all" && value !== "trashed" && !count && scope !== value) return [];
+              return [{ id: value, label, badge: count ? count.toLocaleString() : undefined }];
             })}
-          </div>
+          />
           {!search && (
             <div className="kx-controls-end">
               <DatabaseToolbar
@@ -736,6 +751,7 @@ export default function ReferenceLibrary({
                 top={top}
                 selected={row.selected}
                 focused={row.focused}
+                zotero={zotero}
                 onPointer={(e) => select(source.id, e)}
                 onOpen={() => open(source)}
                 onStar={() =>
@@ -898,6 +914,7 @@ function SourceRow({
   top,
   selected,
   focused,
+  zotero,
   onPointer,
   onOpen,
   onStar,
@@ -908,6 +925,7 @@ function SourceRow({
   top: number;
   selected: boolean;
   focused: boolean;
+  zotero: ZoteroSyncStatus | null;
   onPointer: (e: React.MouseEvent) => void;
   onOpen: () => void;
   onStar: () => void;
@@ -959,6 +977,7 @@ function SourceRow({
         </span>
       </span>
       <span className="kx-row-end">
+        {zotero && isZoteroSource(source) && <ZoteroMark status={zotero} what="Item" />}
         {(source.noteCount > 0 || source.annotationCount > 0) && (
           <span className="kx-row-badge" title={`${source.noteCount} notes, ${source.annotationCount} highlights`}>
             <Icon name="note" size={11} />
@@ -999,7 +1018,7 @@ const MIN_LIST = 380;
 
 const waitingToIndex = (s: Source) => s.indexStatus === "pending" || s.indexStatus === "indexing";
 
-type SearchState = { query: string; result?: SearchResult; busy: boolean; limit: number; error?: string };
+type SearchState = { query: string; result?: SearchResult; busy: boolean; limit: number; error?: string; /** Filter token words, highlighted too. */ terms?: string };
 
 const FIELD_LABEL: Record<FieldMatch["field"], string> = {
   creators: "Authors",
@@ -1051,7 +1070,7 @@ const SearchResults = memo(function SearchResults({
 }) {
   const result = search.result;
   const { collapsed, toggle } = useCollapsedGroups();
-  const pattern = useMemo(() => queryPattern(search.query), [search.query]);
+  const pattern = useMemo(() => queryPattern(search.query, search.terms), [search.query, search.terms]);
   const hits = result?.hits ?? [];
   const notes = result?.notes ?? [];
   const inDetails = hits.filter((h) => h.metadataMatch).length;
@@ -1180,7 +1199,9 @@ const SearchHitRow = memo(function SearchHitRow({
                 )}
                 {source.year && (
                   <span>
-                    <FilterLink filter={sourceFilter.year(source.year)}>{source.year}</FilterLink>
+                    <FilterLink filter={sourceFilter.year(source.year)}>
+                      <Highlight text={String(source.year)} pattern={pattern} />
+                    </FilterLink>
                   </span>
                 )}
                 {container && (

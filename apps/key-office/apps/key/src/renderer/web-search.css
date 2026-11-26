@@ -246,3 +246,167 @@
   color: var(--kx-text-2);
   cursor: default;
 }
+
+/* A filter token web search cannot apply: kept in the query for the workspace's results,
+   greyed and struck while only the web is searched. */
+.kx-token[data-inactive] {
+  background: var(--kx-fill);
+  color: var(--kx-text-3);
+}
+.kx-token[data-inactive] :is(.kx-token-scope, .kx-token-value) {
+  color: var(--kx-text-3);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--kx-text-3) 70%, transparent);
+}
+.kx-token[data-inactive] button:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+}
+.kx-web-source[data-status="skipped"] {
+  color: var(--kx-text-3);
+  text-decoration: line-through;
+}
+
+/* Web rows choose like the workspace's rows; the one shown in the preview stays marked. */
+.kx-web-hit {
+  cursor: default;
+}
+.kx-web-hit[data-previewed] {
+  background: var(--kx-accent-soft);
+}
+.kx-web-hit[data-previewed] .kx-hit-title {
+  color: var(--kx-accent-text);
+}
+
+/* The preview beside the results. */
+.kx-web-preview {
+  flex: none;
+  height: 100%;
+  border-left: 0.5px solid var(--kx-line);
+  background: var(--kx-bg);
+}
+.kx-web-preview .key-side-panel-head {
+  height: 38px;
+  border-bottom-color: var(--kx-line);
+}
+.kx-web-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px 28px;
+  user-select: text;
+}
+.kx-web-preview-title {
+  margin: 0;
+  font-family: var(--kx-font-display);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.kx-web-preview-authors,
+.kx-web-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  color: var(--kx-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.kx-web-preview-authors span:not(:last-child)::after {
+  content: ",";
+  margin-right: 4px;
+}
+.kx-web-preview-meta {
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+.kx-web-preview-meta span:not(:last-child)::after {
+  content: "·";
+  margin: 0 5px;
+}
+.kx-web-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.kx-web-preview-actions :is(.kx-web-add, .kx-web-in, .kx-web-preview-button) {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.kx-web-preview-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0.5px solid var(--kx-line);
+  border-radius: 6px;
+  background: var(--kx-bg);
+  color: var(--kx-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: default;
+}
+.kx-web-preview-button:hover {
+  background: var(--kx-fill);
+}
+.kx-web-preview-button:focus-visible,
+.kx-web-preview-actions :is(.kx-web-add, .kx-web-in):focus-visible {
+  outline: 2px solid var(--kx-accent);
+  outline-offset: 1px;
+}
+.kx-web-preview-facts {
+  display: grid;
+  gap: 5px;
+  margin: 4px 0 0;
+  padding: 10px 0;
+  border-block: 0.5px solid var(--kx-line);
+  font-size: 12px;
+}
+.kx-web-preview-facts > div {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+.kx-web-preview-facts dt {
+  color: var(--kx-text-3);
+}
+.kx-web-preview-facts dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.kx-web-preview-facts .kx-web-link {
+  color: var(--kx-text-2);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.kx-web-preview-abstract h3 {
+  margin: 4px 0 6px;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.kx-web-preview-abstract p {
+  margin: 0;
+  color: var(--kx-text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.kx-web-preview-none {
+  margin: 0;
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+.kx-web-preview mark {
+  border-radius: 3px;
+  padding: 0 1px;
+  background: color-mix(in srgb, var(--kx-amber) 30%, transparent);
+  color: inherit;
+}

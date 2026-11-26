@@ -383,25 +383,8 @@ button { color: inherit; }
   background: rgb(var(--key-surface) / 74%);
 }
 
-.key-ui-tabs > [role="tablist"] {
-  display: flex;
-  gap: var(--key-space);
+.key-ui-tabs > .key-segmented {
   margin-bottom: calc(var(--key-space) * 2);
-}
-
-.key-ui-tabs [role="tab"] {
-  height: var(--key-compact-control-height);
-  border: 0;
-  border-radius: var(--key-radius-button);
-  padding: 0 calc(var(--key-space) * 2);
-  color: var(--key-text-secondary);
-  background: transparent;
-  cursor: pointer;
-}
-
-.key-ui-tabs [role="tab"][aria-selected="true"] {
-  color: var(--key-text);
-  background: var(--key-press);
 }
 
 .key-ui-badge {
