@@ -28,15 +28,22 @@ const ITEMS: ZoteroItem[] = [
 ];
 
 let root: Root | undefined;
+let installed = false;
 let host: HTMLElement | undefined;
 const bridge = {
   workspaces: vi.fn(async () => [{ id: "zw", name: "Zotero", root: "/Users/someone/Key/Zotero" }]),
   zoteroWorkspace: vi.fn(async () => ({ id: "zw", name: "Zotero", root: "/Users/someone/Key/Zotero" })),
   importZotero: vi.fn(),
-  zoteroPlugin: vi.fn(async () => ({ file: "/App/key-sync.xpi" })),
+  zoteroPlugin: vi.fn(async (action?: string) => {
+    if (!action) return { file: "/App/key-sync.xpi" };
+    if (action === "install") installed = true;
+    const install = { running: true, profile: "/P", installedVersion: null, bundledVersion: "1.0.1" };
+    return { file: "/App/key-sync.xpi", install: { ...install, state: action === "install" || installed ? "pending" : "not-installed" } };
+  }),
   revealPath: vi.fn(async () => {}),
 };
 beforeEach(() => {
+  installed = false;
   (window as unknown as { key: typeof bridge }).key = bridge;
   for (const f of Object.values(bridge)) f.mockClear();
 });
@@ -153,8 +160,13 @@ describe("Zotero sheet", () => {
     expect(view.textContent).toContain("Install the Key Sync plugin in Zotero");
     expect(view.querySelector(".kx-zotero-count")?.textContent).toBe("Zotero needs the Key Sync plugin");
     expect((view.querySelector(".key-property-primary") as HTMLButtonElement).disabled).toBe(true);
-    await click(button(view, "Show plugin in Finder"));
+    await click(button(view, "Show plugin file"));
     expect(bridge.revealPath).toHaveBeenCalledWith("/App/key-sync.xpi");
+    // One click puts the plugin into Zotero's profile; Zotero needs a restart to load it.
+    await click(button(view, "Install in Zotero"));
+    expect(bridge.zoteroPlugin).toHaveBeenCalledWith("install");
+    expect(view.textContent).toContain("Restart Zotero to finish");
+    expect(button(view, "Restart Zotero")).toBeTruthy();
     // The probe asks the Zotero workspace's host, where a saved pairing lives.
     expect(invoke).toHaveBeenCalledWith("store_zotero_plugin_probe", {}, "zw");
 

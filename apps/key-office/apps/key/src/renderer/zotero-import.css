@@ -60,6 +60,9 @@
   .kx-zotero-what > .kx-zotero-tree > :is([role="tree"], [role="listbox"]) {
     max-height: 300px;
   }
+  .kx-zotero-bring {
+    align-self: stretch;
+  }
 }
 /* Step one: import once or keep in sync, side by side. */
 .kx-zotero-modes {
@@ -169,7 +172,7 @@
   color: var(--kx-text-2);
   font-size: 12px;
 }
-.kx-zotero-toggle > span {
+.kx-form-row.kx-zotero-toggle > span {
   display: flex;
   flex: 1;
   flex-direction: column;
