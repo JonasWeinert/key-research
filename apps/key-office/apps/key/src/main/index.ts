@@ -2425,9 +2425,14 @@ else
               "workspace_save_record",
               "workspace_save_entry",
               "workspace_set_project_membership",
+              "store_tag_apply",
+              "store_tag_restore",
             ].includes(command)
           )
             emit("library-changed");
+          // Tags turned into a property define (or undefine) it.
+          if ((command === "store_tag_apply" && args?.operation?.property) || (command === "store_tag_restore" && args?.snapshot?.definition))
+            emit("property-definitions-changed", { workspaceId: targetWorkspace, name: args?.operation?.property?.name ?? args?.snapshot?.definition?.[0] });
           // Every view showing a note or a PDF's highlights stays in step with edits made elsewhere.
           if (command === "store_note_save" || command === "store_note_meta" || command === "store_note_delete")
             emit("note-changed", { workspaceId: targetWorkspace, noteId: (result as any)?.id ?? args?.id, sourceId: (result as any)?.sourceId ?? args?.sourceId });

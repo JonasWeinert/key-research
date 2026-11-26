@@ -28,6 +28,7 @@ import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { ZoteroImportSheet } from "./ZoteroImport";
+import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
@@ -733,6 +734,7 @@ export default function App() {
     >
       <GlobalDrawerHost />
       <ItemLayer />
+      <TagManagerHost invoke={invoke} />
       <CommandCenter
         invoke={invoke}
         workspaceId={workspaceId}
@@ -741,6 +743,7 @@ export default function App() {
           { id: "new-note", label: "New note", icon: "note", run: createNote },
           { id: "new-canvas", label: "New canvas", icon: "canvas", run: createCanvas },
           { id: "library", label: "Show library", icon: "books", run: () => action("open-content", { section: "sources", workspaceId }) },
+          ...(workspaceId ? [{ id: "tags", label: "Organise tags…", icon: "tag" as const, run: () => openTagManager(workspaceId) }] : []),
           { id: "highlights", label: "All highlights", icon: "quote", shortcut: "⌘⇧H", run: () => action("open-content", { section: "highlights", workspaceId }) },
           { id: "inspector", label: inspectorOpen ? "Hide inspector" : "Show inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => setInspectorOpen((o) => !o) },
           { id: "sidebar", label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: "sidebar", run: () => setSidebarCollapsed((v) => !v) },
@@ -1250,6 +1253,8 @@ export default function App() {
             toast(mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”`);
             selectLibrary({ workspaceId: workspace.id });
             libraryChanged();
+            // Zotero libraries arrive with many, often messy tags: offer to organise them.
+            setTimeout(() => void offerTagCleanup(invoke, workspace.id).catch(() => {}), 2800);
           }}
         />
       )}
