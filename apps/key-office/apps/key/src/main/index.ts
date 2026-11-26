@@ -2355,8 +2355,6 @@ else
       startupMark("settings-loaded");
       keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
       startupMark("keys-loaded");
-      // The bundled layout model, for packaged builds (development finds it in the crate).
-      if (app.isPackaged) process.env.KEY_LAYOUT_MODEL ??= join(process.resourcesPath, "models/layout/model_fp16.onnx");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
       windowState = await windowStore.load();
       await refreshWorkspaces();
@@ -2614,6 +2612,9 @@ else
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
+        if (before.modelsAutoDownload !== next.modelsAutoDownload)
+          for (const workspace of await registry.list())
+            void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});
         if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders)) pushHostKeys();
         if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
@@ -2655,18 +2656,18 @@ else
         } else home(w);
       });
       // A file to read or write (bibliography import, export and auto-export targets).
-      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }) => {
+      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[]; filterName?: string; allowFolders?: boolean }) => {
         const w = shell(event.sender.id);
         if (request.mode === "folder") {
           const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, buttonLabel: "Choose", properties: ["openDirectory", "createDirectory"] });
           return result.canceled ? null : result.filePaths[0] ?? null;
         }
-        const filters = request.extensions?.length ? [{ name: "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
+        const filters = request.extensions?.length ? [{ name: request.filterName ?? "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
         if (request.mode === "save") {
           const result = await dialog.showSaveDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["createDirectory", "showOverwriteConfirmation"] });
           return result.canceled ? null : result.filePath ?? null;
         }
-        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["openFile"] });
+        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: request.allowFolders ? ["openFile", "openDirectory"] : ["openFile"] });
         return result.canceled ? null : result.filePaths[0] ?? null;
       });
       ipcMain.handle("key:add-files", async (event, workspaceId, collectionId) => {

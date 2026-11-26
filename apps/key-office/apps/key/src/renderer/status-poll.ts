@@ -8,6 +8,7 @@ export interface PolledStatus {
   counts?: { indexing?: number };
   references?: unknown;
   model?: { state?: string };
+  models?: { models?: { state?: string }[] };
 }
 type Listener = (status: PolledStatus) => void;
 interface Poller {
@@ -24,7 +25,7 @@ const pollers = new Map<string, Poller>();
 /** Quick while indexing or downloading, gentle otherwise. */
 export function nextDelay(status: PolledStatus | undefined) {
   if (!status) return 4000;
-  if (status.model?.state === "downloading") return 700;
+  if (status.model?.state === "downloading" || status.models?.models?.some((m) => m.state === "downloading")) return 700;
   if (status.busy || (status.counts?.indexing ?? 0) > 0 || status.references) return 900;
   if (status.model && status.model.state !== "ready") return 3000;
   return 4000;

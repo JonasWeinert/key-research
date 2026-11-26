@@ -9,6 +9,7 @@ import { Icon, isIconName, type IconName } from "./icons";
 import { ActivityPanel, activityLabel, isActive, olderSources, ProgressRing, referencesProgress, useLibraryStatus } from "./index-activity";
 import type { Invoke, LibraryStatus, ZoteroSyncStatus } from "./library-api";
 import { ago } from "./zotero-sheet-model";
+import { modelsWorkItem } from "./models-ui";
 import { useAutoExportStatus } from "./BiblioSheets";
 import { useMarkdownExportStatus } from "./markdown-export";
 import { inboxStatusItem, openInbox, useFeedCounts } from "./feeds-ui";
@@ -432,6 +433,9 @@ export function StatusBar({
 function workItem(status: LibraryStatus | undefined): StatusItem | undefined {
   const activity = status?.activity;
   if (!status) return undefined;
+  // A model downloading (on first need, or the user asked) is the work going on.
+  const download = modelsWorkItem(status.models);
+  if (download && !(activity && isActive(activity))) return download;
   if (activity && (isActive(activity) || (activity.paused && olderSources(status.backfill) > 0))) {
     const { label, fraction } = activityLabel(activity);
     return {

@@ -8,6 +8,7 @@ import { bridge, type AppInfo, type Invoke, type Theme, type WorkspaceSummary } 
 import { ThemePicker } from "./Settings";
 import { WORKSPACE_COLORS } from "./WorkspaceSwitcher";
 import "./onboarding.css";
+import "./models.css";
 
 const STEPS = ["welcome", "library", "sources", "appearance"] as const;
 type Step = (typeof STEPS)[number];
@@ -18,6 +19,8 @@ export default function Onboarding({
   info,
   theme,
   onTheme,
+  autoDownload = true,
+  onAutoDownload,
   onFinish,
 }: {
   invoke: Invoke;
@@ -25,6 +28,9 @@ export default function Onboarding({
   info: AppInfo;
   theme: Theme;
   onTheme: (theme: Theme) => void;
+  /** Download on-device models when first needed (Settings › Search & indexing). */
+  autoDownload?: boolean;
+  onAutoDownload?: (value: boolean) => void;
   /** Called with the library to open, if any. */
   onFinish: (workspaceId?: string) => void;
 }) {
@@ -68,6 +74,13 @@ export default function Onboarding({
                 <Point icon="search">Search by words or by meaning, down to the passage</Point>
                 <Point icon="lock">Everything runs and stays on this Mac</Point>
               </ul>
+              <label className="kx-onboarding-models">
+                <div>
+                  <strong>Download on-device models when needed</strong>
+                  <small>Search and PDF layout models (about 400 MB) come from Hugging Face the first time Key needs them, then stay on this Mac.</small>
+                </div>
+                <input type="checkbox" className="kx-switch" aria-label="Download on-device models when needed" checked={autoDownload} onChange={(e) => onAutoDownload?.(e.target.checked)} />
+              </label>
             </Copy>
           )}
           {step === "library" && (
