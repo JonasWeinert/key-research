@@ -213,16 +213,20 @@ export class Registry {
       if (known) return { ...known }
       if (this.entries.length >= 128)
         throw new Error('Workspace registry supports at most 128 folders')
+      let hostId = ''
       const host = new RustHost({
         executable: this.options.hostExecutable,
         libraryRoot: join(canonical, '.key'),
         pdfiumPath: this.options.pdfiumPath,
+        // Kept as the workspace's host: its events (sources changed) must reach the views.
+        onEvent: (name) => void (hostId && this.options.onHostEvent?.(hostId, name)),
       })
       try {
         const info = await host.invoke<WorkspaceInfo>('workspace_initialize', {
           name: name.trim(),
           workspaceRoot: canonical,
         })
+        hostId = info.id
         this.adoptPrelude(host)
         if (this.closed) throw new Error('Workspace registry is closed')
         if (this.entries.some((w) => w.id === info.id))
@@ -258,14 +262,18 @@ export class Registry {
     const canonical = await realpath(resolve(root))
     const known = [...this.hidden.values()].find((w) => w.root === canonical)
     if (known) return { id: known.id, name: known.name, root: known.root }
+    let hostId = ''
     const host = new RustHost({
       executable: this.options.hostExecutable,
       libraryRoot: join(canonical, '.key'),
       pdfiumPath: this.options.pdfiumPath,
       env,
+      // The host keeps running as this workspace's: its events count too.
+      onEvent: (name) => void (hostId && this.options.onHostEvent?.(hostId, name)),
     })
     try {
       const info = await host.invoke<WorkspaceInfo>('workspace_initialize', { name, workspaceRoot: canonical })
+      hostId = info.id
       if (this.entries.some((w) => w.id === info.id)) throw new Error('This library is already a workspace')
       this.adoptPrelude(host)
       const entry: HiddenWorkspace = { id: info.id, name: info.name, root: canonical, env }

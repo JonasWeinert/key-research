@@ -492,6 +492,20 @@ function emit(event: string, value?: unknown) {
 function emitTo(w: ShellWindow, event: string, value?: unknown) {
   if (!w.window.isDestroyed()) w.window.webContents.send(event, value);
 }
+/** Library readers of a workspace whose source changed elsewhere (a title edited in the
+ * library) take its new title and details. */
+async function refreshReaderTitles(workspaceId: string) {
+  for (const v of views.values()) {
+    if (v.kind !== "pdf" || v.temp || v.workspaceId !== workspaceId) continue;
+    const hash = v.source?.hash ?? v.id.split(":").at(-1);
+    const info: any = await registry.invoke("library_source_info", { hash }, workspaceId).catch(() => undefined);
+    if (!info || (info.title === v.title && info.title === v.source?.title)) continue;
+    v.source = info;
+    if (info.title) v.title = info.title;
+    const w = shellOfView(v.id);
+    if (w) tabsChanged(w);
+  }
+}
 function tabsChanged(w: ShellWindow) {
   emitTo(w, "tabs-changed", snapshot(w));
   saveWindows();
@@ -2329,7 +2343,10 @@ else
         prelude: () => [...hostKeyRequests(), feedsEnvironmentRequest()],
         // Background lookups filled sources in: open views refresh (the host throttles it).
         onHostEvent: (workspaceId, name) => {
-          if (name === "library-changed") emit("library-sources-changed", { workspaceId });
+          if (name === "library-changed") {
+            emit("library-sources-changed", { workspaceId });
+            void refreshReaderTitles(workspaceId);
+          }
         },
       });
       watchFeedsEnvironment((command, args) => void registry.broadcast(command, args).catch(() => undefined));

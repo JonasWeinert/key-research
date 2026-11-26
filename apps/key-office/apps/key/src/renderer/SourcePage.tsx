@@ -12,7 +12,7 @@ import { ProgressRing } from "./index-activity";
 import { useSourceProgress } from "./source-progress";
 import { ItemPage } from "./ItemPage";
 import { ITEM_TYPES, KIND_ICON, OA_LABEL, bridge as libraryBridge, fetchedAgo, formatBytes, itemTypeLabel, shortCreators, type Collection, type Facet, type Invoke, type Note, type Source, type SourceGraph } from "./library-api";
-import { libraryChanged } from "./library-nav";
+import { libraryChanged, onLibraryChanged } from "./library-nav";
 import { FilterButton, FilterLink, FilterLinks, fieldFilter, showInLibrary, sourceFilter } from "./filter-links";
 import { EntityLink } from "./entity-ui";
 import { PaperRelations } from "./RelationMap";
@@ -192,11 +192,19 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         void loadSource();
         void loadGraph();
       }),
+      // Edited elsewhere (the library's inspector, another window, a background lookup): a
+      // docked details panel beside a reader shows the new details without reopening.
+      bridge().on("library-sources-changed", (p) => {
+        if ((p as { workspaceId?: string })?.workspaceId !== workspaceId) return;
+        void loadSource();
+        void loadGraph();
+      }),
+      onLibraryChanged(() => void loadSource()),
       bridge().on("note-changed", (p) => (p as { sourceId?: string })?.sourceId === sourceId && void loadNotes()),
       bridge().on("annotations-changed", () => void loadHighlights()),
     ];
     return () => offs.forEach((off) => off());
-  }, [sourceId, loadSource, loadGraph, loadNotes, loadHighlights]);
+  }, [sourceId, workspaceId, loadSource, loadGraph, loadNotes, loadHighlights]);
   // The tab follows the title.
   useEffect(() => {
     if (source && viewId) void bridge().tabAction("content-title", { viewId, title: source.title || "Untitled" });

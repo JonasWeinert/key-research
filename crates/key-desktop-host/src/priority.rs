@@ -64,6 +64,19 @@ pub fn class_of(command: &str) -> Class {
 
 /// The class a request runs at: the caller's hint (`x-key-class`) where given, else the
 /// table's; slow work is at most foreground.
+/// Edits to sources' details: after one, open views of those sources elsewhere (a reader's
+/// docked details, its tab title, another window) refresh through the throttled
+/// `library-changed` event (events.rs).
+const SOURCE_EDITS: &[&str] = &[
+    "store_update", "store_edit", "store_trash", "store_delete", "store_bulk_tag", "store_tag_apply", "store_tag_apply_many", "store_retag", "store_undo",
+    "store_redo", "store_merge_sources", "store_merge_exact", "store_citation_key_set", "store_set_reading_status", "store_membership",
+    "library_update_metadata", "library_set_labels", "library_set_property",
+];
+
+pub fn changes_sources(command: &str) -> bool {
+    SOURCE_EDITS.contains(&command)
+}
+
 pub fn resolve(command: &str, hint: Option<&str>) -> Class {
     let class = hint.and_then(Class::parse).unwrap_or_else(|| class_of(command));
     if class == Class::Interactive && is_slow(command) { Class::Foreground } else { class }

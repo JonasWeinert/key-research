@@ -411,6 +411,22 @@ const want = (name) => !only.length || only.includes(name);
       }
       await shell.evaluate(() => window.key.setAppSettings({ theme: "system" }));
       await shell.emulateMedia({ colorScheme: "light" });
+      // The open reader follows an edit made elsewhere: the title changed in the library's
+      // inspector shows in the docked Details and the tab once the reader is in front again.
+      const readerTab = await shell.evaluate(async () => (await window.key.tabs()).tabs.find((t) => t.views[0]?.kind === "pdf")?.id);
+      await shell.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), opened.workspaceId);
+      const library = shell.locator(".kx-library:not([hidden])");
+      await library.locator(".kx-row").first().click({ position: { x: 24, y: 14 } });
+      const renamed = "A title edited in the library";
+      const titleBox = library.locator(".kx-inspector").getByRole("textbox", { name: "Title", exact: true });
+      await titleBox.fill(renamed);
+      await titleBox.press("Enter");
+      await shell.evaluate((id) => window.key.tabAction("activate", { tabId: id }), readerTab);
+      await shell.locator(".key-reader-panel .kx-source-page", { hasText: renamed }).waitFor({ timeout: 15000 });
+      await shell.waitForFunction(async (title) => (await window.key.tabs()).tabs.some((t) => t.views[0]?.kind === "pdf" && t.title.includes(title)), renamed, { timeout: 15000 });
+      await shell.locator(`[data-tab-id="${readerTab}"]`, { hasText: renamed }).waitFor({ timeout: 15000 });
+      await shot(shell, "panel-details-follows-edit");
+      result.panelFollowsEdits = true;
       await tab("References").click();
       await shell.waitForFunction(() => document.querySelector(".key-reader-panel [role=tab][aria-selected=true]")?.textContent?.startsWith("References"), undefined, { timeout: 5000 });
       await panel.getByRole("button", { name: "Hide details and references" }).click();

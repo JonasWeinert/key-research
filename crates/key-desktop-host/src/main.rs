@@ -182,6 +182,9 @@ fn run() -> Result<(), String> {
             });
             // A query a newer one replaced stopped part way ("interrupted"): say why.
             let result = if token.is_cancelled() && result.is_err() { Err(key_store::cancel::SUPERSEDED.into()) } else { result };
+            if result.is_ok() && priority::changes_sources(&command) {
+                events::library_changed();
+            }
             // KEY_LOCK_TRACE_MS: user actions slower than this are reported (stderr).
             if class == Class::Interactive && std::env::var("KEY_LOCK_TRACE_MS").ok().and_then(|v| v.parse::<u128>().ok()).is_some_and(|ms| started.elapsed().as_millis() > ms) {
                 eprintln!("key slow: {command} took {:?}", started.elapsed());
