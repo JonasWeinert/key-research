@@ -1,4 +1,5 @@
 import { apa } from "./citation";
+import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { itemAttrs, selectItems } from "./item-ui";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { GROUPS, type SearchGroup } from "./unified-search";
@@ -919,9 +920,9 @@ function SourceRow({
   const container = source.containerShort || source.containerTitle;
   const meta = [
     source.creators.length > 0 && (
-      <FilterLink key="a" filter={sourceFilter.creator(source.creators[0])}>
+      <CreatorLink key="a" creator={source.creators[0]}>
         {shortCreators(source.creators)}
-      </FilterLink>
+      </CreatorLink>
     ),
     source.year && (
       <FilterLink key="y" filter={sourceFilter.year(source.year)}>
@@ -929,9 +930,9 @@ function SourceRow({
       </FilterLink>
     ),
     container && (
-      <FilterLink key="c" filter={source.containerTitle ? sourceFilter.container(source.containerTitle) : undefined}>
+      <VenueLink key="c" venueId={source.venueId} title={source.containerTitle ?? ""}>
         {container}
-      </FilterLink>
+      </VenueLink>
     ),
   ]
     .filter(Boolean)
@@ -1195,9 +1196,9 @@ const SearchHitRow = memo(function SearchHitRow({
                 <span className="kx-hit-tags">
                   {tags.map((t) => (
                     <span key={t} className="kx-hit-tag">
-                      <FilterLink filter={sourceFilter.tag(t)}>
+                      <TagLink tag={t}>
                         <Highlight text={t} pattern={pattern} />
-                      </FilterLink>
+                      </TagLink>
                     </span>
                   ))}
                 </span>

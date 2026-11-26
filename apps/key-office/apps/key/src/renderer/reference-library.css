@@ -989,7 +989,7 @@
   box-shadow: var(--kx-shadow-card);
   font-size: 12px;
 }
-.kx-chip > button {
+.kx-chip > button:not(.kx-filter-link) {
   display: grid;
   place-items: center;
   width: 16px;
@@ -1000,7 +1000,7 @@
   background: transparent;
   color: var(--kx-text-3);
 }
-.kx-chip > button:hover {
+.kx-chip > button:not(.kx-filter-link):hover {
   background: var(--kx-fill-2);
   color: var(--kx-text);
 }
@@ -1272,7 +1272,8 @@
     width: auto;
   }
 }
-.kx-chip > :not(button, svg) {
+.kx-chip > :not(button, svg),
+.kx-chip > .kx-filter-link {
   overflow: hidden;
   text-overflow: ellipsis;
 }

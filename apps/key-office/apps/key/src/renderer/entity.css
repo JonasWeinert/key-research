@@ -73,11 +73,52 @@
   background: var(--kx-fill-2);
   color: var(--kx-text);
 }
-.kx-entity-popover > footer {
+/* The two ways to go: rows like a menu's, under a hairline. */
+.kx-entity-choices {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 1px;
+  margin: 4px -6px -6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--kx-line);
+}
+.kx-entity-choice {
+  display: grid;
+  grid-template-columns: 18px auto 1fr;
+  align-items: center;
   gap: 6px;
-  margin-top: 4px;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  text-align: left;
+}
+.kx-entity-choice svg {
+  color: var(--kx-text-2);
+}
+.kx-entity-choice small {
+  justify-self: end;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-entity-choice:hover:not(:disabled),
+.kx-entity-choice:focus-visible {
+  outline: none;
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+}
+.kx-entity-choice:hover:not(:disabled) svg,
+.kx-entity-choice:hover:not(:disabled) small,
+.kx-entity-choice:focus-visible svg,
+.kx-entity-choice:focus-visible small {
+  color: inherit;
+  opacity: 0.85;
+}
+.kx-entity-choice:disabled {
+  opacity: 0.45;
 }
 
 /* A retracted work says so before anything else. */

@@ -84,7 +84,7 @@ const assert = require("node:assert/strict");
     await popover.getByText("1 source in your library").waitFor();
     await popover.locator(".kx-entity-chip", { hasText: "Heather Piwowar" }).waitFor();
     await page.screenshot({ path: path.join(temp, "person-popover.png") });
-    await popover.getByRole("button", { name: "Open page" }).click();
+    await popover.getByRole("button", { name: /Open overview/ }).click();
     const personPage = page.locator(".kx-entity-page:visible");
     await personPage.locator(".kx-entity-title", { hasText: "Jason R Priem" }).waitFor();
     await personPage.locator('.kx-research-row[data-research="ORCID"]', { hasText: "0000-0001-6187-6610" }).waitFor();
@@ -114,10 +114,10 @@ const assert = require("node:assert/strict");
     assert.equal(merged.creators[0].personId, priem, "the older source now names the same person");
     assert.deepEqual(await call("store_merge_suggestions"), []);
 
-    // A topic opens its popover; Show sources filters the library by it.
+    // A topic opens its popover; Search library filters the library by it.
     await tabAction("open-source-page", { workspaceId: ws.id, sourceId: paper.id, title: "The state of OA", read: false });
     await sourcePage.locator('.kx-research-row[data-research="Topics"] .kx-entity-link', { hasText: "Academic Publishing and Open Access" }).click();
-    await popover.getByRole("button", { name: "Show sources" }).click();
+    await popover.getByRole("button", { name: /Search library/ }).click();
     for (let i = 0; i < 40 && (await activeKind()) !== "library"; i++) await page.waitForTimeout(150);
     const library = page.locator(".kx-library:visible");
     await library.locator('.kx-token[data-field="topic"]', { hasText: "Academic Publishing and Open Access" }).waitFor();
