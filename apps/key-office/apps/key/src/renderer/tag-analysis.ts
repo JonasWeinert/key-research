@@ -493,6 +493,10 @@ export function* analyzeSteps(index: TagIndex, options: AnalysisOptions = {}): G
         if (sa.replace(/\D/g, "") !== sb.replace(/\D/g, "")) continue;
         const short = Math.min(sa.length, sb.length);
         if (short < 5) continue;
+        // A whole word more or less is a different tag ("to read" / "read").
+        const wa = new Set(normals[a].words),
+          wb = new Set(normals[b].words);
+        if (wa.size !== wb.size && ([...wa].every((w) => wb.has(w)) || [...wb].every((w) => wa.has(w)))) continue;
         const distance = editDistance(sa, sb, 2);
         const allowed = short >= 10 ? 2 : 1;
         if (distance > allowed || jaroWinkler(sa, sb) < 0.9) continue;
@@ -646,7 +650,7 @@ export function* analyzeSteps(index: TagIndex, options: AnalysisOptions = {}): G
   const cleanup = (tags: string[], title: string, evidence: string, confidence: number) =>
     tags.length &&
     out.push({ id: suggestionId("cleanup", tags), kind: "cleanup", title, evidence, confidence, tags, items: unionCount(tags), plan: { type: "delete", tags } });
-  cleanup(junk, `Remove ${plural(junk.length, "tag")} that look like noise`, "Numbers, links, identifiers or whole sentences rather than topics", 0.7);
+  cleanup(junk, `Remove ${plural(junk.length, "tag")} that ${junk.length === 1 ? "looks" : "look"} like noise`, "Numbers, links, identifiers or whole sentences rather than topics", 0.7);
   cleanup(automatic, `Remove ${plural(automatic.length, "automatic subject heading")}`, "Headings such as “Humans” or “Female” that catalogues add to every record", 0.55);
   for (const t of everywhere)
     cleanup([t], `Remove ${quote(t)} from all items`, `On ${Math.round((count(t) / live) * 100)}% of tagged items, so it does not tell them apart (an import marker?)`, 0.5);

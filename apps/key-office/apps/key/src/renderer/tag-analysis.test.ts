@@ -75,6 +75,7 @@ describe("tag analysis", () => {
     expect(merge?.plan).toEqual({ type: "merge", from: ["machine learnings", "machine-learning", "ML"].sort((a, b) => a.localeCompare(b)), to: "Machine learning" });
     expect(merge?.items).toBe(12);
     expect(find("merge", (s) => s.tags.includes("Behavior"))?.plan).toMatchObject({ to: "Behaviour" });
+    expect(find("merge", (s) => s.tags.includes("status: to read"))).toBeUndefined();
   });
 
   it("reads delimiter families as hierarchy and as a property", () => {

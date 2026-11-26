@@ -279,7 +279,7 @@ export function planChange(plan: ManagerPlan, index: TagIndex, tree: TagTree = b
         values: plan.propertyType === "boolean" ? values.map(([t]) => [t, true]) : values,
         removeTags: plan.removeTags,
       };
-      for (const [t, v] of op.property.values) lines.push({ before: t, after: plan.propertyType === "boolean" ? `${name} ✓` : `${name}: ${v}`, detail: plural(countOf(t), "item") });
+      for (const [t, v] of op.property.values) lines.push({ before: t, after: plan.propertyType === "boolean" ? `${name}: checked` : `${name}: ${v}`, detail: plural(countOf(t), "item") });
       return {
         operation: op,
         label: `Turn ${values.length === 1 ? `“${values[0][0]}”` : plural(values.length, "tag")} into “${name}”`,

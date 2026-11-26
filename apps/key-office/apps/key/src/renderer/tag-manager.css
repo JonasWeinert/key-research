@@ -74,9 +74,9 @@
   border-color: var(--kx-accent);
   box-shadow: 0 0 0 3px var(--kx-accent-soft);
 }
-.kx-tm-sort button {
+.kx-segmented.kx-tm-sort button {
   width: auto;
-  padding: 0 9px;
+  padding: 0 10px;
   font: 500 11.5px var(--kx-font);
 }
 .kx-tm-body {
@@ -157,7 +157,7 @@
 }
 .kx-tm-row[aria-selected="true"] {
   background: var(--kx-accent);
-  color: var(--kx-on-accent);
+  color: var(--kx-accent-ink);
 }
 .kx-tm-list:not(:focus-within) .kx-tm-row[aria-selected="true"] {
   background: var(--kx-sidebar-selected);
@@ -184,7 +184,7 @@
   transform: rotate(90deg);
 }
 .kx-tm-dot {
-  --dot: var(--kx-text-3);
+  --dot: var(--kx-line-strong);
   display: grid;
   flex: none;
   place-items: center;
@@ -679,7 +679,7 @@
 }
 .kx-tm-primary {
   background: var(--kx-accent);
-  color: var(--kx-on-accent);
+  color: var(--kx-accent-ink);
 }
 .kx-tm-primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--kx-accent) 88%, var(--kx-text));
@@ -758,7 +758,7 @@
 .kx-tm-menu > button:hover,
 .kx-tm-menu > button:focus-visible {
   background: var(--kx-accent);
-  color: var(--kx-on-accent);
+  color: var(--kx-accent-ink);
   outline: none;
 }
 .kx-tm-menu > button[data-danger]:not(:hover) {
