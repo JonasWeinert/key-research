@@ -8,7 +8,10 @@ contextBridge.exposeInMainWorld("key", {
   ) => ipcRenderer.invoke("key:invoke", command, args, workspaceId, options),
   workspaces: () => ipcRenderer.invoke("key:workspaces"),
   addWorkspace: () => ipcRenderer.invoke("key:add-workspace"),
+  // The workspaces window (main/launcher.ts); "show" works from any window.
+  launcher: (action: string, payload?: unknown) => ipcRenderer.invoke("key:launcher", action, payload),
   removeWorkspace: (workspaceId: string) => ipcRenderer.invoke("key:remove-workspace", workspaceId),
+  moveWorkspace: (workspaceId: string) => ipcRenderer.invoke("key:move-workspace", workspaceId),
   appSettings: () => ipcRenderer.invoke("key:app-settings"),
   setAppSettings: (patch: unknown) => ipcRenderer.invoke("key:set-app-settings", patch),
   tabs: () => ipcRenderer.invoke("key:tabs"),
@@ -102,6 +105,9 @@ contextBridge.exposeInMainWorld("key", {
         "full-screen",
         "open-item-link",
         "library-sources-changed",
+        "launcher-changed",
+        "workspaces-changed",
+        "launcher-command",
       ].includes(event)
     )
       throw Error("Unknown event");

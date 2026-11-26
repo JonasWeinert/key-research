@@ -164,6 +164,7 @@ impl Library {
         }
         let result = match command {
             "store_sources" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.list_sources(&q)?)),
+            "store_summary" => self.store.summary().and_then(|(sources, notes)| json_output(serde_json::json!({ "sources": sources, "notes": notes }))),
             "store_facets" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.facets(&q)?)),
             // A source merged into another answers as the one it became.
             "store_source" => arg::<String>(args, "id").and_then(|id| json_output(self.store.source(&self.store.resolve_source_id(&id)?)?)),

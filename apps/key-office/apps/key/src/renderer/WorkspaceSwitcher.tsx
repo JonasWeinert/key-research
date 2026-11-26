@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "./icons";
 import { useDismiss, within } from "@key-reader/ui/dismiss";
+import { WORKSPACE_COLORS, WORKSPACE_ICONS } from "./workspace-look";
 export interface WorkspaceAppearance {
   id: string;
   name: string;
@@ -10,33 +11,10 @@ export interface WorkspaceAppearance {
   icon?: string;
   color?: string;
 }
-export const WORKSPACE_ICONS = [
-  "📚",
-  "🔬",
-  "🧠",
-  "✍️",
-  "🌱",
-  "🗂️",
-  "🏠",
-  "💼",
-  "★",
-  "◆",
-  "●",
-  "☀",
-];
 /** Library colours, shared with the welcome. */
-export const WORKSPACE_COLORS = [
-  "#64748b",
-  "#2563eb",
-  "#7c3aed",
-  "#db2777",
-  "#dc2626",
-  "#ea580c",
-  "#16a34a",
-  "#0891b2",
-];
-const colors = WORKSPACE_COLORS;
+export { WORKSPACE_COLORS, WORKSPACE_ICONS };
 const icons = WORKSPACE_ICONS;
+const colors = WORKSPACE_COLORS;
 export default function WorkspaceSwitcher({
   workspaces,
   selectedId,
@@ -70,6 +48,7 @@ export default function WorkspaceSwitcher({
     [error, setError] = useState(""),
     [icon, setIcon] = useState("📚"),
     [color, setColor] = useState(colors[0]),
+    [name, setName] = useState(""),
     // A workspace picked (or just added): open it here or in a new window?
     [choosing, setChoosing] = useState<WorkspaceAppearance>();
   const menu = useRef<HTMLDivElement>(null);
@@ -79,7 +58,8 @@ export default function WorkspaceSwitcher({
     setError("");
     setIcon(selected?.icon || "📚");
     setColor(selected?.color || colors[0]);
-  }, [selectedId, selected?.icon, selected?.color]);
+    setName(selected?.name ?? "");
+  }, [selectedId, selected?.icon, selected?.color, selected?.name]);
   useEffect(() => {
     if (!openRequest) return;
     setQuery("");
@@ -303,6 +283,16 @@ export default function WorkspaceSwitcher({
                   <Icon name="plus" size={14} />
                   <span>Add workspace…</span>
                 </Button>
+                <Button
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    void (window as unknown as { key: { launcher: (action: string) => Promise<unknown> } }).key.launcher("show");
+                  }}
+                >
+                  <Icon name="layers" size={14} />
+                  <span>All workspaces…</span>
+                </Button>
               </div>
             </div>
           ) : (
@@ -310,11 +300,17 @@ export default function WorkspaceSwitcher({
               aria-label="Workspace appearance"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (selected) void run(() => onSave(selected.id, icon, color));
+                if (selected)
+                  void run(async () => {
+                    // The display name; the folder keeps its name.
+                    if (name.trim() && name.trim() !== selected.name)
+                      await (window as unknown as { key: { invoke: (c: string, a: unknown, w: string) => Promise<unknown> } }).key.invoke("workspace_rename", { name: name.trim() }, selected.id);
+                    await onSave(selected.id, icon, color);
+                  });
               }}
             >
               <header>
-                <strong>Workspace appearance</strong>
+                <strong>Customize workspace</strong>
                 <Button
                   type="button"
                   aria-label="Back to workspaces"
@@ -323,6 +319,10 @@ export default function WorkspaceSwitcher({
                   ←
                 </Button>
               </header>
+              <label>
+                Name
+                <Input value={name} maxLength={256} onChange={(e) => setName(e.target.value)} placeholder={selected?.name} />
+              </label>
               <label>
                 Emoji or icon
                 <Input
@@ -378,7 +378,7 @@ export default function WorkspaceSwitcher({
                 {selected?.name}
               </p>
               <Button type="submit" variant="primary" disabled={busy}>
-                {busy ? "Saving…" : "Save appearance"}
+                {busy ? "Saving…" : "Save"}
               </Button>
             </form>
           )}

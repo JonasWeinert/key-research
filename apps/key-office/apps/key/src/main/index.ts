@@ -15,9 +15,9 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { existsSync } from "node:fs";
-import { join, resolve, basename, extname } from "node:path";
+import { join, resolve, basename, dirname, extname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { setUiLang, normalizeLang } from "@key/i18n";
 import { AgentFill } from "./agent-fill";
@@ -31,6 +31,7 @@ import { hostKeyRequests, pushHostKeys, startKeyedServices } from "./services/se
 import { startZoteroPluginSync } from "./zotero-sync";
 import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
+import { Launcher, launcherEnabled, moveFolder } from "./launcher";
 import { fatal, installErrorHandlers, serveNotices } from "./app-notices";
 import { serveStatusItems } from "./status-items";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
@@ -238,6 +239,9 @@ function focusedShell(): ShellWindow {
   );
 }
 let registry: Registry;
+/** The workspaces window (main/launcher.ts); with it on, closing the last workspace window shows it. */
+let launcher: Launcher | undefined;
+const launcherMode = launcherEnabled();
 let agentFill: AgentFill;
 let appSettings: AppSettingsStore;
 const views = new Map<string, OwnedView>();
@@ -1591,6 +1595,10 @@ function createShell(
     // Quitting, or closing the last window, keeps every window for the next launch;
     // closing one of several keeps its arrangement for the next visit to its workspace.
     const ending = quitRequested || liveShells().length === 1;
+    // The workspaces window keeps the app open: the workspace's arrangement waits for its next visit.
+    const staying = launcherMode && !quitRequested;
+    void launcher?.cacheSummary(w.workspaceId);
+    if (ending && staying) windowState.layouts[w.workspaceId] = savedTabs(w);
     if (ending) freezeWindows();
     else windowState.layouts[w.workspaceId] = savedTabs(w);
     void (async () => {
@@ -1607,6 +1615,13 @@ function createShell(
       focusOrder.splice(focusOrder.indexOf(w.id) >>> 0, 1);
       if (lastFocusedShell === w) lastFocusedShell = undefined;
       for (const other of liveShells()) tabsChanged(other);
+      if (!liveShells().length && staying && !quitRequested) {
+        window.destroy();
+        frozen = false;
+        launcher?.show();
+        refreshMenu();
+        return;
+      }
       if (!liveShells().length) {
         await registry.close();
         window.destroy();
@@ -1649,7 +1664,15 @@ function visibleBounds(bounds: { x: number; y: number; width: number; height: nu
 // Workspaces, as last listed by the registry, for titles and menus.
 let knownWorkspaces: WorkspaceInfo[] = [];
 async function refreshWorkspaces() {
-  knownWorkspaces = await registry.list();
+  // The workspaces window can show an empty list; workspace windows always have one.
+  const before = JSON.stringify(knownWorkspaces);
+  knownWorkspaces = launcherMode && !liveShells().length ? await registry.known() : await registry.list();
+  await launcher?.refreshKnown();
+  // One list for every window: the switcher, Workspace Settings' picker and the workspaces window.
+  if (JSON.stringify(knownWorkspaces) !== before) {
+    emit("workspaces-changed");
+    launcher?.changed();
+  }
   for (const w of liveShells()) titleWindow(w);
   refreshMenu();
   return knownWorkspaces;
@@ -1664,6 +1687,7 @@ function titleWindow(w: ShellWindow) {
 function touchRecent(workspaceId: string) {
   if (!workspaceId) return;
   windowState.recent = [workspaceId, ...windowState.recent.filter((id) => id !== workspaceId)].slice(0, 32);
+  launcher?.touched(workspaceId);
 }
 
 /** Opens `workspaceId`: in place in `w`, or in a window of its own. A window already
@@ -1702,6 +1726,67 @@ async function switchWorkspace(w: ShellWindow, workspaceId: string, newWindow = 
   }
   refreshMenu();
   layout(w);
+}
+
+/** A `key://` link from another app: shown by the front workspace window, or, with none open,
+ * by the most recent workspace, opened for it (the link waits until that window listens). */
+function sendItemLink(url: string) {
+  const w = focusedShell();
+  if (!w || w.window.isDestroyed()) {
+    const id = windowState.recent.find((r) => knownWorkspaces.some((k) => k.id === r)) ?? knownWorkspaces[0]?.id;
+    if (launcherMode && id) void openFromLauncher(id, {}).then(() => launcher?.close(), () => launcher?.show());
+    else launcher?.show();
+    return false;
+  }
+  if (w.window.webContents.isLoading()) return false;
+  w.window.show();
+  w.window.focus();
+  emitTo(w, "open-item-link", url);
+  return true;
+}
+/** The window to open `workspaceId` in: last time's frame, with its latest arrangement. */
+function lastWindow(workspaceId: string): SavedWindow {
+  const saved = windowState.windows.find((s) => s.workspaceId === workspaceId);
+  const tabs = windowState.layouts[workspaceId] ?? saved?.tabs ?? { groups: [], active: 0 };
+  return { ...saved, workspaceId, tabs };
+}
+/** Opens a workspace from the workspaces window (or a link): brings its window forward, or
+ * opens one, then runs what was asked for there (the Zotero sheet, adding files …). */
+async function openFromLauncher(workspaceId: string, options: { newWindow?: boolean; command?: string; files?: string[] }) {
+  if (!knownWorkspaces.some((k) => k.id === workspaceId)) await refreshWorkspaces();
+  if (!knownWorkspaces.some((k) => k.id === workspaceId)) throw Error("This workspace is no longer available");
+  let w = liveShells().find((s) => s.workspaceId === workspaceId);
+  if (w) {
+    if (w.window.isMinimized()) w.window.restore();
+    w.window.show();
+    w.window.focus();
+  } else {
+    // Only the first window takes last time's frame; others cascade from the front one.
+    const saved = lastWindow(workspaceId);
+    w = createShell({ workspaceId, saved: liveShells().length ? { workspaceId, tabs: saved.tabs } : saved.tabs.groups.length || saved.bounds ? saved : undefined });
+  }
+  const target = w;
+  const then = async () => {
+    deliverDeepLinks(sendItemLink);
+    if (options.files?.length) {
+      await registry.invoke("store_import_files", { paths: options.files, collectionId: null }, workspaceId);
+      emit("library-changed");
+      await openContent(target, { section: "sources", workspaceId });
+      layout(target);
+    }
+    if (options.command === "add-files") {
+      const picked = await dialog.showOpenDialog(target.window, { title: "Add sources", properties: ["openFile", "multiSelections"] });
+      if (!picked.canceled && picked.filePaths.length) {
+        await registry.invoke("store_import_files", { paths: picked.filePaths, collectionId: null }, workspaceId);
+        emit("library-changed");
+      }
+      await openContent(target, { section: "sources", workspaceId });
+      layout(target);
+    } else if (options.command) emitTo(target, "command", options.command);
+  };
+  const run = () => void then().catch((e) => emitTo(target, "operation-error", String(e)));
+  if (target.window.webContents.isLoading() || !target.window.webContents.getURL()) target.window.webContents.once("did-finish-load", () => setTimeout(run, 1200));
+  else run();
 }
 
 // Persistence: every window's workspace, frame and tabs, saved as view descriptors.
@@ -1762,7 +1847,8 @@ function windowStateNow(): WindowState {
   const ordered = focusOrder.map((id) => shells.get(id)).filter((w): w is ShellWindow => !!w && !w.closed && !w.window.isDestroyed());
   return {
     ...windowState,
-    windows: ordered.map((w) => ({
+    // With no workspace window open (only the workspaces window), last time's windows stay.
+    windows: !ordered.length ? windowState.windows : ordered.map((w) => ({
       workspaceId: w.workspaceId,
       bounds: w.window.getNormalBounds(),
       maximized: w.window.isMaximized(),
@@ -2064,6 +2150,14 @@ function refreshMenu() {
   else baseMenu();
 }
 function baseMenu() {
+  // The workspaces window, in front or alone, has a menu of its own: nothing here acts on a
+  // workspace window behind it.
+  if (launcher && (launcher.isFocused() || !liveShells().length)) {
+    Menu.setApplicationMenu(Menu.buildFromTemplate(launcher.menu({ editMenu: { role: "editMenu" }, openSettings: () => launcher?.request("settings") })));
+    launcher.updateDock();
+    return;
+  }
+  launcher?.updateDock();
   const recent = [
     ...windowState.recent.map((id) => knownWorkspaces.find((k) => k.id === id)).filter((k): k is WorkspaceInfo => !!k),
     ...knownWorkspaces.filter((k) => !windowState.recent.includes(k.id)),
@@ -2115,6 +2209,13 @@ function baseMenu() {
           { label: "Switch to Workspace", submenu: workspaceItems(false) },
           { label: "Open Workspace in New Window", submenu: workspaceItems(true) },
           { label: "Workspace Settings…", click: () => emitTo(focusedShell(), "open-workspace-settings") },
+          ...(launcher
+            ? [
+                { label: "New Workspace…", click: () => launcher?.request("new") },
+                { label: "Open Workspace", submenu: launcher.openWorkspaceMenu() },
+                { label: "All Workspaces…", click: () => launcher?.show() },
+              ]
+            : []),
           { type: "separator" },
           {
             label: "Open…",
@@ -2241,7 +2342,7 @@ function baseMenu() {
           { label: "Keyboard Shortcuts", accelerator: "CmdOrCtrl+/", click: () => emitTo(focusedShell(), "command", "shortcuts") },
         ],
       },
-      { role: "windowMenu" },
+      launcher ? launcher.windowMenu() : { role: "windowMenu" },
     ]),
   );
 }
@@ -2254,11 +2355,16 @@ if (process.env.KEY_USER_DATA)
 installErrorHandlers();
 app.on("second-instance", () => {
   const w = focusedShell();
-  if (w) {
+  if (!w && launcher) launcher.show();
+  else if (w) {
     if (w.window.isMinimized()) w.window.restore();
     w.window.show();
     w.window.focus();
   }
+});
+// Hosts still running for the workspaces window's sake (a summary) end with the app.
+app.on("will-quit", () => {
+  if (!liveShells().length) registry?.close();
 });
 app.on("before-quit", () => {
   quitRequested = true;
@@ -2361,30 +2467,42 @@ else
       startupMark("keys-loaded");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
       windowState = await windowStore.load();
+      launcher = new Launcher(join(app.getPath("userData"), "launcher.json"), {
+        registry: () => registry,
+        settings: () => appSettings,
+        preload,
+        renderer,
+        workspaceParent: () => workspaceParent,
+        openWorkspaces: () => liveShells().map((w) => w.workspaceId),
+        recent: () => windowState.recent,
+        openWorkspace: openFromLauncher,
+        workspacesChanged: refreshWorkspaces,
+        zoteroWorkspace,
+        info: () => appInfo(workspaceParent),
+        menuChanged: () => refreshMenu(),
+      });
+      launcher.serve();
       await refreshWorkspaces();
-      // Windows reopen where they were, on workspaces that still exist.
-      const restoring = process.env.KEY_NO_WINDOW_RESTORE
-        ? []
-        : windowState.windows.filter((saved) => knownWorkspaces.some((k) => k.id === saved.workspaceId));
+      // Windows reopen where they were, on workspaces that still exist. With the workspaces
+      // window on, that is one of three choices (Settings › When Key opens).
+      const launchWith = launcherMode ? appSettings.get().openAtLaunch : "restore";
+      const lastWorkspace = windowState.recent.find((id) => knownWorkspaces.some((k) => k.id === id));
+      const restoring =
+        process.env.KEY_NO_WINDOW_RESTORE || launchWith === "workspaces"
+          ? []
+          : launchWith === "last"
+            ? lastWorkspace
+              ? [lastWindow(lastWorkspace)]
+              : []
+            : windowState.windows.filter((saved) => knownWorkspaces.some((k) => k.id === saved.workspaceId));
       startupMark("state-loaded");
-      const first = createShell({ load: false, workspaceId: knownWorkspaces[0]?.id, saved: restoring[0] });
+      const first = launcherMode && !restoring.length ? undefined : createShell({ load: false, workspaceId: knownWorkspaces[0]?.id, saved: restoring[0] });
+      if (!first) launcher.show();
       startupMark("window-created");
       // key:// links from other apps, once the shell has had a moment to listen.
-      first.window.webContents.once("did-finish-load", () =>
-        setTimeout(
-          () =>
-            deliverDeepLinks((url) => {
-              const w = focusedShell();
-              if (!w || w.window.isDestroyed()) return false;
-              w.window.show();
-              w.window.focus();
-              emitTo(w, "open-item-link", url);
-              return true;
-            }),
-          1200,
-        ),
-      );
-      configureOfficeEditors(first.window, {
+      if (first) first.window.webContents.once("did-finish-load", () => setTimeout(() => deliverDeepLinks(sendItemLink), 1200));
+      else deliverDeepLinks(sendItemLink);
+      configureOfficeEditors(first?.window ?? launcher.browserWindow!, {
         extractPdfText: async (bytes) => {
           if (bytes.byteLength > 32 * 1024 * 1024)
             throw Error("PDF attachment exceeds 32 MiB");
@@ -2478,12 +2596,16 @@ else
           if (!record && registry.isHidden(workspaceId)) throw Error("Workspace is not registered");
           if (command === "workspace_set_appearance") {
             shell(event.sender.id);
-            return registry.setAppearance(workspaceId, args.icon, args.color);
+            const updated = await registry.setAppearance(workspaceId, args.icon, args.color);
+            launcher?.changed();
+            return updated;
           }
+          // The display name; the registry keeps it for titles, menus and the workspaces window.
           if (command === "workspace_rename") {
             shell(event.sender.id);
-            const renamed = await registry.rename(workspaceId, args.name);
+            const renamed = await registry.rename(workspaceId, String(args?.name ?? ""));
             await refreshWorkspaces();
+            launcher?.changed();
             return renamed;
           }
           if (command === "agent_fill_status") return agentFill.status();
@@ -2663,11 +2785,44 @@ else
           await switchWorkspace(w, other.id);
           if (w.workspaceId === workspaceId) throw Error("Close the open tabs first");
         }
-        await registry.remove(workspaceId);
+        await registry.forget(workspaceId);
+        launcher?.changed();
         windowState.recent = windowState.recent.filter((id) => id !== workspaceId);
         delete windowState.layouts[workspaceId];
         await refreshWorkspaces();
         return { workspaceId: w.workspaceId };
+      });
+      // Workspace Settings › Location › Move…: the folder moves on the same disk; the window's
+      // tabs on it close first (asking about unsaved work) and come back afterwards.
+      ipcMain.handle("key:move-workspace", async (event, workspaceId: string) => {
+        const w = shell(event.sender.id);
+        const workspace = (await registry.known()).find((k) => k.id === workspaceId);
+        if (!workspace) throw Error("This workspace is no longer available");
+        if (liveShells().some((s) => s !== w && s.workspaceId === workspaceId)) throw Error("Close the other window showing this workspace first");
+        const picked = await dialog.showOpenDialog(w.window, { title: `Move “${workspace.name}” to…`, buttonLabel: "Move Here", defaultPath: dirname(workspace.root), properties: ["openDirectory", "createDirectory"] });
+        if (picked.canceled || !picked.filePaths[0]) return null;
+        const target = join(picked.filePaths[0], basename(workspace.root));
+        if (target === workspace.root) return null;
+        if (await access(target).then(() => true, () => false)) throw Error(`That folder already has a “${basename(workspace.root)}”`);
+        const showing = w.workspaceId === workspaceId;
+        const arrangement = savedTabs(w);
+        if (showing) {
+          if (!(await closeViews(w, windowViewIds(w)))) {
+            layout(w);
+            return null;
+          }
+          w.state = emptyTabsState();
+        }
+        try {
+          return await registry.relocate(workspaceId, target, moveFolder);
+        } finally {
+          await refreshWorkspaces();
+          if (showing) {
+            await restoreTabs(w, arrangement);
+            if (!allTabs(w.state).length) await openContent(w, { section: "sources", workspaceId });
+            layout(w);
+          }
+        }
       });
       ipcMain.handle("key:tabs", (event) => snapshot(shell(event.sender.id)));
       ipcMain.handle("key:reader-back", (event) => {
@@ -3499,6 +3654,7 @@ else
         layout(w);
         return snapshot(w);
       });
+      if (!first) return;
       // Tabs exist before the page loads, so nothing opened early lands in front of them.
       if (restoring[0]) await restoreTabs(first, restoring[0].tabs);
       if (!allTabs(first.state).length) home(first);
@@ -3513,4 +3669,27 @@ else
       fatal("Key could not start", error);
       app.quit();
     });
-app.on("window-all-closed", () => app.quit());
+// On a Mac, Key stays open with the workspaces window closed too (the Dock icon brings it back).
+app.on("window-all-closed", () => {
+  if (!launcherMode || process.platform !== "darwin") app.quit();
+});
+app.on("activate", () => {
+  if (launcherMode && launcher && !liveShells().length && !launcher.isOpen()) launcher.show();
+});
+// Files given to Key (dropped on the Dock icon): added to the front workspace, or, with none
+// open, the workspaces window asks which one.
+app.on("open-file", (event, path) => {
+  event.preventDefault();
+  void app.whenReady().then(() => setTimeout(() => {
+    const w = focusedShell();
+    if (w?.workspaceId)
+      void registry
+        .invoke("store_import_files", { paths: [path], collectionId: null }, w.workspaceId)
+        .then(() => {
+          emit("library-changed");
+          void openContent(w, { section: "sources", workspaceId: w.workspaceId }).then(() => layout(w));
+        })
+        .catch((e) => emit("operation-error", String(e)));
+    else launcher?.takeFiles([path]);
+  }, launcher ? 0 : 1500));
+});

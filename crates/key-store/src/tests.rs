@@ -188,6 +188,18 @@ fn standalone_and_source_notes_stay_searchable() {
 }
 
 #[test]
+fn summary_counts_live_sources_and_every_note() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(store.summary().unwrap(), (0, 0));
+    let source = store.insert_source(input(json!({"kind": "reference", "title": "Nets"}))).unwrap();
+    store.insert_source(input(json!({"kind": "reference", "title": "Bed nets"}))).unwrap();
+    store.save_note(None, Some(&source.id), "", "Attached", None).unwrap();
+    store.save_note(None, None, "Ideas", "Standalone", None).unwrap();
+    assert_eq!(store.summary().unwrap(), (2, 2));
+}
+
+#[test]
 fn note_passages_keep_unchanged_vectors_and_show_in_search() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::open(dir.path()).unwrap();

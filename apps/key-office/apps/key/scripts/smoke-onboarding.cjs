@@ -1,5 +1,6 @@
 // Run serially: native windows and focus are shared with other GUI checks.
-// First run shows the welcome (welcome, library, sources, appearance); its library colour and
+// First run starts in the workspaces window, whose "Create your first workspace" hands over to
+// the welcome in the new workspace's window (welcome, library, sources, appearance); its library colour and
 // appearance choice apply and persist, it fits a small window; finishing opens the library.
 // Key Settings opens from the sidebar: every section, keyboard and search, a search that
 // finds Workspace Settings; Workspace Settings edits one workspace of two, the other unchanged.
@@ -18,11 +19,19 @@ const assert = require("node:assert/strict");
   });
   const shot = (page, name) => page.screenshot({ path: path.join(temp, `${name}.png`) });
   try {
-    const page = await app.firstWindow();
+    const launcher = await app.firstWindow();
+    launcher.setDefaultTimeout(20000);
+    assert.match(launcher.url(), /launcher\.html$/, "a first run starts in the workspaces window");
+    await launcher.getByRole("region", { name: "Welcome" }).waitFor();
+    await shot(launcher, "0-workspaces-first-run");
+    const opening = app.waitForEvent("window", (p) => /index\.html$/.test(p.url()));
+    // The launcher steps aside as the workspace opens, possibly before the click returns.
+    await launcher.getByRole("button", { name: "Create your first workspace" }).click().catch(() => {});
+    const page = await opening;
     page.setDefaultTimeout(20000);
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("index.html")).setSize(1440, 900));
     // Playwright pins a light colour scheme by default; follow the app's own setting instead.
     await page.emulateMedia({ colorScheme: null });
 
@@ -52,14 +61,14 @@ const assert = require("node:assert/strict");
     await page.waitForTimeout(400);
     await shot(page, "4-appearance-dark");
     // A small window drops the drawing and keeps the copy and buttons inside.
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(760, 520));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("index.html")).setSize(760, 520));
     await page.waitForTimeout(500);
     await shot(page, "5-appearance-small-dark");
     const box = await welcome.boundingBox();
     const view = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
     assert.ok(box && box.y >= 0 && box.y + box.height <= view.h && box.x >= 0 && box.x + box.width <= view.w, `welcome leaves the window: ${JSON.stringify({ box, view })}`);
     await welcome.getByRole("button", { name: "Start using Key" }).waitFor();
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 900));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("index.html")).setSize(1440, 900));
     await welcome.getByRole("button", { name: "Start using Key" }).click();
     await page.getByRole("heading", { name: /^(All sources|Sources)$/ }).waitFor();
     await welcome.waitFor({ state: "detached" });
@@ -181,7 +190,7 @@ const assert = require("node:assert/strict");
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, temp, welcome: true, darkApplied: true, persisted: true, settings: true }));
   } catch (e) {
-    await app.windows()[0]?.screenshot({ path: path.join(temp, "failure.png") }).catch(() => {});
+    await app.windows().at(-1)?.screenshot({ path: path.join(temp, "failure.png") }).catch(() => {});
     console.error("Artifacts", temp);
     throw e;
   } finally {

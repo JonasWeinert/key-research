@@ -391,6 +391,8 @@ export interface AppSettings {
   /** The CSL style id and locale citations use (the host reads them from the settings file). */
   citationStyle?: string;
   citationLocale?: string;
+  /** What Key shows when it opens (app-level): the workspaces window, last time's windows, or the last workspace. */
+  openAtLaunch?: "workspaces" | "restore" | "last";
 }
 export interface AppInfo {
   version: string;
@@ -417,6 +419,8 @@ export interface Bridge {
   setAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   workspaces(): Promise<WorkspaceSummary[]>;
   addWorkspace(): Promise<WorkspaceSummary | null>;
+  /** Moves a workspace's folder (Workspace Settings › Location); null when cancelled. */
+  moveWorkspace(workspaceId: string): Promise<WorkspaceSummary | null>;
   /** Forgets a workspace (its folder stays); answers with the workspace this window now shows. */
   removeWorkspace?(workspaceId: string): Promise<{ workspaceId: string }>;
   tabAction(action: string, payload?: unknown): Promise<unknown>;

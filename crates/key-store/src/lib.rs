@@ -1157,6 +1157,16 @@ impl Store {
             .map_err(e)
     }
 
+    /// A small overview for the workspace launcher: live sources and notes.
+    pub fn summary(&self) -> Result<(i64, i64)> {
+        let db = self.read()?;
+        let sources = db
+            .query_row("SELECT count(*) FROM sources WHERE trashed_at IS NULL AND merged_into IS NULL", [], |r| r.get(0))
+            .map_err(e)?;
+        let notes = db.query_row("SELECT count(*) FROM notes", [], |r| r.get(0)).map_err(e)?;
+        Ok((sources, notes))
+    }
+
     /// How many sources wait for (or are in) indexing.
     pub fn index_queue_len(&self) -> Result<i64> {
         self.read()?

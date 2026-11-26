@@ -162,6 +162,7 @@ function General({ invoke, workspace, ws, onClose, onChanged, onRemoved }: { inv
       setError(String(e).replace(/^Error: /, ""));
     }
   };
+  const [moveError, setMoveError] = useState("");
   const look = async (icon: string, color: string) => {
     setError("");
     try {
@@ -224,12 +225,24 @@ function General({ invoke, workspace, ws, onClose, onChanged, onRemoved }: { inv
           </span>
         </Row>
       </Group>
-      <Group title="Location" footer="To move the workspace: remove it from Key, move the folder in Finder, then add it again in Key Settings › Workspaces.">
+      <Group title="Location" footer="Move… takes the folder and everything in it to another folder on the same disk; its tabs close and reopen.">
         <Row label="Folder" path detail={home(workspace.root)}>
           <button className="kx-settings-button" onClick={() => void bridge().revealPath(workspace.root)}>
             Show in Finder
           </button>
+          <button
+            className="kx-settings-button"
+            onClick={() =>
+              void bridge()
+                .moveWorkspace(workspace.id)
+                .then((moved) => moved && onChanged())
+                .catch((e: unknown) => setMoveError(String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "")))
+            }
+          >
+            Move…
+          </button>
         </Row>
+        {moveError && <p className="kx-settings-footnote kx-cite-error" role="alert">{moveError}</p>}
       </Group>
       <Group title="Adding sources">
         <Row label="Works added from a source" detail="From its references, related works or a citation in its PDF.">

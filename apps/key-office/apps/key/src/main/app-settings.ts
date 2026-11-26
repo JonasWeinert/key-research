@@ -38,12 +38,15 @@ export interface AppSettings {
   /** The CSL style (bundled or installed id) and locale citations and bibliographies use. */
   citationStyle: string
   citationLocale: string
+  /** What Key shows when it opens: the workspaces window, last time's windows, or the last workspace. */
+  openAtLaunch: OpenAtLaunch
 }
+export type OpenAtLaunch = 'workspaces' | 'restore' | 'last'
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces' }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -87,6 +90,7 @@ function sanitize(input: AppSettings): AppSettings {
     addFromSource: (['ask', 'origin', 'library'] as const).includes(input.addFromSource) ? input.addFromSource : 'ask',
     findPdfOnAdd: input.findPdfOnAdd === true,
     citationStyle: typeof input.citationStyle === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(input.citationStyle) ? input.citationStyle : 'apa',
+    openAtLaunch: (['workspaces', 'restore', 'last'] as const).includes(input.openAtLaunch) ? input.openAtLaunch : 'workspaces',
     citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
   }
 }

@@ -357,6 +357,8 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
   const refreshWorkspaces = () => void api().workspaces().then(setWorkspaces).catch(() => {});
+  // Names, icons and colours changed elsewhere (the workspaces window, another window).
+  useEffect(() => api().on("workspaces-changed", refreshWorkspaces), []);
   useEffect(() => {
     void task(async () => {
       setWorkspaces(await api().workspaces());
