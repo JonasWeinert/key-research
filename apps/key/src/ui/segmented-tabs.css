@@ -7,11 +7,20 @@
   --key-segmented-track: var(--key-ui-hover);
   --key-segmented-pill: var(--key-ui-bg);
   --key-segmented-pill-shadow: 0 0 0 0.5px var(--key-ui-border), 0 1px 3px rgb(0 0 0 / 12%);
+  /* One row, always: a fixed block size, so a column flex/grid parent can never stretch the
+     bar into an oval nor squash it, and switching tabs never changes its size. Along the row
+     it fills what it is given. */
+  --key-segmented-block: calc(var(--key-segmented-height) + 2 * var(--key-segmented-pad));
   position: relative;
+  box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
+  align-self: stretch;
   min-width: 0;
   max-width: 100%;
+  block-size: var(--key-segmented-block);
+  min-block-size: var(--key-segmented-block);
+  max-block-size: var(--key-segmented-block);
   border-radius: 999px;
   background: var(--key-segmented-track);
   box-shadow: inset 0 0 0 0.5px var(--key-ui-border-subtle, var(--key-ui-border));
@@ -36,9 +45,11 @@
 }
 .key-segmented-track {
   position: relative;
+  box-sizing: border-box;
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
+  block-size: 100%;
   padding: var(--key-segmented-pad);
   overflow-x: auto;
   overflow-y: hidden;
@@ -82,11 +93,13 @@
   position: relative;
   z-index: 1;
   display: inline-flex;
+  /* Equal widths where they fit, never narrower than the label: past that the bar scrolls
+     instead of clipping. */
   flex: 1 0 var(--key-segmented-min);
   align-items: center;
   justify-content: center;
   gap: 5px;
-  min-width: var(--key-segmented-min);
+  min-width: max-content;
   height: var(--key-segmented-height);
   padding: 0 12px;
   border: 0;
@@ -118,9 +131,7 @@
   outline-offset: -2px;
 }
 .key-segmented-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .key-segmented-track > [role="tab"] svg {
   flex: none;

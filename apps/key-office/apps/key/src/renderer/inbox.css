@@ -43,8 +43,7 @@
   padding-bottom: 8px;
   border-bottom: 1px solid var(--kx-line);
 }
-.kx-inbox-bar .key-segmented-tabs,
-.kx-inbox-bar [role="tablist"] {
+.kx-inbox-bar > .key-segmented {
   flex: 0 1 260px;
 }
 .kx-inbox-filter {
