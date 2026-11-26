@@ -143,8 +143,11 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
     void set([item.id], { read: true }).catch(() => {});
     void bridge().tabAction("open-url", { url, placement: "split", fromViewId: viewId });
   };
-  const markAllRead = () =>
-    items.forEach((i) => readHere.current.add(i.id)) ||
+  const markAllRead = () => {
+    items.forEach((i) => readHere.current.add(i.id));
+    markRead();
+  };
+  const markRead = () =>
     void invoke<number>("feeds_mark_read", { subscriptionId: filter.subscriptionId ?? null, kind: filter.kind ?? null }, workspaceId).then((n) => {
       feedsChanged();
       toast(n ? `Marked ${n} as read` : "Nothing unread here");

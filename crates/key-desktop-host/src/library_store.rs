@@ -479,8 +479,9 @@ impl Library {
                 json_output(self.store.reading_event(&id, &kind, arg(args, "page")?, arg(args, "pageCount")?)?)
             })(),
             "store_set_reading_status" => (|| {
-                let ids: Vec<String> = arg(args, "ids")?;
-                json_output(self.store.set_reading_status(&ids, arg::<Option<String>>(args, "status")?.as_deref())?)
+                // By id, or a reader's content hash.
+                let ids = arg::<Vec<String>>(args, "ids")?.iter().map(|id| self.reading_id(id)).collect::<Result<Vec<_>, _>>()?;
+                json_output(self.store.set_reading_status(&ids,arg::<Option<String>>(args, "status")?.as_deref())?)
             })(),
             // Related items: linked by hand (journaled), and what the library knows on its own.
             "store_related" => arg::<String>(args, "id").and_then(|id| json_output(self.store.related_sources(&self.store.resolve_source_id(&id)?)?)),

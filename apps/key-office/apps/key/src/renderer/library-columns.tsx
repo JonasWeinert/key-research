@@ -7,7 +7,8 @@ import { KIND_ICON, bridge, itemTypeLabel, relativeDate, shortCreators, type Col
 import { formulaValue, type PropertyDefinition } from "./PropertySheets";
 import { indexLabel } from "./SourceInspector";
 import { ZoteroMark, isZoteroSource } from "./zotero-badge";
-import type { ZoteroSyncStatus } from "./library-api";
+import type { Invoke, ZoteroSyncStatus } from "./library-api";
+import { ReadingStatusControl, STATUS_LABEL, statusOf } from "./reading-ui";
 
 export const SOURCE_SORTS: [string, string][] = [
   ["added", "Date added"],
@@ -19,6 +20,8 @@ export const SOURCE_SORTS: [string, string][] = [
   ["pages", "Pages"],
   ["updated", "Last modified"],
   ["citationKey", "Citation key"],
+  ["status", "Reading status"],
+  ["lastRead", "Last read"],
 ];
 export const DEFAULT_SORTS: SortLevel[] = [{ field: "added", descending: true }];
 
@@ -29,6 +32,7 @@ export function useSourceColumns({
   onCommit,
   onEditProperty,
   zotero = null,
+  reading,
 }: {
   definitions: PropertyDefinition[];
   collections: Collection[];
@@ -36,6 +40,8 @@ export function useSourceColumns({
   onEditProperty: (definition: PropertyDefinition) => void;
   /** The workspace's Zotero sync: items it keeps in step carry its mark. */
   zotero?: ZoteroSyncStatus | null;
+  /** For the Status column's control. */
+  reading?: { invoke: Invoke; workspaceId: string };
 }): DatabaseColumn<Source>[] {
   // Handlers change every render; the columns only when what they show changes.
   const latest = useRef({ onCommit, onEditProperty });
@@ -77,6 +83,16 @@ export function useSourceColumns({
         render: (s) => (isZoteroSource(s) ? <span className="kx-cell-muted">{zotero ? "Synced" : "Imported"}</span> : ""),
       },
       { id: "updated", label: "Modified", width: 100, hidden: true, sortField: "updated", render: (s) => <span className="kx-cell-muted">{relativeDate(s.updatedAt)}</span> },
+      {
+        id: "reading",
+        label: "Status",
+        width: 110,
+        hidden: true,
+        sortField: "status",
+        render: (s) =>
+          reading ? <ReadingStatusControl invoke={reading.invoke} workspaceId={reading.workspaceId} ids={[s.id]} status={statusOf(s)} /> : STATUS_LABEL[statusOf(s)],
+      },
+      { id: "lastRead", label: "Last read", width: 100, hidden: true, sortField: "lastRead", render: (s) => <span className="kx-cell-muted">{s.lastReadAt ? relativeDate(s.lastReadAt) : ""}</span> },
     ];
     const properties = definitions.map<DatabaseColumn<Source>>((d) => ({
       id: `property:${d.name}`,
@@ -90,7 +106,7 @@ export function useSourceColumns({
       render: (s) => <PropertyCell definition={d} source={s} onCommit={(value) => latest.current.onCommit(s, d.name, value)} />,
     }));
     return [...builtIn, ...properties];
-  }, [definitions, collections, zotero]);
+  }, [definitions, collections, zotero, reading?.invoke, reading?.workspaceId]);
 }
 
 /** Older libraries remembered their shown properties separately; they become shown columns. */

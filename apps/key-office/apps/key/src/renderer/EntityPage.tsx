@@ -31,8 +31,26 @@ import MergeReview from "./MergeReview";
 import { openTagManager } from "./tag-manager-open";
 import RelationMap from "./RelationMap";
 import "./entity.css";
+import { FollowButton, type FeedKind } from "./feeds-ui";
 
 type Data = PersonPageData | VenuePageData | TopicPageData | TagPageData;
+
+/** What "Follow" on an author's, journal's or topic's page subscribes to (none for tags, or
+ *  without an OpenAlex id, ORCID or ISSN to ask by). */
+function followTarget(kind: EntityKind, data: Data, name: string): { kind: FeedKind; title: string; config: Record<string, unknown> | null; hint: string } {
+  if (kind === "person") {
+    const p = (data as PersonPageData).person;
+    const config = p.openalexId ? { openalexId: p.openalexId } : p.orcid ? { orcid: p.orcid } : null;
+    return { kind: "author", title: name, config, hint: "New works by them in your Inbox" };
+  }
+  if (kind === "venue") {
+    const v = (data as VenuePageData).venue;
+    const config = v.openalexId ? { openalexId: v.openalexId } : v.issnL ? { issn: v.issnL } : null;
+    return { kind: "venue", title: name, config, hint: "New articles in your Inbox" };
+  }
+  if (kind === "topic") return { kind: "topic", title: name, config: { openalexId: (data as TopicPageData).topic.id }, hint: "New works on this topic in your Inbox" };
+  return { kind: "topic", title: name, config: null, hint: "" };
+}
 const COMMAND = ENTITY_COMMAND;
 const KIND_LABEL: Record<EntityKind, string> = { person: "Person", venue: "Journal", topic: "Topic", tag: "Tag" };
 
@@ -153,6 +171,7 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
             {KIND_LABEL[kind]}
           </span>
           <span className="kx-spacer" />
+          <FollowButton invoke={invoke} workspaceId={workspaceId} {...followTarget(kind, data, name)} />
           <button className="kx-page-action" onClick={showSources}>
             <Icon name="search" size={12} /> Search library
           </button>

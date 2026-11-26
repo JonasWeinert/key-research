@@ -1,0 +1,126 @@
+/* Reading status control and related sources (reading-ui.tsx). */
+
+.kx-reading-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0.5px solid var(--kx-line-strong);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: 12px var(--kx-font);
+  white-space: nowrap;
+}
+.kx-reading-status:hover {
+  background: var(--kx-fill);
+}
+.kx-reading-status[data-status="reading"] {
+  color: var(--kx-accent);
+}
+.kx-reading-status[data-status="read"] {
+  color: var(--kx-green);
+}
+.kx-reading-status[data-compact] {
+  width: 22px;
+  padding: 0;
+  justify-content: center;
+  border-color: transparent;
+}
+.kx-reading-status[data-compact][data-status="unread"] {
+  color: var(--kx-text-3);
+}
+.kx-reading-summary {
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+
+.kx-related {
+  margin-top: 28px;
+  padding: 2px 0 8px;
+  border-radius: 10px;
+  transition: background 120ms var(--kx-ease);
+}
+.kx-related[data-dropping] {
+  background: var(--kx-accent-soft);
+  outline: 1.5px dashed var(--kx-accent);
+  outline-offset: 4px;
+}
+.kx-related-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.kx-related-head h2 {
+  margin: 0;
+  font: 600 15px var(--kx-font);
+}
+.kx-related-group h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 12px 0 2px;
+  color: var(--kx-text-2);
+  font: 600 12px var(--kx-font);
+}
+.kx-related-group h3 small {
+  color: var(--kx-text-3);
+  font-weight: 400;
+}
+.kx-related-hint {
+  margin: 2px 0;
+  color: var(--kx-text-3);
+  font-size: 12.5px;
+}
+.kx-related-picker {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  padding: 6px;
+}
+.kx-related-picker-field {
+  margin-bottom: 4px;
+  padding: 5px 8px;
+  border: 0.5px solid var(--kx-line-strong);
+  border-radius: 6px;
+  background: var(--kx-bg);
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  outline: none;
+}
+.kx-related-picker > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  text-align: left;
+}
+.kx-related-picker > button[aria-selected="true"] {
+  background: var(--kx-accent);
+  color: var(--kx-on-accent);
+}
+.kx-related-picker > button[aria-selected="true"] small {
+  color: inherit;
+  opacity: 0.85;
+}
+.kx-related-picker-title {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-related-picker small {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-related-picker-empty {
+  margin: 6px 8px;
+  color: var(--kx-text-3);
+  font-size: 12.5px;
+}

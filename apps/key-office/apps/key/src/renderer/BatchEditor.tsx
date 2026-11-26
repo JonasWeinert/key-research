@@ -9,6 +9,7 @@ import { ITEM_TYPES, type Collection, type Facet, type Invoke, type Source } fro
 import type { PropertyDefinition } from "./PropertySheets";
 import type { BatchEdit, Operation } from "./library-hygiene";
 import "./hygiene.css";
+import { ReadingStatusControl, statusOf, type ReadingStatus } from "./reading-ui";
 
 const BATCH_FIELDS: [keyof Source & string, string, "number"?][] = [
   ["containerTitle", "Published in"],
@@ -155,6 +156,16 @@ export default function BatchEditor({
             ))}
           </select>
         </label>
+        {(() => {
+          // Unread / in progress / read for all of them, or "Mixed" (reading-ui.tsx).
+          const status = shared(sources, (s) => statusOf(s));
+          return (
+            <div className="kx-field-row" data-mixed={!status.same || undefined}>
+              <span>Reading status</span>
+              <ReadingStatusControl invoke={invoke} workspaceId={workspaceId} ids={ids} status={status.same ? (status.value as ReadingStatus) : undefined} mixed={!status.same} />
+            </div>
+          );
+        })()}
         {BATCH_FIELDS.map(([key, label, kind]) => (
           <BatchField
             key={key}

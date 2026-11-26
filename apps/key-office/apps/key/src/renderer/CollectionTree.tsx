@@ -6,6 +6,7 @@ import type { Collection, Invoke } from "./library-api";
 import { hasExternalDrop, hasItemDrag, importDrop, readItemDrag } from "./item-links";
 import { copyCollectionBibliography, toast } from "./item-actions";
 import { sidebarClick } from "./sidebar-intent";
+import { follow } from "./feeds-ui";
 import { ZoteroMark, isZoteroCollection, useZoteroSync } from "./zotero-badge";
 import { SOURCE_DRAG_TYPE, currentSelection, libraryChanged, onLibraryChanged, onLibrarySelection, selectLibrary } from "./library-nav";
 
@@ -426,6 +427,7 @@ export default function CollectionTree({
               item("Rename", "doc", () => setRenaming(menuCollection.id)),
               menuCollection.parentId && item("Move to top level", "arrowRight", () => place(menuCollection.id, null, "inside")),
               workspaceId && item("Copy bibliography", "quote", () => void copyCollectionBibliography(invoke, workspaceId, menuCollection.id, menuCollection.name)),
+              workspaceId && item("Alert me to new citations", "bell", () => void follow(invoke, workspaceId, "citing", `Citing “${menuCollection.name}”`, { collectionId: menuCollection.id }).catch((e) => toast(String(e).replace(/^Error: /, "")))),
               <hr key="rule" />,
               item("Delete collection…", "trash", () => remove(menuCollection)),
             ];

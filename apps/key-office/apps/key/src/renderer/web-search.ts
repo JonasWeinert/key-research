@@ -241,6 +241,8 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     keyOf,
     /** Web filters are set (a search can run without words). */
     filtered,
+    /** What is asked: the words and the web filters (an alert saves both). */
+    asked: { query: q, filters: filters ?? {} },
     /** Which providers are on is known. */
     ready: !!infos && !!filters,
     online,
