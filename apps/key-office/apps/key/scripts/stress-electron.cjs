@@ -136,20 +136,20 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
         };
       });
       if (i % 4 === 0) {
-        await shell.evaluate(async () => {
-          const state = await window.key.tabs();
-          await window.key.tabAction("split", { viewId: state.activeViewId });
-        });
+        await shell.evaluate(() => window.key.tabAction("split-right"));
         await delay(200);
         const split = await shell.evaluate(() => window.key.tabs());
-        const count = split.tabs.find((t) => t.id === split.activeTabId).views
-          .length;
-        if (i > 0) assert.equal(count, 2, "Split should contain two views");
+        if (i > 0) assert.equal(split.groups.length, 2, "Split Right should make two groups");
         if (i === 8) {
           await page.screenshot({ path: path.join(temp, "split-reader.png") });
           await shell.screenshot({ path: path.join(temp, "split-shell.png") });
         }
-        await shell.evaluate(() => window.key.tabAction("separate"));
+        // Back into one group.
+        await shell.evaluate(async () => {
+          const t = await window.key.tabs();
+          for (const tab of t.tabs.filter((x) => x.groupId !== t.groups[0].id))
+            await window.key.tabAction("drop-tab", { kind: "move", tabId: tab.id, groupId: t.groups[0].id, index: 99 });
+        });
       }
       await ready(page);
       const state = await shell.evaluate(() => window.key.tabs());
@@ -234,7 +234,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
       endMiB: samples.at(-1).totalMiB,
       peakMiB: Math.max(...samples.map((s) => s.totalMiB)),
       scope:
-        "Electron app.getAppMetrics workingSetSize: main/renderers/GPU/utility processes; Rust workers excluded. Synthetic foreground switching/zoom/scroll and split/separate; local debug build, not a latency guarantee.",
+        "Electron app.getAppMetrics workingSetSize: main/renderers/GPU/utility processes; Rust workers excluded. Synthetic foreground switching/zoom/scroll and split into groups and back; local debug build, not a latency guarantee.",
     };
     await writeFile(
       path.join(temp, "report.json"),

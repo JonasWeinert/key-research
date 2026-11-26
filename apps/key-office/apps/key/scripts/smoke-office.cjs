@@ -80,7 +80,12 @@ const { tmpdir } = require("node:os");
         JSON.stringify(geometry),
         content.slice(0, 100),
       );
-      await shell.evaluate(() => window.key.tabAction("separate"));
+      // The library goes back into the editor's group, so the next editor opens alone.
+      await shell.evaluate(async (viewId) => {
+        const t = await window.key.tabs();
+        const tab = t.tabs.find((x) => x.views[0].id === viewId);
+        await window.key.tabAction("drop-tab", { kind: "move", tabId: tab.id, groupId: t.groups[0].id, index: 99 });
+      }, library);
       await editor.screenshot({ path: path.join(temp, kind + ".png") });
       const errors = await editor.locator("body").innerText();
       if (/ERR_FILE_NOT_FOUND|Failed to load resource/i.test(errors))
