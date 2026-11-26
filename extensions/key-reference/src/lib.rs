@@ -35,7 +35,7 @@ pub use link_preview::{
     LinkPreviewEvent, LinkPreviewFetcher, LinkPreviewKind, LinkPreviewSession, WebsitePreview,
     WebsitePreviewProvider, WebsitePreviewState,
 };
-pub use openalex::{OpenAlexResponse, openalex_get};
+pub use openalex::{OpenAlexResponse, crossref_get, openalex_get};
 pub use scholarly::{
     MatchCertainty, ScholarlyEvent, ScholarlyFetcher, ScholarlyMetadata, ScholarlyMetadataProvider,
     ScholarlyMetadataState, ScholarlyQuery, ScholarlySession, ScholarlySource,

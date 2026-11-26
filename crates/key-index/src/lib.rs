@@ -702,6 +702,14 @@ impl Indexer {
         if self.store.identification(id)?.is_some_and(|r| r.hash.as_deref() == Some(hash.as_str()) && (r.doi.is_some() || r.via.is_some())) {
             return Ok(());
         }
+        // Added before file-name titles were recorded: a title that is still the file's name
+        // may give way to the work's, as for a PDF added now.
+        let mut record = self.store.identification(id)?.unwrap_or_default();
+        let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        if record.placeholder.is_none() && !source.title().trim().is_empty() && key_store::name_key(source.title()) == key_store::name_key(&stem) {
+            record.placeholder = Some(source.title().to_string());
+            self.store.set_identification(id, &record)?;
+        }
         let job = Job { id: id.to_string(), title: source.title().to_string(), kind: source.kind.clone(), stage: "identifying".into(), ..Default::default() };
         // Joined a reference: that one is indexed again and gets its own lookup.
         if self.identify(&source, &path, &hash, pdf, &job)? {
@@ -1086,6 +1094,7 @@ mod tests {
         let s = store.source(&jama.id).unwrap().unwrap();
         assert_eq!(s.field("doi"), Some("10.1001/jamacardio.2021.0185"));
         assert_eq!(s.field("enrichStatus"), Some("backfill"), "behind every other lookup");
+        assert_eq!(store.identification(&jama.id).unwrap().unwrap().placeholder.as_deref(), Some("jama"), "the file-name title may be replaced");
         assert!(store.next_enrichment(true, &[]).unwrap().is_none());
         assert_eq!(store.next_backfill_enrichment().unwrap().unwrap().id, jama.id);
         assert_eq!(store.backfill_status().unwrap(), key_store::BackfillStatus { identify: 0, lookup: 1 });
@@ -1097,6 +1106,7 @@ mod tests {
         assert!(indexer.backfill_identify(&paper));
         assert_eq!(store.source(&curated.id).unwrap().unwrap().field("enrichStatus"), Some("backfill"));
         assert_eq!(store.source(&curated.id).unwrap().unwrap().title(), "A curated title");
+        assert_eq!(store.identification(&curated.id).unwrap().unwrap().placeholder, None, "the user's title stays");
         store.enrichment_failed(&curated.id, "not_found", "none", None).unwrap();
         assert!(!indexer.backfill_identify(&paper), "the version stamp stops a retry");
 

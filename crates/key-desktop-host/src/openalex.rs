@@ -23,6 +23,10 @@ const PACE: Duration = Duration::from_millis(250);
 /// Cached counts older than this are fetched again when they are viewed.
 const STALE_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 const ATTEMPTS: i64 = 6;
+/// Between two background lookups of older PDFs, on top of the pacing of each request.
+const BACKFILL_PACE: Duration = Duration::from_secs(4);
+/// Between two Crossref searches (its polite pool asks for little).
+const CROSSREF_PACE: Duration = Duration::from_secs(1);
 const WORK_FIELDS: &str = "id,doi,display_name,title,publication_year,publication_date,ids,language,primary_location,best_oa_location,type,open_access,authorships,biblio,is_retracted,cited_by_count,fwci,primary_topic,topics,keywords,funders,awards,referenced_works,abstract_inverted_index";
 const CITED_FIELDS: &str = "id,doi,display_name,publication_year,authorships,primary_location";
 
@@ -52,11 +56,14 @@ pub enum Fail {
     /// Worth trying again later (rate limited, server or network trouble).
     Busy(String),
     Error(String),
+    /// Crossref matched the title, but OpenAlex has no record of that DOI.
+    Unlisted { doi: String, score: f64 },
 }
 impl Fail {
     fn message(&self) -> String {
         match self {
             Fail::NotFound => "OpenAlex has no record of this work".into(),
+            Fail::Unlisted { doi, .. } => format!("OpenAlex has no record of {doi}"),
             Fail::Busy(m) | Fail::Error(m) => m.clone(),
         }
     }
@@ -67,11 +74,12 @@ pub struct OpenAlex {
     options: Arc<Mutex<Options>>,
     signal: Arc<(Mutex<bool>, Condvar)>,
     focus: Arc<Mutex<Vec<String>>>,
+    gate: Arc<Mutex<Option<Arc<dyn Fn() -> bool + Send + Sync>>>>,
 }
 
 impl OpenAlex {
     pub fn start(store: Store) -> Self {
-        let worker = Self { options: Arc::new(Mutex::new(Options::from_env())), signal: Default::default(), focus: Default::default() };
+        let worker = Self { options: Arc::new(Mutex::new(Options::from_env())), signal: Default::default(), focus: Default::default(), gate: Default::default() };
         let run = worker.clone();
         thread::Builder::new().name("key-openalex".into()).spawn(move || run.run(store)).expect("spawn OpenAlex worker");
         worker
@@ -98,15 +106,48 @@ impl OpenAlex {
         }
     }
 
+    /// Background lookups of older PDFs run only while this answers true (indexing idle and
+    /// not paused); without one they never run.
+    pub fn set_backfill_gate(&self, gate: impl Fn() -> bool + Send + Sync + 'static) {
+        if let Ok(mut slot) = self.gate.lock() {
+            *slot = Some(Arc::new(gate));
+        }
+        self.wake();
+    }
+
+    /// The next background lookup of an older PDF, when nothing else waits, automatic
+    /// lookups are on, the gate is open and the last one was a while ago.
+    fn next_backfill(&self, store: &Store, options: &Options, last: Option<Instant>) -> Option<EnrichJob> {
+        if !options.auto || last.is_some_and(|l| l.elapsed() < BACKFILL_PACE) {
+            return None;
+        }
+        let gate = self.gate.lock().ok()?.clone()?;
+        if !gate() {
+            return None;
+        }
+        store.next_backfill_enrichment().ok().flatten()
+    }
+
     fn run(self, store: Store) {
+        let mut last_backfill: Option<Instant> = None;
         loop {
             let options = self.options();
             let focus = self.focus.lock().map(|f| f.clone()).unwrap_or_default();
-            match store.next_enrichment(options.auto, &focus) {
+            let next = match store.next_enrichment(options.auto, &focus) {
+                Ok(None) => match self.next_backfill(&store, &options, last_backfill) {
+                    Some(job) => {
+                        last_backfill = Some(Instant::now());
+                        Ok(Some(job))
+                    }
+                    None => Ok(None),
+                },
+                other => other,
+            };
+            match next {
                 Ok(Some(job)) => {
                     if let Err(fail) = enrich(&store, &job, &options) {
                         let (status, retry) = match &fail {
-                            Fail::NotFound => ("not_found", None),
+                            Fail::NotFound | Fail::Unlisted { .. } => ("not_found", None),
                             // Busy: back off 1, 2, 4 … minutes, then give up until asked again.
                             _ if job.attempts + 1 < ATTEMPTS => ("failed", Some(key_store::now_ms() + 60_000 * (1 << job.attempts.clamp(0, 10)))),
                             _ => ("failed", None),
@@ -115,9 +156,12 @@ impl OpenAlex {
                     }
                 }
                 Ok(None) | Err(_) => {
+                    // Background lookups waiting: come back once the pace allows the next.
+                    let backfill = options.auto && store.backfill_status().is_ok_and(|s| s.lookup > 0);
+                    let idle = if backfill { BACKFILL_PACE } else { Duration::from_secs(30) };
                     let (lock, condvar) = &*self.signal;
                     if let Ok(guard) = lock.lock() {
-                        if let Ok((mut guard, _)) = condvar.wait_timeout_while(guard, Duration::from_secs(30), |woken| !*woken) {
+                        if let Ok((mut guard, _)) = condvar.wait_timeout_while(guard, idle, |woken| !*woken) {
                             *guard = false;
                         }
                     }
@@ -244,7 +288,7 @@ fn bare_doi(doi: &str) -> String {
 /// The work for a source: by OpenAlex id, DOI (as read from an added PDF, then its other
 /// readings) or PMID, else by title. A title search result is accepted only when it is
 /// clearly the same work (key_store::accept_title); the second value is that match's score.
-fn find_work(job: &EnrichJob, options: &Options, record: Option<&Identification>, surnames: &[String]) -> Result<(Json, Option<f64>), Fail> {
+fn find_work(job: &EnrichJob, options: &Options, record: Option<&Identification>, surnames: &[String]) -> Result<(Json, Option<(f64, &'static str)>), Fail> {
     let fields = [("select", WORK_FIELDS)];
     let doi = job.doi.as_deref().map(bare_doi).filter(|d| d.starts_with("10."));
     let alternates = record.filter(|r| r.doi.is_some() && r.doi == doi).map(|r| r.alternates.clone()).unwrap_or_default();
@@ -296,7 +340,90 @@ fn find_work(job: &EnrichJob, options: &Options, record: Option<&Identification>
             break;
         }
     }
-    best.map(|(score, work)| (work, Some(score))).ok_or(Fail::NotFound)
+    if let Some((score, work)) = best {
+        return Ok((work, Some((score, "title"))));
+    }
+    // OpenAlex has nothing by these titles: Crossref's search, held to the same test, and the
+    // work by the DOI it gives.
+    for title in titles.iter().take(2) {
+        let Some((score, doi)) = crossref_match(title, &context, options)? else { continue };
+        return match get(&format!("works/doi:{doi}"), &fields, options) {
+            Ok(work) => Ok((work, Some((score, "crossref")))),
+            Err(Fail::NotFound) => Err(Fail::Unlisted { doi, score }),
+            Err(fail) => Err(fail),
+        };
+    }
+    Err(Fail::NotFound)
+}
+
+/// The DOI of the Crossref work that is clearly the one titled `title` (key_store::accept_title).
+fn crossref_match(title: &str, context: &TitleContext, options: &Options) -> Result<Option<(f64, String)>, Fail> {
+    let items = crossref_search(title, options)?;
+    let mut best: Option<(f64, String)> = None;
+    for item in &items {
+        let Some(doi) = item["DOI"].as_str().map(bare_doi).filter(|d| d.starts_with("10.")) else { continue };
+        let year = ["issued", "published", "published-print", "published-online"]
+            .iter()
+            .find_map(|k| item[*k]["date-parts"][0][0].as_i64());
+        let candidate = TitleCandidate {
+            title: item["title"][0].as_str().unwrap_or("").to_string(),
+            year,
+            surnames: item["author"].as_array().into_iter().flatten().filter_map(|a| a["family"].as_str().or(a["name"].as_str()).map(String::from)).collect(),
+        };
+        if let Some(score) = accept_title(title, &candidate, context) {
+            if best.as_ref().is_none_or(|(b, _)| score > *b) {
+                best = Some((score, doi));
+            }
+        }
+    }
+    Ok(best)
+}
+
+/// Crossref's bibliographic search for a title: a few candidates, paced a second apart
+/// (Crossref's polite pool asks for little), retried with backoff when it is busy.
+fn crossref_search(title: &str, options: &Options) -> Result<Vec<Json>, Fail> {
+    let query = [("query.bibliographic", title), ("rows", "5"), ("select", "DOI,title,author,issued,published,published-print,published-online")];
+    if let Some(dir) = fixtures() {
+        // Recorded: crossref.json lists items; the search is loose like Crossref's.
+        let items: Vec<Json> = std::fs::read_to_string(dir.join("crossref.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str::<Json>(&t).ok())
+            .and_then(|v| v["message"]["items"].as_array().cloned())
+            .unwrap_or_default();
+        return Ok(items.into_iter().filter(|i| i["title"][0].as_str().is_some_and(|t| title_similarity(t, title) >= 0.6)).take(5).collect());
+    }
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    let mut delay = Duration::from_secs(2);
+    for attempt in 0..3 {
+        {
+            let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(wait) = last.and_then(|l| CROSSREF_PACE.checked_sub(l.elapsed())) {
+                thread::sleep(wait);
+            }
+            *last = Some(Instant::now());
+        }
+        let busy = match key_reference::crossref_get("works", &query, Some(&options.mailto)) {
+            Ok(response) => match response.status {
+                200..=299 => {
+                    let value: Json = serde_json::from_slice(&response.body).map_err(|e| Fail::Error(format!("Crossref sent an unreadable answer: {e}")))?;
+                    return Ok(value["message"]["items"].as_array().cloned().unwrap_or_default());
+                }
+                404 => return Ok(Vec::new()),
+                429 | 500..=599 => {
+                    delay = response.retry_after.map_or(delay, |d| d.min(Duration::from_secs(60)));
+                    format!("Crossref is busy (HTTP {})", response.status)
+                }
+                status => return Err(Fail::Error(format!("Crossref returned HTTP {status}"))),
+            },
+            Err(error) => error,
+        };
+        if attempt == 2 {
+            return Err(Fail::Busy(busy));
+        }
+        thread::sleep(delay);
+        delay *= 2;
+    }
+    Err(Fail::Busy("Crossref did not answer".into()))
 }
 
 /// Looks one source up and stores what OpenAlex knows, then the details of what it cites.
@@ -306,7 +433,25 @@ pub fn enrich(store: &Store, job: &EnrichJob, options: &Options) -> Result<(), F
     let record = store.identification(&job.id).map_err(Fail::Error)?;
     let source = store.source(&job.id).map_err(Fail::Error)?;
     let surnames: Vec<String> = source.iter().flat_map(|s| s.creators.iter()).filter_map(|c| c.family.clone().or_else(|| c.literal.clone())).collect();
-    let (work, score) = find_work(job, options, record.as_ref(), &surnames)?;
+    let (work, score) = match find_work(job, options, record.as_ref(), &surnames) {
+        // Only Crossref knows the work: its DOI is attached (when the source has none) and
+        // the source counts as looked up; OpenAlex may list it later.
+        Err(Fail::Unlisted { doi, score }) => {
+            let has_doi = source.as_ref().is_some_and(|s| s.field("doi").is_some_and(|d| !d.trim().is_empty()));
+            if !has_doi && source.is_some() {
+                let mut patch = serde_json::Map::new();
+                patch.insert("doi".into(), json!(doi));
+                store.update_source(&job.id, &patch).map_err(Fail::Error)?;
+                let mut record = record.unwrap_or_default();
+                record.via = Some("crossref".into());
+                record.score = Some(score);
+                record.doi = Some(doi.clone());
+                store.set_identification(&job.id, &record).map_err(Fail::Error)?;
+            }
+            return Err(Fail::Unlisted { doi, score });
+        }
+        found => found?,
+    };
     let work_id = work["id"].as_str().map(|w| w.rsplit('/').next().unwrap_or("").to_string());
     let work_doi = work["doi"].as_str().map(bare_doi);
     let mut id = job.id.clone();
@@ -318,8 +463,8 @@ pub fn enrich(store: &Store, job: &EnrichJob, options: &Options) -> Result<(), F
     }
     store.apply_openalex_work(&id, &work).map_err(Fail::Error)?;
     if let Some(mut record) = store.identification(&id).map_err(Fail::Error)? {
-        if let Some(score) = score {
-            record.via = Some("title".into());
+        if let Some((score, via)) = score {
+            record.via = Some(via.into());
             record.score = Some(score);
             record.doi = work_doi.clone();
         } else if let (Some(read), Some(actual)) = (record.doi.clone(), work_doi.clone()) {
@@ -614,6 +759,28 @@ mod tests {
         let record = Identification { titles: vec!["Falls in nursing homes and what to do about them".into()], ..Default::default() };
         store.set_identification(&third.id, &record).unwrap();
         assert!(matches!(enrich(&store, &EnrichJob { id: third.id.clone(), ..Default::default() }, &options), Err(Fail::NotFound)));
+
+        // OpenAlex has no such title; Crossref does, with the author on the page: its DOI
+        // leads to the OpenAlex work. A Crossref work OpenAlex does not list gives its DOI.
+        let crossref = json!({"message": {"items": [
+            {"DOI": "10.5555/FALLS", "title": ["Video detection of falls in memory care: a cohort"], "issued": {"date-parts": [[2021]]}, "author": [{"family": "Bayen"}]},
+            {"DOI": "10.5555/unlisted", "title": ["Night-time wandering in memory care units"], "issued": {"date-parts": [[2020]]}, "author": [{"family": "Nickels"}]},
+            {"DOI": "10.5555/other", "title": ["Night-time wandering in memory care units"], "issued": {"date-parts": [[2020]]}, "author": [{"family": "Someone"}]}
+        ]}});
+        std::fs::write(fixtures.join("crossref.json"), crossref.to_string()).unwrap();
+        let page = "Original Paper\nEleonore Bayen1,2; Shirley Nickels3\n2021";
+        let fourth = store.insert_source(input(json!({"kind": "pdf", "title": "scan 4", "filePath": "/tmp/w.pdf", "fileHash": "h4"}))).unwrap();
+        let record = Identification { titles: vec!["Video detection of falls in memory care: a cohort".into()], first_page: Some(page.into()), ..Default::default() };
+        store.set_identification(&fourth.id, &record).unwrap();
+        enrich(&store, &EnrichJob { id: fourth.id.clone(), ..Default::default() }, &options).unwrap();
+        let found = store.source(&fourth.id).unwrap().unwrap();
+        assert_eq!((found.field("openalexId"), found.field("identifiedBy")), (Some("W1"), Some("crossref")));
+        let fifth = store.insert_source(input(json!({"kind": "pdf", "title": "scan 5", "filePath": "/tmp/v.pdf", "fileHash": "h5"}))).unwrap();
+        let record = Identification { titles: vec!["Night-time wandering in memory care units".into()], first_page: Some(page.into()), ..Default::default() };
+        store.set_identification(&fifth.id, &record).unwrap();
+        assert!(matches!(enrich(&store, &EnrichJob { id: fifth.id.clone(), ..Default::default() }, &options), Err(Fail::Unlisted { .. })));
+        let found = store.source(&fifth.id).unwrap().unwrap();
+        assert_eq!((found.field("doi"), found.field("identifiedBy")), (Some("10.5555/unlisted"), Some("crossref")));
         unsafe { std::env::remove_var("KEY_OPENALEX_FIXTURES") };
     }
 }

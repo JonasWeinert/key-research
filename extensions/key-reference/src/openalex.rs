@@ -36,3 +36,22 @@ pub fn openalex_get(path: &str, query: &[(&str, &str)], mailto: Option<&str>, ap
     let retry_after = response.header("retry-after").and_then(|h| h.value_str()).and_then(|v| v.trim().parse::<u64>().ok()).map(Duration::from_secs);
     Ok(OpenAlexResponse { status: response.status(), retry_after, body: response.body().to_vec() })
 }
+
+/// GET `https://api.crossref.org/<path>?<query>&mailto=…` (Crossref's polite pool), for a
+/// title search when OpenAlex has no match. The caller paces and retries, as for OpenAlex.
+pub fn crossref_get(path: &str, query: &[(&str, &str)], mailto: Option<&str>) -> Result<OpenAlexResponse, String> {
+    let mut url = Url::parse("https://api.crossref.org/").map_err(|error| error.to_string())?;
+    url.set_path(path.trim_start_matches('/'));
+    {
+        let mut pairs = url.query_pairs_mut();
+        for (key, value) in query {
+            pairs.append_pair(key, value);
+        }
+        if let Some(mailto) = mailto.filter(|m| m.contains('@')) {
+            pairs.append_pair("mailto", mailto);
+        }
+    }
+    let response = fetch_public_json_response(url.as_str(), MAX_OPENALEX_BYTES, &CancellationToken::active()).map_err(|error| format!("Crossref: {error}"))?;
+    let retry_after = response.header("retry-after").and_then(|h| h.value_str()).and_then(|v| v.trim().parse::<u64>().ok()).map(Duration::from_secs);
+    Ok(OpenAlexResponse { status: response.status(), retry_after, body: response.body().to_vec() })
+}
