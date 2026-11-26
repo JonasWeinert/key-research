@@ -5,7 +5,7 @@
 // panel (`variant="side"`), so a source looks the same wherever it is shown.
 import { AnnotationText } from "./annotation-text";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { apa, apaInText } from "./citation";
+import { bibliography, inTextCitation, rtfDocument, writeRichClipboard } from "./cite";
 import { CitationKeyRow } from "./citation-keys";
 import { Icon } from "./icons";
 import { ProgressRing } from "./index-activity";
@@ -24,9 +24,12 @@ import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
 import { SavePageOffer, saveSourceWebPage } from "./source-web-page";
+import { findPdf as findPdfFor, findPdfMessage } from "./find-pdf";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
+import MetadataUpdateSheet from "./MetadataUpdateSheet";
+import { RetractionNotice, VersionsLine } from "./source-notices";
 
 interface Highlight {
   id: string;
@@ -79,6 +82,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const [collections, setCollections] = useState<Collection[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<Facet[]>([]);
   const [moreFields, setMoreFields] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [abstractOpen, setAbstractOpen] = useState(false);
   /** People, journal, topics, citations: the metadata graph around the source. */
   const [graph, setGraph] = useState<SourceGraph>();
@@ -197,7 +201,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const save = async (patch: Record<string, unknown>) => {
     setError("");
     try {
-      const next = await invoke<Source>("store_update", { id: sourceId, patch }, workspaceId);
+      const next = await invoke<Source>("store_update", { id: sourceId, patch, byHand: true }, workspaceId);
       setSource(next);
       side?.onChanged(next);
       libraryChanged();
@@ -280,17 +284,24 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
     await invoke("store_note_delete", { id: note.id }, workspaceId);
     setNotes((list) => list.filter((n) => n.id !== note.id));
   };
+  // Find PDF (find-pdf.ts): the host's open-access chain, else the publisher's page in the
+  // in-app browser, where a PDF opened is attached to this source.
+  const [finding, setFinding] = useState<"" | "busy" | string>("");
+  const canFindPdf = !!(source?.doi || source?.url || source?.arxivId || source?.pmcid || source?.oaUrl);
   const findPdf = async () => {
     setError("");
+    setFinding("busy");
     try {
-      const lookup = await invoke<{ fullTextUrl?: string | null }>("scholarly_lookup_resource", { resource: source!.doi || source!.url }, workspaceId);
-      if (!lookup.fullTextUrl) throw Error("No open-access PDF was found for this reference.");
-      const next = await invoke<Source>("library_download_pdf", { url: lookup.fullTextUrl, sourceId }, workspaceId);
-      setSource(next);
-      side?.onChanged(next);
+      const result = await findPdfFor(invoke, workspaceId, source!, { quiet: true });
+      if (result.source) {
+        setSource(result.source);
+        side?.onChanged(result.source);
+      }
+      setFinding(result.status === "attached" ? "" : findPdfMessage(result));
+      if (result.status !== "attached" && result.status !== "hasFile") setPdfMissing(true);
     } catch (e) {
+      setFinding("");
       setError(String(e).replace(/^Error: /, ""));
-      setPdfMissing(true);
     }
   };
   // No PDF to be had: the reference's web page, saved offline as its file instead.
@@ -319,14 +330,22 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
       setError(String(e));
     }
   };
-  const copy = async (label: string, text: string, html?: string) => {
+  // The reference and in-text citation in the style chosen in Settings; BibTeX through the
+  // engine's BibTeX style.
+  // BibTeX, RIS, pandoc and LaTeX copies come from the host's exporter (store_biblio_copy).
+  const copyCitation = async (kind: "reference" | "in-text" | "bibtex") => {
     try {
-      if (html && "ClipboardItem" in window)
-        await navigator.clipboard.write([
-          new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) }),
-        ]);
-      else await navigator.clipboard.writeText(text);
-      setCopied(label);
+      if (kind === "in-text") {
+        const c = await inTextCitation(invoke, workspaceId, sourceId);
+        await writeRichClipboard({ text: c.text, html: c.html, rtf: rtfDocument([c.rtf]) });
+      } else {
+        const bib = await bibliography(invoke, workspaceId, [sourceId], kind === "bibtex" ? { style: "bibtex" } : {});
+        const entry = bib?.entries[0];
+        if (!entry) throw Error("This style has no reference list");
+        if (kind === "bibtex") await writeRichClipboard({ text: entry.text });
+        else await writeRichClipboard({ text: entry.text, html: `<div class="csl-entry">${entry.html}</div>`, rtf: rtfDocument([entry.rtf]) });
+      }
+      setCopied(kind === "bibtex" ? "BibTeX" : kind);
       setTimeout(() => setCopied(""), 1400);
     } catch (e) {
       setError(String(e));
@@ -658,8 +677,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <Icon name="more" size={14} />
             </summary>
             <div className="kx-menu-popover" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
-              <button onClick={() => void copy("APA", apa(source), apa(source, true))}>Copy APA reference</button>
-              <button onClick={() => void copy("in-text", apaInText(source))}>Copy in-text citation</button>
+              <button onClick={() => void copyCitation("reference")}>Copy reference</button>
+              <button onClick={() => void copyCitation("in-text")}>Copy in-text citation</button>
               {(
                 [
                   ["bibtex", "BibTeX"],
@@ -668,15 +687,23 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   ["latex", "LaTeX \\cite"],
                 ] as const
               ).map(([format, label]) => (
-                <button key={format} onClick={() => void invoke<string>("store_biblio_copy", { ids: [sourceId], format }, workspaceId).then((text) => copy(label, text), (e) => setError(String(e)))}>
+                <button key={format} onClick={() => void invoke<string>("store_biblio_copy", { ids: [sourceId], format }, workspaceId).then(async (text) => {
+                      await navigator.clipboard.writeText(text);
+                      setCopied(label);
+                      setTimeout(() => setCopied(""), 1400);
+                    }).catch((e) => setError(String(e)))}>
                   Copy {label}
                 </button>
               ))}
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
-              {!source.filePath && (source.doi || source.url) && <button onClick={() => void findPdf()}>Find PDF</button>}
+              {!source.filePath && canFindPdf && <button onClick={() => void findPdf()}>Find PDF</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
+              <button onClick={() => setUpdating(true)}>Update metadata…</button>
+              {source.doi && (
+                <button onClick={() => void invoke("store_retraction_check", { ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Check for retraction</button>
+              )}
               <button onClick={reindex}>Re-index</button>
             </div>
           </details>
@@ -705,13 +732,22 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
       titleText={source.title || ""}
       details={{ summary: foldedSummary, content: details }}
       notice={
-        source.retracted === 1 && (
-          <div className="kx-retracted" role="alert">
-            <Icon name="info" size={14} />
-            Retracted
-            <span>OpenAlex lists this work as retracted. Check before citing it.</span>
-          </div>
-        )
+        <>
+          <RetractionNotice invoke={invoke} workspaceId={workspaceId} source={source} onChanged={() => void loadSource()} />
+          <VersionsLine invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} />
+          {updating && (
+            <MetadataUpdateSheet
+              invoke={invoke}
+              workspaceId={workspaceId}
+              ids={[sourceId]}
+              onClose={() => setUpdating(false)}
+              onDone={() => {
+                setUpdating(false);
+                void loadSource();
+              }}
+            />
+          )}
+        </>
       }
       title={<AutoText className="kx-inspector-title kx-source-page-title kx-note-title" label="Title" value={source.title || ""} placeholder="Untitled" onCommit={(title) => void save({ title })} />}
     >
@@ -722,6 +758,15 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
           </figure>
         )}
         {error && <p className="kx-inline-error">{error}</p>}
+        {!source.filePath && canFindPdf && (
+          <div className="kx-find-pdf" role="group" aria-label="PDF" data-busy={finding === "busy" || undefined}>
+            {finding === "busy" ? <span className="kx-search-spinner" aria-hidden="true" /> : <Icon name="filePdf" size={14} />}
+            <span role="status">{finding === "busy" ? "Looking for an open-access PDF…" : finding || "No PDF yet."}</span>
+            <button className="kx-page-action" disabled={finding === "busy"} onClick={() => void findPdf()}>
+              <Icon name="search" size={12} /> Find PDF
+            </button>
+          </div>
+        )}
         {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (
           <SavePageOffer busy={savingPage} onSave={() => void saveWebPage()} />
         )}
@@ -790,6 +835,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             searchItems={sources.searchItems}
             searchItemsMore={sources.searchItemsMore}
             citeLabel={sources.citeLabel}
+            formatCitations={sources.formatCitations}
+            formatBibliography={sources.formatBibliography}
             onOpenItem={sources.onOpenItem}
             placeholder="Write about this source. Type / for blocks, @ to link anything"
           />
@@ -828,6 +875,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   searchItems={sources.searchItems}
                   searchItemsMore={sources.searchItemsMore}
                   citeLabel={sources.citeLabel}
+                  formatCitations={sources.formatCitations}
+                  formatBibliography={sources.formatBibliography}
                   onOpenItem={sources.onOpenItem}
                 />
               </div>

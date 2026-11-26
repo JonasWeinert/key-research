@@ -19,6 +19,8 @@ pub struct Library {
     pub indexer: Indexer,
     pub references: super::reference_worker::ReferenceWorker,
     pub openalex: super::openalex::OpenAlex,
+    /// Duplicate counts and retraction rechecks in the background (hygiene.rs).
+    pub hygiene: super::hygiene::Hygiene,
     /// One Zotero import or sync at a time; its progress while it runs.
     zotero: std::sync::Mutex<()>,
     zotero_progress: std::sync::Arc<std::sync::Mutex<Option<key_zotero::Progress>>>,
@@ -99,7 +101,9 @@ impl Library {
         let gate = indexer.clone();
         openalex.set_backfill_gate(move || !gate.is_paused() && !gate.is_busy());
         super::biblio_commands::start_watcher(store.clone());
-        Ok(Self { store, indexer, references, openalex, zotero: Default::default(), zotero_progress: Default::default() })
+        let idle = indexer.clone();
+        let hygiene = super::hygiene::Hygiene::start(store.clone(), openalex.clone(), move || !idle.is_paused() && !idle.is_busy());
+        Ok(Self { store, indexer, references, openalex, hygiene, zotero: Default::default(), zotero_progress: Default::default() })
     }
 
     fn zotero_run(&self, options: &key_zotero::ImportOptions, mode: key_zotero::Mode) -> Result<key_zotero::ImportReport, String> {
@@ -146,7 +150,11 @@ impl Library {
         let result = match command {
             "store_sources" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.list_sources(&q)?)),
             "store_facets" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.facets(&q)?)),
-            "store_source" => arg::<String>(args, "id").and_then(|id| json_output(self.store.source(&id)?)),
+            // A source merged into another answers as the one it became.
+            "store_source" => arg::<String>(args, "id").and_then(|id| json_output(self.store.source(&self.store.resolve_source_id(&id)?)?)),
+            // "Already in library": which of these works the library has, and how it knows.
+            "store_match_identifiers" => arg::<Option<Vec<key_store::matching::MatchQuery>>>(args, "works")
+                .and_then(|works| json_output(self.store.match_identifiers(&works.unwrap_or_default())?)),
             "store_create" => arg::<SourceInput>(args, "source").and_then(|input| {
                 let source = self.store.insert_source(input)?;
                 self.indexer.wake();
@@ -156,18 +164,27 @@ impl Library {
             "store_update" => (|| {
                 let id: String = arg(args, "id")?;
                 let patch: Map<String, Json> = arg(args, "patch")?;
-                let source = self.store.update_source(&id, &patch)?;
+                // The user's own edits are journaled (undo) and mark the fields as set by hand.
+                let source = if arg::<Option<bool>>(args, "byHand")?.unwrap_or(false) {
+                    let edit = key_store::BatchEdit { patch, by_hand: true, ..Default::default() };
+                    self.store.edit_sources(std::slice::from_ref(&id), &edit, None)?;
+                    self.hygiene.wake();
+                    self.store.source(&id)?.ok_or("Source not found")?
+                } else {
+                    self.store.update_source(&id, &patch)?
+                };
                 self.indexer.wake();
                 self.openalex.wake();
                 json_output(source)
             })(),
-            "store_trash" => (|| json_output(self.store.trash(&arg::<Vec<String>>(args, "ids")?, arg::<Option<bool>>(args, "trashed")?.unwrap_or(true))?))(),
+            "store_trash" => (|| json_output(self.store.trash_sources(&arg::<Vec<String>>(args, "ids")?, arg::<Option<bool>>(args, "trashed")?.unwrap_or(true))?.affected))(),
             "store_delete" => arg::<Vec<String>>(args, "ids").and_then(|ids| json_output(self.store.delete(&ids)?)),
             "store_bulk_tag" => (|| {
                 let ids: Vec<String> = arg(args, "ids")?;
                 let add: Option<Vec<String>> = arg(args, "add")?;
                 let remove: Option<Vec<String>> = arg(args, "remove")?;
-                json_output(self.store.bulk_tag(&ids, &add.unwrap_or_default(), &remove.unwrap_or_default())?)
+                let edit = key_store::BatchEdit { tags_add: add.unwrap_or_default(), tags_remove: remove.unwrap_or_default(), by_hand: true, ..Default::default() };
+                json_output(self.store.edit_sources(&ids, &edit, None)?.affected)
             })(),
             "store_tag_index" => self.store.tag_index().and_then(json_output),
             "store_tag_apply" => arg::<key_store::TagOperation>(args, "operation").and_then(|op| json_output(self.store.apply_tags(&op)?)),
@@ -204,11 +221,11 @@ impl Library {
             })(),
             "store_collection_delete" => arg::<String>(args, "id").and_then(|id| json_output(self.store.delete_collection(&id)?)),
             "store_membership" => (|| {
-                json_output(self.store.set_membership(
-                    &arg::<String>(args, "collectionId")?,
-                    &arg::<Vec<String>>(args, "ids")?,
-                    arg::<Option<bool>>(args, "present")?.unwrap_or(true),
-                )?)
+                json_output(
+                    self.store
+                        .file_sources(&arg::<String>(args, "collectionId")?, &arg::<Vec<String>>(args, "ids")?, arg::<Option<bool>>(args, "present")?.unwrap_or(true))?
+                        .affected,
+                )
             })(),
             // Without a source: the workspace's standalone notes.
             "store_notes" => arg::<Option<String>>(args, "sourceId").and_then(|id| match id {
@@ -456,8 +473,10 @@ impl Library {
             "store_provenance" => arg::<String>(args, "id").and_then(|id| json_output(self.store.property_provenance(&id)?)),
             _ => {
                 return super::openalex::dispatch(self, command, args)
+                    .or_else(|| super::hygiene::dispatch(self, command, args))
                     .or_else(|| super::linked_folders::dispatch(self, command, args, root))
                     .or_else(|| super::core_commands::dispatch(self, command, args))
+                    .or_else(|| super::cite_commands::dispatch(self, command, args))
                     .or_else(|| super::biblio_commands::dispatch(self, command, args, root));
             }
         };

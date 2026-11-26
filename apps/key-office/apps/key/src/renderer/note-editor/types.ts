@@ -24,6 +24,8 @@ export interface SourceRef {
   anchor?: string;
   /** A highlight's colour. */
   color?: string;
+  /** "Retracted", "Withdrawn" or "Expression of concern": cited with a warning. */
+  flag?: string;
   /** Which search section it came from: titles and details, the text, or related by meaning. */
   group?: "titles" | "text" | "meaning";
   /** Where it matched ("p. 4", "Abstract") and the passage, with `[[match]]` markers. */
@@ -80,6 +82,10 @@ export interface NoteEditorProps {
   searchMapCenters?: (query: string) => Promise<SourceRef[]>;
   /** An in-text citation for a picked source or highlight, e.g. "(Palma et al., 2022, p. 4)". */
   citeLabel?: (ref: SourceRef, page?: number) => Promise<string | undefined>;
+  /** All of a note's citations at once, so numbering and disambiguation hold (`page` 0-based). */
+  formatCitations?: (cites: { id: string; page?: number }[]) => Promise<string[]>;
+  /** The Bibliography block's entries for these sources. */
+  formatBibliography?: (ids: string[]) => Promise<{ entries: { id: string; html: string; text: string }[]; hangingIndent: boolean } | undefined>;
   placeholder?: string;
   autoFocus?: boolean;
   /** Shows the note without editing it (a canvas card); links and media still work. */
@@ -124,6 +130,10 @@ export function itemFromHref(href: string | null | undefined): ItemLink | null {
 // Items dragged anywhere in the app (library rows, the sidebar, canvas cards) carry this
 // type; a canvas places them as cards and a note links them where they land.
 export const ITEM_DRAG_TYPE = "application/x-key-items";
+/** Marks an item drag whose sources should land as citations (the library panel's rows). */
+export const CITE_DRAG_TYPE = "application/x-key-cite";
+/** A passage dragged out of the library panel, as JSON `QuoteInsert`. */
+export const QUOTE_DRAG_TYPE = "application/x-key-quote";
 
 export interface DraggedItem extends ItemLink {
   title: string;

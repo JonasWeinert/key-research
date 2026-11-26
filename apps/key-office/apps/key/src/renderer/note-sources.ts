@@ -1,5 +1,6 @@
 // How notes reach the library: find sources for @-links and embeds, describe them for
 // cards and quotes, and open them (at a page when a quote has one).
+import { retractionOf } from "./library-hygiene";
 import { bridge, shortCreators, type Invoke, type Source, type SourcePage } from "./library-api";
 import type { ItemLink, NoteMediaHost, SourceRef } from "./note-editor";
 import type { Found } from "./unified-search";
@@ -12,6 +13,7 @@ export function sourceRef(source: Source): SourceRef {
     title: source.title || "Untitled",
     detail: [shortCreators(source.creators), source.year].filter(Boolean).join(" "),
     kind: source.kind,
+    flag: retractionOf(source),
   };
 }
 
@@ -62,7 +64,21 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
     citeLabel: async (ref: SourceRef, page?: number) => {
       const { describeItem, inTextCitation } = await import("./item-actions");
       const info = await describeItem(invoke, workspaceId, { kind: "source", id: ref.id, anchor: ref.anchor });
-      return info.source ? inTextCitation(info.source, page ?? info.highlight?.page) : undefined;
+      return info.source ? inTextCitation(invoke, workspaceId, info.source, page ?? info.highlight?.page) : undefined;
+    },
+    // A note's citations in one call (numbering and disambiguation across the note).
+    formatCitations: async (cites: { id: string; page?: number }[]) => {
+      const { renderCitations } = await import("./cite");
+      const out = await renderCitations(invoke, workspaceId, {
+        citations: cites.map((c) => ({ items: [{ id: c.id, locator: c.page === undefined || c.page < 0 ? undefined : String(c.page + 1) }] })),
+        bibliography: false,
+      });
+      return out.citations.map((c) => c.text);
+    },
+    formatBibliography: async (ids: string[]) => {
+      const { bibliography } = await import("./cite");
+      const bib = await bibliography(invoke, workspaceId, ids);
+      return bib && { entries: bib.entries, hangingIndent: bib.hangingIndent };
     },
     onOpenItem: (item: ItemLink) => void import("./item-links").then(({ openItem }) => openItem(invoke, workspaceId, item)),
     searchSources: async (query: string): Promise<SourceRef[]> => {

@@ -36,6 +36,8 @@ export class WebSearch {
     const result =
       command === "web_merge" ? await this.deps.invoke(command, {}, target, { binary: new TextEncoder().encode(JSON.stringify(args ?? {})) }) : await this.deps.invoke(command, args ?? {}, target);
     if (command === "web_add_to_library" && result && !result.existed) this.deps.emit("library-changed");
+    if (command === "web_find_pdf" && result?.status === "attached") this.deps.emit("library-changed");
+    if (command === "web_add_identifiers" && Array.isArray(result) && result.some((r) => r?.status === "added")) this.deps.emit("library-changed");
     return result;
   }
 

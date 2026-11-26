@@ -4,6 +4,7 @@ import { ReferenceList } from "@key-reader/pdfjs/ReferenceList";
 import { Icon } from "./icons";
 import { AnalysisStatus, working, type AnalysisReport } from "./reader-analysis";
 import { readerLibraryWorks } from "./reader-library-works";
+import { addFromSource } from "./add-from-source";
 import { ReferenceAside } from "./ReferenceAside";
 import "./reader-panel.css";
 
@@ -92,14 +93,16 @@ function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId:
   );
   // Add to library beside this PDF, in its collections (read when adding).
   const collectionsRef = useLatest(collections);
+  const sourceIdRef = useLatest(sourceId);
   const works = useMemo(
     () =>
       readerLibraryWorks({
         invoke: <T,>(command: string, args?: Record<string, unknown>) => shellApi().invoke<T>(command, args, workspaceId),
         open,
         collections: async () => collectionsRef.current,
+        addFrom: (work) => addFromSource((command, args, ws) => shellApi().invoke(command, args, ws ?? workspaceId), { workspaceId, sourceId: sourceIdRef.current ?? null }, work),
       }),
-    [workspaceId, open, collectionsRef],
+    [workspaceId, open, collectionsRef, sourceIdRef],
   );
   const references = report
     ? report.references

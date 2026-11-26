@@ -8,11 +8,16 @@ mod graph;
 mod identify;
 mod linked;
 mod links;
+pub mod matching;
 mod openalex;
 mod properties;
 mod relations;
 mod search;
 mod tag_ops;
+pub mod duplicates;
+mod journal;
+pub mod refresh;
+mod retractions;
 pub mod tag_analysis;
 pub mod tag_plan;
 pub mod smart_query;
@@ -33,6 +38,8 @@ pub use properties::PropertyOption;
 pub use relations::{MapLink, MapNode, RelationMap, TagPage};
 pub use linked::{LinkedDir, LinkedEntries, LinkedFile, LinkedFolder, MAX_PDF_BYTES, MAX_TEXT_BYTES, SyncReport, file_kind};
 pub use links::{Canvas, CanvasSummary, HighlightUse, ItemLinks, ItemRef, Link, LinkEnd, LinkInput, LinkTarget, canvas_links, note_title};
+pub use journal::{BatchEdit, JournalEntry, JournalState, Operation};
+pub use retractions::{Notice, notice_for};
 pub use tag_ops::{SourceTags, TagOperation, TagProperty, TagReplace, TagResult, TagSnapshot};
 pub use search::{FileHit, NoteHit, SearchHit, SearchPassage, SearchQuery, SearchResult};
 
@@ -70,6 +77,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/008_pages.sql"),
     include_str!("migrations/009_linked_folders.sql"),
     include_str!("migrations/010_metadata_graph.sql"),
+    include_str!("migrations/011_library_hygiene.sql"),
 ];
 /// The migration after which existing sources are linked to the new people and venue tables.
 const GRAPH_MIGRATION: usize = 10;
@@ -118,6 +126,11 @@ const TEXT_FIELDS: &[(&str, &str)] = &[
     ("enrichError", "enrich_error"),
     ("venueId", "venue_id"),
     ("publisherId", "publisher_id"),
+    // Retraction and correction notices (retractions.rs) and hand-edited fields (journal.rs).
+    ("retractionKind", "retraction_kind"),
+    ("retractionNotice", "retraction_notice"),
+    ("retractionDate", "retraction_date"),
+    ("editedFields", "edited_fields"),
 ];
 const NUMBER_FIELDS: &[(&str, &str)] = &[
     ("year", "year"),
@@ -129,9 +142,15 @@ const NUMBER_FIELDS: &[(&str, &str)] = &[
     ("fwci", "fwci"),
     ("metricsAt", "metrics_at"),
     ("enrichedAt", "enriched_at"),
+    ("retractionCheckedAt", "retraction_checked_at"),
+    ("retractionFlaggedAt", "retraction_flagged_at"),
+    ("retractionDismissed", "retraction_dismissed"),
 ];
 /// Fields only the store writes: a patch naming them is ignored.
-const DERIVED_FIELDS: &[&str] = &["venueId", "publisherId", "enrichStatus", "enrichError", "enrichedAt", "metricsAt"];
+const DERIVED_FIELDS: &[&str] = &[
+    "venueId", "publisherId", "enrichStatus", "enrichError", "enrichedAt", "metricsAt", "retractionKind", "retractionNotice", "retractionDate", "editedFields",
+    "retractionCheckedAt", "retractionFlaggedAt", "retractionDismissed",
+];
 /// Identifiers a source can be looked up by; a new one queues the lookup.
 const LOOKUP_FIELDS: &[&str] = &["doi", "pmid", "openalexId"];
 
@@ -322,6 +341,9 @@ pub struct Counts {
     pub ready: i64,
     pub indexing: i64,
     pub attention: i64,
+    /// Flagged as retracted and not dismissed.
+    #[serde(default)]
+    pub retracted: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -405,6 +427,8 @@ pub struct Store {
     /// A second, read-only connection for lists and search, so they never wait behind
     /// the indexer's writes on `conn` (WAL lets readers run alongside a writer).
     reader: Arc<Mutex<Connection>>,
+    /// The duplicate matcher's index of the library (duplicates.rs), rebuilt when it changed.
+    duplicates: Arc<Mutex<duplicates::Cache>>,
 }
 
 pub fn now_ms() -> i64 {
@@ -468,7 +492,7 @@ impl Store {
         citation_keys::ensure_schema(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
         reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
-        Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)) })
+        Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
     }
 
     pub fn root(&self) -> &Path {
@@ -666,7 +690,9 @@ impl Store {
         let db = self.db()?;
         let tx = db.unchecked_transaction().map_err(e)?;
         let mut removed = 0;
-        for id in ids {
+        // Sources merged into a deleted one go with it.
+        let ids = journal::with_merged(&tx, ids)?;
+        for id in &ids {
             tx.execute(
                 "DELETE FROM sources_fts WHERE rowid = (SELECT rowid FROM sources WHERE id = ?)",
                 [id],
@@ -1309,6 +1335,14 @@ fn read_source(row: &Row) -> rusqlite::Result<Source> {
         }
         index += 1;
     }
+    if let Some(Json::String(edited)) = fields.get("editedFields") {
+        let edited: Vec<String> = serde_json::from_str(edited).unwrap_or_default();
+        if edited.is_empty() {
+            fields.remove("editedFields");
+        } else {
+            fields.insert("editedFields".into(), Json::from(edited));
+        }
+    }
     for (name, _) in NUMBER_FIELDS {
         if let Some(value) = row.get::<_, Option<f64>>(index)? {
             let number = if value.fract() == 0.0 { Json::from(value as i64) } else { Json::from(value) };
@@ -1623,7 +1657,7 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
     let mut conditions: Vec<String> = Vec::new();
     let mut values: Vec<Value> = Vec::new();
     match query.scope.as_deref().unwrap_or("all") {
-        "trashed" => conditions.push("s.trashed_at IS NOT NULL".into()),
+        "trashed" => conditions.push("s.trashed_at IS NOT NULL AND s.merged_into IS NULL".into()),
         scope => {
             conditions.push("s.trashed_at IS NULL".into());
             match scope {
@@ -1632,6 +1666,8 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
                 "attention" => conditions.push("s.index_status IN ('failed','missing','no_text')".into()),
                 "indexing" => conditions.push("s.index_status IN ('pending','indexing')".into()),
                 "ready" => conditions.push("s.index_status = 'ready'".into()),
+                "retracted" => conditions.push("s.retracted = 1 AND s.retraction_dismissed = 0".into()),
+                "flagged" => conditions.push("((s.retracted = 1 OR s.retraction_kind IS NOT NULL) AND s.retraction_dismissed = 0)".into()),
                 _ => {}
             }
         }
@@ -1696,18 +1732,19 @@ fn counts(db: &Connection, query: &ListQuery) -> Result<Counts> {
         &format!(
             "SELECT
                sum(s.trashed_at IS NULL),
-               sum(s.trashed_at IS NOT NULL),
+               sum(s.trashed_at IS NOT NULL AND s.merged_into IS NULL),
                sum(s.trashed_at IS NULL AND s.starred = 1),
                sum(s.trashed_at IS NULL AND NOT EXISTS (SELECT 1 FROM source_collections sc WHERE sc.source_id = s.id)),
                sum(s.trashed_at IS NULL AND s.index_status = 'ready'),
                sum(s.trashed_at IS NULL AND s.index_status IN ('pending','indexing')),
-               sum(s.trashed_at IS NULL AND s.index_status IN ('failed','missing','no_text'))
+               sum(s.trashed_at IS NULL AND s.index_status IN ('failed','missing','no_text')),
+               sum(s.trashed_at IS NULL AND s.retracted = 1 AND s.retraction_dismissed = 0)
              FROM sources s {clause}"
         ),
         params_from_iter(values.iter()),
         |r| {
             let n = |i: usize| r.get::<_, Option<i64>>(i).map(|v| v.unwrap_or(0));
-            Ok(Counts { all: n(0)?, trashed: n(1)?, starred: n(2)?, unfiled: n(3)?, ready: n(4)?, indexing: n(5)?, attention: n(6)? })
+            Ok(Counts { all: n(0)?, trashed: n(1)?, starred: n(2)?, unfiled: n(3)?, ready: n(4)?, indexing: n(5)?, attention: n(6)?, retracted: n(7)? })
         },
     )
     .map_err(e)

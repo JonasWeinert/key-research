@@ -24,6 +24,70 @@ pub struct Detection {
     pub kinds: Option<Vec<&'static str>>,
     /// The query once the detected part is taken out (what is still searched as text).
     pub rest: String,
+    /// The query is only this identifier: the library can offer to add the work it names.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub add: Option<Identifier>,
+}
+
+/// A work's identifier as pasted: doi | arxiv | pmid | pmcid | isbn, normalised.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct Identifier {
+    pub kind: &'static str,
+    pub value: String,
+}
+
+/// One pasted entry of a list of identifiers: what it is, or `None` when it names none.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PastedIdentifier {
+    pub text: String,
+    pub identifier: Option<Identifier>,
+}
+
+const ADDABLE: [&str; 5] = ["doi", "arxiv", "pmid", "pmcid", "isbn"];
+
+fn addable(found: &Detection) -> Option<Identifier> {
+    let kind = ADDABLE.iter().copied().find(|k| *k == found.id)?;
+    let value = found.filters.first()?.value.clone();
+    // Books are looked up and matched by ISBN-13.
+    let value = if kind == "isbn" { crate::matching::bare_isbn(&value).unwrap_or(value) } else { value };
+    Some(Identifier { kind, value })
+}
+
+/// Identifiers pasted one per line, or separated by commas, semicolons or spaces, in order;
+/// an entry that names none is kept so the list can say so. At most 200.
+pub fn read_identifiers(text: &str) -> Vec<PastedIdentifier> {
+    let mut out = Vec::new();
+    for piece in text.split(['\n', '\r', ',', ';', '\t']).map(str::trim).filter(|p| !p.is_empty()) {
+        let mut rest = piece.to_string();
+        // Several on one line ("PMID 123 PMID 456", "10.1/a 10.2/b"): taken one at a time.
+        for _ in 0..50 {
+            let trimmed = rest.trim().to_string();
+            if trimmed.is_empty() {
+                break;
+            }
+            let found = identifier(&trimmed).and_then(|d| addable(&d).map(|i| (i, d.rest)));
+            match found {
+                Some((identifier, left)) if left.trim().len() < trimmed.len() => {
+                    out.push(PastedIdentifier { text: identifier.value.clone(), identifier: Some(identifier) });
+                    rest = left;
+                }
+                _ => {
+                    // An ISBN written with spaces ("978 0 262 03384 8") reads as one once joined.
+                    let joined: String = trimmed.chars().filter(|c| !c.is_whitespace()).collect();
+                    match identifier(&joined).and_then(|d| addable(&d).filter(|_| d.rest.trim().is_empty())) {
+                        Some(identifier) => out.push(PastedIdentifier { text: trimmed.clone(), identifier: Some(identifier) }),
+                        None => out.push(PastedIdentifier { text: trimmed.clone(), identifier: None }),
+                    }
+                    break;
+                }
+            }
+        }
+        if out.len() >= 200 {
+            out.truncate(200);
+            break;
+        }
+    }
+    out
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -275,7 +339,7 @@ fn arxiv_id(text: &str, at: usize) -> Option<(usize, usize)> {
 }
 
 fn detection(id: &'static str, filters: Vec<QueryFilter>, rest: String) -> Detection {
-    Detection { id, filters, kinds: None, rest }
+    Detection { id, filters, kinds: None, rest, add: None }
 }
 
 /// `key:smith2020` or `@smith2020`: a citation key.
@@ -804,7 +868,7 @@ fn kind_word(text: &str, kinds: bool) -> Option<Detection> {
             return Some(detection("kind", vec![filter("kind", kind, label, "is")], rest));
         }
         if let Some(find) = find.filter(|_| kinds) {
-            return Some(Detection { id: "kind", filters: vec![], kinds: Some(vec![find]), rest });
+            return Some(Detection { id: "kind", filters: vec![], kinds: Some(vec![find]), rest, add: None });
         }
     }
     None
@@ -871,7 +935,10 @@ pub fn detect_query(text: &str, kinds: bool, known: Option<&KnownNames>) -> Vec<
     if query.encode_utf16().count() < 3 {
         return vec![];
     }
-    if let Some(id) = identifier(query) {
+    if let Some(mut id) = identifier(query) {
+        if id.rest.trim().is_empty() {
+            id.add = addable(&id);
+        }
         return vec![id];
     }
     let readers: [&dyn Fn(&str) -> Option<Detection>; 4] = [&quoted, &years, &|t| kind_word(t, kinds), &|t| known_name(t, known)];
@@ -891,7 +958,7 @@ pub fn detect_query(text: &str, kinds: bool, known: Option<&KnownNames>) -> Vec<
     // Several readings: also all at once ("pdf since 2020 malaria" → PDF, 2020 or later, "malaria").
     if out.len() > 1 && cite.is_none() {
         let mut rest = query.to_string();
-        let mut all = Detection { id: "all", filters: vec![], kinds: None, rest: String::new() };
+        let mut all = Detection { id: "all", filters: vec![], kinds: None, rest: String::new(), add: None };
         for read in readers {
             let Some(found) = read(&rest) else { continue };
             all.filters.extend(found.filters);
@@ -975,6 +1042,18 @@ mod tests {
         assert_eq!(read_doi("(see doi:10.1016/S0140-6736(20)30183-5)").unwrap().doi, "10.1016/s0140-6736(20)30183-5");
         assert_eq!(first("malaria 10.1000/abc").unwrap().3, "malaria");
         assert_eq!(first("see https://doi.org/10.5555/Interaction.2022.").unwrap().3, "see");
+    }
+
+    #[test]
+    fn offers_to_add_a_lone_identifier_and_reads_pasted_lists() {
+        let add = |t: &str| detect_query(t, false, None).first().and_then(|d| d.add.clone()).map(|i| format!("{}={}", i.kind, i.value));
+        assert_eq!(add("https://doi.org/10.1038/S41591-021-01384-9").as_deref(), Some("doi=10.1038/s41591-021-01384-9"));
+        assert_eq!(add("ISBN 978-0-262-03384-8").as_deref(), Some("isbn=9780262033848"));
+        assert_eq!(add("PMID: 33599681").as_deref(), Some("pmid=33599681"));
+        assert_eq!(add("malaria 10.1038/s41591-021-01384-9"), None);
+        let list = read_identifiers("10.1234/abc\narXiv:1706.03762, PMC8190434; PMID 33599681 PMID 12345\n978 0 262 03384 8\nnot an id\n\n");
+        let got: Vec<String> = list.iter().map(|p| p.identifier.as_ref().map_or(format!("? {}", p.text), |i| format!("{}={}", i.kind, i.value))).collect();
+        assert_eq!(got, ["doi=10.1234/abc", "arxiv=1706.03762", "pmcid=PMC8190434", "pmid=33599681", "pmid=12345", "isbn=9780262033848", "? not an id"]);
     }
 
     #[test]

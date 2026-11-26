@@ -5,29 +5,14 @@ import { useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { jobProgress, referencesProgress, stageLabel } from "./analysis-progress";
 import { KIND_ICON, type IndexActivity, type IndexJob, type Invoke, type LibraryStatus } from "./library-api";
+import { subscribeStatus } from "./status-poll";
 
-/** Polls the host's library status: quickly while indexing, gently otherwise. */
+/** The host's library status: quickly while indexing, gently otherwise (one shared poller). */
 export function useLibraryStatus(invoke: Invoke, workspaceId: string | undefined, active = true) {
   const [status, setStatus] = useState<LibraryStatus>();
   useEffect(() => {
     if (!workspaceId || !active) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      let next: LibraryStatus | undefined;
-      try {
-        next = await invoke<LibraryStatus>("store_status", {}, workspaceId);
-      } catch {}
-      if (stopped) return;
-      if (next) setStatus(next);
-      const working = !!next && (next.busy || next.counts.indexing > 0 || !!next.references);
-      timer = setTimeout(poll, working ? 900 : 4000);
-    };
-    void poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
+    return subscribeStatus(invoke, workspaceId, (next) => setStatus(next as LibraryStatus));
   }, [invoke, workspaceId, active]);
   return status;
 }

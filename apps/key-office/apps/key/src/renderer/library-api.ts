@@ -48,6 +48,14 @@ export interface Source extends CitableSource {
   oaStatus?: string;
   oaUrl?: string;
   retracted?: number;
+  /** A Crossref notice: retraction | withdrawal | expression_of_concern | correction …, its DOI and date. */
+  retractionKind?: string;
+  retractionNotice?: string;
+  retractionDate?: string;
+  retractionCheckedAt?: number;
+  retractionDismissed?: number;
+  /** Fields the user set by hand: lookups leave them alone. */
+  editedFields?: string[];
   citedByCount?: number;
   fwci?: number;
   metricsAt?: number;
@@ -210,6 +218,8 @@ export interface Counts {
   ready: number;
   indexing: number;
   attention: number;
+  /** Flagged as retracted and not dismissed. */
+  retracted?: number;
 }
 export interface SourcePage {
   items: Source[];
@@ -364,6 +374,11 @@ export interface AppSettings {
   webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
   /** A work added from another source's context: ask, use the origin's collections, or the library only. */
   addFromSource: "ask" | "origin" | "library";
+  /** Find PDF for references as they are added (off by default). */
+  findPdfOnAdd?: boolean;
+  /** The CSL style id and locale citations use (the host reads them from the settings file). */
+  citationStyle?: string;
+  citationLocale?: string;
 }
 export interface AppInfo {
   version: string;
@@ -403,6 +418,7 @@ export interface Bridge {
   choosePath(request: { mode: "open" | "save"; title?: string; defaultPath?: string; extensions?: string[] }): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
+  writeClipboard?(data: { text: string; html?: string; rtf?: string }): Promise<void>;
   /** A Quick Look thumbnail as a data URL, or null when the file has none. */
   thumbnail(path: string, size?: number): Promise<string | null>;
   pathForFile(file: File): string;

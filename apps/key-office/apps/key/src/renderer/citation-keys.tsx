@@ -102,7 +102,7 @@ const ago = (at?: number | null) => {
 };
 
 /** Settings › Citation keys & export. */
-export function CitationSettings({ invoke, workspaces }: { invoke: Invoke; workspaces: WorkspaceSummary[] }) {
+export function CitationKeySettings({ invoke, workspaces }: { invoke: Invoke; workspaces: WorkspaceSummary[] }) {
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id);
   const [pattern, setPattern] = useState("");
   const [saved, setSaved] = useState("");

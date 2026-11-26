@@ -52,7 +52,7 @@ const assert = require("node:assert/strict");
     await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     await page.getByRole("heading", { name: "All sources", exact: true }).waitFor();
     await page.locator('summary[aria-label="More ways to add"]:visible').click();
-    await page.getByRole("button", { name: /Add by DOI, ISBN or URL/ }).click();
+    await page.getByRole("button", { name: /^Add by identifier/ }).click();
     const dialog = page.getByRole("dialog", {
       name: "Add by identifier",
       exact: true,
@@ -62,12 +62,12 @@ const assert = require("node:assert/strict");
       const css = getComputedStyle(el);
       return {font: css.fontFamily, size: css.fontSize, height: el.getBoundingClientRect().height, padding: css.padding};
     });
-    const projectField = await appearance(dialog.locator('input:not([type="checkbox"])').first());
+    const projectField = await appearance(dialog.locator('textarea').first());
     // Shell surfaces use the native system font and macOS control metrics.
     assert(projectField.font.includes('-apple-system'), 'Real dialog field uses the system font');
     assert.equal(projectField.size, '13px', 'Real dialog field uses body type');
-    // The identifier field is a search well: a borderless input inside a padded container.
-    const well = await appearance(dialog.locator('.kx-identifier-input'));
+    // The identifier field is a sunken well that takes several lines.
+    const well = await appearance(dialog.locator('.kx-identifier-text'));
     assert(well.height >= 32, 'Real dialog field meets default density: ' + JSON.stringify(well));
     await dialog.evaluate(async el => { await Promise.all(el.getAnimations({subtree: true}).map(a => a.finished.catch(() => {}))); });
     await page.screenshot({path: path.join(temp, 'identifier-dialog.png')});

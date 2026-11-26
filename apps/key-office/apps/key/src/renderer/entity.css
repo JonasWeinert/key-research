@@ -239,6 +239,10 @@
   color: var(--kx-accent);
   font: 500 11px/16px var(--kx-font);
 }
+.kx-work-badge[data-possible] {
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+}
 .kx-work-body {
   padding: 0 4px 10px 22px;
   animation: kx-pop 140ms var(--kx-ease);

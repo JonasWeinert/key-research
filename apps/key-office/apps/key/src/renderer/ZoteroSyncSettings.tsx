@@ -6,8 +6,8 @@ import { Group, Row } from "./Settings";
 import { Conflicts } from "./ZoteroImport";
 import { syncLine, type Mode } from "./zotero-sheet-model";
 
-/** The Zotero library Key imported into: the workspace in a folder named Zotero. */
-export const zoteroWorkspaceOf = (workspaces: WorkspaceSummary[]) => workspaces.find((w) => /\/Zotero$/.test(w.root));
+import { zoteroWorkspaceOf } from "./zotero-workspace";
+export { zoteroWorkspaceOf };
 
 export function ZoteroSettings({
   invoke,

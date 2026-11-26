@@ -1,0 +1,17 @@
+/* Reduced effects: no live blur behind bars, popovers and sheets. Blurring what scrolls
+   underneath is redrawn every frame and is the costliest effect on integrated or older GPUs.
+   Applies when macOS "Reduce transparency" is on, and on low-end machines (reduced-effects.ts). */
+@media (prefers-reduced-transparency: reduce) {
+  *,
+  *::before,
+  *::after {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+:root[data-reduced-effects] *,
+:root[data-reduced-effects] *::before,
+:root[data-reduced-effects] *::after {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

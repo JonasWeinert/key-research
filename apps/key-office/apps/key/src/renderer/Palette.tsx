@@ -9,7 +9,7 @@ import { FoundList, foundKeys, useCollapsedGroups, visibleFound } from "./search
 import { useUnifiedSearch, type Found, type SearchOptions } from "./unified-search";
 import { EMPTY_FIND, useFind, type FindState } from "./global-search";
 import { KindChips } from "./SearchPage";
-import { fuzzyScore } from "./note-editor/menus";
+import { fuzzyScore } from "./note-editor/fuzzy";
 import "./palette.css";
 
 export interface Command {

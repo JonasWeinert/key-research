@@ -505,6 +505,14 @@ pub(crate) fn write_links(db: &Connection, owner: &ItemRef, links: &[LinkInput])
         )
         .map_err(e)?;
     for (seq, link) in links.iter().enumerate() {
+        // A source merged into another is linked as the one it became.
+        let mut link = link.clone();
+        if link.to.kind == SOURCE {
+            link.to.id = crate::journal::resolve_source(db, &link.to.id)?;
+        }
+        if link.from.kind == SOURCE {
+            link.from.id = crate::journal::resolve_source(db, &link.from.id)?;
+        }
         let broken = (!target_exists(db, &link.to)?).then_some(now);
         insert
             .execute(params![

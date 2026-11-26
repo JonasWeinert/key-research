@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("key", {
   choosePath: (request: unknown) => ipcRenderer.invoke("key:choose-path", request),
   openPath: (path: string) => ipcRenderer.invoke("key:open-path", path),
   revealPath: (path: string) => ipcRenderer.invoke("key:reveal-path", path),
+  writeClipboard: (data: { text: string; html?: string; rtf?: string }) => ipcRenderer.invoke("key:write-clipboard", data),
   thumbnail: (path: string, size?: number) => ipcRenderer.invoke("key:thumbnail", path, size),
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   startFileDrag: (paths: string[]) => ipcRenderer.send("key:start-file-drag", paths),

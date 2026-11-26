@@ -1,3 +1,4 @@
+import { startupMark } from "./startup-marks";
 import { placeSearchResultBeside, placeSearchResultTab } from "../shared/search-preview-model";
 import {
   app,
@@ -37,7 +38,7 @@ import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
-import { properUrlOf, ProxyService, type ProxyOp } from "./browser/proxy-service";
+import { properUrlOf, proxiedUrlOf, ProxyService, type ProxyOp } from "./browser/proxy-service";
 import { importProxies } from "./browser/proxy-import";
 import { WebSources } from "./web-sources";
 import { PageActions } from "./browser/page-actions";
@@ -52,6 +53,8 @@ import {
   closeOfficeView,
   canCloseOfficeView,
   activateOfficeView,
+  loadOffice,
+  officeLoaded,
   type OfficeKind,
 } from "./office-editors";
 import {
@@ -106,10 +109,13 @@ type OwnedView = {
   /** The address of that page. */
   referrerUrl?: string;
   /** A browser tab on an article page: the library source it is (once looked up), and an add in progress. */
-  articleState?: { key: string; sourceId?: string; busy?: boolean };
+  articleState?: { key: string; sourceId?: string; busy?: boolean; possible?: boolean };
   /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library.
    * `referrer` is the page that led to it. */
   temp?: { url: string; hash: string; referrer?: string };
+  /** Find PDF sent this browser tab (or the tab that led to this PDF) for a library source
+   * without a file: a PDF captured from it is attached to that source. */
+  pdfFor?: { workspaceId: string; sourceId: string; title?: string };
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
   libraryNotice?: "added" | "exists";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
@@ -452,7 +458,7 @@ function viewSummary(id: string) {
       canGoBack: v.web.canGoBack,
       canGoForward: v.web.canGoForward,
       stalled: v.web.stalled || undefined,
-      article: v.web.article && { title: v.web.article.title, doi: v.web.article.doi, inLibrary: !!v.articleState?.sourceId, busy: !!v.articleState?.busy },
+      article: v.web.article && { title: v.web.article.title, doi: v.web.article.doi, inLibrary: !!v.articleState?.sourceId && !v.articleState.possible, possiblyInLibrary: !!v.articleState?.possible, busy: !!v.articleState?.busy },
     },
     temp: v?.temp ? true : undefined,
   };
@@ -564,6 +570,8 @@ function focusShown(w: ShellWindow) {
  * are drawn by the shell's renderer. A new kind adds itself to `OwnedView["kind"]`, registers
  * here, and opens as a tab of the focused group with `add(record, w)`. */
 interface NativeKind {
+  /** False while the kind's code is still loading: the view is created on the next layout. */
+  ready?(): boolean;
   create(record: OwnedView): WebContentsView;
   /** Asked before the tab closes; false keeps it open. */
   canClose?(record: OwnedView): Promise<boolean>;
@@ -596,6 +604,15 @@ registerNativeKind("pdf", {
 });
 for (const kind of OFFICE_KINDS)
   registerNativeKind(kind, {
+    // The editors load with the first Office tab shown, then every window lays out again.
+    ready: () => {
+      if (officeLoaded()) return true;
+      void loadOffice().then(
+        () => liveShells().forEach((w) => layout(w)),
+        (error) => emit("operation-error", String(error)),
+      );
+      return false;
+    },
     create: (record) => createOfficeView(kind, record.path, { newBlank: !record.path }),
     canClose: (record) => (record.view ? canCloseOfficeView({ kind, view: record.view }) : Promise.resolve(true)),
     async dispose(record) {
@@ -621,7 +638,7 @@ registerNativeKind("web", {
       open(url, background) {
         const w = shellOfView(record.id) ?? focusedShell();
         const found = w && findViewTab(w.state, record.id);
-        const from = { background, referrer: record.title, referrerUrl: webUrl(web.url) };
+        const from = { background, referrer: record.title, referrerUrl: webUrl(web.url), pdfFor: record.pdfFor };
         openLink(url, w, found ? { ...from, groupId: found.group.id, index: found.index + 1 } : from);
       },
       external: (url) => void systemShell.openExternal(url),
@@ -658,7 +675,7 @@ function webView(url: string, title?: string): OwnedView {
 }
 /** Every web link in the app comes here: http(s) opens as a browser tab in the focused group
  * (or at `options`), mail and phone links go to the system, anything else is ignored. */
-function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string; referrerUrl?: string } = {}) {
+function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string; referrerUrl?: string; pdfFor?: OwnedView["pdfFor"] } = {}) {
   const web = webUrl(url);
   if (!web) {
     const external = systemUrl(url);
@@ -670,6 +687,7 @@ function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), opt
   const record = webView(web);
   record.referrer = options.referrer;
   record.referrerUrl = options.referrerUrl;
+  record.pdfFor = options.pdfFor;
   add(record, w, { groupId: options.groupId, index: options.index });
   if (previous && findTab(w.state, previous)) {
     w.state = activateWorkspaceTab(w.state, previous);
@@ -734,6 +752,7 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
     const url = properUrlOf(file.url);
     const entry = await tempPdfs.add(file.path, url, pdfTitle(file.filename, url, page), referrer !== url ? referrer : undefined);
     const record = await tempPdfView(entry);
+    record.pdfFor = from?.pdfFor;
     if (!w || w.closed) return;
     if (views.has(record.id) && shellOfView(record.id)) return focus(record.id);
     const found = from && findViewTab(w.state, from.id);
@@ -786,6 +805,21 @@ async function addTempToLibrary(temp: OwnedView) {
   const workspaceId = w.workspaceId;
   const entry = temp.temp && (await tempPdfs.get(temp.temp.hash));
   if (!entry || !existsSync(entry.file)) throw Error("This PDF is no longer kept; open it from the page again");
+  // Find PDF opened the page this came from: the PDF becomes that source's file.
+  if (temp.pdfFor && temp.pdfFor.workspaceId === workspaceId) {
+    const directory = await mkdtemp(join(tmpdir(), "key-web-pdf-"));
+    try {
+      const path = join(directory, `${safeFileName(temp.pdfFor.title || temp.title || entry.title).replace(/\.pdf$/i, "")}.pdf`);
+      await copyFile(entry.file, path);
+      await registry.invoke("store_attach_file", { id: temp.pdfFor.sourceId, path }, workspaceId);
+      await carryTempWork(entry, workspaceId, temp.pdfFor.sourceId);
+      emit("library-changed");
+      await swapToLibrary(temp, workspaceId, entry.hash, "added");
+      return { status: "attached" };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
   const known = await registry.invoke<{ items: any[] }>("store_sources", { ids: [entry.hash], limit: 1, scope: "all" }, workspaceId);
   if (known.items[0]) {
     await carryTempWork(entry, workspaceId, known.items[0].id);
@@ -847,6 +881,7 @@ function attach(record: OwnedView, w: ShellWindow) {
     }
     return;
   }
+  if (kind.ready && !kind.ready()) return;
   const view = kind.create(record);
   record.view = view;
   relayDismiss(view.webContents, () => record.host?.window);
@@ -2179,7 +2214,8 @@ function baseMenu() {
           { label: "Search Everything…", accelerator: "CmdOrCtrl+Shift+F", click: () => emitTo(focusedShell(), "command", "search") },
           { type: "separator" },
           { label: "Copy Link", accelerator: "CmdOrCtrl+L", click: () => emitTo(focusedShell(), "command", "copy-link") },
-          { label: "Copy Citation", accelerator: "CmdOrCtrl+Shift+C", click: () => emitTo(focusedShell(), "command", "copy-citation") },
+          { label: "Copy Reference", accelerator: "CmdOrCtrl+Shift+C", click: () => emitTo(focusedShell(), "command", "copy-citation") },
+          { label: "Copy In-Text Citation", accelerator: "CmdOrCtrl+Shift+A", click: () => emitTo(focusedShell(), "command", "copy-in-text") },
           { label: "Send To…", accelerator: "CmdOrCtrl+Shift+S", click: () => emitTo(focusedShell(), "command", "send-to") },
           { type: "separator" },
           { label: "Show Inspector", accelerator: "CmdOrCtrl+Shift+I", click: () => emitTo(focusedShell(), "toggle-inspector") },
@@ -2193,6 +2229,7 @@ function baseMenu() {
     ]),
   );
 }
+startupMark("main-evaluated");
 app.setName("Key");
 registerMediaScheme();
 if (process.env.KEY_USER_DATA)
@@ -2216,10 +2253,15 @@ else
   app
     .whenReady()
     .then(async () => {
+      startupMark("ready");
       setUiLang(normalizeLang(app.getLocale()));
       const root = resolve(app.getAppPath(), "../../../..");
       workspaceParent =
         process.env.KEY_WORKSPACE_PARENT ?? join(app.getPath("documents"), "Key");
+      // Library hosts read the chosen citation style from the settings file and keep
+      // installed styles in one app-wide folder.
+      process.env.KEY_APP_SETTINGS_FILE = join(app.getPath("userData"), "app-settings.json");
+      process.env.KEY_CITATION_STYLES_DIR = join(app.getPath("userData"), "citation-styles");
       registry = new Registry({
         registryDir: join(app.getPath("userData"), "workspaces"),
         defaultWorkspaceParent: workspaceParent,
@@ -2290,7 +2332,9 @@ else
       );
       appSettings = new AppSettingsStore(join(app.getPath("userData"), "app-settings.json"));
       await appSettings.load();
+      startupMark("settings-loaded");
       keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
+      startupMark("keys-loaded");
       // The bundled layout model, for packaged builds (development finds it in the crate).
       if (app.isPackaged) process.env.KEY_LAYOUT_MODEL ??= join(process.resourcesPath, "models/layout/model_fp16.onnx");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
@@ -2300,7 +2344,9 @@ else
       const restoring = process.env.KEY_NO_WINDOW_RESTORE
         ? []
         : windowState.windows.filter((saved) => knownWorkspaces.some((k) => k.id === saved.workspaceId));
+      startupMark("state-loaded");
       const first = createShell({ load: false, workspaceId: knownWorkspaces[0]?.id, saved: restoring[0] });
+      startupMark("window-created");
       configureOfficeEditors(first.window, {
         extractPdfText: async (bytes) => {
           if (bytes.byteLength > 32 * 1024 * 1024)
@@ -2477,6 +2523,13 @@ else
               "workspace_set_project_membership",
               "store_tag_apply",
               "store_tag_restore",
+              // The operations journal, merges and metadata updates (see the host's hygiene.rs).
+              "store_undo",
+              "store_redo",
+              "store_edit",
+              "store_merge_sources",
+              "store_merge_exact",
+              "store_apply_metadata",
             ].includes(command)
           )
             emit("library-changed");
@@ -2487,7 +2540,7 @@ else
           if (command === "store_note_save" || command === "store_note_meta" || command === "store_note_delete")
             emit("note-changed", { workspaceId: targetWorkspace, noteId: (result as any)?.id ?? args?.id, sourceId: (result as any)?.sourceId ?? args?.sourceId });
           // Backlinks are rewritten by these saves, and titles they show change with renames.
-          if (["store_note_save", "store_note_delete", "store_canvas_save", "store_canvas_delete", "store_update", "store_delete", "library_apply_annotations", "library_save_annotations"].includes(command))
+          if (["store_note_save", "store_note_delete", "store_canvas_save", "store_canvas_delete", "store_update", "store_delete", "store_undo", "store_redo", "store_merge_sources", "store_merge_exact", "library_apply_annotations", "library_save_annotations"].includes(command))
             emit("links-changed", { workspaceId: targetWorkspace, command });
           if (["library_apply_annotations", "library_save_annotations", "library_import_annotations"].includes(command))
             emit("annotations-changed", { workspaceId: targetWorkspace });
@@ -2610,6 +2663,14 @@ else
         const edge = Math.max(32, Math.min(800, Number(size) || 320));
         const image = await nativeImage.createThumbnailFromPath(String(path), { width: edge, height: edge });
         return image.isEmpty() ? null : image.toDataURL();
+      });
+      // Citations go on the clipboard as plain text, HTML and RTF (word processors take RTF).
+      ipcMain.handle("key:write-clipboard", (event, data: { text?: unknown; html?: unknown; rtf?: unknown }) => {
+        shell(event.sender.id);
+        const text = typeof data?.text === "string" ? data.text : "";
+        const html = typeof data?.html === "string" ? data.html : undefined;
+        const rtf = typeof data?.rtf === "string" ? data.rtf : undefined;
+        clipboard.write({ text, ...(html ? { html } : {}), ...(rtf ? { rtf } : {}) });
       });
       ipcMain.handle("key:reveal-path", (event, path) => {
         shell(event.sender.id);
@@ -2855,7 +2916,11 @@ else
               .catch(() => false)
           : false;
         return {
-          web: v.temp ? { url: v.temp.url, referrer: v.temp.referrer, host: hostLabel(v.temp.referrer ?? v.temp.url), inLibrary } : notice ? { notice } : undefined,
+          web: v.temp
+            ? { url: v.temp.url, referrer: v.temp.referrer, host: hostLabel(v.temp.referrer ?? v.temp.url), inLibrary, attachTo: v.pdfFor && !inLibrary ? (v.pdfFor.title ?? "the source") : undefined }
+            : notice
+              ? { notice }
+              : undefined,
           focus,
           notesOpen: !!v.panel,
           panelTab: v.panel ? (v.panel.tab ?? "details") : undefined,
@@ -3083,6 +3148,12 @@ else
             if (/^zotero:\/\/select\/library\/items\/[A-Z0-9]{8}$/.test(String(p.url))) return void (await systemShell.openExternal(String(p.url)));
             if (!webUrl(p.url) && !systemUrl(p.url)) throw Error("Unsupported link");
             if (p.external) await systemShell.openExternal(String(webUrl(p.url) ?? systemUrl(p.url)));
+            // Find PDF's last step: the landing page (through the library's proxy when one
+            // covers the site), where a PDF captured is attached to the source.
+            else if (p.pdfFor && typeof p.pdfFor.sourceId === "string" && webUrl(p.url))
+              openLink(proxiedUrlOf(String(webUrl(p.url))), w, {
+                pdfFor: { workspaceId: String(p.pdfFor.workspaceId || w.workspaceId), sourceId: p.pdfFor.sourceId, title: typeof p.pdfFor.title === "string" ? p.pdfFor.title.slice(0, 200) : undefined },
+              });
             else openLink(p.url, w, { background: Boolean(p.background) });
             return snapshot(w);
           }
@@ -3347,7 +3418,9 @@ else
       // Tabs exist before the page loads, so nothing opened early lands in front of them.
       if (restoring[0]) await restoreTabs(first, restoring[0].tabs);
       if (!allTabs(first.state).length) home(first);
+      startupMark("shell-load");
       await loadShell(first);
+      startupMark("shell-loaded");
       layout(first);
       for (const saved of restoring.slice(1)) createShell({ saved });
       if (restoring.length > 1) first.window.focus();

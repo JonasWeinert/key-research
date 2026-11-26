@@ -367,6 +367,15 @@ const assert = require("node:assert/strict");
     await page.locator(".kx-list").press("Backspace");
     await page.locator(".kx-toast", { hasText: "Trash" }).getByRole("button", { name: "Undo" }).click();
     await page.waitForFunction(async (ws) => (await window.key.invoke("store_sources", { limit: 10 }, ws)).total === 2, ws.id);
+    // Both are in the operations journal; ⌘Z (no field focused) takes back the restore.
+    assert.equal((await page.evaluate((id) => window.key.invoke("store_journal", {}, id), ws.id)).undo.label, "Restore 1 source");
+    await page.locator(".kx-list").press("Meta+z");
+    await page.locator(".kx-toast", { hasText: "Undo: Restore 1 source" }).waitFor();
+    await page.waitForFunction(async (ws) => (await window.key.invoke("store_sources", { limit: 10 }, ws)).total === 1, ws.id);
+    await page.locator(".kx-list").press("Meta+z");
+    await page.waitForFunction(async (ws) => (await window.key.invoke("store_sources", { limit: 10 }, ws)).total === 2, ws.id);
+    // Nothing is flagged or duplicated here, so those views stay out of the way.
+    assert.equal(await page.locator(".kx-scope-tabs").getByRole("tab", { name: /Retracted|Duplicates/ }).count(), 0);
     report.trash = true;
 
     // Tags: add one in the inspector, then open the tag manager.

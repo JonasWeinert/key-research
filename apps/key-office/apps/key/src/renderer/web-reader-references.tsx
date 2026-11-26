@@ -14,6 +14,8 @@ import { working } from "./reader-analysis";
 import type { Invoke, Source } from "./library-api";
 import { bridge } from "./library-api";
 import { webPageEvent, WEB_ANALYSIS_EVENT, WEB_REANALYZE_EVENT, WEB_REFERENCE_EVENT } from "./web-page-open";
+import { readerLibraryWorks } from "./reader-library-works";
+import { addFromSource } from "./add-from-source";
 import "./web-reader-panel.css";
 
 /** The host's reading of a page: its reference list and the in-text links to it. */
@@ -78,6 +80,18 @@ export function useWebReferences({
   onFlash: (el: Element) => void;
 }): ReactNode {
   const [report, refresh] = useWebAnalysis(invoke, workspaceId, sourceId);
+  // A cited work's card: In library (or possibly), else Add to library through the collection
+  // chooser, beside this page in its collections by default.
+  const libraryWorks = useMemo(
+    () =>
+      readerLibraryWorks({
+        invoke: <T,>(command: string, args?: Record<string, unknown>) => invoke<T>(command, args, workspaceId),
+        open: (id) => void bridge().tabAction("open-source-page", { workspaceId, sourceId: id }),
+        collections: () => invoke<Source | null>("store_source", { id: sourceId }, workspaceId).then((s) => s?.collections ?? []),
+        addFrom: (work) => addFromSource(invoke, { workspaceId, sourceId }, work),
+      }),
+    [invoke, workspaceId, sourceId],
+  );
   // The host reads the saved page once the report is in; a page saved before references were
   // read (or read with another method) is stored now, and again when asked to re-analyse.
   const [scan, setScan] = useState<WebReferenceScan | null>(null);
@@ -296,6 +310,7 @@ export function useWebReferences({
         expanded={expanded}
         onCollapse={() => setExpanded(false)}
         libraryAction={inLibrary}
+        libraryWorks={libraryWorks}
         onClose={card.pinned ? close : undefined}
         uiId={`web-${sourceId}`}
       />

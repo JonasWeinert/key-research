@@ -1,7 +1,7 @@
 import { onLibraryChanged } from "./library-nav";
 import { useEffect, useState } from "react";
 import type { LibrarySource } from "./LibraryHome";
-import { notesChanged } from "./NotePage";
+import { notesChanged } from "./note-events";
 import { ActivityBanner, useLibraryStatus } from "./index-activity";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import { Icon, type IconName } from "./icons";

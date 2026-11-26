@@ -43,6 +43,18 @@
   width: 0;
   padding: 0;
 }
+.key-work-possible {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.key-work-add[data-state='possible'] {
+  color: var(--key-ui-muted, var(--key-muted));
+  font-style: normal;
+}
+.key-work-add-anyway {
+  padding-inline: 5px;
+}
 .key-work-add svg {
   width: 11px;
   height: 11px;

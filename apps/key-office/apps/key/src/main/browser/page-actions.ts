@@ -17,7 +17,7 @@ export interface PageRecord {
   id: string;
   web?: WebTabState;
   view?: { webContents: WebContents };
-  articleState?: { key: string; sourceId?: string; busy?: boolean };
+  articleState?: { key: string; sourceId?: string; busy?: boolean; possible?: boolean };
 }
 export interface PageActionDeps {
   service(): BrowserService | undefined;
@@ -57,17 +57,19 @@ export class PageActions {
     void this.lookup(record, article).catch(() => undefined);
   }
 
-  /** Whether the library has the article already (by DOI, else by title). */
+  /** Whether the library has the article already: the library host's matcher (key-store
+   *  `matching.rs`) by DOI or the page's own address (the proxy's rewriting undone), else
+   *  "possibly" by its title. */
   private async lookup(record: PageRecord, article: ScholarlyArticle) {
     const workspaceId = this.deps.workspaceOf(record);
     if (!workspaceId) return;
     const key = articleKey(article);
-    const text = article.doi ?? article.title?.slice(0, 200);
-    if (!text) return;
-    const found = await this.deps.invoke<{ items: { id: string; doi?: string; title?: string }[] }>("store_sources", { text, limit: 8, scope: "all" }, workspaceId);
-    const match = found.items?.find((s) => (article.doi ? s.doi?.toLowerCase() === article.doi.toLowerCase() : s.title?.toLowerCase() === article.title?.toLowerCase()));
+    const work = { key: "page", doi: article.doi, url: webUrl(properUrlOf(record.web?.url)), title: article.title, year: article.year, firstAuthor: article.authors?.[0] };
+    if (!work.doi && !work.title && !work.url) return;
+    const [match] = await this.deps.invoke<{ sourceId: string; certain: boolean }[]>("store_match_identifiers", { works: [work] }, workspaceId);
     if (match && record.articleState?.key === key) {
-      record.articleState.sourceId = match.id;
+      record.articleState.sourceId = match.sourceId;
+      record.articleState.possible = !match.certain;
       this.deps.changed(record);
     }
   }

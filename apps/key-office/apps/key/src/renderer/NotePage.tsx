@@ -15,10 +15,8 @@ import LinkedFrom from "./LinkedFrom";
 import { readAppearance } from "./page-appearance";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 
-/** Lets the sidebar list refresh when a note is created, renamed or deleted. */
-export const notesChanged = () => window.dispatchEvent(new Event("key:notes-changed"));
-/** A note's text was saved; canvases showing it re-read it. */
-export const noteSaved = (id: string) => window.dispatchEvent(new CustomEvent("key:note-saved", { detail: id }));
+import { notesChanged, noteSaved } from "./note-events";
+export { notesChanged, noteSaved };
 
 type MetaPatch = { fields?: Record<string, unknown>; properties?: Record<string, unknown>; appearance?: AppearancePatch };
 
@@ -229,6 +227,8 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
             searchItems={sources.searchItems}
             searchItemsMore={sources.searchItemsMore}
             citeLabel={sources.citeLabel}
+            formatCitations={sources.formatCitations}
+            formatBibliography={sources.formatBibliography}
             onOpenItem={sources.onOpenItem}
             className="kx-note-page-editor"
             apiRef={editorApi}

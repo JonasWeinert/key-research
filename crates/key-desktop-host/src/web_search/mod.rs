@@ -9,7 +9,9 @@
 // shows them in Settings. Nothing here goes to the network unless the user searches the web
 // or adds a work.
 pub mod filters;
+pub mod find_pdf;
 pub mod http;
+pub mod identifiers;
 pub mod library;
 pub mod merge;
 pub mod openalex;
@@ -370,6 +372,15 @@ pub trait Library {
     fn find(&self, text: &str) -> Vec<library::Stored>;
     fn source(&self, id: &str) -> Result<Json, String>;
     fn create(&self, input: Json) -> Result<Json, String>;
+    /// The store's identifier matcher (`store_match_identifiers`): hits for these queries.
+    /// None where there is none (tests' shelves), and the library's own search is used.
+    fn match_works(&self, _queries: &[Json]) -> Option<Vec<Json>> {
+        None
+    }
+    /// Makes this file (a found PDF) the source's file, and indexes it.
+    fn attach(&self, _id: &str, _path: &std::path::Path) -> Result<Json, String> {
+        Err("This library cannot attach files".into())
+    }
 }
 
 /// Adds the work as a reference, or answers the source it already is. With `lookup`, a work
@@ -388,7 +399,7 @@ pub fn add_to_library(web: &WebSearch, library: &dyn Library, work: WebResult, c
     if work.title.trim().is_empty() {
         return Err("Nothing to add".into());
     }
-    let existing = library::find_existing(&[library::Asked::from(&work)], &|text| library.find(text));
+    let existing = library::existing(library, &[library::Asked::from(&work)], true);
     if let Some(id) = existing.get("work").and_then(Json::as_str) {
         return Ok(json!({ "source": library.source(id)?, "existed": true, "work": work }));
     }
@@ -420,13 +431,27 @@ pub fn dispatch(web: &WebSearch, library: &dyn Library, command: &str, args: &Js
         })(),
         "web_lookup" => (|| json_output(web.lookup(&arg::<String>(args, "provider")?, &arg::<String>(args, "id")?)?))(),
         "web_merge" => arg::<Vec<merge::ProviderList>>(args, "lists").and_then(|lists| json_output(merge::merge(&lists))),
-        "web_library_match" => arg::<Option<Vec<library::Asked>>>(args, "works").and_then(|works| json_output(Json::Object(library::find_existing(&works.unwrap_or_default(), &|text| library.find(text))))),
+        "web_library_match" => arg::<Option<Vec<library::Asked>>>(args, "works").and_then(|works| json_output(Json::Object(library::existing(library, &works.unwrap_or_default(), false)))),
         "web_add_to_library" => (|| {
             let work: WebResult = arg::<Option<WebResult>>(args, "work")?.ok_or("Nothing to add")?;
             let collection: Option<String> = arg(args, "collectionId")?;
             let lookup = arg::<Option<bool>>(args, "lookup")?.unwrap_or(false);
             json_output(add_to_library(web, library, work, collection.as_deref(), lookup)?)
         })(),
+        // Find PDF for a source without a file (find_pdf.rs).
+        "web_find_pdf" => (|| {
+            let id: String = arg(args, "id")?;
+            let email: Option<String> = arg(args, "email")?;
+            json_output(web.find_pdf(library, &id, email.as_deref())?)
+        })(),
+        // Add by identifier: DOIs, ISBNs, PMIDs, PMCIDs and arXiv ids, many at once (identifiers.rs).
+        "web_add_identifiers" => (|| {
+            let text: String = arg(args, "text")?;
+            let collection: Option<String> = arg(args, "collectionId")?;
+            let find_pdf = arg::<Option<bool>>(args, "findPdf")?.unwrap_or(false);
+            json_output(identifiers::add_all(web, library, &text, collection.as_deref(), find_pdf))
+        })(),
+        "web_read_identifiers" => arg::<String>(args, "text").and_then(|text| json_output(key_store::smart_query::read_identifiers(&text))),
         // What was asked with the user's keys since the last read (Settings shows the usage).
         "web_key_usage" => json_output(web.take_usage()),
         _ => return None,
@@ -464,6 +489,12 @@ impl Library for StoreLibrary<'_> {
     fn create(&self, input: Json) -> Result<Json, String> {
         self.call("store_create", json!({ "source": input }))
     }
+    fn match_works(&self, queries: &[Json]) -> Option<Vec<Json>> {
+        self.call("store_match_identifiers", json!({ "works": queries })).ok().and_then(|hits| hits.as_array().cloned())
+    }
+    fn attach(&self, id: &str, path: &std::path::Path) -> Result<Json, String> {
+        self.call("store_attach_file", json!({ "id": id, "path": path }))
+    }
 }
 
 #[cfg(test)]
@@ -485,9 +516,9 @@ pub(crate) mod tests {
     type Route = dyn Fn(&Url) -> (u16, String) + Send + Sync;
 
     #[derive(Default)]
-    struct Calls {
+    pub struct Calls {
         answers: VecDeque<(u16, String)>,
-        urls: Vec<Url>,
+        pub urls: Vec<Url>,
         headers: Vec<Vec<(String, String)>>,
     }
 
@@ -533,7 +564,7 @@ pub(crate) mod tests {
             url.query_pairs().map(|(k, v)| (k.into_owned(), v.into_owned())).collect()
         }
         /// A web search that sends everything here and never sleeps.
-        fn search(self) -> (Arc<Mutex<Calls>>, WebSearch) {
+        pub fn search(self) -> (Arc<Mutex<Calls>>, WebSearch) {
             let calls = self.calls.clone();
             (calls, WebSearch::with(providers(), self.transport, Box::new(|_, cancel| !cancel.is_cancelled())))
         }

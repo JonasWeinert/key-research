@@ -1,6 +1,7 @@
 // The search page's web results: each provider asked on its own (the library host's web_search),
 // merged as they arrive, checked against the library, and added to it on request.
 // Nothing here touches the network unless the Web pill is on.
+import { matchLibrary } from "./library-match";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FilterToken, WebFilterKey, WebFilters } from "../shared/web-filters";
 import type { WebHit, WebPage, WebProviderInfo, WebResult } from "../shared/web-search";
@@ -44,6 +45,8 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
   const [providers, setProviders] = useState<ProviderState[]>([]);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [inLibrary, setInLibrary] = useState<Record<string, string>>({});
+  /** Works whose title (only) matches a library source: "Possibly in library". */
+  const [possible, setPossible] = useState<Record<string, string>>({});
   const generation = useRef(0);
   const requests = useRef(new Set<string>());
   const q = query.trim();
@@ -200,24 +203,34 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     const asked = all ? hits : hits.filter((h) => !checked.current.has(h.key));
     if (!asked.length) return;
     asked.forEach((h) => checked.current.add(h.key));
-    void invoke<Record<string, string>>("web_library_match", { works: asked.map(({ key, doi, title, year, ids }) => ({ key, doi, title, year, ids })) }, workspaceId)
-      .then((found) =>
-        setInLibrary((m) => {
+    const works = asked.map((h) => ({ key: h.key, doi: h.doi, url: h.landingUrl, title: h.title, year: h.year, firstAuthor: h.authors[0], arxiv: h.ids.arxiv, pmid: h.ids.pmid, pmcid: h.ids.pmcid, openalex: h.ids.openalex }));
+    void matchLibrary(invoke, workspaceId, works)
+      .then((found) => {
+        const update = (certain: boolean) => (m: Record<string, string>) => {
           const next = { ...m };
-          for (const h of asked) if (found[h.key]) next[h.key] = found[h.key];
-          // A source trashed since: the work can be added again.
-          else if (all) delete next[h.key];
+          for (const h of asked) {
+            const hit = found[h.key];
+            if (hit && hit.certain === certain) next[h.key] = hit.sourceId;
+            // A source trashed since: the work can be added again.
+            else if (all || hit) delete next[h.key];
+          }
           return next;
-        }),
-      )
+        };
+        setInLibrary(update(true));
+        setPossible(update(false));
+      })
       .catch(() => {});
   }, [hits, active, workspaceId, invoke, libraryTick]);
   useEffect(() => {
     checked.current.clear();
     setInLibrary({});
+    setPossible({});
   }, [workspaceId]);
 
-  const noted = useCallback((key: string, sourceId: string) => setInLibrary((m) => ({ ...m, [key]: sourceId })), []);
+  const noted = useCallback((key: string, sourceId: string) => {
+    setInLibrary((m) => ({ ...m, [key]: sourceId }));
+    setPossible(({ [key]: _, ...rest }) => rest);
+  }, []);
 
   return {
     providers,
@@ -232,6 +245,7 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     ready: !!infos && !!filters,
     online,
     inLibrary,
+    possible,
     noted,
     loadMore,
     retry: (id: string) => run(id),

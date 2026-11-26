@@ -2301,8 +2301,10 @@ name = "key-desktop-host"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "citationberg",
  "http",
  "key-biblio",
+ "key-cite",
  "key-embed",
  "key-index",
  "key-library",

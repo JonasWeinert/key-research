@@ -17,6 +17,8 @@ export interface Detection {
   kinds?: DetectedKind[];
   /** The query once the detected part is taken out (what is still searched as text). */
   rest: string;
+  /** The query is only this identifier: the library can offer to add the work it names. */
+  add?: { kind: "doi" | "arxiv" | "pmid" | "pmcid" | "isbn"; value: string };
 }
 
 /** Every reading of `text`, best first; the workspace's tag and collection names included. */

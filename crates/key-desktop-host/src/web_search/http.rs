@@ -7,7 +7,7 @@
 // (KEY_WEB_OPENALEX_URL, KEY_WEB_S2_URL, KEY_WEB_SERPAPI_URL), for tests and smokes. Only then,
 // and only for a loopback address, does a request leave the safe client: a plain HTTP/1.0
 // GET to that port.
-use key_safe_http::{CancellationToken, ContentTypePolicy, ExactHostAllowlist, HttpError, HttpLimits, HttpPolicy, HttpRequest, RateLimit, SafeHttpClient, SchemePolicy};
+use key_safe_http::{CancellationToken, ContentTypePolicy, ContentTypeRule, ExactHostAllowlist, HttpError, HttpLimits, HttpPolicy, HttpRequest, RateLimit, SafeHttpClient, SchemePolicy};
 use serde_json::Value as Json;
 use std::{
     collections::HashMap,
@@ -19,6 +19,8 @@ use std::{
 use url::Url;
 
 const MAX_BYTES: usize = 8 * 1024 * 1024;
+/// A PDF found for a source (the safe client's own ceiling).
+pub const MAX_PDF_BYTES: usize = 64 * 1024 * 1024;
 /// Each attempt gets this long; the caller's cancel stops it sooner.
 const TIMEOUT: Duration = Duration::from_secs(15);
 const USER_AGENT: &str = "Key/0.1 (scholarly web search)";
@@ -107,23 +109,48 @@ fn safe_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> 
         other => SendError::Failed(other.to_string()),
     };
     let host = url.host_str().ok_or_else(|| SendError::Failed("The address has no host".into()))?;
+    // What the caller accepts picks the policy: JSON (the default), an XML feed (arXiv's API),
+    // or a PDF (Find PDF), which may be redirected to other hosts and is much larger.
+    let accept = headers.iter().find(|(n, _)| n.eq_ignore_ascii_case("accept")).map(|(_, v)| v.to_ascii_lowercase()).unwrap_or_default();
+    let pdf = accept.contains("application/pdf");
+    let types = if pdf {
+        let rules = ["application/pdf", "application/x-pdf", "application/octet-stream", "binary/octet-stream", "application/download", "application/force-download"]
+            .into_iter()
+            .filter_map(|t| ContentTypeRule::exact(t).ok());
+        ContentTypePolicy::new(rules, true).map_err(failed)?
+    } else if accept.contains("xml") {
+        let rules = [ContentTypeRule::exact("application/xml"), ContentTypeRule::exact("text/xml"), ContentTypeRule::structured_suffix("xml")].into_iter().filter_map(Result::ok);
+        ContentTypePolicy::new(rules, false).map_err(failed)?
+    } else {
+        ContentTypePolicy::json()
+    };
     let limits = HttpLimits {
-        max_response_bytes: MAX_BYTES,
-        max_redirects: 3,
+        max_response_bytes: if pdf { MAX_PDF_BYTES } else { MAX_BYTES },
+        max_redirects: if pdf { 8 } else { 3 },
         max_concurrent: 1,
-        request_timeout: TIMEOUT,
+        request_timeout: if pdf { Duration::from_secs(60) } else { TIMEOUT },
         rate: RateLimit::new(30, Duration::from_secs(60)).map_err(failed)?,
         ..HttpLimits::default()
     };
-    let policy = HttpPolicy::new(ExactHostAllowlist::new([host]).map_err(failed)?, ContentTypePolicy::json())
-        .with_schemes(SchemePolicy::HttpsOnly)
-        .with_limits(limits)
-        .map_err(failed)?;
-    let mut request = HttpRequest::get(url.as_str()).and_then(|r| r.with_header("accept", "application/json")).and_then(|r| r.with_header("user-agent", USER_AGENT)).map_err(failed)?;
-    for (name, value) in headers {
-        request = request.with_header(*name, *value).map_err(failed)?;
-    }
-    let response = SafeHttpClient::new(policy).execute(request, cancel).map_err(failed)?;
+    let mut hosts = vec![host.to_string()];
+    let response = loop {
+        let policy = HttpPolicy::new(ExactHostAllowlist::new(&hosts).map_err(failed)?, types.clone())
+            .with_schemes(SchemePolicy::HttpsOnly)
+            .with_limits(limits.clone())
+            .map_err(failed)?;
+        let default_accept = if accept.is_empty() { "application/json" } else { accept.as_str() };
+        let mut request = HttpRequest::get(url.as_str()).and_then(|r| r.with_header("accept", default_accept)).and_then(|r| r.with_header("user-agent", USER_AGENT)).map_err(failed)?;
+        for (name, value) in headers.iter().filter(|(n, _)| !n.eq_ignore_ascii_case("accept")) {
+            request = request.with_header(*name, *value).map_err(failed)?;
+        }
+        match SafeHttpClient::new(policy).execute(request, cancel) {
+            Ok(response) => break response,
+            // A PDF link redirected to another public host (a publisher's CDN, a repository):
+            // that host is allowed too and the request starts again, a few times at most.
+            Err(HttpError::HostDenied(next)) if pdf && hosts.len() < 6 && !hosts.contains(&next) => hosts.push(next),
+            Err(error) => return Err(failed(error)),
+        }
+    };
     Ok(Response {
         status: response.status(),
         headers: response.headers().iter().filter_map(|h| Some((h.name().to_string(), h.value_str()?.to_string()))).collect(),

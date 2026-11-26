@@ -66,6 +66,8 @@ interface ReaderBridge {
   readerOpenSource?(sourceId: string): Promise<void>;
   readerOpenItem?(item: { kind: string; id: string; title?: string; reveal?: string }): Promise<void>;
   readerResult?(direction: number): Promise<void>;
+  /** The shared collection chooser in the window's shell (renderer/add-from-source.tsx). */
+  addFromSource?(request: { origin: { workspaceId: string; sourceId?: string | null }; work: Record<string, unknown> }): Promise<{ id: string } | null>;
 }
 const bridge = () => (window as unknown as { key: ReaderBridge }).key;
 
@@ -169,7 +171,15 @@ export default function PdfReader() {
       })();
       const source = await citeSource.current;
       try {
+        // The attribution in the chosen citation style (the fallback formats it when this fails).
+        const attribution = source.sourceId
+          ? await bridge()
+              .invoke?.<{ text: string }>("store_cite_attribution", { id: source.sourceId, page: passage.page >= 0 ? String(passage.page + 1) : null })
+              .then((a) => a.text)
+              .catch(() => undefined)
+          : undefined;
         await writeQuoteClipboard({
+          attribution,
           v: 1,
           text: passage.text,
           workspaceId: initial.workspaceId,
@@ -194,6 +204,9 @@ export default function PdfReader() {
     const initial = document?.initial;
     const call = bridge().invoke;
     if (!initial || (initial.web && "url" in initial.web) || !call || !bridge().readerOpenSource) return undefined;
+    const sourceId = () =>
+      call<{ items: { id: string }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then((found) => found.items[0]?.id ?? null);
+    const workspaceId = initial.workspaceId;
     return readerLibraryWorks({
       invoke: <T,>(command: string, args?: Record<string, unknown>) => call<T>(command, args),
       open: (sourceId) => void bridge().readerOpenSource?.(sourceId),
@@ -201,6 +214,11 @@ export default function PdfReader() {
         call<{ items: { collections?: string[] }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then(
           (found) => found.items[0]?.collections ?? [],
         ),
+      // Asks which collections, beside this PDF's by default (Settings › Libraries).
+      addFrom:
+        workspaceId && bridge().addFromSource
+          ? async (work) => bridge().addFromSource!({ origin: { workspaceId, sourceId: await sourceId().catch(() => null) }, work: { ...work } })
+          : undefined,
     });
   }, [document]);
   // A highlight's info card: the notes and canvases that use it, each opening there.

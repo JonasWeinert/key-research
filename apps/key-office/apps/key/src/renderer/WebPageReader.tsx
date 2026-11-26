@@ -10,6 +10,7 @@ import { openItemAt, toast } from "./item-actions";
 import { describeRange, locate, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
 import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT } from "./web-page-open";
 import { writeQuoteClipboard } from "./quote-clipboard";
+import { quoteAttribution } from "./cite";
 import { AnnotationText } from "./annotation-text";
 import { drawHighlightMarkers, inFrameView } from "./web-highlight-markers";
 import { highlightUsage } from "./highlight-usage";
@@ -373,8 +374,10 @@ export function WebPageReader({
   const cite = async () => {
     if (!source || !contextText.trim()) return;
     const authors = (source.creators ?? []).map((c) => c.family || c.literal || c.given || "").filter(Boolean);
+    const attribution = sourceId ? await quoteAttribution(invoke, workspaceId, sourceId).then((a) => a.text).catch(() => undefined) : undefined;
     await writeQuoteClipboard({
       v: 1,
+      attribution,
       text: contextText,
       workspaceId,
       sourceId,

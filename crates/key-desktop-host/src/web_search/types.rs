@@ -125,7 +125,7 @@ pub fn fold(text: &str) -> String {
     out
 }
 
-fn strip_tags(text: &str) -> String {
+pub fn strip_tags(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(start) = rest.find('<') {

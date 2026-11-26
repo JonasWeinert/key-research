@@ -31,7 +31,11 @@ interface MenuItem {
   count?: number;
   /** A reading of the query (smart-query.ts): the text left to search, and kinds to show. */
   detected?: { rest: string; kinds?: DetectedKind[] };
+  /** Picked, it does this instead of adding tokens ("Add … to library"). */
+  action?: () => void;
 }
+
+const ID_NAME: Record<string, string> = { doi: "DOI", arxiv: "arXiv", pmid: "PMID", pmcid: "PMCID", isbn: "ISBN" };
 
 const FIELD: Record<string, { label: string; icon: IconName }> = {
   creator: { label: "Author", icon: "user" },
@@ -99,6 +103,7 @@ export default function SearchField({
   placeholder = "Search titles, authors, notes and full text",
   onKinds,
   tokenNote,
+  onAddIdentifier,
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -119,6 +124,8 @@ export default function SearchField({
   /** Why a token is not applied right now (the search tab while only the web is searched);
    *  it stays in the query, shown greyed. */
   tokenNote?: (filter: SearchFilter) => string | undefined;
+  /** A pasted identifier alone: offer "Add <identifier> to library" (the library). */
+  onAddIdentifier?: (identifier: NonNullable<Detection["add"]>) => void;
 }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [index, setIndex] = useState(-1);
@@ -238,8 +245,28 @@ export default function SearchField({
       };
     }).filter((item) => !taken.has(item.key));
     const seen = new Set<string>();
-    return [...detected, ...specific, ...generic].filter((item) => !seen.has(item.key) && !!seen.add(item.key));
-  }, [suggestions, detections, typed, filters, pattern]);
+    const adds: MenuItem[] = onAddIdentifier
+      ? detections.flatMap((d) =>
+          d.add
+            ? [
+                {
+                  key: `add:${d.add.kind}:${d.add.value}`,
+                  filters: [],
+                  icon: "plus" as IconName,
+                  action: () => onAddIdentifier(d.add!),
+                  content: (
+                    <>
+                      Add <span className="kx-suggest-value">{ID_NAME[d.add.kind] ?? ""} {d.add.value}</span> to library
+                    </>
+                  ),
+                },
+              ]
+            : [],
+        )
+      : [];
+    return [...detected, ...adds, ...specific, ...generic].filter((item) => !seen.has(item.key) && !!seen.add(item.key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestions, detections, typed, filters, pattern, !!onAddIdentifier]);
   useEffect(() => setIndex(-1), [typed]);
   const showMenu = open && items.length > 0;
   // The list closes on blur already; scrolling away or a press in another view closes it
@@ -248,6 +275,11 @@ export default function SearchField({
   useDismiss(showMenu, { refs: [formRef], kind: "passive", escape: false, anchor: formRef, onDismiss: () => setOpen(false) });
 
   const pick = (item: MenuItem) => {
+    if (item.action) {
+      setOpen(false);
+      setIndex(-1);
+      return item.action();
+    }
     if (item.filters.length) onFilters([...filters, ...item.filters]);
     if (item.detected?.kinds?.length) onKinds?.(item.detected.kinds);
     onText(item.detected?.rest ?? "");

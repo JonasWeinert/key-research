@@ -1,11 +1,8 @@
 import HomeView from "./HomeView";
 import { Button, Input, Textarea, Select } from "@key/design-system";
-import NotePage from "./NotePage";
-import CanvasPage from "./canvas/CanvasPage";
+import { lazyComponent } from "./lazy";
 import SourcePage, { type DockedPanel } from "./SourcePage";
 import SearchPage from "./SearchPage";
-import HighlightsPage from "./HighlightsPage";
-import LinkedFileView from "./LinkedFileView";
 import { WebPageReader } from "./WebPageReader";
 import type { SearchPreviewState } from "./search-preview";
 import { EntryDetails } from "./EntryTools";
@@ -19,7 +16,13 @@ import LibraryHome, {
 } from "./LibraryHome";
 import "./shell.css";
 import ReferenceLibrary from "./ReferenceLibrary";
-import EntityPage from "./EntityPage";
+
+// Pages that load with their first tab (the note editor, canvas and entity pages are large).
+const NotePage = lazyComponent(() => import("./NotePage").then((m) => m.default));
+const CanvasPage = lazyComponent(() => import("./canvas/CanvasPage").then((m) => m.default));
+const HighlightsPage = lazyComponent(() => import("./HighlightsPage").then((m) => m.default));
+const LinkedFileView = lazyComponent(() => import("./LinkedFileView").then((m) => m.default));
+const EntityPage = lazyComponent(() => import("./EntityPage").then((m) => m.default));
 
 interface Workspace {
   id: string;

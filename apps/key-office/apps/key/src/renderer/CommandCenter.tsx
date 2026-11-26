@@ -3,13 +3,13 @@
 // (library rows, canvas cards) or else on the focused pane's item.
 import { useEffect, useState } from "react";
 import { GlobalDialog } from "./GlobalDrawer";
-import { copyCitation, copyItemLink, describeCount, openItemAt, sendToCanvas, sendToNote, toast, type InsertMode } from "./item-actions";
+import { copyCitation, copyInTextCitation, copyItemLink, describeCount, openItemAt, sendToCanvas, sendToNote, toast, type InsertMode } from "./item-actions";
 import { onSendTo, quickLook, selectedItems, showInInspector } from "./item-ui";
 import { bridge, type Invoke, type Note } from "./library-api";
 import Palette, { type Command } from "./Palette";
 import { openSearchTab } from "./global-search";
 import type { DraggedItem } from "./note-editor";
-import { notesChanged } from "./NotePage";
+import { notesChanged } from "./note-events";
 
 type Open = { mode: "open" } | { mode: "search" } | { mode: "commands" } | { mode: "send"; items: DraggedItem[] } | { mode: "shortcuts" };
 
@@ -35,7 +35,8 @@ export const SHORTCUTS: [string, [string, string][]][] = [
       ["![[", "In a note: embed a note, highlight, source or canvas"],
       ["@", "In a note: cite a source, e.g. @smith p. 12"],
       ["⌘L", "Copy a link to the selection"],
-      ["⌘⇧C", "Copy the citation"],
+      ["⌘⇧C", "Copy the reference (bibliography entry)"],
+      ["⌘⇧A", "Copy an in-text citation"],
       ["⌘⇧S", "Send the selection to a canvas or note"],
     ],
   ],
@@ -136,6 +137,8 @@ export default function CommandCenter({
           return items.length ? void copyItemLink(items.map((item) => ({ item, title: item.title }))) : toast("Select something to copy a link to");
         case "copy-citation":
           return items.length && workspaceId ? void copyCitation(invoke, workspaceId, items) : toast("Select a source or highlight to cite");
+        case "copy-in-text":
+          return items.length && workspaceId ? void copyInTextCitation(invoke, workspaceId, items) : toast("Select a source or highlight to cite");
         case "send-to":
           return items.length ? setOpen({ mode: "send", items }) : toast("Select something to send");
       }
@@ -158,7 +161,8 @@ export default function CommandCenter({
         { id: "sel-look", label: "Quick look", icon: "search", shortcut: "Space", run: () => quickLook(selection[0]) },
         { id: "sel-send", label: `Send ${describeCount(selection)} to…`, icon: "arrowRight", shortcut: "⌘⇧S", run: () => setTimeout(() => setOpen({ mode: "send", items: selection })) },
         { id: "sel-link", label: "Copy link", icon: "link", shortcut: "⌘L", run: () => void copyItemLink(selection.map((item) => ({ item, title: item.title }))) },
-        { id: "sel-cite", label: "Copy citation", icon: "quote", shortcut: "⌘⇧C", run: () => void copyCitation(invoke, workspaceId, selection) },
+        { id: "sel-cite", label: "Copy reference", icon: "quote", shortcut: "⌘⇧C", run: () => void copyCitation(invoke, workspaceId, selection) },
+        { id: "sel-cite-in-text", label: "Copy in-text citation", icon: "quote", shortcut: "⌘⇧A", run: () => void copyInTextCitation(invoke, workspaceId, selection) },
         { id: "sel-inspect", label: "Show selection in inspector", icon: "panelRight", run: () => showInInspector(selection) },
       ]
     : [];

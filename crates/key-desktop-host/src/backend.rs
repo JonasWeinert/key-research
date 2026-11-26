@@ -7,12 +7,16 @@ mod scholarly_resolver;
 mod library_store;
 #[path = "linked_folders.rs"]
 mod linked_folders;
+#[path = "cite_commands.rs"]
+mod cite_commands;
 #[path = "core_commands.rs"]
 mod core_commands;
 #[path = "biblio_commands.rs"]
 mod biblio_commands;
 #[path = "openalex.rs"]
 mod openalex;
+#[path = "hygiene.rs"]
+mod hygiene;
 #[path = "reference_worker.rs"]
 mod reference_worker;
 #[path = "web_search/mod.rs"]

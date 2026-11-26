@@ -64,6 +64,15 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   { id: "quote-source", label: "Quote from a source", hint: "Quotation with attribution", group: "Research", icon: "quote", keywords: ["citation", "excerpt", "cite"], run: (e, r) => openPicker(e, r, "quote") },
   {
+    id: "bibliography",
+    label: "Bibliography",
+    hint: "The sources this note cites, in your citation style",
+    group: "Research",
+    icon: "list",
+    keywords: ["references", "works cited", "reference list", "citations", "sources"],
+    run: (e, r) => clear(e, r).insertContent([{ type: "noteBibliography", attrs: { title: "References" } }, { type: "paragraph" }]).run(),
+  },
+  {
     id: "image",
     label: "Image",
     hint: "Upload from your Mac",
@@ -108,26 +117,8 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
 ];
 
-/** Subsequence match; higher is better, -1 when the query does not match. */
-export function fuzzyScore(query: string, text: string): number {
-  const q = query.toLowerCase();
-  const t = text.toLowerCase();
-  if (!q) return 0;
-  if (t.startsWith(q)) return 1000 - t.length;
-  const word = t.indexOf(` ${q}`);
-  if (word >= 0) return 800 - word;
-  const sub = t.indexOf(q);
-  if (sub >= 0) return 600 - sub;
-  let score = 0;
-  let last = -1;
-  for (const ch of q) {
-    const at = t.indexOf(ch, last + 1);
-    if (at < 0) return -1;
-    score += at === last + 1 ? 6 : 1;
-    last = at;
-  }
-  return score;
-}
+import { fuzzyScore } from "./fuzzy";
+export { fuzzyScore };
 
 export function filterSlashItems(items: SlashItem[], query: string): SlashItem[] {
   const q = query.trim();
@@ -353,6 +344,10 @@ export function insertSource(editor: Editor, range: Range, ref: SourceRef, mode:
   const at = mode === "cite" && wholeSource && page !== undefined ? { ...item, anchor: `page:${page}` } : item;
   const label = mentionLabel(ref);
   const href = itemHref(at);
+  // Citing a retracted (or flagged) work: say so once, quietly.
+  const flag = ref.flag;
+  if (flag && item.kind === "source")
+    void import("../item-actions").then(({ toast }) => toast(`${ref.title.slice(0, 60)}: ${flag.toLowerCase()}. Check it before citing.`));
   editor
     .chain()
     .focus()

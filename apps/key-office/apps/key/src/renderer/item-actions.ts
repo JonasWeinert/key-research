@@ -2,7 +2,7 @@
 // describe itself for previews, open in a tab, beside the current pane or in its place,
 // copy a link or citation, and be sent to a canvas or note. Views register here so a
 // send reaches an open editor rather than racing it through the store.
-import { apa, apaInText } from "./citation";
+import { bibliography, inTextCitation as engineInText, renderCitations, rtfDocument, rtfText, writeRichClipboard } from "./cite";
 import type { IconName } from "./icons";
 import { bridge, shortCreators, type Invoke, type Note, type PersonPageData, type Source, type TagPageData, type TopicPageData, type VenuePageData } from "./library-api";
 import { itemFromHref, itemHref, markdownToPlainText, type DraggedItem, type ItemLink } from "./note-editor";
@@ -274,26 +274,81 @@ export async function copyItemLink(items: { item: ItemLink; title: string }[]) {
   toast(items.length === 1 ? "Link copied" : `${items.length} links copied`);
 }
 
-/** (Palma et al., 2022, p. 4) */
-export function inTextCitation(source: Source, page?: number) {
-  const base = apaInText(source);
-  return page === undefined ? base : `${base.slice(0, -1)}, p. ${page + 1})`;
+/** "(Palma et al., 2022, p. 4)" in the chosen style; `page` is 0-based. */
+export async function inTextCitation(invoke: Invoke, workspaceId: string, source: Source, page?: number) {
+  return (await engineInText(invoke, workspaceId, source.id, { page })).text;
 }
 
-/** The reference list entry for sources; a highlight copies as a quotation with its citation. */
+const quoted = (text?: string) => `“${(text ?? "").replace(/\s+/g, " ").trim()}”`;
+
+/** ⌘⇧C: the reference list entries for sources (one bibliography, sorted by the style); a
+ *  highlight copies as a quotation with its in-text citation. */
 export async function copyCitation(invoke: Invoke, workspaceId: string, items: ItemLink[]) {
   const infos = await Promise.all(items.map((item) => describeItem(invoke, workspaceId, item)));
   const cited = infos.filter((info) => info.source);
   if (!cited.length) return toast("Only sources and highlights have citations");
-  const plain = cited
-    .map((info) => (info.highlight ? `“${info.highlight.text ?? ""}” ${inTextCitation(info.source!, info.highlight.page)}` : apa(info.source!)))
-    .join("\n\n");
-  const html = cited
-    .map((info) => (info.highlight ? `<p>“${escapeHtml(info.highlight.text ?? "")}” ${escapeHtml(inTextCitation(info.source!, info.highlight.page))}</p>` : `<p>${apa(info.source!, true)}</p>`))
-    .join("");
-  await writeClipboard(plain, html);
-  toast(cited.length === 1 ? "Citation copied" : `${cited.length} citations copied`);
+  try {
+    const sources = [...new Set(cited.filter((i) => !i.highlight).map((i) => i.source!.id))];
+    const quotes = cited.filter((i) => i.highlight);
+    const [bib, rendered] = await Promise.all([
+      sources.length ? bibliography(invoke, workspaceId, sources) : Promise.resolve(undefined),
+      quotes.length ? renderCitations(invoke, workspaceId, { citations: quotes.map((q) => ({ items: [{ id: q.source!.id, locator: pageLocator(q.highlight!.page) }] })), bibliography: false }) : Promise.resolve(undefined),
+    ]);
+    const text: string[] = [];
+    const html: string[] = [];
+    const rtf: string[] = [];
+    quotes.forEach((q, i) => {
+      const c = rendered?.citations[i];
+      if (!c) return;
+      text.push(`${quoted(q.highlight!.text)} ${c.text}`);
+      html.push(`<p>${escapeHtml(quoted(q.highlight!.text))} ${c.html}</p>`);
+      rtf.push(`${rtfText(quoted(q.highlight!.text))} ${c.rtf}`);
+    });
+    for (const entry of bib?.entries ?? []) {
+      text.push(entry.text);
+      html.push(`<div class="csl-entry">${entry.html}</div>`);
+      rtf.push(entry.rtf);
+    }
+    await writeRichClipboard({ text: text.join("\n\n"), html: html.join(""), rtf: rtfDocument(rtf) });
+    toast(cited.length === 1 ? "Citation copied" : `${cited.length} citations copied`);
+  } catch (e) {
+    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
+  }
 }
+
+/** ⌘⇧A: one in-text citation for the selected sources (and highlighted pages). */
+export async function copyInTextCitation(invoke: Invoke, workspaceId: string, items: ItemLink[]) {
+  const infos = await Promise.all(items.map((item) => describeItem(invoke, workspaceId, item)));
+  const cited = infos.filter((info) => info.source);
+  if (!cited.length) return toast("Only sources and highlights have citations");
+  try {
+    const out = await renderCitations(invoke, workspaceId, {
+      citations: [{ items: cited.map((info) => ({ id: info.source!.id, locator: pageLocator(info.highlight?.page) })) }],
+      bibliography: false,
+    });
+    const c = out.citations[0];
+    await writeRichClipboard({ text: c.text, html: c.html, rtf: rtfDocument([c.rtf]) });
+    toast("In-text citation copied");
+  } catch (e) {
+    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
+  }
+}
+
+/** A collection's bibliography (its sources, sub-collections included as the library shows them). */
+export async function copyCollectionBibliography(invoke: Invoke, workspaceId: string, collectionId: string, name: string) {
+  try {
+    const page = await invoke<{ items: { id: string }[] }>("store_sources", { collectionId, limit: 5000, offset: 0, sort: "title" }, workspaceId);
+    if (!page.items.length) return toast(`“${name}” has no sources`);
+    const bib = await bibliography(invoke, workspaceId, page.items.map((s) => s.id));
+    if (!bib) return toast("This style has no reference list");
+    await writeRichClipboard({ text: bib.entries.map((e) => e.text).join("\n\n"), html: bib.html, rtf: bib.rtf });
+    toast(bib.entries.length === 1 ? "Bibliography copied (1 reference)" : `Bibliography copied (${bib.entries.length} references)`);
+  } catch (e) {
+    toast(`Could not format the bibliography: ${String(e).replace(/^Error: /, "")}`);
+  }
+}
+
+const pageLocator = (page?: number) => (page === undefined || page < 0 ? undefined : String(page + 1));
 
 // ── Sending to a canvas or a note ────────────────────────────────────────────
 
@@ -347,7 +402,7 @@ export async function itemsMarkdown(invoke: Invoke, workspaceId: string, items: 
         const info = await describeItem(invoke, workspaceId, item);
         if (!info.source) return `[${label(item.title)}](${itemHref(item)})`;
         const page = info.highlight?.page ?? (item.anchor?.startsWith("page:") ? Number(item.anchor.slice(5)) : undefined);
-        const cite = `[${inTextCitation(info.source, page)}](${itemHref(item)})`;
+        const cite = `[${await inTextCitation(invoke, workspaceId, info.source, page)}](${itemHref(item)})`;
         return info.highlight?.text ? `“${info.highlight.text.replace(/\s+/g, " ").trim()}” ${cite}` : cite;
       }),
     );

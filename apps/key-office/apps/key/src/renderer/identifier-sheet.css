@@ -1,0 +1,111 @@
+/* Add by identifier: the pasted list and what became of each. */
+.kx-identifier-text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 10px;
+  border: 0.5px solid var(--kx-line);
+  border-radius: 10px;
+  outline: none;
+  background: var(--kx-bg-sunken);
+  color: var(--kx-text);
+  font: 13px/1.5 var(--kx-font);
+  resize: vertical;
+}
+.kx-identifier-text:focus-visible {
+  border-color: var(--kx-accent);
+  box-shadow: 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-identifier-text::placeholder {
+  color: var(--kx-text-3);
+}
+.kx-identifier-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 22px;
+  margin-top: 6px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-identifier-meta .kx-check {
+  margin-top: 0;
+}
+.kx-identifier-results {
+  margin-top: 12px;
+  border-radius: 10px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+  overflow: hidden;
+}
+.kx-identifier-tally {
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 0.5px solid var(--kx-line);
+  color: var(--kx-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+.kx-identifier-results ul {
+  max-height: 260px;
+  margin: 0;
+  padding: 4px 0;
+  overflow: auto;
+  list-style: none;
+}
+.kx-identifier-results li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px 5px 12px;
+}
+.kx-identifier-results li > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-identifier-results li[data-tone="ok"] > svg {
+  color: var(--kx-green);
+}
+.kx-identifier-results li[data-tone="info"] > svg {
+  color: var(--kx-accent);
+}
+.kx-identifier-results li[data-tone="warn"] > svg {
+  color: var(--kx-amber);
+}
+.kx-identifier-row-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.kx-identifier-row-text > strong,
+.kx-identifier-row-text > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-identifier-row-text > strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.kx-identifier-row-text > small {
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-identifier-results li[data-tone="muted"] .kx-identifier-row-text > strong {
+  color: var(--kx-text-2);
+}
+.kx-identifier-sheet .kx-identifier-open {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-accent);
+  font: 500 12px var(--kx-font);
+}
+.kx-identifier-sheet .kx-identifier-open:hover {
+  background: var(--kx-fill);
+}

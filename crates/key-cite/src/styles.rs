@@ -168,12 +168,11 @@ impl Styles {
     /// Bundled styles first (alphabetical by title), then installed ones; an installed style
     /// with a bundled style's id replaces it.
     pub fn list(&self) -> Vec<StyleSummary> {
+        // The bundled set never changes: summarized once.
+        static BUNDLED: OnceLock<Vec<StyleSummary>> = OnceLock::new();
+        let bundled = BUNDLED.get_or_init(|| bundled::STYLES.iter().filter_map(|(_, xml)| Style::from_xml(xml).ok().map(|s| summarize(&s, true))).collect());
         let installed = self.installed();
-        let mut out: Vec<StyleSummary> = bundled::STYLES
-            .iter()
-            .filter(|(id, _)| !installed.iter().any(|s| s.id == *id))
-            .filter_map(|(_, xml)| Style::from_xml(xml).ok().map(|s| summarize(&s, true)))
-            .collect();
+        let mut out: Vec<StyleSummary> = bundled.iter().filter(|b| !installed.iter().any(|s| s.id == b.id)).cloned().collect();
         out.extend(installed);
         out.sort_by(|a, b| b.bundled.cmp(&a.bundled).then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase())));
         out

@@ -25,12 +25,17 @@ export interface AppSettings {
   /** A work added from another source's context (its references, a citation card): ask which
    *  collections, put it in the origin source's collections, or in the library only. */
   addFromSource: 'ask' | 'origin' | 'library'
+  /** Find PDF (open-access copies) for references as they are added. Off by default. */
+  findPdfOnAdd: boolean
+  /** The CSL style (bundled or installed id) and locale citations and bibliographies use. */
+  citationStyle: string
+  citationLocale: string
 }
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask' }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -71,6 +76,9 @@ function sanitize(input: AppSettings): AppSettings {
     openalexApiKey: typeof input.openalexApiKey === 'string' ? input.openalexApiKey.trim().slice(0, 200) : '',
     webProviders: webProviders(input.webProviders),
     addFromSource: (['ask', 'origin', 'library'] as const).includes(input.addFromSource) ? input.addFromSource : 'ask',
+    findPdfOnAdd: input.findPdfOnAdd === true,
+    citationStyle: typeof input.citationStyle === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(input.citationStyle) ? input.citationStyle : 'apa',
+    citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
   }
 }
 

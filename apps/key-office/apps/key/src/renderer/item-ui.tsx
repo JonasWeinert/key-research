@@ -9,6 +9,7 @@ import { useDismiss } from "@key-reader/ui/dismiss";
 import { Icon, type IconName } from "./icons";
 import {
   copyCitation,
+  copyInTextCitation,
   copyItemLink,
   describeItem,
   onToast,
@@ -151,6 +152,8 @@ export function ItemBody({ info, invoke, workspaceId, size = "card" }: { info: I
           searchItems={sources.searchItems}
           searchItemsMore={sources.searchItemsMore}
           citeLabel={sources.citeLabel}
+          formatCitations={sources.formatCitations}
+          formatBibliography={sources.formatBibliography}
           onOpenItem={sources.onOpenItem}
         />
       </div>
@@ -373,7 +376,12 @@ export function itemMenuEntries(items: { item: ItemLink; title: string }[], extr
     { label: "Quick look", icon: "search", shortcut: "Space", run: () => quickLook(first.item) },
     "-",
     { label: items.length > 1 ? `Copy ${items.length} links` : "Copy link", icon: "link", shortcut: "⌘L", run: () => void copyItemLink(items) },
-    ...(sourceLike ? [{ label: "Copy citation", icon: "quote" as const, shortcut: "⌘⇧C", run: () => invoke && workspaceId && void copyCitation(invoke, workspaceId, items.map((i) => i.item)) }] : []),
+    ...(sourceLike
+      ? [
+          { label: "Copy reference", icon: "quote" as const, shortcut: "⌘⇧C", run: () => invoke && workspaceId && void copyCitation(invoke, workspaceId, items.map((i) => i.item)) },
+          { label: "Copy in-text citation", icon: "quote" as const, shortcut: "⌘⇧A", run: () => invoke && workspaceId && void copyInTextCitation(invoke, workspaceId, items.map((i) => i.item)) },
+        ]
+      : []),
     "-",
     { label: "Send to canvas or note…", icon: "canvas", shortcut: "⌘⇧S", run: () => sendTo(asDragged) },
     { label: "Show in inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => showInInspector(asDragged) },

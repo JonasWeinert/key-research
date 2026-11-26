@@ -24,10 +24,11 @@ const TOKEN_NAME: Record<FenceKind, string> = {
   // the editor's image node also takes marked's `![alt](src)` tokens, which share this type
   image: "image",
   embed: "itemEmbed",
+  bibliography: "noteBibliography",
 };
 
 /** Fences whose body is a plain line (a label, title or caption), not Markdown blocks. */
-const LINE_BODY: readonly FenceKind[] = ["source", "video", "image", "embed"];
+const LINE_BODY: readonly FenceKind[] = ["source", "video", "image", "embed", "bibliography"];
 
 function fenceTokenizer(kind: FenceKind, accept?: (attrs: Record<string, string>) => boolean, inline = false) {
   return {
@@ -243,6 +244,44 @@ export const ItemEmbed = Node.create({
   },
 });
 
+/** The note's reference list: every source it links or cites, formatted by the citation
+ *  engine in the chosen style. Stored as a fence whose body is its heading. */
+export const NoteBibliography = Node.create({
+  name: "noteBibliography",
+  group: "block",
+  atom: true,
+  selectable: true,
+  draggable: true,
+
+  addAttributes() {
+    return {
+      title: {
+        default: "References",
+        parseHTML: (el) => el.getAttribute("data-title") ?? "References",
+        renderHTML: (attrs) => ({ "data-title": attrs.title }),
+      },
+    };
+  },
+
+  parseHTML() {
+    return [{ tag: "div[data-note-bibliography]" }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ["div", mergeAttributes(HTMLAttributes, { "data-note-bibliography": "", class: "ne-bibliography" })];
+  },
+
+  markdownTokenizer: fenceTokenizer("bibliography"),
+
+  parseMarkdown(token, helpers) {
+    return helpers.createNode("noteBibliography", { title: bodyLine(token) || "References" });
+  },
+
+  renderMarkdown(node) {
+    return renderFence("bibliography", [], String(node.attrs?.title || "References").replace(/\n+/g, " "));
+  },
+});
+
 export const SourceQuote = Node.create({
   name: "sourceQuote",
   group: "block",
@@ -428,6 +467,7 @@ export interface NoteSchemaParts {
   sourceQuote?: AnyExtension;
   videoEmbed?: AnyExtension;
   itemEmbed?: AnyExtension;
+  bibliography?: AnyExtension;
   image?: AnyExtension;
   codeBlock?: AnyExtension;
 }
@@ -460,6 +500,7 @@ export function buildSchemaExtensions(parts: NoteSchemaParts = {}): AnyExtension
     parts.sourceQuote ?? SourceQuote,
     parts.videoEmbed ?? VideoEmbed,
     parts.itemEmbed ?? ItemEmbed,
+    parts.bibliography ?? NoteBibliography,
   ];
 }
 
@@ -487,7 +528,7 @@ export function collapseBlankLines(md: string): string {
       out.push(line);
       continue;
     }
-    if (fence && !/^(?:callout|toggle|source|quote|video|image)\b/.test(fence[2].trim())) code = fence[1];
+    if (fence && !/^(?:callout|toggle|source|quote|video|image|embed|bibliography)\b/.test(fence[2].trim())) code = fence[1];
     if (!line.trim()) {
       blank += 1;
       if (blank > 1) continue;

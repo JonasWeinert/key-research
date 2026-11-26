@@ -4,6 +4,7 @@
 // citation keys. Every import is journalled so it can be undone as a whole.
 use crate::fields::{self, text};
 use crate::{Format, Parsed, Record, Warning};
+use key_store::duplicates::{MatchKind as EngineKind, Work};
 use key_store::{ListQuery, Source, SourceInput, Store, citation_keys::fold_ascii, normalize_doi};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
@@ -240,9 +241,46 @@ impl DuplicateIndex {
     }
 }
 
-/// Duplicate lookup for a batch of records (the "one small function" the import calls).
-pub fn find_duplicates(index: &DuplicateIndex, records: &[Record]) -> Vec<Option<DuplicateMatch>> {
-    records.iter().map(|r| index.find(&r.source)).collect()
+fn work(input: &SourceInput) -> Work {
+    let t = |name: &str| text(&input.fields, name).map(String::from);
+    Work {
+        title: t("title"),
+        year: input.fields.get("year").and_then(Json::as_i64),
+        item_type: t("itemType"),
+        doi: t("doi"),
+        isbn: t("isbn"),
+        pmid: t("pmid"),
+        pmcid: t("pmcid"),
+        arxiv_id: t("arxivId"),
+        container_title: t("containerTitle"),
+        edition: t("edition"),
+        creators: input.creators.clone(),
+        ..Default::default()
+    }
+}
+
+/// The library's duplicates of records (the store's duplicate engine): an identifier match
+/// is exact; a likely match, or a preprint and its published version, is possible.
+pub fn find_duplicates(store: &Store, records: &[Record]) -> Result<Vec<Option<DuplicateMatch>>, String> {
+    let works: Vec<Work> = records.iter().map(|r| work(&r.source)).collect();
+    let mut titles: HashMap<String, String> = HashMap::new();
+    let found = store.find_duplicates_for(&works)?;
+    found
+        .into_iter()
+        .map(|matches| {
+            let Some(best) = matches.into_iter().next() else { return Ok(None) };
+            let title = match titles.get(&best.source_id) {
+                Some(title) => title.clone(),
+                None => {
+                    let title = store.source(&best.source_id)?.map(|s| s.title().to_string()).unwrap_or_default();
+                    titles.insert(best.source_id.clone(), title.clone());
+                    title
+                }
+            };
+            let kind = if best.kind == EngineKind::Exact { MatchKind::Exact } else { MatchKind::Possible };
+            Ok(Some(DuplicateMatch { source_id: best.source_id, kind, reason: best.reason, title }))
+        })
+        .collect()
 }
 
 // ── Files ────────────────────────────────────────────────────────────────────
@@ -293,8 +331,20 @@ fn filled_fields(record: &Record) -> Vec<String> {
 }
 
 pub fn preview(store: &Store, parsed: &Parsed, options: &ImportOptions) -> Result<Preview, String> {
-    let index = DuplicateIndex::build(store)?;
-    let matches = find_duplicates(&index, &parsed.records);
+    // The library's duplicates, then earlier entries of the same file.
+    let library = find_duplicates(store, &parsed.records)?;
+    let mut seen = DuplicateIndex::default();
+    let matches: Vec<Option<DuplicateMatch>> = parsed
+        .records
+        .iter()
+        .zip(library)
+        .enumerate()
+        .map(|(i, (record, found))| {
+            let found = found.or_else(|| seen.find(&record.source));
+            seen.add_input(&format!("#{i}"), &record.source);
+            found
+        })
+        .collect();
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     let (mut found, mut missing, mut notes) = (0, 0, 0);
     let mut groups: Vec<String> = Vec::new();
@@ -442,7 +492,10 @@ pub fn run(
     let mut report = Report { id: journal_id.clone(), format: parsed.format.label().into(), total, warnings: parsed.warnings.clone(), ..Default::default() };
     let mut journal = Journal { id: journal_id.clone(), at: key_store::now_ms(), label: label.into(), ..Default::default() };
     progress(Progress { stage: "Checking for duplicates".into(), done: 0, total });
-    let mut index = DuplicateIndex::build(store)?;
+    let library = find_duplicates(store, &parsed.records)?;
+    // Entries imported earlier in this run, for duplicates within the file.
+    let mut index = DuplicateIndex::default();
+    let mut position = 0;
     // Collections the file's groups name (existing ones are reused).
     let mut known: HashMap<(Option<String>, String), String> =
         store.collections()?.into_iter().map(|c| ((c.parent_id.clone(), c.name.to_lowercase()), c.id)).collect();
@@ -454,7 +507,8 @@ pub fn run(
         let mut inputs: Vec<SourceInput> = Vec::new();
         let mut kept: Vec<Record> = Vec::new();
         for mut record in batch {
-            let duplicate = index.find(&record.source);
+            let duplicate = library.get(position).cloned().flatten().or_else(|| index.find(&record.source));
+            position += 1;
             match (&duplicate, options.duplicates) {
                 (Some(m), DuplicatePolicy::Skip) if m.kind == MatchKind::Exact => {
                     report.skipped += 1;
