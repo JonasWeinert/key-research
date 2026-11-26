@@ -196,7 +196,9 @@ const assert = require("node:assert/strict");
     await page.mouse.move(from.x + 30, from.y + 14);
     await page.mouse.down();
     await page.mouse.move(target.x + target.width + 20, target.y + 14, { steps: 16 });
-    await page.locator(".key-tab-insert-marker").waitFor();
+    const marker = page.locator(".key-tab-insert-marker");
+    for (let i = 0; i < 60 && !(await marker.isVisible()); i++) await page.mouse.move(target.x + target.width + 20 + (i % 2) * 3, target.y + 14, { steps: 2 });
+    await marker.waitFor();
     await page.mouse.up();
     await until(async () => (await tabs()).groups[1].tabIds.includes(homeTab), "the tab joins the right group");
     state = await tabs();
@@ -210,7 +212,11 @@ const assert = require("node:assert/strict");
     await page.mouse.move(pdfBox.x + 30, pdfBox.y + 14);
     await page.mouse.down();
     await page.mouse.move(d.width - 40, 500, { steps: 20 });
-    await page.locator(".key-pane-drop-preview").waitFor();
+    // Under load the drag starts after the pointer got there: keep the pointer moving over
+    // the side until the preview shows (it follows pointer moves, not time).
+    const preview = page.locator(".key-pane-drop-preview");
+    for (let i = 0; i < 60 && !(await preview.isVisible()); i++) await page.mouse.move(d.width - 40 - (i % 2) * 4, 500 + (i % 3), { steps: 2 });
+    await preview.waitFor();
     await shot("drop-preview");
     await page.mouse.up();
     await until(async () => (await tabs()).groups.length === 3, "three groups");

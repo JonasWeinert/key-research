@@ -2763,6 +2763,8 @@ else
         const text = typeof data?.text === "string" ? data.text : "";
         const html = typeof data?.html === "string" ? data.html : undefined;
         const rtf = typeof data?.rtf === "string" ? data.rtf : undefined;
+        // Smokes run side by side: with KEY_TEST_CLIPBOARD each app keeps its copies to itself.
+        if (process.env.KEY_TEST_CLIPBOARD === "1") return void ((globalThis as { __keyClipboard?: unknown }).__keyClipboard = { text, html: html ?? "", rtf: rtf ?? "" });
         clipboard.write({ text, ...(html ? { html } : {}), ...(rtf ? { rtf } : {}) });
       });
       ipcMain.handle("key:reveal-path", (event, path) => {

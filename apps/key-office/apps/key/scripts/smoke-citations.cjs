@@ -46,7 +46,8 @@ const HOUSE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
     args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
-    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_OPENALEX_ENABLED: "0", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces") },
+    // KEY_TEST_CLIPBOARD: copies stay in this app (other smokes share the system clipboard).
+    env: { ...process.env, KEY_TEST_CLIPBOARD: "1", KEY_SKIP_ONBOARDING: "1", KEY_OPENALEX_ENABLED: "0", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces") },
   });
   const shot = (page, name) => page.screenshot({ path: path.join(temp, `${name}.png`) });
   const result = {};
@@ -85,8 +86,8 @@ const HOUSE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     await page.reload();
     await page.getByRole("region", { name: "Home", exact: true }).waitFor();
 
-    const clip = () => app.evaluate(({ clipboard }) => ({ text: clipboard.readText(), html: clipboard.readHTML(), rtf: clipboard.readRTF() }));
-    const clearClip = () => app.evaluate(({ clipboard }) => clipboard.clear());
+    const clip = () => app.evaluate(() => globalThis.__keyClipboard ?? { text: "", html: "", rtf: "" });
+    const clearClip = () => app.evaluate(() => void (globalThis.__keyClipboard = undefined));
     const menu = (label) =>
       app.evaluate(({ Menu }, label) => {
         const find = (items) => {
