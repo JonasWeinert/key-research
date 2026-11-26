@@ -1,5 +1,6 @@
 // How notes reach the library: find sources for @-links and embeds, describe them for
 // cards and quotes, and open them (at a page when a quote has one).
+import { retractionOf } from "./library-hygiene";
 import { bridge, shortCreators, type Invoke, type Source, type SourcePage } from "./library-api";
 import type { ItemLink, NoteMediaHost, SourceRef } from "./note-editor";
 import type { Found } from "./unified-search";
@@ -12,6 +13,7 @@ export function sourceRef(source: Source): SourceRef {
     title: source.title || "Untitled",
     detail: [shortCreators(source.creators), source.year].filter(Boolean).join(" "),
     kind: source.kind,
+    flag: retractionOf(source),
   };
 }
 

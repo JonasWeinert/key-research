@@ -24,6 +24,8 @@ export interface SourceRef {
   anchor?: string;
   /** A highlight's colour. */
   color?: string;
+  /** "Retracted", "Withdrawn" or "Expression of concern": cited with a warning. */
+  flag?: string;
   /** Which search section it came from: titles and details, the text, or related by meaning. */
   group?: "titles" | "text" | "meaning";
   /** Where it matched ("p. 4", "Abstract") and the passage, with `[[match]]` markers. */

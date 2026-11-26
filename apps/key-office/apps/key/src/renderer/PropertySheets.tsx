@@ -118,7 +118,7 @@ export function PropertySheet({
             draft.type === "formula"
               ? formulaValue({ name, type: "formula", formula: draft.formula }, target)
               : value;
-          await invoke("store_update", { id: target.id, patch: { properties: { [name]: next } } }, workspaceId);
+          await invoke("store_update", { id: target.id, patch: { properties: { [name]: next } }, byHand: true }, workspaceId);
         }
       }
       onSaved();

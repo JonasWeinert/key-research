@@ -1233,3 +1233,14 @@
   background: var(--kx-accent-soft);
   color: var(--kx-accent-text);
 }
+
+/* A cited work that was retracted or flagged (library-hygiene.ts). */
+.ne-source-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  color: var(--kx-red);
+  font-size: 11px;
+  font-weight: 600;
+}
