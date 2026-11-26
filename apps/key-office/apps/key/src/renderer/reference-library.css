@@ -39,8 +39,27 @@
 .kx-search-input::placeholder {
   color: var(--kx-text-muted);
 }
+/* The header fits the list's own width: with details open beside it the list can be far
+   narrower than the window, so the search field gives way and Add keeps its size. */
+.kx-library .kx-page-head > .kx-page-title {
+  flex: 0 1 auto;
+}
+.kx-library .kx-page-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.kx-library .kx-page-actions {
+  flex: 1 1 240px;
+  justify-content: flex-end;
+  min-width: 0;
+}
 .kx-library .kx-search {
-  width: clamp(200px, 30vw, 340px);
+  flex: 0 1 clamp(200px, 30vw, 340px);
+  width: auto;
+  min-width: 0;
+}
+.kx-library .kx-add {
+  flex: none;
 }
 
 /* Add button with a menu, and shared popover menus */

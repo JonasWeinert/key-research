@@ -53,6 +53,28 @@ const assert = require("node:assert/strict");
 
     // Inspector: edit the title and star the source.
     await page.locator(".kx-row", { hasText: "Interaction study" }).click();
+    // With details open beside it, a narrow list keeps its header inside its own pane.
+    {
+      const win = (fn, arg) => app.evaluate(fn, arg);
+      const size = await win(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize());
+      let beside = 0;
+      for (const width of [1500, 1300, 1150, 1000, 900]) {
+        await win(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setSize(w, 700), width);
+        await page.waitForTimeout(350);
+        const fit = await page.evaluate(() => {
+          const root = document.querySelector(".kx-library:not([hidden])");
+          const r = (q) => root.querySelector(q).getBoundingClientRect();
+          return { overlay: root.dataset.overlay === "true", main: r(".kx-library-main").right, add: r(".kx-add").right, search: r(".kx-search").width };
+        });
+        if (!fit.overlay) beside++;
+        await page.screenshot({ path: path.join(temp, `header-${width}.png`) });
+        assert(fit.add <= fit.main + 1, `Add stays inside the list at ${width}px (${fit.add} > ${fit.main})`);
+        assert(fit.search >= 120, `the search field stays usable at ${width}px (${fit.search})`);
+      }
+      assert(beside > 0, "checked with details beside the list");
+      await win(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size);
+      await page.waitForTimeout(300);
+    }
     const title = page.getByRole("textbox", { name: "Title", exact: true });
     await title.fill("Interaction effects in shared reading");
     await title.press("Enter");
