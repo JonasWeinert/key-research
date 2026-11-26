@@ -4,7 +4,7 @@
 // entity links, and what can be done with it: Open, Open to the side, or Add to library for
 // works not in it yet (asking where, see add-from-source.tsx). ⌥-click opens it to the side,
 // ⌘-click or a double-click in a tab.
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode, type Ref } from "react";
 import { useRetryingLookup } from "@key-reader/pdfjs/use-retrying-lookup";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { Icon } from "./icons";
@@ -36,6 +36,9 @@ export function SourceListItem({
   onSelect,
   aside,
   actions,
+  lead,
+  itemRef,
+  index,
 }: {
   /** A work known by its metadata (a reference, a related work). */
   work?: ListWork;
@@ -55,6 +58,11 @@ export function SourceListItem({
   aside?: ReactNode;
   /** More actions after the row's own, when opened. */
   actions?: ReactNode;
+  /** Before the row's head (a selection checkbox in lists that select many). */
+  lead?: ReactNode;
+  /** For virtualised lists: the row's element and its index, to measure it. */
+  itemRef?: Ref<HTMLLIElement>;
+  index?: number;
 }) {
   // A work the host did not match already (related works, cited-by): asked by its identifiers,
   // with its title only ever "possibly" the library's.
@@ -113,6 +121,9 @@ export function SourceListItem({
   const creators = record?.creators ?? [];
   return (
     <li
+      ref={itemRef}
+      data-index={index}
+      data-lead={lead ? true : undefined}
       className="kx-source-item"
       data-in-library={inLibrary || !!added}
       data-open={open}
@@ -122,6 +133,7 @@ export function SourceListItem({
       draggable={!!id}
       onDragStart={id ? (e) => setItemDrag(e.dataTransfer, [{ kind: "source", id, title }]) : undefined}
     >
+      {lead}
       <button
         className="kx-work-head"
         aria-expanded={open}
