@@ -16,6 +16,7 @@ import { Icon } from "./icons";
 import { toast } from "./item-actions";
 import { bridge, type AppSettings, type Collection, type Invoke, type Source } from "./library-api";
 import { libraryChanged } from "./library-nav";
+import { findPdfAfterAdd } from "./find-pdf";
 import "./add-from-source.css";
 
 /** What is added: whatever the context knows of the work. */
@@ -105,7 +106,6 @@ function creatorOf(name: string) {
 }
 
 async function insertWork(invoke: Invoke, workspaceId: string, work: AddWork, collections: string[]) {
-  let source: Source;
   // Already in the library (by an identifier or its link): that source is filed, not a copy made.
   const known = await invoke<{ sourceId: string; certain: boolean }[]>(
     "store_match_identifiers",
@@ -114,35 +114,37 @@ async function insertWork(invoke: Invoke, workspaceId: string, work: AddWork, co
   ).catch(() => []);
   const existing = known?.find((m) => m.certain);
   const found = existing && (await invoke<Source | null>("store_source", { id: existing.sourceId }, workspaceId).catch(() => null));
-  if (found) {
-    source = found;
-  } else if (work.openalexId) {
-    source = await invoke<Source>("store_add_work", { openalexId: work.openalexId, title: work.title, doi: work.doi, year: work.year, collectionId: collections[0] ?? null }, workspaceId);
-  } else {
-    const web = !work.doi && !!work.url;
-    source = await invoke<Source>(
-      "store_create",
-      {
-        source: {
-          kind: web ? "web" : "reference",
-          itemType: web ? "webpage" : "article",
-          title: work.title || work.doi || work.url || "",
-          ...(work.doi ? { doi: work.doi } : {}),
-          ...(work.year ? { year: work.year } : {}),
-          ...(work.url ? { url: work.url } : {}),
-          ...(work.container ? { containerTitle: work.container } : {}),
-          ...(work.authors?.length ? { creators: work.authors.slice(0, 100).map(creatorOf) } : {}),
-          collections,
-          ...(web ? {} : { indexStatus: "skipped" }),
-        },
-      },
-      workspaceId,
-    );
-    if (work.doi) await invoke("store_enrich", { ids: [source.id] }, workspaceId).catch(() => {});
-  }
+  const source = found || (await addWork(invoke, workspaceId, work, collections));
   // Already in the library, or added to the first collection only: file it in the rest.
   for (const id of collections.filter((c) => !source.collections.includes(c)))
     await invoke("store_membership", { collectionId: id, ids: [source.id], present: true }, workspaceId).catch(() => {});
+  if (!found && !source.filePath) void findPdfAfterAdd(invoke, workspaceId, source.id);
+  return source;
+}
+
+async function addWork(invoke: Invoke, workspaceId: string, work: AddWork, collections: string[]): Promise<Source> {
+  if (work.openalexId)
+    return invoke<Source>("store_add_work", { openalexId: work.openalexId, title: work.title, doi: work.doi, year: work.year, collectionId: collections[0] ?? null }, workspaceId);
+  const web = !work.doi && !!work.url;
+  const source = await invoke<Source>(
+    "store_create",
+    {
+      source: {
+        kind: web ? "web" : "reference",
+        itemType: web ? "webpage" : "article",
+        title: work.title || work.doi || work.url || "",
+        ...(work.doi ? { doi: work.doi } : {}),
+        ...(work.year ? { year: work.year } : {}),
+        ...(work.url ? { url: work.url } : {}),
+        ...(work.container ? { containerTitle: work.container } : {}),
+        ...(work.authors?.length ? { creators: work.authors.slice(0, 100).map(creatorOf) } : {}),
+        collections,
+        ...(web ? {} : { indexStatus: "skipped" }),
+      },
+    },
+    workspaceId,
+  );
+  if (work.doi) await invoke("store_enrich", { ids: [source.id] }, workspaceId).catch(() => {});
   return source;
 }
 

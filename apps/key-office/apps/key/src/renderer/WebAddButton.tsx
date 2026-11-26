@@ -7,6 +7,7 @@ import { Icon } from "./icons";
 import { openItemAt, toast } from "./item-actions";
 import type { Invoke, Source } from "./library-api";
 import { errorText, type WebSearchState } from "./web-search";
+import { findPdfAfterAdd } from "./find-pdf";
 
 export type Adding = "adding" | "pdf";
 
@@ -23,6 +24,7 @@ export function useWebAdd(web: WebSearchState, invoke: Invoke, workspaceId: stri
           setAdding((a) => ({ ...a, [hit.key]: "pdf" }));
           await invoke("library_download_pdf", { url: hit.pdfUrl, sourceId: source.id }, workspaceId).catch((e) => toast(`Added without the PDF: ${errorText(e)}`));
         } else if (existed) toast("Already in your library");
+        else void findPdfAfterAdd(invoke, workspaceId, source.id);
       } catch (e) {
         toast(`Couldn't add it: ${errorText(e)}`);
       } finally {

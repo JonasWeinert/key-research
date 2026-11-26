@@ -37,7 +37,7 @@ import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
-import { properUrlOf, ProxyService, type ProxyOp } from "./browser/proxy-service";
+import { properUrlOf, proxiedUrlOf, ProxyService, type ProxyOp } from "./browser/proxy-service";
 import { importProxies } from "./browser/proxy-import";
 import { WebSources } from "./web-sources";
 import { PageActions } from "./browser/page-actions";
@@ -110,6 +110,9 @@ type OwnedView = {
   /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library.
    * `referrer` is the page that led to it. */
   temp?: { url: string; hash: string; referrer?: string };
+  /** Find PDF sent this browser tab (or the tab that led to this PDF) for a library source
+   * without a file: a PDF captured from it is attached to that source. */
+  pdfFor?: { workspaceId: string; sourceId: string; title?: string };
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
   libraryNotice?: "added" | "exists";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
@@ -621,7 +624,7 @@ registerNativeKind("web", {
       open(url, background) {
         const w = shellOfView(record.id) ?? focusedShell();
         const found = w && findViewTab(w.state, record.id);
-        const from = { background, referrer: record.title, referrerUrl: webUrl(web.url) };
+        const from = { background, referrer: record.title, referrerUrl: webUrl(web.url), pdfFor: record.pdfFor };
         openLink(url, w, found ? { ...from, groupId: found.group.id, index: found.index + 1 } : from);
       },
       external: (url) => void systemShell.openExternal(url),
@@ -658,7 +661,7 @@ function webView(url: string, title?: string): OwnedView {
 }
 /** Every web link in the app comes here: http(s) opens as a browser tab in the focused group
  * (or at `options`), mail and phone links go to the system, anything else is ignored. */
-function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string; referrerUrl?: string } = {}) {
+function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string; referrerUrl?: string; pdfFor?: OwnedView["pdfFor"] } = {}) {
   const web = webUrl(url);
   if (!web) {
     const external = systemUrl(url);
@@ -670,6 +673,7 @@ function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), opt
   const record = webView(web);
   record.referrer = options.referrer;
   record.referrerUrl = options.referrerUrl;
+  record.pdfFor = options.pdfFor;
   add(record, w, { groupId: options.groupId, index: options.index });
   if (previous && findTab(w.state, previous)) {
     w.state = activateWorkspaceTab(w.state, previous);
@@ -734,6 +738,7 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
     const url = properUrlOf(file.url);
     const entry = await tempPdfs.add(file.path, url, pdfTitle(file.filename, url, page), referrer !== url ? referrer : undefined);
     const record = await tempPdfView(entry);
+    record.pdfFor = from?.pdfFor;
     if (!w || w.closed) return;
     if (views.has(record.id) && shellOfView(record.id)) return focus(record.id);
     const found = from && findViewTab(w.state, from.id);
@@ -786,6 +791,21 @@ async function addTempToLibrary(temp: OwnedView) {
   const workspaceId = w.workspaceId;
   const entry = temp.temp && (await tempPdfs.get(temp.temp.hash));
   if (!entry || !existsSync(entry.file)) throw Error("This PDF is no longer kept; open it from the page again");
+  // Find PDF opened the page this came from: the PDF becomes that source's file.
+  if (temp.pdfFor && temp.pdfFor.workspaceId === workspaceId) {
+    const directory = await mkdtemp(join(tmpdir(), "key-web-pdf-"));
+    try {
+      const path = join(directory, `${safeFileName(temp.pdfFor.title || temp.title || entry.title).replace(/\.pdf$/i, "")}.pdf`);
+      await copyFile(entry.file, path);
+      await registry.invoke("store_attach_file", { id: temp.pdfFor.sourceId, path }, workspaceId);
+      await carryTempWork(entry, workspaceId, temp.pdfFor.sourceId);
+      emit("library-changed");
+      await swapToLibrary(temp, workspaceId, entry.hash, "added");
+      return { status: "attached" };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
   const known = await registry.invoke<{ items: any[] }>("store_sources", { ids: [entry.hash], limit: 1, scope: "all" }, workspaceId);
   if (known.items[0]) {
     await carryTempWork(entry, workspaceId, known.items[0].id);
@@ -2844,7 +2864,11 @@ else
               .catch(() => false)
           : false;
         return {
-          web: v.temp ? { url: v.temp.url, referrer: v.temp.referrer, host: hostLabel(v.temp.referrer ?? v.temp.url), inLibrary } : notice ? { notice } : undefined,
+          web: v.temp
+            ? { url: v.temp.url, referrer: v.temp.referrer, host: hostLabel(v.temp.referrer ?? v.temp.url), inLibrary, attachTo: v.pdfFor && !inLibrary ? (v.pdfFor.title ?? "the source") : undefined }
+            : notice
+              ? { notice }
+              : undefined,
           focus,
           notesOpen: !!v.panel,
           panelTab: v.panel ? (v.panel.tab ?? "details") : undefined,
@@ -3072,6 +3096,12 @@ else
             if (/^zotero:\/\/select\/library\/items\/[A-Z0-9]{8}$/.test(String(p.url))) return void (await systemShell.openExternal(String(p.url)));
             if (!webUrl(p.url) && !systemUrl(p.url)) throw Error("Unsupported link");
             if (p.external) await systemShell.openExternal(String(webUrl(p.url) ?? systemUrl(p.url)));
+            // Find PDF's last step: the landing page (through the library's proxy when one
+            // covers the site), where a PDF captured is attached to the source.
+            else if (p.pdfFor && typeof p.pdfFor.sourceId === "string" && webUrl(p.url))
+              openLink(proxiedUrlOf(String(webUrl(p.url))), w, {
+                pdfFor: { workspaceId: String(p.pdfFor.workspaceId || w.workspaceId), sourceId: p.pdfFor.sourceId, title: typeof p.pdfFor.title === "string" ? p.pdfFor.title.slice(0, 200) : undefined },
+              });
             else openLink(p.url, w, { background: Boolean(p.background) });
             return snapshot(w);
           }

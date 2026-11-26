@@ -352,6 +352,15 @@ function Libraries({
             ))}
           </select>
         </Row>
+        <Row label="Find PDFs automatically" detail="Look for an open-access PDF when a reference without one is added.">
+          <input
+            type="checkbox"
+            className="kx-switch"
+            aria-label="Find PDFs automatically when adding"
+            checked={settings.findPdfOnAdd === true}
+            onChange={(e) => onSettings({ findPdfOnAdd: e.target.checked })}
+          />
+        </Row>
       </Group>
     </>
   );

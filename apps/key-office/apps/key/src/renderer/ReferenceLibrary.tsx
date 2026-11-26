@@ -1,4 +1,5 @@
 import { apa } from "./citation";
+import { cancelFindPdfs, findPdfs, useFindPdfRun } from "./find-pdf";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { itemAttrs, selectItems } from "./item-ui";
@@ -117,7 +118,8 @@ export default function ReferenceLibrary({
   const [sheet, setSheet] = useState<PropertySheetState>();
   const [agent, setAgent] = useState<{ targets: Source[]; name?: string }>();
   const [tagManager, setTagManager] = useState(false);
-  const [identifier, setIdentifier] = useState(false);
+  /** Add by identifier is open (with this text prefilled). */
+  const [identifier, setIdentifier] = useState<string | false>(false);
   // Layout, columns and sorting are remembered per workspace library.
   const [viewState, setViewState] = useDatabaseViewState(`library:${workspaceId}`, {
     layout: (() => {
@@ -301,6 +303,7 @@ export default function ReferenceLibrary({
   // The window's status bar shows the count, the selection and (when nothing is being
   // indexed; the bar's own work item covers that) how much is searchable.
   const matching = search?.result?.hits.length ?? 0;
+  const pdfRun = useFindPdfRun();
   useStatusItems(viewId, [
     {
       id: "count",
@@ -309,10 +312,13 @@ export default function ReferenceLibrary({
       priority: 60,
     },
     ...(selected.size > 1 ? [{ id: "selected", label: `${selected.size.toLocaleString()} selected`, text: true, priority: 55 }] : []),
+    ...(pdfRun
+      ? [{ id: "find-pdfs", label: `Finding PDFs ${pdfRun.done}/${pdfRun.total}`, progress: pdfRun.total ? pdfRun.done / pdfRun.total : 0, priority: 70, title: `${pdfRun.found} found so far. Click to stop.` }]
+      : []),
     ...(status && !isActive(activity) && !activity?.paused
       ? [{ id: "searchable", label: `${status.counts.ready.toLocaleString()} searchable`, icon: "search", text: true, priority: 30, title: "Sources searchable by their full text" }]
       : []),
-  ]);
+  ], (id) => id === "find-pdfs" && cancelFindPdfs());
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId);
 
   // While searching, selection, arrow keys and bulk actions work on the results, in the
@@ -629,6 +635,7 @@ export default function ReferenceLibrary({
               onText={setText}
               filters={filters}
               onFilters={setFilters}
+              onAddIdentifier={(id) => setIdentifier(id.value)}
               busy={search?.busy}
               inputRef={searchInput}
               onSubmit={() => {
@@ -664,7 +671,7 @@ export default function ReferenceLibrary({
                 setFocusId(source.id);
                 setInspector(source);
               }}
-              onIdentifier={() => setIdentifier(true)}
+              onIdentifier={() => setIdentifier("")}
               onZotero={() => window.dispatchEvent(new CustomEvent("key:open-zotero"))}
             />
           </div>
@@ -787,6 +794,8 @@ export default function ReferenceLibrary({
               setSheet(definition ? { mode: "edit", definition, targets, applyValue: true } : { mode: "new", targets });
             }}
             onFill={() => setAgent({ targets: items.filter((s) => selected.has(s.id)) })}
+            withoutFile={items.filter((s) => selected.has(s.id) && !s.filePath).length}
+            onFindPdfs={() => void findPdfs(invoke, workspaceId, items.filter((s) => selected.has(s.id)))}
             onEnrich={async () => {
               const count = await invoke<number>("store_enrich", { ids: [...selected] }, workspaceId);
               setToast({ text: `Looking up ${count} ${count === 1 ? "source" : "sources"} in OpenAlex` });
@@ -889,8 +898,9 @@ export default function ReferenceLibrary({
           onSaved={() => void load(0)}
         />
       )}
-      {identifier && (
+      {identifier !== false && (
         <IdentifierSheet
+          initialText={identifier}
           invoke={invoke}
           workspaceId={workspaceId}
           collectionId={collectionId}
@@ -1384,6 +1394,8 @@ function BulkBar({
   onSetProperty,
   onFill,
   onEnrich,
+  withoutFile,
+  onFindPdfs,
   onTag,
   onCollect,
   onStar,
@@ -1398,6 +1410,9 @@ function BulkBar({
   onSetProperty: (definition?: PropertyDefinition) => void;
   onFill: () => void;
   onEnrich: () => Promise<void>;
+  /** How many selected sources have no file: Find PDFs looks for theirs. */
+  withoutFile: number;
+  onFindPdfs: () => void;
   onTag: (tag: string) => Promise<void>;
   onCollect: (id: string) => Promise<void>;
   onStar: () => Promise<void>;
@@ -1460,6 +1475,11 @@ function BulkBar({
           <button onClick={() => void onEnrich()} title="Look the selection up in OpenAlex: authors, journal, topics, funding and citations">
             <Icon name="globe" size={13} /> Look up
           </button>
+          {withoutFile > 0 && (
+            <button onClick={onFindPdfs} title={`Look for open-access PDFs for the ${withoutFile} selected ${withoutFile === 1 ? "source" : "sources"} without a file`}>
+              <Icon name="filePdf" size={13} /> Find PDFs
+            </button>
+          )}
           <span className="kx-bulk-sep" />
         </>
       )}

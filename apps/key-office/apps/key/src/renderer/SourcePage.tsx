@@ -23,6 +23,7 @@ import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
 import { SavePageOffer, saveSourceWebPage } from "./source-web-page";
+import { findPdf as findPdfFor, findPdfMessage } from "./find-pdf";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
@@ -279,17 +280,24 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
     await invoke("store_note_delete", { id: note.id }, workspaceId);
     setNotes((list) => list.filter((n) => n.id !== note.id));
   };
+  // Find PDF (find-pdf.ts): the host's open-access chain, else the publisher's page in the
+  // in-app browser, where a PDF opened is attached to this source.
+  const [finding, setFinding] = useState<"" | "busy" | string>("");
+  const canFindPdf = !!(source?.doi || source?.url || source?.arxivId || source?.pmcid || source?.oaUrl);
   const findPdf = async () => {
     setError("");
+    setFinding("busy");
     try {
-      const lookup = await invoke<{ fullTextUrl?: string | null }>("scholarly_lookup_resource", { resource: source!.doi || source!.url }, workspaceId);
-      if (!lookup.fullTextUrl) throw Error("No open-access PDF was found for this reference.");
-      const next = await invoke<Source>("library_download_pdf", { url: lookup.fullTextUrl, sourceId }, workspaceId);
-      setSource(next);
-      side?.onChanged(next);
+      const result = await findPdfFor(invoke, workspaceId, source!, { quiet: true });
+      if (result.source) {
+        setSource(result.source);
+        side?.onChanged(result.source);
+      }
+      setFinding(result.status === "attached" ? "" : findPdfMessage(result));
+      if (result.status !== "attached" && result.status !== "hasFile") setPdfMissing(true);
     } catch (e) {
+      setFinding("");
       setError(String(e).replace(/^Error: /, ""));
-      setPdfMissing(true);
     }
   };
   // No PDF to be had: the reference's web page, saved offline as its file instead.
@@ -659,7 +667,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <button onClick={() => void copy("in-text", apaInText(source))}>Copy in-text citation</button>
               <button onClick={() => void copy("BibTeX", bibtex(source))}>Copy BibTeX</button>
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
-              {!source.filePath && (source.doi || source.url) && <button onClick={() => void findPdf()}>Find PDF</button>}
+              {!source.filePath && canFindPdf && <button onClick={() => void findPdf()}>Find PDF</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
@@ -708,6 +716,15 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
           </figure>
         )}
         {error && <p className="kx-inline-error">{error}</p>}
+        {!source.filePath && canFindPdf && (
+          <div className="kx-find-pdf" role="group" aria-label="PDF" data-busy={finding === "busy" || undefined}>
+            {finding === "busy" ? <span className="kx-search-spinner" aria-hidden="true" /> : <Icon name="filePdf" size={14} />}
+            <span role="status">{finding === "busy" ? "Looking for an open-access PDF…" : finding || "No PDF yet."}</span>
+            <button className="kx-page-action" disabled={finding === "busy"} onClick={() => void findPdf()}>
+              <Icon name="search" size={12} /> Find PDF
+            </button>
+          </div>
+        )}
         {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (
           <SavePageOffer busy={savingPage} onSave={() => void saveWebPage()} />
         )}

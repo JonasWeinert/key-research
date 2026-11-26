@@ -1,0 +1,25 @@
+/* Find PDF on a source without a file (SourcePage, the inspector). */
+.kx-find-pdf {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 7px 8px 7px 12px;
+  border: 0.5px solid var(--kx-line);
+  border-radius: 10px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.kx-find-pdf > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-find-pdf > span[role="status"] {
+  flex: 1;
+  min-width: 0;
+}
+.kx-find-pdf > .kx-page-action {
+  flex: none;
+}
