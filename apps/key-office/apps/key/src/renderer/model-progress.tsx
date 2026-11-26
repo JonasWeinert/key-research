@@ -2,6 +2,7 @@
 // sidebar pill, the Home card and the Sources card with progress, speed and time left.
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
+import { subscribeStatus } from "./status-poll";
 
 export interface ModelStatus {
   state: string;
@@ -22,14 +23,9 @@ export function useModelProgress(invoke: Invoke, workspaceId?: string, active = 
   const samples = useRef<{ at: number; bytes: number }[]>([]);
   useEffect(() => {
     if (!workspaceId || !active) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      let status: ModelStatus | undefined;
-      try {
-        status = (await invoke<{ model: ModelStatus }>("store_status", {}, workspaceId)).model;
-      } catch {}
-      if (stopped) return;
+    // The shared status poller (quick while bytes are moving, gentle otherwise).
+    return subscribeStatus(invoke, workspaceId, (next) => {
+      const status = (next as { model?: ModelStatus }).model;
       if (status) {
         const now = performance.now();
         const received = status.received;
@@ -44,14 +40,7 @@ export function useModelProgress(invoke: Invoke, workspaceId?: string, active = 
           secondsLeft: rate > 0 && status.total ? (status.total - received) / rate : undefined,
         });
       }
-      // Quick while bytes are moving, slow once there is nothing left to show.
-      timer = setTimeout(poll, status?.state === "ready" ? 30000 : status?.state === "downloading" ? 700 : 3000);
-    };
-    void poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
-    };
+    });
   }, [invoke, workspaceId, active]);
   return progress;
 }
