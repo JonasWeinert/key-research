@@ -9,6 +9,8 @@ mod library_store;
 mod linked_folders;
 #[path = "core_commands.rs"]
 mod core_commands;
+#[path = "biblio_commands.rs"]
+mod biblio_commands;
 #[path = "openalex.rs"]
 mod openalex;
 #[path = "reference_worker.rs"]

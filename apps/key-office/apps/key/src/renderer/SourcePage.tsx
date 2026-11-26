@@ -5,7 +5,8 @@
 // panel (`variant="side"`), so a source looks the same wherever it is shown.
 import { AnnotationText } from "./annotation-text";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { apa, apaInText, bibtex } from "./citation";
+import { apa, apaInText } from "./citation";
+import { CitationKeyRow } from "./citation-keys";
 import { Icon } from "./icons";
 import { ProgressRing } from "./index-activity";
 import { useSourceProgress } from "./source-progress";
@@ -378,7 +379,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             <span>Author</span>
             <Creators creators={source.creators} onCommit={(creators) => void save({ creators })} />
           </div>
-          {shown.map(([key, label, kind]) => (
+          {shown.map(([key, label, kind]) => key === "citationKey" ? (
+            <CitationKeyRow key={key} invoke={invoke} workspaceId={workspaceId} source={source} onChanged={() => void loadSource()} />
+          ) : (
             <FieldRow
               key={key}
               label={label}
@@ -657,7 +660,18 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             <div className="kx-menu-popover" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
               <button onClick={() => void copy("APA", apa(source), apa(source, true))}>Copy APA reference</button>
               <button onClick={() => void copy("in-text", apaInText(source))}>Copy in-text citation</button>
-              <button onClick={() => void copy("BibTeX", bibtex(source))}>Copy BibTeX</button>
+              {(
+                [
+                  ["bibtex", "BibTeX"],
+                  ["ris", "RIS"],
+                  ["pandoc", "Pandoc citation"],
+                  ["latex", "LaTeX \\cite"],
+                ] as const
+              ).map(([format, label]) => (
+                <button key={format} onClick={() => void invoke<string>("store_biblio_copy", { ids: [sourceId], format }, workspaceId).then((text) => copy(label, text), (e) => setError(String(e)))}>
+                  Copy {label}
+                </button>
+              ))}
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void findPdf()}>Find PDF</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}

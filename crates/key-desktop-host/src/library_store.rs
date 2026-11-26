@@ -98,6 +98,7 @@ impl Library {
         // Older PDFs are looked up only while indexing is idle, and not while it is paused.
         let gate = indexer.clone();
         openalex.set_backfill_gate(move || !gate.is_paused() && !gate.is_busy());
+        super::biblio_commands::start_watcher(store.clone());
         Ok(Self { store, indexer, references, openalex, zotero: Default::default(), zotero_progress: Default::default() })
     }
 
@@ -456,7 +457,8 @@ impl Library {
             _ => {
                 return super::openalex::dispatch(self, command, args)
                     .or_else(|| super::linked_folders::dispatch(self, command, args, root))
-                    .or_else(|| super::core_commands::dispatch(self, command, args));
+                    .or_else(|| super::core_commands::dispatch(self, command, args))
+                    .or_else(|| super::biblio_commands::dispatch(self, command, args, root));
             }
         };
         Some(result)

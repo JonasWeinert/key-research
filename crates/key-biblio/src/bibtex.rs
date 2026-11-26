@@ -51,7 +51,12 @@ struct Lexer<'a> {
 impl<'a> Lexer<'a> {
     fn line(&mut self) -> usize {
         // Lines are counted lazily up to the current position.
-        self.line += self.bytes[self.line_at..self.at].iter().filter(|b| **b == b'\n').count();
+        if self.at < self.line_at {
+            // Moved back (recovering from a broken entry).
+            self.line -= self.bytes[self.at..self.line_at].iter().filter(|b| **b == b'\n').count();
+        } else {
+            self.line += self.bytes[self.line_at..self.at].iter().filter(|b| **b == b'\n').count();
+        }
         self.line_at = self.at;
         self.line
     }
@@ -93,13 +98,13 @@ impl<'a> Lexer<'a> {
                 }
                 b'\\' => self.at += 1,
                 b'@' if depth == 1 && self.bytes.get(self.at.wrapping_sub(1)) == Some(&b'\n') && looks_like(&self.text[self.at..self.text.len().min(self.at + 64)]) => {
-                    return Err("Unbalanced braces: the entry runs into the next one".into());
+                    return Err("a “}” is missing, so the next entry starts inside this one".into());
                 }
                 _ => {}
             }
             self.at += 1;
         }
-        Err("Unbalanced braces: missing “}”".into())
+        Err("a “}” is missing".into())
     }
     fn quoted(&mut self) -> Result<&'a str, String> {
         let start = self.at + 1;
@@ -181,6 +186,7 @@ pub fn parse_raw(text: &str, progress: &dyn Fn(usize, usize)) -> (Vec<RawEntry>,
     let mut last_report = 0;
     while let Some(offset) = text[lexer.at..].find('@') {
         lexer.at += offset + 1;
+        let entry_start = lexer.at;
         let line = lexer.line();
         if lexer.at - last_report > 256 * 1024 {
             progress(lexer.at, total);
@@ -249,6 +255,9 @@ pub fn parse_raw(text: &str, progress: &dyn Fn(usize, usize)) -> (Vec<RawEntry>,
                     _ => {}
                 }
                 let name = lexer.ident().to_ascii_lowercase();
+                if name.starts_with('@') {
+                    return Err("a “}” is missing, so the next entry starts inside this one".into());
+                }
                 if name.is_empty() {
                     return Err(format!("Unexpected “{}”", lexer.peek().map(|b| b as char).unwrap_or(' ')));
                 }
@@ -268,8 +277,11 @@ pub fn parse_raw(text: &str, progress: &dyn Fn(usize, usize)) -> (Vec<RawEntry>,
             Ok(Some(entry)) => entries.push(entry),
             Ok(None) => {}
             Err(message) => {
-                let at = lexer.line();
-                warnings.push(Warning { line: at.max(line), message: format!("@{kind} at line {line}: {message}") });
+                let key: String = text[entry_start..].chars().skip_while(|c| *c != '{' && *c != '(').skip(1).take_while(|c| *c != ',' && *c != '\n').take(60).collect();
+                let name = if key.trim().is_empty() { format!("@{kind}") } else { format!("@{kind}{{{}}}", key.trim()) };
+                warnings.push(Warning { line, message: format!("{name} was left out: {message}") });
+                // The next entry may begin inside what the broken one swallowed.
+                lexer.at = entry_start;
                 lexer.recover();
             }
         }

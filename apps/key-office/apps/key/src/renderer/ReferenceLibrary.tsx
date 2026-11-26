@@ -50,6 +50,7 @@ import {
 import { DatabaseToolbar, DatabaseView, useDatabaseViewState, type DatabaseViewHandle } from "./DatabaseView";
 import { DEFAULT_SORTS, SOURCE_SORTS, SourceCard, legacyColumnSettings, useSourceColumns } from "./library-columns";
 import "./reference-library.css";
+import { isBibliographyPath, openBibExport, openBibImport } from "./BiblioSheets";
 
 const PAGE = 300;
 const ROW = 58;
@@ -516,6 +517,9 @@ export default function ReferenceLibrary({
   }, [active]);
 
   const importDropped = async (data: DataTransfer) => {
+    // A bibliography file opens the import sheet instead of becoming a source.
+    const bibliography = [...data.files].map((file) => bridge().pathForFile(file)).find((path) => path && isBibliographyPath(path));
+    if (bibliography) return openBibImport({ workspaceId, collectionId, paths: [bibliography] });
     try {
       const added = await importDrop(invoke, workspaceId, data, collectionId);
       if (!added.length) return;
@@ -666,6 +670,8 @@ export default function ReferenceLibrary({
               }}
               onIdentifier={() => setIdentifier(true)}
               onZotero={() => window.dispatchEvent(new CustomEvent("key:open-zotero"))}
+              onImport={() => openBibImport({ workspaceId, collectionId })}
+              onExport={() => openBibExport({ workspaceId, collectionId, ids: selected.size ? [...selected] : undefined })}
             />
           </div>
         </header>
@@ -1292,7 +1298,21 @@ const NoteHitRow = memo(function NoteHitRow({ note, pattern, handlers }: { note:
   );
 });
 
-function AddMenu({ onFiles, onBlank, onIdentifier, onZotero }: { onFiles: () => void; onBlank: () => void; onIdentifier: () => void; onZotero: () => void }) {
+function AddMenu({
+  onFiles,
+  onBlank,
+  onIdentifier,
+  onZotero,
+  onImport,
+  onExport,
+}: {
+  onFiles: () => void;
+  onBlank: () => void;
+  onIdentifier: () => void;
+  onZotero: () => void;
+  onImport: () => void;
+  onExport: () => void;
+}) {
   return (
     <div className="kx-add">
       <button className="kx-button-primary" onClick={onFiles}>
@@ -1316,6 +1336,13 @@ function AddMenu({ onFiles, onBlank, onIdentifier, onZotero }: { onFiles: () => 
           <hr />
           <button onClick={onZotero}>
             <Icon name="books" size={13} /> Import from Zotero…
+          </button>
+          <button onClick={onImport}>
+            <Icon name="download" size={13} /> Import BibTeX, RIS, CSL-JSON…
+          </button>
+          <hr />
+          <button onClick={onExport}>
+            <Icon name="upload" size={13} /> Export…
           </button>
         </div>
       </details>

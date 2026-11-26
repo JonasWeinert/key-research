@@ -16,8 +16,9 @@ import { ModelProgressCard, useModelProgress } from "./model-progress";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
+import { CitationSettings } from "./citation-keys";
 
-export type SettingsSection = "general" | "libraries" | "zotero" | "search" | "web" | "services" | "ai" | "about";
+export type SettingsSection = "general" | "libraries" | "zotero" | "export" | "search" | "web" | "services" | "ai" | "about";
 interface SectionInfo {
   id: SettingsSection;
   label: string;
@@ -31,6 +32,7 @@ const GROUPS: SectionInfo[][] = [
   [
     { id: "libraries", label: "Libraries", icon: "books", keywords: "workspace folder finder add library adding sources collections" },
     { id: "zotero", label: "Zotero", icon: "zotero", keywords: "import sync plugin conflicts" },
+    { id: "export", label: "Citation keys & export", icon: "quote", keywords: "bibtex biblatex ris csl json csv citekey pattern auto-export overleaf latex pandoc" },
   ],
   [
     { id: "search", label: "Search & indexing", icon: "search", keywords: "model embedding index pause retry layout analysis pdf openalex email duplicates people metadata" },
@@ -155,7 +157,8 @@ export default function Settings({
               <Libraries invoke={invoke} workspaces={workspaces} settings={settings} onSettings={onSettings} onOpenLibrary={onOpenLibrary} onChanged={onWorkspacesChanged} />
             )}
             {section === "zotero" && <Zotero invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onChanged={onWorkspacesChanged} />}
-            {section === "search" && <SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
+            {section === "export" && <CitationSettings invoke={invoke} workspaces={workspaces} />}
+            {section === "search" &&<SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
             {section === "web" && (
               <>
                 <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />

@@ -7,7 +7,7 @@ use crate::{Format, Parsed, Record, Warning};
 use key_store::{ListQuery, Source, SourceInput, Store, citation_keys::fold_ascii, normalize_doi};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 /// Rows the preview shows.
@@ -135,7 +135,6 @@ struct Journal {
     memberships: Vec<(String, String)>,
     notes: Vec<String>,
     collections: Vec<String>,
-    properties: Vec<String>,
     undone: bool,
 }
 
@@ -447,8 +446,6 @@ pub fn run(
     // Collections the file's groups name (existing ones are reused).
     let mut known: HashMap<(Option<String>, String), String> =
         store.collections()?.into_iter().map(|c| ((c.parent_id.clone(), c.name.to_lowercase()), c.id)).collect();
-    let definitions: HashSet<String> = store.property_definitions()?.iter().filter_map(|d| d.get("name").and_then(Json::as_str).map(String::from)).collect();
-    let mut new_properties: HashSet<String> = HashSet::new();
 
     let mut records = parsed.records;
     let mut done = 0;
@@ -503,11 +500,6 @@ pub fn run(
             collections.dedup();
             record.source.collections = collections;
             record.source.origin = None;
-            for name in record.source.properties.keys() {
-                if !definitions.contains(name) {
-                    new_properties.insert(name.clone());
-                }
-            }
             if !options.files {
                 record.files.clear();
             }
@@ -554,7 +546,6 @@ pub fn run(
                         let mut patch = Map::new();
                         patch.insert("properties".into(), json!({ "import.otherFiles": path.to_string_lossy() }));
                         store.update_source(id, &patch)?;
-                        new_properties.insert("import.otherFiles".into());
                     }
                     None => {
                         report.files_missing += 1;
@@ -570,13 +561,8 @@ pub fn run(
         progress(Progress { stage: "Importing".into(), done: report.added + report.merged + report.skipped, total });
         let _ = done;
     }
-    // Kept fields become text properties, so they show among the library's columns.
-    let mut names: Vec<String> = new_properties.into_iter().filter(|n| !definitions.contains(n)).collect();
-    names.sort();
-    for name in names {
-        store.save_property_definition(&name, &json!({ "type": "text" }))?;
-        journal.properties.push(name);
-    }
+    // Kept fields stay plain properties of the sources that have them: no library-wide
+    // definition, so other sources do not show empty rows for them.
     progress(Progress { stage: "Creating citation keys".into(), done: total, total });
     store.ensure_citation_keys()?;
     report.collections_created = journal.collections.len();
@@ -642,13 +628,6 @@ pub fn undo(store: &Store, id: &str) -> Result<Report, String> {
             && store.list_sources(&ListQuery { collection_id: Some(collection.clone()), scope: Some("trashed".into()), limit: Some(1), ..Default::default() })?.total == 0;
         if empty {
             store.delete_collection(collection)?;
-        }
-    }
-    let definitions = store.property_definitions()?;
-    // Definitions the import made: their values went with its sources and merges.
-    for name in &journal.properties {
-        if definitions.iter().any(|d| d.get("name").and_then(Json::as_str) == Some(name)) {
-            let _ = store.delete_property(name, false);
         }
     }
     journal.undone = true;

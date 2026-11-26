@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apa, apaInText, bibtex } from "./citation";
+import { apa, apaInText } from "./citation";
 
 const article = {
   id: "1",
@@ -33,13 +33,5 @@ describe("citations", () => {
     expect(apa({ id: "2", kind: "reference", itemType: "book", title: "Untitled report", creators: [], publisher: "WHO" })).toBe(
       "Untitled report. (n.d.). WHO.",
     );
-  });
-
-  it("writes BibTeX with a derived key", () => {
-    const entry = bibtex(article);
-    expect(entry.startsWith("@article{palma2022health,")).toBe(true);
-    expect(entry).toContain("author = {Palma, Marco A. and Huseynov, Samir and Nayga, Rodolfo M.}");
-    expect(entry).toContain("journal = {PLoS One}");
-    expect(bibtex({ ...article, citationKey: "palma_health_2022" })).toContain("@article{palma_health_2022,");
   });
 });

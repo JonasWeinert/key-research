@@ -52,7 +52,7 @@ fn nasty_bibtex_reads_as_expected() {
     // One broken entry is reported with its line; parsing resumes after it.
     assert_eq!(parsed.records.len(), 9, "{:?}", parsed.records.iter().map(|r| r.citation_key()).collect::<Vec<_>>());
     assert_eq!(parsed.warnings.len(), 1, "{:?}", parsed.warnings);
-    assert!(parsed.warnings[0].message.contains("broken") || parsed.warnings[0].line >= 70, "{:?}", parsed.warnings);
+    assert!(parsed.warnings[0].message.starts_with("@article{broken} was left out"), "{:?}", parsed.warnings);
     let s = find("schroedinger1926");
     assert_eq!(text(s, "title").as_deref(), Some("Quantisierung als Eigenwertproblem"));
     assert_eq!(s.source.creators[0].family.as_deref(), Some("Schrödinger"));

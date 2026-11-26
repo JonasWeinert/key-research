@@ -9,6 +9,7 @@ import { Icon, isIconName, type IconName } from "./icons";
 import { ActivityPanel, activityLabel, isActive, olderSources, ProgressRing, referencesProgress, useLibraryStatus } from "./index-activity";
 import type { Invoke, LibraryStatus, ZoteroSyncStatus } from "./library-api";
 import { ago } from "./zotero-sheet-model";
+import { useAutoExportStatus } from "./BiblioSheets";
 import { overflowingStatusItems, sanitizeStatusItems, STATUS_BAR_HEIGHT, type StatusItem } from "../shared/status-items";
 
 interface Notice {
@@ -297,6 +298,7 @@ export function StatusBar({
   const notice = notices.at(-1);
 
   const work = workItem(status);
+  const autoExport = useAutoExportStatus(invoke, workspaceId);
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId).catch(() => {});
 
   const dom = activeViewId ? domItems.get(activeViewId) : undefined;
@@ -323,6 +325,7 @@ export function StatusBar({
     ...(workspaceName ? [{ id: "workspace", label: workspaceName, icon: "folder", title: "Switch workspace", priority: 70 }] : []),
     { ...zoteroItem(sync, syncing, now), priority: 40 },
     ...(work ? [work] : []),
+    ...(autoExport ? [autoExport] : []),
   ];
   const bar = useRef<HTMLElement>(null);
   const widths = useRef(new Map<string, number>());
@@ -366,6 +369,8 @@ export function StatusBar({
             onClick={(anchor) =>
               item.id === "zotero"
                 ? onOpenZotero()
+                : item.id === "autoexport"
+                  ? window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "export" }))
                 : item.id === "workspace"
                   ? onOpenWorkspace()
                   : workPanel

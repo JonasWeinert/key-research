@@ -24,6 +24,7 @@ key-pdf-runtime = { path = "../key-pdf-runtime" }
 key-pdfium = { path = "../key-pdfium" }
 key-semantic-search = { path = "../key-semantic-search" }
 key-store = { path = "../key-store" }
+key-biblio = { path = "../key-biblio" }
 key-embed = { path = "../key-embed" }
 key-index = { path = "../key-index" }
 key-zotero = { path = "../key-zotero" }

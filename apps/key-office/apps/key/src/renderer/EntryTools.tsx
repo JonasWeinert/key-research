@@ -8,7 +8,7 @@ import {
 } from "@key/design-system";
 import { GlobalDrawer, GlobalDialog } from "./GlobalDrawer";
 import { useEffect, useState, useRef } from "react";
-import { parseReferences } from "./reference-import";
+import { openBibImport } from "./BiblioSheets";
 import {
   agentInputs,
   defaultInstruction,
@@ -157,7 +157,6 @@ export function EntryDetails({
     ((entry?.properties.authors as string[]) ?? []).join("; "),
   );
   const [year, setYear] = useState(String(entry?.properties.year ?? ""));
-  const [bibliography, setBibliography] = useState("");
   const [loaded, setLoaded] = useState<SourceEntry | undefined>(
     entry?.body ? entry : undefined,
   );
@@ -293,36 +292,6 @@ export function EntryDetails({
       );
     } catch (e) {
       setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function importBibliography() {
-    setBusy(true);
-    setError("");
-    let count = 0;
-    try {
-      const records = parseReferences(bibliography);
-      for (const r of records) {
-        await invoke(
-          "workspace_save_entry",
-          {
-            sourceType: "reference",
-            title: r.title,
-            url: r.url,
-            content: "",
-            properties: r.properties,
-            projectId: projectId ?? null,
-          },
-          id,
-        );
-        count++;
-      }
-      onSaved();
-      onClose();
-    } catch (e) {
-      setError(`${count} imported. ${String(e)}`);
-      if (count) onSaved();
     } finally {
       setBusy(false);
     }
@@ -562,35 +531,16 @@ export function EntryDetails({
       </details>
       {notice && <p role="status">{notice}</p>}
       {!entry && (
-        <details>
-          <summary>Import BibTeX or RIS references</summary>
-          <Input
-            type="file"
-            accept=".bib,.ris"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (file.size > 256 * 1024) {
-                setError("Reference import is limited to 256 KiB");
-                return;
-              }
-              void file.text().then(setBibliography);
-            }}
-          />
-          <Textarea
-            rows={5}
-            aria-label="BibTeX or RIS content"
-            value={bibliography}
-            onChange={(e) => setBibliography(e.target.value)}
-            placeholder="Paste BibTeX or RIS…"
-          />
-          <Button
-            disabled={busy || !id || !bibliography.trim()}
-            onClick={() => void importBibliography()}
-          >
-            Import references
-          </Button>
-        </details>
+        <Button
+          type="button"
+          disabled={!id}
+          onClick={() => {
+            onClose();
+            openBibImport({ workspaceId: id });
+          }}
+        >
+          Import BibTeX, RIS or CSL-JSON…
+        </Button>
       )}
       {error && <p role="alert">{error}</p>}
       <Button
