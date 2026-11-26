@@ -34,6 +34,8 @@ import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
+import { properUrlOf, ProxyService, type ProxyOp } from "./browser/proxy-service";
+import { importProxies } from "./browser/proxy-import";
 import { WebSources } from "./web-sources";
 import { PageActions } from "./browser/page-actions";
 import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browser/temp-pdfs";
@@ -439,8 +441,10 @@ function viewSummary(id: string) {
     nav: v?.nav,
     favicon: v?.web?.favicon,
     web: v?.web && {
-      host: hostLabel(v.web.url),
-      url: v.web.url,
+      // A page that came through a library proxy is shown by its own address.
+      host: hostLabel(properUrlOf(v.web.url)),
+      url: properUrlOf(v.web.url),
+      proxy: proxyService?.barState(v.view?.webContents, v.web.url),
       loading: v.web.loading,
       canGoBack: v.web.canGoBack,
       canGoForward: v.web.canGoForward,
@@ -604,7 +608,7 @@ for (const kind of OFFICE_KINDS)
 registerNativeKind("web", {
   create(record) {
     const web = record.web!;
-    return createWebTab(web.url, {
+    const tab = createWebTab(web.url, {
       changed(patch) {
         Object.assign(web, patch);
         if (patch.title !== undefined || patch.url !== undefined) record.title = (web.title || hostLabel(web.url) || "New tab").slice(0, 200);
@@ -622,6 +626,12 @@ registerNativeKind("web", {
       scanned: (scan) => browserPages.scanned(record, scan),
       inlinePdf: (url) => browserPages.inlinePdf(record, url),
     });
+    // Library proxies apply to browser tabs (and only to them).
+    proxyService?.attach(tab.webContents, () => {
+      const w = shellOfView(record.id);
+      if (w) tabsChanged(w);
+    });
+    return tab;
   },
   dispose(record) {
     const view = record.view;
@@ -674,6 +684,7 @@ const scratchWorkspace = () =>
 let tempPdfs: TempPdfs;
 let webSources: WebSources;
 let browserService: BrowserService;
+let proxyService: ProxyService | undefined;
 let webSearchService: WebSearch | undefined;
 /** Embedded PDFs and article pages in browser tabs (see browser/page-actions.ts). */
 const browserPages = new PageActions({
@@ -715,8 +726,10 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
   try {
     const page = from && (from.web?.committed ? from.web.title : from.referrer);
     // The landing page that led to the PDF (the tab's page, or the page that opened the tab).
-    const referrer = from && webUrl(from.web?.committed ? from.web.url : from.referrerUrl);
-    const entry = await tempPdfs.add(file.path, file.url, pdfTitle(file.filename, file.url, page), referrer !== file.url ? referrer : undefined);
+    // Both by their own addresses when they came through a library proxy.
+    const referrer = from && webUrl(properUrlOf(from.web?.committed ? from.web.url : from.referrerUrl));
+    const url = properUrlOf(file.url);
+    const entry = await tempPdfs.add(file.path, url, pdfTitle(file.filename, url, page), referrer !== url ? referrer : undefined);
     const record = await tempPdfView(entry);
     if (!w || w.closed) return;
     if (views.has(record.id) && shellOfView(record.id)) return focus(record.id);
@@ -1316,10 +1329,22 @@ let workspaceParent = "";
 const zoteroWorkspace = () => registry.add(join(workspaceParent, "Zotero"), "Zotero");
 /** Imports the Zotero library into its own "Zotero" workspace beside the default one. */
 async function importZotero(options?: Record<string, unknown>) {
+  const { proxies, ...rest } = options ?? {};
   const workspace = await zoteroWorkspace();
-  const report = await registry.invoke("store_import_zotero", options ?? {}, workspace.id);
+  const report = await registry.invoke("store_import_zotero", rest, workspace.id);
   emit("library-changed");
+  if (proxies) await importLibraryProxies({ dataDir: typeof rest.dataDir === "string" ? rest.dataDir : undefined, follow: true }).catch(() => undefined);
   return { workspace, report };
+}
+/** Zotero's library proxies (its desktop tables and its Connectors), merged into the browser's. */
+let proxiesImportedAt = 0;
+async function importLibraryProxies({ zotero = true, connector = true, dataDir, follow }: { zotero?: boolean; connector?: boolean; dataDir?: string; follow?: boolean } = {}) {
+  if (!proxyService) throw Error("The browser is still starting");
+  proxiesImportedAt = Date.now();
+  const found = await importProxies({ zotero, connector, dataDir });
+  const merged = await proxyService.merge(found.flatMap((f) => f.proxies));
+  if (follow && !proxyService.data.prefs.followZotero) await proxyService.setPrefs({ followZotero: true });
+  return { found: found.map((f) => ({ label: f.label, count: f.proxies.length })), ...merged, data: proxyService.snapshot() };
 }
 /** While Zotero sync is on, asks the Zotero workspace to sync; its host only reads
  *  zotero.sqlite again when the file changed. Nothing runs before a first import. */
@@ -1333,6 +1358,8 @@ async function syncZotero(force = false) {
     if (!workspace) return;
     const result: any = await registry.invoke("store_zotero_sync", { force }, workspace.id);
     if (result?.ran) emit("library-changed");
+    // Proxies added in Zotero (or its Connector) follow, now and then.
+    if (proxyService?.data.prefs.followZotero && Date.now() - proxiesImportedAt > 60 * 60_000) void importLibraryProxies().catch(() => undefined);
   } catch (e) {
     console.warn("Zotero sync:", e);
   } finally {
@@ -2172,6 +2199,8 @@ else
         pdf: (contents, file) => void openDownloadedPdf(contents, file),
         file: (_contents, path, ok) => emit("browser-notice", { message: ok ? `Downloaded “${basename(path)}” to Downloads` : `The download of “${basename(path)}” did not finish`, path: ok ? path : undefined }),
       });
+      proxyService = await new ProxyService(join(app.getPath("userData"), "library-proxies.json")).load();
+      proxyService.onChange(() => emit("proxies-changed"));
       // Smokes drive the headless API directly.
       if (process.env.KEY_BROWSER_SMOKE) Object.assign(globalThis, { keyBrowser: { service: browserService, temp: tempPdfs, clean: cleanTempPdfs } });
       // Pages of the app itself (the shell, readers, editors) never become browsers: a link
@@ -2516,6 +2545,17 @@ else
       ipcMain.handle("key:import-zotero", async (event, options) => {
         shell(event.sender.id);
         return importZotero(options);
+      });
+      // Library proxies for the in-app browser (Settings › Library access).
+      ipcMain.handle("key:proxies", async (event, action, payload) => {
+        shell(event.sender.id);
+        if (!proxyService) throw Error("The browser is still starting");
+        if (action === "get") return proxyService.snapshot();
+        if (action === "prefs") return proxyService.setPrefs(payload ?? {});
+        if (action === "save") return proxyService.saveProxy(payload ?? {});
+        if (action === "remove") return proxyService.removeProxy(String(payload));
+        if (action === "import") return importLibraryProxies(payload ?? {});
+        throw Error("Unknown proxy action");
       });
       ipcMain.handle("key:zotero-workspace", (event) => {
         shell(event.sender.id);
@@ -2890,6 +2930,7 @@ else
             if (view?.kind !== "web" || !view.view) throw Error("Not a browser tab");
             if (p.op === "reload") view.view.webContents.reload();
             else if (p.op === "add-article") await browserPages.addArticle(view);
+            else if (String(p.op).startsWith("proxy-")) await proxyService?.op(view.view.webContents, view.web?.url ?? "", p.op as ProxyOp);
             else if (p.op === "open-article" && view.articleState?.sourceId) await openSourcePage(w, { workspaceId: w.workspaceId, sourceId: view.articleState.sourceId });
             return snapshot(w);
           }

@@ -22,6 +22,12 @@ function notePdfFrame(contentsId: number, url: string) {
 export function wasPdfFrame(contentsId: number, url: string) {
   return pdfFrames.get(contentsId)?.includes(url) ?? false;
 }
+type ResponseObserver = (details: Electron.OnHeadersReceivedListenerDetails) => void;
+let responseObserver: ResponseObserver | undefined;
+/** Hears every main-frame response of the profile (library proxies recognise themselves). */
+export function observeResponses(observer: ResponseObserver) {
+  responseObserver = observer;
+}
 let configured: Session | undefined;
 export function browserSession(): Session {
   if (configured) return configured;
@@ -51,6 +57,7 @@ export function browserSession(): Session {
   // (with this profile's cookies) opens in the app's own reader. See BrowserService.
   ses.webRequest.onHeadersReceived({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
     const headers = details.responseHeaders ?? {};
+    if (details.resourceType === "mainFrame") responseObserver?.(details);
     const type = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type")?.[1]?.[0];
     if (!looksLikePdf(type, undefined)) return callback({});
     // A PDF in a frame or object would show in Chromium's viewer (`plugins: false` does not

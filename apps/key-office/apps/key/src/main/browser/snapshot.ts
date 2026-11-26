@@ -3,6 +3,7 @@
 // data, and a Content-Security-Policy that blocks any network access when it is shown.
 import type { WebContents } from "electron";
 import { browserSession } from "./profile";
+import { properUrlOf } from "./proxy-service";
 
 export interface PageMeta {
   title: string;
@@ -190,6 +191,8 @@ export async function capturePage(contents: WebContents): Promise<PageSnapshot> 
     sheets: string[];
     meta: PageMeta;
   };
+  // A page that came through a library proxy is kept under its own address.
+  collected.meta.url = properUrlOf(collected.meta.url);
   const budget = { left: TOTAL_LIMIT };
   const sheets = await mapLimit(collected.sheets, 4, async (url) => {
     const file = await fetchData(url, budget);
