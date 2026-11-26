@@ -34,18 +34,13 @@
     background-color 160ms var(--key-ui-ease, ease),
     box-shadow 160ms var(--key-ui-ease, ease);
 }
-/* Open, the ticks sit on a frosted plate of the window colour, so they read over light,
-   dark and busy pages alike. */
+/* Open, there is no plate behind the ticks: a stronger halo in the window colour keeps
+   them legible over light, dark and busy pages. */
 .key-preview-rail-ticks:hover,
 .key-preview-rail-ticks:focus-within,
 .key-preview-rail.is-open .key-preview-rail-ticks {
   opacity: 1;
-  filter: none;
-  background: color-mix(in srgb, var(--key-ui-bg) 82%, transparent);
-  box-shadow:
-    0 0 0 0.5px var(--key-ui-border),
-    0 6px 18px -6px color-mix(in srgb, var(--key-ui-text) 28%, transparent);
-  backdrop-filter: blur(18px) saturate(1.6);
+  filter: drop-shadow(0 0 1px var(--key-ui-bg)) drop-shadow(0 0 2.5px var(--key-ui-bg));
 }
 .key-preview-rail-ticks > button {
   /* `--m` (0–1, set per frame by PreviewRail) is how close the pointer is; `--s` the length. */
