@@ -155,7 +155,7 @@ function ConnectorTranslation({
   const native = override ?? translation?.native ?? "";
   const per = estimate?.perConcept ?? [];
   const known = per.filter((n): n is number => typeof n === "number");
-  const narrowest = known.length > 1 ? per.indexOf(Math.min(...known)) : -1;
+  const narrowest = known.length > 1 && Math.min(...known) < Math.max(...known) ? per.indexOf(Math.min(...known)) : -1;
   const blocked = c.needsKey && !c.hasKey;
   const tooLong = translation?.maxLength !== undefined && native.length > translation.maxLength;
   return (
@@ -211,8 +211,8 @@ function ConnectorTranslation({
                 <Icon name="undo" size={12} />
               </button>
             )}
-            {c.manual && c.manualInfo?.url && (
-              <button type="button" className="kx-db-icon-button" aria-label={`Open ${c.name}`} title={`Copy the query and open ${c.name}'s search`} onClick={() => (void navigator.clipboard.writeText(native), openWebLink(c.manualInfo!.url))}>
+            {c.manual && (translation?.manualUrl || c.manualInfo?.url) && (
+              <button type="button" className="kx-db-icon-button" aria-label={`Open ${c.name}`} title={`Copy the query and open ${c.name}'s search`} onClick={() => (void navigator.clipboard.writeText(native), openWebLink(translation?.manualUrl || c.manualInfo!.url))}>
                 <Icon name="external" size={12} />
               </button>
             )}

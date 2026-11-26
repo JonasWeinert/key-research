@@ -112,7 +112,61 @@ export const SERVICES: KeyedService[] = [
       return { ok: true, message: response.status === 429 ? "Key accepted; Semantic Scholar is busy right now" : "Semantic Scholar accepted the key" };
     },
   },
+  // Database search (crates/key-connectors): keys reach the host as db_options secrets (setup.ts).
+  {
+    id: "ncbi",
+    name: "PubMed (NCBI)",
+    summary: "A free NCBI key lets database search ask PubMed ten times a second instead of three.",
+    usedFor: "PubMed in database search",
+    keyUrl: "https://www.ncbi.nlm.nih.gov/account/settings/",
+    keyUrlLabel: "ncbi.nlm.nih.gov",
+    async validate(key, context) {
+      const base = (process.env.KEY_DB_NCBI_URL || "https://eutils.ncbi.nlm.nih.gov").replace(/\/$/, "");
+      const response = await probe(`${base}/entrez/eutils/einfo.fcgi?${new URLSearchParams({ db: "pubmed", retmode: "json", api_key: key })}`, context);
+      if (!response) return { ok: false, message: "Couldn't reach NCBI" };
+      if (response.status === 400 || refused(response.status)) return { ok: false, message: "NCBI refused this key" };
+      if (!response.ok) return { ok: false, message: `NCBI returned HTTP ${response.status}` };
+      return { ok: true, message: "NCBI accepted the key" };
+    },
+  },
+  {
+    id: "elsevier",
+    name: "Scopus",
+    via: "Elsevier",
+    summary: "Scopus is searched only with a key from Elsevier's developer portal; most need their institution's subscription.",
+    usedFor: "Scopus in database search",
+    keyUrl: "https://dev.elsevier.com/apikey/manage",
+    keyUrlLabel: "dev.elsevier.com",
+    keyRequired: true,
+    async validate(key, context) {
+      const base = (process.env.KEY_DB_ELSEVIER_URL || "https://api.elsevier.com").replace(/\/$/, "");
+      const response = await probe(`${base}/content/search/scopus?${new URLSearchParams({ query: "TITLE(heart)", count: "1" })}`, context, { "X-ELS-APIKey": key });
+      if (!response) return { ok: false, message: "Couldn't reach Elsevier" };
+      if (refused(response.status)) return { ok: false, message: "Elsevier refused this key, or it needs your institution's network" };
+      if (!response.ok) return { ok: false, message: `Elsevier returned HTTP ${response.status}` };
+      const remaining = remainingFrom(response.headers);
+      return { ok: true, message: "Scopus accepted the key", remaining: remaining === undefined ? undefined : { value: remaining, label: "requests left this week" } };
+    },
+  },
+  {
+    id: "clarivate-wos",
+    name: "Web of Science",
+    via: "Clarivate",
+    summary: "Web of Science is searched only with a key from Clarivate's developer portal (the Starter API).",
+    usedFor: "Web of Science in database search",
+    keyUrl: "https://developer.clarivate.com/apis/wos-starter",
+    keyUrlLabel: "developer.clarivate.com",
+    keyRequired: true,
+    async validate(key, context) {
+      const base = (process.env.KEY_DB_WOS_URL || "https://api.clarivate.com").replace(/\/$/, "");
+      const response = await probe(`${base}/apis/wos-starter/v1/documents?${new URLSearchParams({ q: "TS=(heart)", limit: "1" })}`, context, { "X-ApiKey": key });
+      if (!response) return { ok: false, message: "Couldn't reach Clarivate" };
+      if (refused(response.status)) return { ok: false, message: "Clarivate refused this key" };
+      if (!response.ok) return { ok: false, message: `Clarivate returned HTTP ${response.status}` };
+      return { ok: true, message: "Web of Science accepted the key" };
+    },
+  },
 ];
 
-export const serviceFor = (id: string) => SERVICES.find((s) => s.id === id);
+export const serviceFor =(id: string) => SERVICES.find((s) => s.id === id);
 export const serviceForProvider = (providerId: string) => SERVICES.find((s) => s.webProvider === providerId);

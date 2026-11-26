@@ -36,7 +36,9 @@ export function QueryBuilder({ query, onChange, connectors = [], conceptCounts, 
   const subjectName = connectors.some((c) => c.id === "pubmed" || c.id === "europepmc") ? "MeSH" : "subject headings";
   const supported = (field: TermField) => !connectors.length || connectors.some((c) => c.supports.fields.includes(field));
   const proximity = connectors.some((c) => c.supports.proximity);
-  const narrowest = conceptCounts && conceptCounts.length > 1 ? conceptCounts.reduce<number>((at, n, i) => (n !== null && (conceptCounts[at] === null || n < (conceptCounts[at] ?? Infinity)) ? i : at), 0) : -1;
+  const counted = (conceptCounts ?? []).filter((n): n is number => typeof n === "number");
+  // The concept that finds fewest alone, when they differ.
+  const narrowest = counted.length > 1 && Math.min(...counted) < Math.max(...counted) ? (conceptCounts ?? []).indexOf(Math.min(...counted)) : -1;
 
   const move = (id: string, block: Block, index?: number) => {
     onChange(moveTerm(query, id, block, index));

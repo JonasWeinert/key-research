@@ -139,7 +139,11 @@ export interface DbConnector {
 }
 
 export const CATEGORY_LABEL: Record<string, string> = {
+  biomedical: "Health & life sciences",
   health: "Health & life sciences",
+  "social-science": "Social sciences",
+  "grey-literature": "Grey literature",
+  registries: "Trials & registries",
   multidisciplinary: "Multidisciplinary",
   preprints: "Preprints",
   economics: "Economics & policy",
@@ -147,7 +151,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   trials: "Trials & registries",
   other: "Other",
 };
-export const CATEGORY_ORDER = ["health", "multidisciplinary", "preprints", "economics", "grey", "trials", "other"];
+export const CATEGORY_ORDER = ["biomedical", "health", "multidisciplinary", "preprints", "economics", "social-science", "grey-literature", "grey", "registries", "trials", "other"];
 
 // ── Translation, counts, runs ────────────────────────────────────────────────────────
 
@@ -162,6 +166,8 @@ export interface Translation {
   warnings: string[];
   length: number;
   maxLength?: number;
+  /** Manual connectors: their own search page with the query filled in. */
+  manualUrl?: string;
 }
 
 export interface Estimate {
@@ -202,7 +208,10 @@ export interface DbRecord {
   ids: { openalex?: string; pmid?: string; pmcid?: string; arxiv?: string };
   landingUrl?: string;
   pdfUrl?: string;
+  /** The web-search kind (article, preprint, report …). */
   type?: string;
+  /** The database's own kind (working-paper, trial …). */
+  recordType?: string;
   date?: string;
   series?: string;
   number?: string;
@@ -299,7 +308,7 @@ export interface DbSearchApi {
   /** Fetches further pages for the databases that have more (also carries on a cancelled run). */
   more(runId: string): Promise<void>;
   record(runId: string, key: string): Promise<{ record: DbRecord; versions: DbRecord[] }>;
-  addToLibrary(runId: string, keys: string[], collectionId?: string): Promise<AddResult>;
+  addToLibrary(runId: string, keys: string[], options: { collectionId?: string; tag?: string }): Promise<AddResult>;
   parse(text: string, dialect: "auto" | "pubmed" | "scopus" | "wos"): Promise<ParsedQuery>;
   /** MeSH headings, where the host offers them; empty otherwise. */
   suggest(text: string, connectors: string[]): Promise<TermSuggestion[]>;
@@ -328,7 +337,7 @@ function hostApi(invoke: Invoke, workspaceId: string): DbSearchApi {
     cancel: (runId) => call("db_search_cancel", { runId }),
     more: (runId) => call("db_search_more", { runId }),
     record: (runId, key) => call("db_record", { runId, key }),
-    addToLibrary: (runId, keys, collectionId) => call("db_add_to_library", { runId, keys, collectionId }),
+    addToLibrary: (runId, keys, { collectionId, tag }) => call("db_add_to_library", { runId, keys, collectionId, tag }),
     parse: (text, dialect) => call("db_parse", { text, dialect }),
     suggest: (text, connectors) => call<TermSuggestion[]>("db_suggest_terms", { text, connectors }).catch(() => []),
     saved: () => call("db_saved_list"),

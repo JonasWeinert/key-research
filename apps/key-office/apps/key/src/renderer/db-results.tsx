@@ -54,7 +54,7 @@ export function useRun(api: DbSearchApi | undefined, runId: string | undefined, 
     const view = String(dedupe);
     const poll = async () => {
       try {
-        const head = await api.results(runId, { dedupe, offset: 0, limit: 1 });
+        const head = await api.results(runId, { dedupe, offset: 0, limit: 0 });
         if (!live) return;
         setPage(head);
         const done = head.state !== "running";
@@ -114,7 +114,7 @@ export function RunProgress({ page, connectors, onCancel, onMore }: { page: RunP
     <section className="kx-db-progress" aria-label="Progress" data-state={page.state}>
       <ul>
         {page.progress.map((p) => {
-          const fraction = p.total ? Math.min(1, p.fetched / Math.min(p.total, Math.max(p.fetched, 500))) : p.state === "done" ? 1 : 0;
+          const fraction = p.state === "done" ? 1 : p.total ? Math.min(1, p.fetched / Math.min(p.total, Math.max(p.fetched, 500))) : 0;
           return (
             <li key={p.connector} data-state={p.state}>
               <span className="kx-db-progress-name">{name(p.connector)}</span>
@@ -151,6 +151,8 @@ export function RunProgress({ page, connectors, onCancel, onMore }: { page: RunP
   );
 }
 
+/** The record's kind as the database names it (working paper, trial), else the general one. */
+const kindOf = (r: DbRecord) => r.recordType ?? r.type;
 const firstRank = (r: DbRecord) => Math.min(...r.provenance.map((p) => p.rank), 1e9);
 function sortRecords(list: DbRecord[], sort: ResultSort) {
   const out = [...list];
@@ -222,7 +224,8 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
     let max = -Infinity;
     for (const r of records) {
       for (const c of new Set(r.foundBy)) byConnector[c] = (byConnector[c] ?? 0) + 1;
-      if (r.type) types[r.type] = (types[r.type] ?? 0) + 1;
+      const kind = kindOf(r);
+      if (kind) types[kind] = (types[kind] ?? 0) + 1;
       if (r.year) {
         min = Math.min(min, r.year);
         max = Math.max(max, r.year);
@@ -237,7 +240,7 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
         (!f.connectors.length || r.foundBy.some((c) => f.connectors.includes(c))) &&
         (!f.yearFrom || (r.year ?? 0) >= f.yearFrom) &&
         (!f.yearTo || (r.year ?? 9999) <= f.yearTo) &&
-        (!f.types.length || (r.type && f.types.includes(r.type))) &&
+        (!f.types.length || f.types.includes(kindOf(r) ?? "")) &&
         (!f.hasAbstract || !!r.abstract) &&
         (!f.openAccess || !!r.pdfUrl) &&
         (!f.onlyNew || !!r.isNew) &&
@@ -449,9 +452,8 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
           label={label}
           onClose={() => setAdding(undefined)}
           onAdd={async ({ collectionId, tag, pdfs }) => {
-            const out = await api.addToLibrary(runId, adding, collectionId);
+            const out = await api.addToLibrary(runId, adding, { collectionId, tag });
             const ids = out.results.map((r) => r.sourceId).filter((id): id is string => !!id);
-            if (tag) await tagSources(invoke, workspaceId, ids, tag);
             setStates((s) => ({ ...s, ...Object.fromEntries(out.results.filter((r) => r.sourceId).map((r) => [r.key, { state: "library" as const, sourceId: r.sourceId }])) }));
             libraryChanged();
             setSelected(new Set());
@@ -467,14 +469,6 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
       )}
     </div>
   );
-}
-
-/** Adds a tag to sources (keeping their own). */
-async function tagSources(invoke: Invoke, workspaceId: string, ids: string[], tag: string) {
-  for (const id of ids) {
-    const s = await invoke<Source | null>("store_source", { id }, workspaceId).catch(() => null);
-    if (s && !s.tags.includes(tag)) await invoke("store_update", { id, patch: { tags: [...s.tags, tag] }, byHand: true }, workspaceId).catch(() => {});
-  }
 }
 
 function RecordPreview({ api, runId, record, state, name, onClose, onInbox, onLibrary }: { api: DbSearchApi; runId: string; record: DbRecord; state: LibraryState; name: (id: string) => string; onClose: () => void; onInbox: () => void; onLibrary: () => void }) {
@@ -499,7 +493,7 @@ function RecordPreview({ api, runId, record, state, name, onClose, onInbox, onLi
   return (
     <aside className="kx-db-preview" aria-label="Preview">
       <header>
-        <span className="kx-db-muted">{[DOC_TYPES.find(([k]) => k === record.type)?.[1], record.year, record.language && record.language !== "en" ? record.language.toUpperCase() : ""].filter(Boolean).join(" · ")}</span>
+        <span className="kx-db-muted">{[DOC_TYPES.find(([k]) => k === kindOf(record))?.[1] ?? kindOf(record), record.year, record.language && record.language !== "en" ? record.language.toUpperCase() : ""].filter(Boolean).join(" · ")}</span>
         <span className="kx-spacer" />
         <button type="button" className="kx-db-icon-button" aria-label="Close the preview" onClick={onClose}>
           <Icon name="close" size={10} />

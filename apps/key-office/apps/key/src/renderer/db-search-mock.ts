@@ -115,7 +115,7 @@ function translateFor(c: DbConnector, q: DbQuery): Translation {
   if (f.openAccess && !c.supports.filters.includes("openAccess")) warnings.add(`${c.name} cannot limit to open access: Key filters the results instead.`);
   if (c.manual) warnings.add(`${c.name} has no API: Key opens its search with this query, and you import what you export from there.`);
   const max = c.id === "wos" ? 4000 : c.id === "nber" || c.id === "iza" ? 256 : undefined;
-  return { connector: c.id, native, chunks: [native], mode: c.supports.fields.length > 5 ? "native" : "terms", warnings: [...warnings], length: native.length, ...(max ? { maxLength: max } : {}) };
+  return { connector: c.id, native, ...(c.manual && c.manualInfo ? { manualUrl: `${c.manualInfo.url}?q=${encodeURIComponent(native)}` } : {}), chunks: [native], mode: c.supports.fields.length > 5 ? "native" : "terms", warnings: [...warnings], length: native.length, ...(max ? { maxLength: max } : {}) };
 }
 const label = (f: TermField) => ({ all: "any field", title: "titles", title_abstract: "titles and abstracts", abstract: "abstracts", keywords: "keywords", subject: "subject headings", fulltext: "full texts", author: "authors", journal: "journal names", affiliation: "affiliations", identifier: "identifiers" })[f];
 
@@ -209,7 +209,8 @@ function buildRecord(run: MockRun, n: number, connector: string, rank: number): 
     ids: connector === "pubmed" ? { pmid: String(30_000_000 + n) } : connector === "openalex" ? { openalex: `W${4_000_000_000 + n}` } : {},
     landingUrl: w.doi ? `https://doi.org/${w.doi}` : `https://example.org/${connector}/${n}`,
     pdfUrl: w.openAccess ? `https://example.org/${connector}/${n}.pdf` : undefined,
-    type: TYPES_BY[connector] ?? (/review|meta-analysis/i.test(w.title) ? "review" : "article"),
+    type: TYPES_BY[connector] === "working-paper" ? "report" : (TYPES_BY[connector] ?? (/review|meta-analysis/i.test(w.title) ? "review" : "article")),
+    recordType: TYPES_BY[connector],
     language: w.language,
     foundBy: [connector],
     provenance: [{ connector, version: "2026.11.1", sourceId: String(n), query: run.overrides[connector] ?? translateFor(run.connectors.find((c) => c.id === connector)!, run.query).native, at: run.startedAt, rank }],
@@ -500,7 +501,7 @@ export function mockDbSearchApi(invoke: Invoke, workspaceId: string): DbSearchAp
       if (!run || !record) throw new Error("Not found");
       return { record, versions: records(run, false).filter((r) => r.key === key) };
     },
-    addToLibrary: async (runId, keys, collectionId) => {
+    addToLibrary: async (runId, keys, { collectionId, tag }) => {
       const run = runs.get(runId);
       const wanted = new Set(keys);
       const list = run ? records(run, true).filter((r) => wanted.has(r.key)) : [];
@@ -511,6 +512,10 @@ export function mockDbSearchApi(invoke: Invoke, workspaceId: string): DbSearchAp
           const existing = known.find((m) => m.certain);
           if (existing) {
             if (collectionId) await invoke("store_membership", { collectionId, ids: [existing.sourceId], present: true }, workspaceId).catch(() => {});
+            if (tag) {
+              const s = await invoke<{ tags: string[] } | null>("store_source", { id: existing.sourceId }, workspaceId).catch(() => null);
+              if (s && !s.tags.includes(tag)) await invoke("store_update", { id: existing.sourceId, patch: { tags: [...s.tags, tag] }, byHand: true }, workspaceId).catch(() => {});
+            }
             results.push({ key: r.key, sourceId: existing.sourceId, existed: true });
             continue;
           }
@@ -531,6 +536,7 @@ export function mockDbSearchApi(invoke: Invoke, workspaceId: string): DbSearchAp
                   return { family: parts.at(-1), given: parts.slice(0, -1).join(" "), role: "author" };
                 }),
                 collections: collectionId ? [collectionId] : [],
+                ...(tag ? { tags: [tag] } : {}),
                 indexStatus: "skipped",
               },
             },

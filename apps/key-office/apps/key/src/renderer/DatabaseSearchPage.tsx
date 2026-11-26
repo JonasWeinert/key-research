@@ -403,7 +403,7 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
           >
             <Icon name="plus" size={12} /> New query
           </button>
-          <button type="button" onClick={() => (setMenu(undefined), void api?.checkUpdates().then((r) => toast(r.state === "updated" ? `Updated ${plural(r.changed.length, "connector")}` : r.state === "failed" ? `Couldn’t check: ${r.error ?? "unknown error"}` : "Connectors are up to date")))}>
+          <button type="button" onClick={() => (setMenu(undefined), void api?.checkUpdates().then((r) => toast(r.state === "updated" ? `Updated ${plural(r.changed.length, "connector")}` : r.state === "failed" ? `Couldn’t check: ${r.error ?? "unknown error"}` : r.state === "unconfigured" ? "Updates not set up yet: Key uses its built-in connectors" : "Connectors are up to date")))}>
             <Icon name="sync" size={12} /> Check for connector updates
           </button>
         </Popover>

@@ -251,6 +251,34 @@ export const HELP = {
     },
   ),
 
+  "settings.services.ncbi": explain(
+    "An NCBI key for PubMed",
+    ["PubMed is run by NCBI, part of the US National Library of Medicine. Without a key, database search may ask it three times a second; a free key allows ten, so large searches finish sooner."],
+    {
+      steps: ["Sign in at ncbi.nlm.nih.gov (a free account).", "Open Account settings and find API Key Management.", "Create a key, paste it here and press Save."],
+      links: [{ label: "Get a key at ncbi.nlm.nih.gov", url: "https://www.ncbi.nlm.nih.gov/account/settings/" }],
+    },
+  ),
+  "settings.services.elsevier": explain(
+    "A Scopus key from Elsevier",
+    [
+      "Scopus belongs to Elsevier and can only be searched with a key. Keys are free to create, but Scopus answers only for people whose institution subscribes, usually on its network or with an institution token.",
+      "Database search sends your query to Scopus with this key.",
+    ],
+    {
+      steps: ["Open dev.elsevier.com and sign in with your institution's account.", "Choose Create API key and accept the terms.", "Paste the key here and press Save."],
+      links: [{ label: "Get a key at dev.elsevier.com", url: "https://dev.elsevier.com/apikey/manage" }],
+    },
+  ),
+  "settings.services.clarivate-wos": explain(
+    "A Web of Science key from Clarivate",
+    ["Web of Science belongs to Clarivate and can only be searched with a key. The Starter API has a free plan with a small daily allowance; your library may offer a larger one."],
+    {
+      steps: ["Open developer.clarivate.com and create an account.", "Subscribe to the Web of Science Starter API.", "Copy the key, paste it here and press Save."],
+      links: [{ label: "Get a key at developer.clarivate.com", url: "https://developer.clarivate.com/apis/wos-starter" }],
+    },
+  ),
+
   // ── Settings: AI ─────────────────────────────────────────────────────────────────────
   "settings.ai.provider": explain(
     "AI assistant",

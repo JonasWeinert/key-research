@@ -16,9 +16,9 @@ export interface DatabaseSet {
 }
 // Built-in sets by what the databases cover, so they follow the connectors the host has.
 const BUILT_IN: (Omit<DatabaseSet, "ids"> & { categories: string[]; free?: boolean })[] = [
-  { id: "health", name: "Health", categories: ["health", "preprints", "trials"], builtIn: true },
-  { id: "economics", name: "Economics", categories: ["economics", "grey"], builtIn: true },
-  { id: "open", name: "Free to use", categories: ["health", "multidisciplinary", "preprints", "economics", "grey", "trials"], free: true, builtIn: true },
+  { id: "health", name: "Health", categories: ["biomedical", "health", "preprints", "trials", "registries"], builtIn: true },
+  { id: "economics", name: "Economics", categories: ["economics", "grey", "grey-literature", "social-science"], builtIn: true },
+  { id: "open", name: "Free to use", categories: ["biomedical", "health", "multidisciplinary", "preprints", "economics", "social-science", "grey", "grey-literature", "trials", "registries"], free: true, builtIn: true },
 ];
 const setsKey = (ws: string) => `key.dbSearch.sets:${ws}`;
 const defaultKey = (ws: string) => `key.dbSearch.default:${ws}`;

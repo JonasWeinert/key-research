@@ -24,6 +24,12 @@ export function hostKeyRequests(): HostRequest[] {
   const keys = Object.fromEntries(SERVICES.map((s) => [s.id, { key: keyed.key(s.id) ?? "", mode: keyed.mode(s.id) }]));
   const requests: HostRequest[] = [{ command: "store_enrich_options", args: { apiKey: keyed.key("openalex") ?? "", keyMode: keyed.mode("openalex") } }];
   if (settingsStore) requests.push({ command: "web_options", args: webOptions(settingsStore.get(), keys) });
+  // Database search: its secrets by the names the connectors use (connectors/COMMANDS.md).
+  const db = ["ncbi", "elsevier", "clarivate-wos", "openalex"];
+  requests.push({
+    command: "db_options",
+    args: { keys: Object.fromEntries(db.map((id) => [id, keyed.key(id) ?? null])), ...(settingsStore ? { mailto: settingsStore.get().openalexMailto ?? "" } : {}) },
+  });
   return requests;
 }
 
