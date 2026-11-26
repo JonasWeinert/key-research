@@ -278,7 +278,7 @@
         "itemsWhere": { "type": "string" },
         "record": { "$ref": "#/$defs/record" },
         "perRecord": { "type": "boolean" },
-        "when": { "type": "object", "additionalProperties": false, "required": ["field"], "properties": { "field": { "type": "string" }, "minLength": { "type": "integer", "minimum": 0 } } }
+        "when": { "type": "object", "additionalProperties": false, "required": ["field"], "properties": { "field": { "type": "string" }, "minLength": { "type": "integer", "minimum": 0 }, "atLeast": { "type": "integer", "minimum": 0 } } }
       }
     },
     "plan": {

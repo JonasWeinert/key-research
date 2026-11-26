@@ -13,6 +13,7 @@ pub mod extract;
 pub mod fixtures;
 pub mod merge;
 pub mod net;
+pub mod parse;
 pub mod paths;
 pub mod query;
 pub mod record;

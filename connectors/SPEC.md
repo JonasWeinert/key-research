@@ -337,7 +337,7 @@ A `lookup` plan without `record` reuses the search's record mapping.
 
 Detail per record: `"detail": { "perRecord": true, "when": { "field": "abstract", "minLength": 290 },
 "request": { "url": "{record.url}", "format": "html" }, "record": { ... } }`: one request per
-record (only to `hosts`), its non-empty fields merged in (a longer abstract wins). `{record.<field>}`
+record (only to `hosts`; `when.minLength`: only when the field is shorter, `when.atLeast`: only when it is at least that long, e.g. a cut-off abstract), its non-empty fields merged in (a longer abstract wins). `{record.<field>}`
 is available in its templates. The local filter runs after it.
 
 Extraction: rule keys run in this order: path/first -> `drop` (exact values, any case) -> `split`
