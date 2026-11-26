@@ -638,7 +638,6 @@ function PossibleDuplicates({ invoke, workspaceId }: { invoke: Invoke; workspace
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
-  genspark: "Genspark",
   codex: "Codex",
   anthropic: "Anthropic",
   gemini: "Gemini",

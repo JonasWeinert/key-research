@@ -6,18 +6,13 @@ import type {
 } from './types'
 
 export const AI_SEARCH_PROVIDERS: AiSearchProviderMeta[] = [
-  {
-    id: 'genspark',
-    label: 'Genspark',
-    keyPlaceholder: 'Not required - sign in to Genspark',
-    imageSearch: true,
-  },
+  { id: 'free', label: 'Free sources', keyPlaceholder: 'Not required', imageSearch: true },
   { id: 'serper', label: 'Serper', keyPlaceholder: 'Serper API key', imageSearch: true },
   { id: 'tavily', label: 'Tavily', keyPlaceholder: 'tvly-...', imageSearch: false },
 ]
 
 export function defaultAiSearchSettings(): AiSearchSettings {
-  return { provider: 'genspark', providers: { serper: { apiKey: '' }, tavily: { apiKey: '' } } }
+  return { provider: 'free', providers: { serper: { apiKey: '' }, tavily: { apiKey: '' } } }
 }
 
 export function resolveAiSearchSettings(
@@ -33,10 +28,12 @@ export function resolveAiSearchSettings(
   return { provider: stored.provider ?? defaults.provider, providers }
 }
 
-/** the stored search provider, honored only with a key; otherwise genspark (gsk + free chain) */
+/** the stored search provider, honored only with a key; otherwise the free chain */
 export function activeSearchProvider(settings: Pick<AiSettings, 'search'>): AiSearchProviderId {
   const search = settings.search
-  if (!search || search.provider === 'genspark') return 'genspark'
-  if (!AI_SEARCH_PROVIDERS.some((m) => m.id === search.provider)) return 'genspark'
-  return search.providers?.[search.provider]?.apiKey ? search.provider : 'genspark'
+  if (!search || search.provider === 'free') return 'free'
+  if (!AI_SEARCH_PROVIDERS.some((m) => m.id === search.provider)) return 'free'
+  return search.providers?.[search.provider as Exclude<AiSearchProviderId, 'free'>]?.apiKey
+    ? search.provider
+    : 'free'
 }
