@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld("key", {
         "toggle-inspector",
         "command",
         "send-items",
+        "dismiss-overlays",
       ].includes(event)
     )
       throw Error("Unknown event");
