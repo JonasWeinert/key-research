@@ -124,7 +124,7 @@ export default function CitationSettings({
   }
   return (
     <>
-      <Group title="Citation style" footer="Used for copied references and in-text citations (⌘⇧C, ⌘⇧A), quotes from the reader, notes and bibliographies.">
+      <Group title="Citation style" help="settings.citations.style" footer="Used for copied references and in-text citations (⌘⇧C, ⌘⇧A), quotes from the reader, notes and bibliographies.">
         <Row label="Style" detail={current ? `${FORMAT_LABEL[current.format]}${current.bundled ? "" : " · installed"}` : undefined}>
           <button className="kx-settings-button kx-cite-current" aria-expanded={picking} aria-label="Citation style" onClick={() => setPicking(!picking)}>
             <span>{current?.title ?? style}</span>

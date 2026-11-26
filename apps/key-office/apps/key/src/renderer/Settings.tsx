@@ -21,6 +21,8 @@ import { CitationKeySettings } from "./citation-keys";
 import { MarkdownExportSettings } from "./markdown-export";
 import { FileSettings } from "./file-names";
 import { FeedsSettings } from "./FeedsManager";
+import { Explain, Glossary, Hint, resetTips, setTipsShown, useTips } from "./explain";
+import { hintText, type ExplainId, type HintId } from "./help-content";
 
 export type SettingsSection = "general" | "libraries" | "zotero" | "citations" | "export" | "markdown" | "files" | "search" | "web" | "feeds" | "services" | "ai" | "about";
 interface SectionInfo {
@@ -99,6 +101,12 @@ export default function Settings({
     nav.current?.querySelector<HTMLButtonElement>(`[data-section="${next}"]`)?.focus();
   };
   const current = SECTIONS.find((s) => s.id === section)!;
+  // An explainer's link ("Get a key at …") opens Key's browser; the sheet steps aside for it.
+  useEffect(() => {
+    const close = () => onClose();
+    window.addEventListener("key:help-navigated", close);
+    return () => window.removeEventListener("key:help-navigated", close);
+  }, [onClose]);
   return (
     <GlobalDrawer presentation="window" label="Settings" onClose={onClose}>
       <div className="kx-settings" data-modal-view={section}>
@@ -188,10 +196,17 @@ export default function Settings({
 }
 
 /** A titled, rounded group of rows. */
-export function Group({ title, footer, children }: { title?: string; footer?: ReactNode; children: ReactNode }) {
+export function Group({ title, footer, children, help, intro }: { title?: string; footer?: ReactNode; children: ReactNode; help?: ExplainId; intro?: HintId }) {
   return (
     <section className="kx-settings-group">
-      {title && <h3>{title}</h3>}
+      {title && (
+        <h3>
+          {title}
+          {help && <Explain help={help} />}
+        </h3>
+      )}
+      {!title && help && <Explain help={help} label className="kx-settings-group-explain" />}
+      {intro && <Hint help={intro} />}
       <div className="kx-settings-rows">{children}</div>
       {footer && <p className="kx-settings-footnote">{footer}</p>}
     </section>
@@ -199,11 +214,14 @@ export function Group({ title, footer, children }: { title?: string; footer?: Re
 }
 /** A setting: its label and a quiet line beneath. A `path` line stays on one line, cut at
  *  the end, with the whole path on hover. */
-export function Row({ label, detail, children, path }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean }) {
+export function Row({ label, detail, children, path, help }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean; help?: ExplainId }) {
   return (
     <div className="kx-settings-row">
       <div>
-        <span>{label}</span>
+        <span>
+          {label}
+          {help && <Explain help={help} />}
+        </span>
         {detail && (
           <small className={path ? "kx-settings-path" : undefined} title={path && typeof detail === "string" ? detail : undefined}>
             {detail}
@@ -262,7 +280,7 @@ function General({
 }) {
   return (
     <>
-      <Group title="Appearance" footer="Documents keep their own colours.">
+      <Group title="Appearance" intro="settings.general.appearance">
         <div className="kx-settings-row kx-settings-row-wide">
           <ThemePicker value={settings.theme} onChange={(theme) => onSettings({ theme })} />
         </div>
@@ -298,8 +316,27 @@ function General({
             Show welcome
           </button>
         </Row>
+        <TipsRow />
+      </Group>
+      <Group title="Glossary" intro="settings.general.glossary">
+        <div className="kx-settings-row kx-settings-row-wide kx-settings-glossary">
+          <Glossary />
+        </div>
       </Group>
     </>
+  );
+}
+
+/** First-use tips: on or off for the whole app, and the ones already seen shown again. */
+function TipsRow() {
+  const tips = useTips();
+  return (
+    <Row label="Show tips" detail={hintText("settings.general.tips")}>
+      <button className="kx-settings-button" disabled={tips.off || !tips.seen.length} onClick={resetTips}>
+        Show again
+      </button>
+      <input type="checkbox" className="kx-switch" aria-label="Show tips" checked={!tips.off} onChange={(e) => setTipsShown(e.target.checked)} />
+    </Row>
   );
 }
 
@@ -327,7 +364,7 @@ function Libraries({
   }, [invoke, workspaces]);
   return (
     <>
-      <Group title="Your libraries" footer="Each library is a folder on this Mac. Files stay where they are.">
+      <Group title="Your libraries" help="settings.libraries.what" intro="settings.libraries.intro" footer="Files you link stay where they are on your Mac.">
         {workspaces.map((w) => (
           <Row
             key={w.id}
@@ -358,7 +395,7 @@ function Libraries({
         </div>
       </Group>
       <Group title="Adding sources">
-        <Row label="Works added from a source" detail="From its references, related works or a citation in its PDF.">
+        <Row label="Works added from a source" help="settings.libraries.add-from-source" detail="From its references, related works or a citation in its PDF: which collections they join.">
           <select className="kx-settings-select" aria-label="Where sources added from another source go" value={settings.addFromSource ?? "ask"} onChange={(e) => onSettings({ addFromSource: e.target.value as AppSettings["addFromSource"] })}>
             {ADD_MODES.map(([id, label]) => (
               <option key={id} value={id}>
@@ -367,7 +404,7 @@ function Libraries({
             ))}
           </select>
         </Row>
-        <Row label="Find PDFs automatically" detail="Look for an open-access PDF when a reference without one is added.">
+        <Row label="Find PDFs automatically" help="settings.libraries.find-pdf" detail="Look for a free, legal (open-access) PDF when a reference without one is added.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -445,7 +482,7 @@ function SearchSettings({
   const failed = counts?.attention ?? 0;
   return (
     <>
-      <Group title="Search model" footer="Runs on this Mac. Your sources and searches never leave it.">
+      <Group title="Search model" help="settings.search.model" footer="Runs on this Mac. Your sources and searches never leave it.">
         {model && ["downloading", "missing", "failed"].includes(model.state) ? (
           <div className="kx-settings-row kx-settings-row-wide">
             <ModelProgressCard progress={model} compact />
@@ -480,7 +517,7 @@ function SearchSettings({
           </Row>
         </Group>
       )}
-      <Group title="Indexing" footer={message || "Sources you open or scroll to are indexed first."}>
+      <Group title="Indexing" help="settings.search.indexing" footer={message || "Indexing reads each source once so search can find it. Sources you open or scroll to go first."}>
         {counts && (
           <div className="kx-settings-stats">
             <div>
@@ -519,7 +556,7 @@ function SearchSettings({
             <span className="kx-search-spinner" aria-hidden="true" />
           </Row>
         )}
-        <Row label="Pause indexing" detail="Search keeps working.">
+        <Row label="Pause indexing" detail="Stops reading new sources. Search keeps working on what is already indexed.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -528,7 +565,7 @@ function SearchSettings({
             onChange={(e) => setPaused(e.target.checked)}
           />
         </Row>
-        <Row label="Retry failed sources" detail={failed ? `${failed.toLocaleString()} could not be read` : "None failed"}>
+        <Row label="Retry failed sources" detail={failed ? `${failed.toLocaleString()} could not be read, often a damaged or password-protected PDF` : "None failed"}>
           <button
             className="kx-settings-button"
             disabled={!failed}
@@ -542,7 +579,7 @@ function SearchSettings({
         </Row>
       </Group>
       <Group title="PDF analysis">
-        <Row label="Use the layout model" detail="Better reading order, tables and columns; about a second per page.">
+        <Row label="Use the layout model" help="settings.search.layout" detail="Better reading order, tables and columns; about a second per page, on this Mac.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -574,15 +611,15 @@ function SearchSettings({
           </button>
         </Row>
       </Group>
-      <Group title="Metadata" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
-        <Row label="Look up new sources in OpenAlex" detail={
+      <Group title="Metadata" help="settings.search.metadata" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
+        <Row label="Look up new sources in OpenAlex" help="settings.search.metadata" detail={
             !settings.openalex
               ? "Only when you ask"
               : status?.enrichment
                 ? `${status.enrichment.toLocaleString()} waiting`
                 : olderSources(status?.backfill)
                   ? `${olderSources(status?.backfill).toLocaleString()} older sources when idle`
-                  : "Authors, journal, topics, citations and retractions"
+                  : "Fills in authors, journal, topics, citation counts and retractions"
           }>
           <input
             type="checkbox"
@@ -592,7 +629,7 @@ function SearchSettings({
             onChange={(e) => onSettings({ openalex: e.target.checked })}
           />
         </Row>
-        <Row label="Contact email" detail="OpenAlex asks for one for heavy use.">
+        <Row label="Contact email" help="settings.search.email" detail="Optional. OpenAlex answers faster when requests carry one.">
           <input
             className="kx-settings-select"
             type="email"
@@ -618,7 +655,7 @@ function PossibleDuplicates({ invoke, workspaceId }: { invoke: Invoke; workspace
   useEffect(load, [load]);
   return (
     <>
-      <Row label="Possible duplicate people" detail={count ? `${count} to review` : "None to review"}>
+      <Row label="Possible duplicate people" help="settings.search.people" detail={count ? `${count} to review. Nothing is merged until you choose.` : "None to review"}>
         <button className="kx-settings-button" disabled={!count} onClick={() => setOpen(true)}>
           Review…
         </button>
@@ -661,7 +698,7 @@ function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: str
   }, [invoke, workspaceId]);
   return (
     <>
-      <Group title="Provider" footer="Used only when you ask, with just the passages a task needs.">
+      <Group title="Provider" help="settings.ai.provider" footer="Used only when you ask, with just the passages a task needs.">
         <Row
           label={status?.available ? `${PROVIDER_LABEL[status.provider ?? ""] ?? status.provider} · ${status.model}` : "Not connected"}
           detail={status ? (status.available ? "Connected" : status.reason || "Connect a provider below") : "Checking…"}
@@ -673,7 +710,7 @@ function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: str
           ) : null}
         </Row>
       </Group>
-      <Group title="OpenAI-compatible provider" footer="Ollama, LM Studio or any hosted API over HTTPS. The key stays on this Mac.">
+      <Group title="OpenAI-compatible provider" help="settings.ai.endpoint" footer="Ollama, LM Studio or any hosted API over HTTPS. The key stays on this Mac.">
         <form
           className="kx-settings-form"
           onSubmit={async (e) => {

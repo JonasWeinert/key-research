@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 contextBridge.exposeInMainWorld("key", {
+  // Automated checks run without first-use tips unless they ask for them (renderer/explain.tsx).
+  automation: process.env.KEY_SKIP_ONBOARDING === "1" && process.env.KEY_SHOW_TIPS !== "1",
   invoke: (
     command: string,
     args?: unknown,

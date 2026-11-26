@@ -77,13 +77,13 @@ export function ZoteroSettings({
       ? `${sync.options.collectionKeys.length.toLocaleString()} collections`
       : "the whole library";
   return (
-    <Group title="Zotero" footer="Key only reads from Zotero. Where both changed an item, Key’s version stays and is listed here.">
+    <Group title="Zotero" help="zotero.import-vs-sync" intro="settings.zotero.intro" footer="Key only reads from Zotero. Where both changed an item, Key’s version stays and is listed here.">
       <Row
         label="Import from Zotero"
         detail={
           info.zoteroFound
             ? `${info.zoteroDir.replace(/^\/Users\/[^/]+/, "~")} · everything, collections or chosen papers`
-            : "No Zotero library found on this Mac"
+            : "No Zotero library found on this Mac. Install Zotero and open it once, then come back."
         }
       >
         <button className="kx-settings-button" disabled={!info.zoteroFound} onClick={() => onOpen("import")}>
@@ -92,13 +92,14 @@ export function ZoteroSettings({
       </Row>
       <Row
         label="Keep in sync with Zotero"
+        help="zotero.plugin"
         detail={
           configured ? (
             <span className="kx-zotero-sync-line" data-state={sync?.paused ? "paused" : (sync?.connection ?? "ok")}>
               {`Syncing ${scope}${sync?.libraryName ? ` from ${sync.libraryName}` : ""}. ${syncLine(sync!, now)}`}
             </span>
           ) : (
-            "Follows changes in Zotero through the Key Sync plugin."
+            "Follows what you change in Zotero from now on, through the small Key Sync plugin Key installs for you."
           )
         }
       >

@@ -206,6 +206,7 @@ export function MarkdownExportSettings({ invoke, workspaces }: { invoke: Invoke;
       )}
       <Group
         title="Highlights"
+        help="settings.markdown.what"
         footer="One Markdown file per source with highlights, for Obsidian, Logseq or any folder of notes. Key only rewrites its own section of each file; what you write around it, and under each highlight, stays. Files you rename or move inside the folder are found again."
       >
         <Row label="Folder" detail={config.folder ? home(config.folder) : "Choose your vault or a folder in it"} path>

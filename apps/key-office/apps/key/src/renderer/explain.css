@@ -1,0 +1,351 @@
+/* Guidance (explain.tsx): hints, the (i) explainer and its popover, empty states, first-use
+   tips and the glossary. Hint text uses --kx-text-muted (4.5:1 or better on every surface). */
+
+.kx-hint {
+  margin: 0;
+  color: var(--kx-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+/* Under a settings group's title, before its rows. */
+.kx-settings-group > .kx-hint {
+  margin: -2px 2px 8px;
+}
+
+/* The (i) button: quiet until hovered, a real button for the keyboard. */
+.kx-explain-trigger {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: -2px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--kx-text-muted);
+  vertical-align: middle;
+  cursor: default;
+}
+.kx-explain-trigger:hover,
+.kx-explain-trigger[aria-expanded="true"] {
+  background: var(--kx-fill-2);
+  color: var(--kx-accent);
+}
+.kx-explain-trigger:focus-visible,
+.kx-explain-link:focus-visible,
+.kx-tip-done:focus-visible,
+.kx-explain-open:focus-visible,
+.kx-explain-close:focus-visible {
+  outline: 2px solid var(--kx-accent);
+  outline-offset: 1px;
+}
+/* "What is an API key?" as an inline link. */
+.kx-explain-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kx-accent-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+.kx-explain-link:hover span {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kx-settings-group > h3 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* The popover: the menu look (menu.css) at a reading width. */
+.kx-explain-popover {
+  position: fixed;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 16px));
+  padding: 12px 14px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  outline: none;
+  font-size: 12.5px;
+  line-height: 1.5;
+  animation: kx-explain-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes kx-explain-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+.kx-explain-popover > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kx-explain-popover h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.kx-explain-popover h5 {
+  margin: 2px 0 -4px;
+  color: var(--kx-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.kx-explain-popover p,
+.kx-explain-popover ol {
+  margin: 0;
+  color: var(--kx-text);
+  text-wrap: pretty;
+}
+.kx-explain-popover ol {
+  display: grid;
+  gap: 3px;
+  padding-left: 18px;
+}
+.kx-explain-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+}
+.kx-explain-close:hover {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+.kx-explain-example {
+  margin: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.kx-explain-open {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kx-accent-text);
+  font: inherit;
+  font-weight: 500;
+}
+.kx-explain-open:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kx-explain-privacy {
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--kx-line-strong);
+  color: var(--kx-text-muted) !important;
+  font-size: 11.5px;
+}
+.kx-explain-privacy > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.kx-explain-privacy strong {
+  color: var(--kx-text-2);
+  font-weight: 600;
+}
+
+/* Empty states: centred, calm, the next step obvious. */
+.kx-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 400px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  text-align: center;
+}
+.kx-empty-state[data-compact] {
+  padding: 24px 16px;
+}
+.kx-empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+}
+.kx-empty-state[data-compact] .kx-empty-state-icon {
+  width: 34px;
+  height: 34px;
+}
+.kx-empty-state h2 {
+  margin: 0;
+  color: var(--kx-text);
+  font-size: 15px;
+  font-weight: 600;
+}
+.kx-empty-state[data-compact] h2 {
+  font-size: 13px;
+}
+.kx-empty-state p {
+  margin: 0;
+  color: var(--kx-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.kx-empty-state .kx-empty-state-todo {
+  color: var(--kx-text-2);
+}
+.kx-empty-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+/* First-use tips: a small accent card with an arrow toward the feature. */
+.kx-tip {
+  --kx-tip-bg: color-mix(in srgb, var(--kx-accent) 82%, black);
+  position: fixed;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: min(280px, calc(100vw - 16px));
+  padding: 10px 10px 10px 12px;
+  border-radius: 10px;
+  background: var(--kx-tip-bg);
+  box-shadow: var(--kx-shadow-pop);
+  color: var(--kx-accent-ink);
+  font-size: 12px;
+  line-height: 1.4;
+  animation: kx-explain-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.kx-tip > svg {
+  flex: none;
+  margin-top: 2px;
+}
+.kx-tip > div {
+  flex: 1;
+  min-width: 0;
+}
+.kx-tip strong {
+  display: block;
+  font-weight: 600;
+}
+.kx-tip p {
+  margin: 2px 0 0;
+  text-wrap: pretty;
+}
+.kx-tip::before {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--kx-tip-bg);
+  transform: rotate(45deg);
+}
+.kx-tip[data-side="below"]::before {
+  top: -4px;
+  left: calc(var(--kx-tip-arrow, 24px) - 5px);
+}
+.kx-tip[data-side="above"]::before {
+  bottom: -4px;
+  left: calc(var(--kx-tip-arrow, 24px) - 5px);
+}
+.kx-tip[data-side="right"]::before {
+  top: calc(var(--kx-tip-arrow, 20px) - 5px);
+  left: -4px;
+}
+.kx-tip-done {
+  flex: none;
+  align-self: flex-end;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--kx-accent-ink) 22%, transparent);
+  color: var(--kx-accent-ink);
+  font: 500 12px var(--kx-font);
+}
+.kx-tip-done:hover {
+  background: color-mix(in srgb, var(--kx-accent-ink) 32%, transparent);
+}
+
+/* Glossary in Settings › General. */
+.kx-glossary {
+  display: grid;
+  margin: 0;
+}
+.kx-glossary > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) 1fr;
+  gap: 12px;
+  padding: 7px 12px;
+}
+.kx-glossary > div + div {
+  border-top: 0.5px solid var(--kx-line-strong);
+}
+.kx-glossary dt {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.kx-glossary dd {
+  margin: 0;
+  color: var(--kx-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kx-explain-popover,
+  .kx-tip {
+    animation: none;
+  }
+}
+
+/* A section's opening line in Settings, with its "What is …?" link. */
+.kx-settings-intro {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  margin: 0 2px 18px;
+}
+.kx-settings-group-explain {
+  margin: 0 2px 8px;
+}
+.kx-settings-row.kx-settings-glossary {
+  padding: 0;
+}
+
+.kx-feeds-opml {
+  align-items: center;
+}

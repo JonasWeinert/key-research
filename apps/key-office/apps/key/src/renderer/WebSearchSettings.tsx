@@ -16,7 +16,7 @@ export default function WebSearchSettings({ invoke, settings, onSettings }: { in
   const change = (id: string, patch: { enabled?: boolean; apiKey?: string }) => onSettings({ webProviders: { ...entries, [id]: { ...entries[id], ...patch } } });
   if (!providers.length) return null;
   return (
-    <Group title="Web search" footer="Asked only when you search the web, with only what you type.">
+    <Group title="Web search" help="settings.web.search" footer="Asked only when you search the web, with only what you type.">
       {providers.map((p) => {
         const entry = entries[p.id] ?? {};
         return (

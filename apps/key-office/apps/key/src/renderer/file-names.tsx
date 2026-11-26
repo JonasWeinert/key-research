@@ -216,6 +216,7 @@ export function FileSettings({ invoke, workspaces }: { invoke: Invoke; workspace
       )}
       <Group
         title="File names"
+        help="settings.files.what"
         footer={
           <>
             Fields: <code>{"{{firstCreator}}"}</code> (Smith, Smith and Jones, Smith et al.), <code>{"{{year}}"}</code>, <code>{"{{title}}"}</code>, <code>{"{{shortTitle}}"}</code>, <code>{"{{citekey}}"}</code>, <code>{"{{journal}}"}</code>, <code>{"{{itemType}}"}</code>; filters such as{" "}
@@ -289,6 +290,7 @@ export function FileSettings({ invoke, workspaces }: { invoke: Invoke; workspace
       </Group>
       <Group
         title="Mirror folder"
+        help="settings.files.mirror"
         footer="A folder of readable copies organised by collection, kept in step with the library, for Finder, DEVONthink or an iPad through a cloud folder. On the same disk the mirror uses hard links: the same file under a second name, taking no space (editing one edits the other). On another disk it makes copies. Key only ever changes files it put there."
       >
         <Row label="Keep a mirror folder">
