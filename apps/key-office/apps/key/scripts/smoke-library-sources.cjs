@@ -96,8 +96,15 @@ const assert = require("node:assert/strict");
     await chooser.getByRole("checkbox", { name: "Don’t ask again" }).check();
     await chooser.getByRole("button", { name: "Add", exact: true }).click();
     await chooser.waitFor({ state: "detached" });
-    for (let i = 0; i < 20 && (await page.evaluate(() => window.key.appSettings())).settings.addFromSource !== "origin"; i++) await page.waitForTimeout(100);
-    assert.equal((await page.evaluate(() => window.key.appSettings())).settings.addFromSource, "origin");
+    // "Don't ask again" is kept for this workspace (Workspace Settings › General › Adding sources).
+    {
+      const mode = async () => {
+        const [w] = await page.evaluate(() => window.key.workspaces());
+        return (await page.evaluate((id) => window.key.invoke("store_workspace_settings", {}, id), w.id)).effective.addFromSource;
+      };
+      for (let i = 0; i < 30 && (await mode()) !== "origin"; i++) await page.waitForTimeout(100);
+      assert.equal(await mode(), "origin");
+    }
     const thirdTitle = (await sourcePage.locator('.kx-work-list li[data-in-library="false"] .kx-work-title').first().textContent()).trim();
     const third = sourcePage.locator(".kx-work-list li", { hasText: thirdTitle });
     await third.locator(".kx-work-head").click();
@@ -109,7 +116,7 @@ const assert = require("node:assert/strict");
 
     // Settings › Libraries asks again.
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:open-settings", { detail: "libraries" })));
-    await page.evaluate(() => window.key.setAppSettings({ addFromSource: "ask" }));
+    await call("store_workspace_settings", { patch: { addFromSource: "ask" } });
 
     // A native view asks through the bridge: the shell shows the chooser over it.
     const pdfSource = await call("store_source", { id: pdf.id });
