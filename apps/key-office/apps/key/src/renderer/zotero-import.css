@@ -3,12 +3,13 @@
   width: 100%;
   container-type: inline-size;
 }
-/* A wider sheet than the app's default; with a list to pick from it takes most of the
-   window's height, and the list grows with it. */
+/* A wider sheet than the app's default; the scope step takes most of the window's height in
+   every scope (so switching Everything, Collections and Papers never resizes the sheet), and
+   the list grows with it. */
 .key-global-drawer.key-global-sheet:has(.kx-zotero-import) {
   --kx-modal-width: 820px;
 }
-.key-global-drawer.key-global-sheet:has(.kx-zotero-import[data-step="scope"]:not([data-scope="library"])) {
+.key-global-drawer.key-global-sheet:has(.kx-zotero-import[data-step="scope"]) {
   --kx-modal-min-height: 780px;
 }
 .kx-zotero-import .key-property-body {

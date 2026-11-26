@@ -23,6 +23,9 @@ pub enum TagPlan {
     Nest {
         parent: String,
         children: Vec<String>,
+        /// A new name for the parent, applied with the nesting.
+        #[serde(default, rename = "renameParent", skip_serializing_if = "Option::is_none")]
+        rename_parent: Option<String>,
     },
     Hierarchy {
         splits: Vec<Split>,
@@ -295,6 +298,9 @@ impl<'a> PlanContext<'a> {
                 Ok(PlannedChange { operation: op, label, lines, items, multiple: 0 })
             }
             TagPlan::Delete { tags } => {
+                if tags.is_empty() {
+                    return Err("Choose at least one tag.".into());
+                }
                 for t in tags {
                     let count = self.count_of(t);
                     if count > 0 {
@@ -309,29 +315,61 @@ impl<'a> PlanContext<'a> {
                 reparent(&mut op, tags, &|removed| field(&self.meta_of(removed), "parent"));
                 Ok(PlannedChange { operation: op, label: format!("Remove {}", one_or_many(tags)), lines, items: self.items_of(tags), multiple: 0 })
             }
-            TagPlan::Nest { parent, children } => {
+            TagPlan::Nest { parent, children, rename_parent } => {
                 let parent = self.existing_name(parent);
                 if parent.is_empty() {
                     return Err("Enter a parent name.".into());
                 }
-                if !self.has(&parent) {
-                    set_meta(&mut op, &parent, Some(Map::new()));
+                let renamed = rename_parent.as_deref().map(str::trim).filter(|r| !r.is_empty() && *r != parent).map(String::from);
+                if renamed.as_ref().is_some_and(|r| r.encode_utf16().count() > 128) {
+                    return Err("Tag names are at most 128 characters.".into());
                 }
+                let mut moved = 0;
+                let target = match &renamed {
+                    Some(to) if self.has(&parent) => {
+                        if key(to) != key(&parent) && self.has(to) {
+                            return Err(format!("There is already a tag {}: merge the two instead.", quote(to)));
+                        }
+                        let count = self.count_of(&parent);
+                        if count > 0 {
+                            op.replace.push(TagReplace { from: parent.clone(), to: vec![to.clone()] });
+                        }
+                        let mut meta = self.meta_of(&parent);
+                        if let Some(k) = self.meta_key(&parent).filter(|k| k != to) {
+                            op.tree.insert(k, Json::Null);
+                        }
+                        meta.retain(|_, v| !(v.is_null() || v.as_str() == Some("")));
+                        op.tree.insert(to.clone(), Json::Object(meta));
+                        let survivor = to.clone();
+                        reparent(&mut op, std::slice::from_ref(&parent), &|_| Some(survivor.clone()));
+                        lines.push(Line { before: parent.clone(), after: to.clone(), detail: Some(if count > 0 { format!("renamed on {}", plural(count, "item")) } else { "renamed".into() }) });
+                        moved = count;
+                        to.clone()
+                    }
+                    Some(to) => to.clone(),
+                    None => parent.clone(),
+                };
+                if !self.has(&parent) {
+                    set_meta(&mut op, &target, Some(Map::new()));
+                }
+                let renames = lines.len();
                 for child in children {
                     if key(child) == key(&parent) || self.is_ancestor(child, &parent) {
                         continue;
                     }
                     let mut meta = self.meta_of(child);
-                    meta.insert("parent".into(), Json::from(parent.clone()));
+                    meta.insert("parent".into(), Json::from(target.clone()));
                     set_meta(&mut op, child, Some(meta));
                     let shown = self.node(child).map(|n| n.name.clone()).unwrap_or_else(|| child.clone());
-                    lines.push(Line { before: child.clone(), after: format!("{parent} › {shown}"), detail: None });
+                    lines.push(Line { before: child.clone(), after: format!("{target} › {shown}"), detail: None });
                 }
-                if lines.is_empty() {
-                    return Err("A tag cannot go under itself or under a tag inside it.".into());
+                let nested = lines.len() - renames;
+                if nested == 0 {
+                    return Err(if children.is_empty() { "Add a tag to nest.".into() } else { "A tag cannot go under itself or under a tag inside it.".into() });
                 }
-                let what = if lines.len() == 1 { quote(&lines[0].before) } else { plural(lines.len(), "tag") };
-                Ok(PlannedChange { operation: op, label: format!("Nest {what} under {}", quote(&parent)), lines, items: 0, multiple: 0 })
+                let what = if nested == 1 { quote(&lines[renames].before) } else { plural(nested, "tag") };
+                let label = if renames > 0 { format!("Nest {what} under {}, renamed from {}", quote(&target), quote(&parent)) } else { format!("Nest {what} under {}", quote(&target)) };
+                Ok(PlannedChange { operation: op, label, lines, items: moved, multiple: 0 })
             }
             TagPlan::Unnest { tags } => {
                 for t in tags {
@@ -353,14 +391,25 @@ impl<'a> PlanContext<'a> {
                 Ok(PlannedChange { operation: op, label: label.into(), lines, items: 0, multiple: 0 })
             }
             TagPlan::Hierarchy { splits } => {
+                let splits: Vec<Split> = splits
+                    .iter()
+                    .map(|s| Split { tag: s.tag.clone(), path: s.path.iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect() })
+                    .filter(|s| !s.path.is_empty())
+                    .collect();
+                if splits.is_empty() {
+                    return Err("Choose at least one tag.".into());
+                }
+                if let Some(s) = splits.iter().find(|s| s.path.len() < 2) {
+                    return Err(format!("Give {} a path of at least two parts, like “Topic › {}”.", quote(&s.tag), s.path[0]));
+                }
                 let mut leaves: HashMap<String, usize> = HashMap::new();
-                for s in splits {
+                for s in &splits {
                     if let Some(leaf) = s.path.last() {
                         *leaves.entry(key(leaf)).or_insert(0) += 1;
                     }
                 }
                 let mut ensured: HashSet<String> = HashSet::new();
-                for Split { tag, path } in splits {
+                for Split { tag, path } in &splits {
                     let Some(leaf) = path.last() else { continue };
                     let chain: Vec<String> = path[..path.len() - 1].iter().map(|s| self.existing_name(s)).collect();
                     for (i, segment) in chain.iter().enumerate() {

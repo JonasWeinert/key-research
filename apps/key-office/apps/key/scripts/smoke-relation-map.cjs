@@ -95,6 +95,49 @@ function work(i) {
   };
 }
 
+const nodeKinds = (box) => box.locator(".kx-map-node:not(.kx-map-center)").evaluateAll((els) => [...new Set(els.map((e) => e.dataset.kind))].sort());
+
+/** A map's legend: All, each kind in its shape and colour with a count; a click shows that
+ * kind alone, again shows all; ⌘-click adds or removes a kind; hovering lights one up. */
+async function legendFilters(page, box, all, name) {
+  const legend = box.locator(".kx-map-legend");
+  await legend.getByRole("button", { name: "All" }).waitFor();
+  assert.equal(await legend.getByRole("button", { name: "All" }).getAttribute("aria-pressed"), "true");
+  const topics = legend.locator('.kx-map-kind[data-kind="topic"]');
+  assert.match(await topics.innerText(), /Topics\s*\d+/);
+  await topics.hover();
+  await box.locator(".kx-map-svg[data-hovering]").waitFor();
+  assert.ok((await box.locator('.kx-map-node[data-dim]:not([data-kind="topic"])').count()) > 0, "other kinds dim on legend hover");
+  assert.equal(await box.locator('.kx-map-node[data-kind="topic"][data-dim]').count(), 0);
+  await topics.click();
+  await page.waitForFunction((el) => [...el.querySelectorAll(".kx-map-node:not(.kx-map-center)")].every((n) => n.dataset.kind === "topic"), await box.elementHandle());
+  assert.deepEqual(await nodeKinds(box), ["topic"]);
+  assert.equal(await box.locator(".kx-map-center").count(), 1, "the centre stays");
+  assert.equal(await topics.getAttribute("aria-pressed"), "true");
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(600);
+  await box.screenshot({ path: path.join(box.temp, `${name}-topics.png`) });
+  await topics.click();
+  await page.waitForFunction(([el, n]) => el.querySelectorAll(".kx-map-node").length >= n, [await box.elementHandle(), all]);
+  assert.equal(await legend.getByRole("button", { name: "All" }).getAttribute("aria-pressed"), "true");
+  // ⌘-click: topics and people together, then people off again.
+  const second = (await legend.locator('.kx-map-kind[data-kind="person"]:not(:disabled)').count()) ? "person" : "source";
+  await topics.click();
+  await legend.locator(`.kx-map-kind[data-kind="${second}"]`).click({ modifiers: ["Meta"] });
+  await page.waitForFunction(([el, k]) => el.querySelectorAll(`.kx-map-node[data-kind="${k}"]`).length > 0, [await box.elementHandle(), second]);
+  assert.deepEqual(await nodeKinds(box), ["topic", second].sort());
+  await page.waitForTimeout(600);
+  await box.screenshot({ path: path.join(box.temp, `${name}-multi.png`) });
+  await legend.locator(`.kx-map-kind[data-kind="${second}"]`).click({ modifiers: ["Shift"] });
+  await page.waitForFunction((el) => [...el.querySelectorAll(".kx-map-node:not(.kx-map-center)")].every((n) => n.dataset.kind === "topic"), await box.elementHandle());
+  // Arrow keys move along the legend.
+  await topics.focus();
+  await page.keyboard.press("ArrowRight");
+  assert.notEqual(await page.evaluate(() => document.activeElement?.dataset.kind), "topic");
+  await legend.getByRole("button", { name: "All" }).click();
+  await page.waitForFunction(([el, n]) => el.querySelectorAll(".kx-map-node").length >= n, [await box.elementHandle(), all]);
+}
+
 (async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "key-relation-map-"));
   const fixtures = path.join(temp, "openalex");
@@ -163,6 +206,7 @@ function work(i) {
     await tabAction("open-content", { section: "topic", workspaceId: ws.id, entityId: "T1", title: "Open Access Publishing" });
     const topicPage = page.locator(".kx-entity-page:visible");
     const mapBox = topicPage.locator(".kx-map");
+    mapBox.temp = temp;
     await mapBox.locator(".kx-map-node.kx-map-center").waitFor();
     await mapBox.locator('.kx-map-node[data-kind="person"]').first().waitFor();
     assert.ok((await mapBox.locator(".kx-map-node").count()) >= 15, "a full map");
@@ -180,11 +224,11 @@ function work(i) {
     await page.waitForTimeout(250);
     await mapBox.screenshot({ path: path.join(temp, "topic-map-hover.png") });
 
-    // Kinds toggle from the legend; the strength slider thins the map.
+    // The legend filters: a kind alone (with the centre), again for all, ⌘-click to add.
     const before = await mapBox.locator(".kx-map-node").count();
-    await mapBox.locator('.kx-map-kind[data-kind="tag"]').click();
-    assert.equal(await mapBox.locator('.kx-map-node[data-kind="tag"]').count(), 0);
-    await mapBox.locator('.kx-map-kind[data-kind="tag"]').click();
+    await legendFilters(page, mapBox, before, "topic-legend");
+    await page.mouse.move(5, 5);
+    // The strength slider thins the map.
     await mapBox.locator(".kx-map-strength input").fill("3");
     await page.waitForFunction((n) => document.querySelectorAll(".kx-entity-page .kx-map-node").length < n, before);
     await mapBox.locator(".kx-map-strength input").fill("1");
@@ -248,6 +292,11 @@ function work(i) {
     await relations.scrollIntoViewIfNeeded();
     await page.waitForTimeout(500);
     await relations.screenshot({ path: path.join(temp, "paper-map-light.png") });
+    const paperMap = relations.locator(".kx-map");
+    paperMap.temp = temp;
+    await paperMap.locator(".kx-map-foot .kx-map-legend").waitFor();
+    await legendFilters(page, paperMap, await paperMap.locator(".kx-map-node").count(), "paper-legend");
+    await page.mouse.move(5, 5);
     await page.emulateMedia({ colorScheme: "dark" });
     await page.waitForTimeout(300);
     await relations.screenshot({ path: path.join(temp, "paper-map-dark.png") });
@@ -285,16 +334,24 @@ function work(i) {
     await page.locator(".ne-menu").getByText("Open Access Publishing").first().click();
     const embed = page.locator('.kx-note-page:visible .ne-item-embed[data-view="map"]');
     await embed.locator(".kx-map-node.kx-map-center").waitFor();
-    await embed.locator('.kx-map-kind[data-kind="collection"]').click();
+    const embedMap = embed.locator(".kx-map");
+    embedMap.temp = temp;
+    await legendFilters(page, embedMap, await embedMap.locator(".kx-map-node").count(), "embed-legend");
+    await embed.locator('.kx-map-kind[data-kind="topic"]').click();
+    await embed.locator('.kx-map-kind[data-kind="person"]').click({ modifiers: ["Meta"] });
     await page.waitForTimeout(1500);
     const saved = await call("store_note", { id: note.id });
     assert.match(saved.body, /```embed href="key:\/\/topic\/T1" view="map"/);
-    assert.match(saved.body, /kinds="topic,field,person,venue,tag,source"|kinds="topic,field,person,venue,tag"/, "the kinds shown are saved");
+    assert.match(saved.body, /kinds="topic,person"/, "the kinds shown are saved");
     assert.match(saved.body, /Relation map of Open Access Publishing: /, "a plain-text line for other readers");
     await embed.scrollIntoViewIfNeeded();
     await page.waitForTimeout(400);
     await shot(page, "note-embed");
     await embed.screenshot({ path: path.join(temp, "note-embed-crop.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(300);
+    await embed.screenshot({ path: path.join(temp, "note-embed-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
 
     // A link to a topic in a note offers the same choice.
     const linking = await call("store_note_save", { id: null, sourceId: null, title: "Reading list", body: "See [Peer Review Processes](key://topic/T5).\n" });

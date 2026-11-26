@@ -133,9 +133,13 @@
 }
 .kx-dup-group-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   margin-bottom: 6px;
+}
+.kx-dup-group-head > .kx-page-action {
+  flex: none;
 }
 .kx-dup-kind {
   padding: 1px 8px;
@@ -149,8 +153,16 @@
   color: var(--kx-accent);
 }
 .kx-dup-reason {
+  min-width: 0;
   color: var(--kx-text-2);
   font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.kx-dup-head {
+  flex-wrap: wrap;
+}
+.kx-dup-head p {
+  min-width: min(100%, 260px);
 }
 .kx-dup-members {
   display: grid;
@@ -166,8 +178,12 @@
   padding: 4px 2px;
   color: var(--kx-text-2);
 }
+.kx-dup-member > svg {
+  flex: none;
+}
 .kx-dup-member > span {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
 }
@@ -186,11 +202,34 @@
 }
 
 /* ── Merge sheet for sources ─────────────────────────────── */
+/* Side by side wants room: as wide as the window allows, up to a comfortable reading width. */
 .key-global-drawer.key-global-sheet:has(.kx-source-merge) {
-  --kx-modal-width: 860px;
+  --kx-modal-width: 1080px;
+}
+.kx-source-merge {
+  container-type: inline-size;
+}
+.kx-source-merge .key-property-body {
+  overflow-x: hidden;
+}
+.kx-source-merge-cards {
+  grid-template-columns: repeat(var(--kx-merge-count, 2), minmax(0, 1fr));
 }
 .kx-source-merge-cards .kx-merge-name {
   font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.kx-source-merge-cards .kx-merge-sub {
+  overflow-wrap: anywhere;
+}
+/* Only a genuinely narrow sheet stacks the sources instead of squeezing them. */
+@container (max-width: 560px) {
+  .kx-source-merge-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kx-merge-fields tbody th {
+    width: 76px;
+  }
 }
 .kx-merge-fields {
   width: 100%;

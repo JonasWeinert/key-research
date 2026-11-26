@@ -4,7 +4,7 @@
   "private": true,
   "productName": "Key",
   "description": "Key research workspace",
-  "license": "Apache-2.0",
+  "license": "MIT AND Apache-2.0",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -136,6 +136,10 @@
         "to": "NOTICE"
       },
       {
+        "from": "../../UPSTREAM-CHANGES.txt",
+        "to": "licenses/GENOFFICE-CHANGES.txt"
+      },
+      {
         "from": "../../LICENSE-UNICODE.txt",
         "to": "licenses/LICENSE-UNICODE.txt"
       },
@@ -144,8 +148,16 @@
         "to": "licenses/KEY-LICENSE"
       },
       {
+        "from": "../../../../NOTICE",
+        "to": "licenses/KEY-NOTICE"
+      },
+      {
         "from": "../../../../vendor/pdfium/LICENSE",
         "to": "licenses/PDFIUM-LICENSE"
+      },
+      {
+        "from": "../../../../vendor/pdfium/licenses",
+        "to": "licenses/pdfium"
       },
       {
         "from": "build/THIRD-PARTY-NOTICES.txt",

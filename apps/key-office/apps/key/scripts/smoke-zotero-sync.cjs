@@ -113,6 +113,28 @@ const library = (pdf) => ({
       await page.waitForTimeout(250);
       await sheet.screenshot({ path: path.join(shots, `${name}.png`) });
     };
+    // The scope bar is one row (never stretched into an oval), the same size in every scope,
+    // its labels whole, and what the scope lists sits below it.
+    const scopeBar = async () => {
+      const m = await sheet.evaluate((root) => {
+        const bar = root.querySelector(".kx-zotero-scope-tabs").getBoundingClientRect();
+        const labels = [...root.querySelectorAll(".kx-zotero-scope-tabs [role=tab]")].map((t) => ({ text: t.textContent, clipped: t.scrollWidth > t.clientWidth || t.querySelector(".key-segmented-label").scrollWidth > t.querySelector(".key-segmented-label").clientWidth, inside: t.getBoundingClientRect().left >= bar.left - 0.5 && t.getBoundingClientRect().right <= bar.right + 0.5 }));
+        const list = root.querySelector(".kx-zotero-tree")?.getBoundingClientRect();
+        const sheetBox = root.closest(".key-global-drawer")?.getBoundingClientRect() ?? root.getBoundingClientRect();
+        return { height: bar.height, width: bar.width, top: bar.top, labels, list: list && { top: list.top, height: list.height }, sheet: { height: sheetBox.height } };
+      });
+      assert.ok(m.height > 0 && m.height <= 40, `scope bar is one row (${m.height}px)`);
+      for (const l of m.labels) assert.ok(!l.clipped && l.inside, `scope label "${l.text}" is whole`);
+      if (m.list) assert.ok(m.list.top >= m.top + m.height && m.list.height > 100, "the list shows below the scope bar");
+      return m;
+    };
+    const scopeBarsMatch = (a, b, c) => {
+      assert.equal(a.height, b.height, "scope bar keeps its height across scopes");
+      assert.equal(b.height, c.height, "scope bar keeps its height across scopes");
+      assert.equal(a.width, b.width, "scope bar keeps its width across scopes");
+      assert.equal(b.width, c.width, "scope bar keeps its width across scopes");
+      assert.ok(Math.abs(a.sheet.height - b.sheet.height) < 2 && Math.abs(b.sheet.height - c.sheet.height) < 2, `the sheet keeps its height across scopes (${a.sheet.height}, ${b.sheet.height}, ${c.sheet.height})`);
+    };
     const zoteroWorkspace = async () => (await page.evaluate(() => window.key.workspaces())).find((w) => /\/Zotero$/.test(w.root));
     const call = async (command, args = {}) => page.evaluate(({ command, args, id }) => window.key.invoke(command, args, id), { command, args, id: (await zoteroWorkspace()).id });
     const sourceOf = async (key) => {
@@ -135,17 +157,21 @@ const library = (pdf) => ({
     await page.getByRole("heading", { name: "Import from Zotero" }).waitFor();
     await sheet.locator(".kx-zotero-count", { hasText: "3 items" }).waitFor();
     await shot("2-import-everything-light");
+    const barEverything = await scopeBar();
     await sheet.getByRole("tab", { name: "Collections" }).click();
     await sheet.getByRole("checkbox", { name: "Thesis" }).check();
     await sheet.getByRole("button", { name: "Expand Thesis" }).click();
     await sheet.locator(".kx-zotero-count", { hasText: "1 item" }).waitFor();
     await shot("3-import-collections-light");
+    const barCollections = await scopeBar();
+    assert.ok(barCollections.list, "the collection list shows");
     await sheet.getByRole("tab", { name: "Papers" }).click();
     await sheet.getByRole("searchbox", { name: "Search papers" }).fill("rossi");
     await sheet.getByRole("checkbox", { name: "Reading in groups" }).check();
     await sheet.getByRole("searchbox", { name: "Search papers" }).fill("");
     await sheet.locator(".kx-zotero-count", { hasText: "1 item" }).waitFor();
     await shot("4-import-papers-light");
+    scopeBarsMatch(barEverything, barCollections, await scopeBar());
     await sheet.getByRole("button", { name: "Import", exact: true }).click();
     await sheet.getByText("Imported into “Zotero”").waitFor();
     await sheet.getByRole("button", { name: "Done" }).click();
@@ -215,6 +241,17 @@ const library = (pdf) => ({
     await sheet.getByRole("heading", { name: "Change what Key syncs" }).waitFor();
     assert.equal(await sheet.getByRole("tab", { name: "Collections" }).getAttribute("aria-selected"), "true", "the synced scope is picked");
     assert.equal(await sheet.getByRole("checkbox", { name: "Thesis" }).isChecked(), true, "the synced collection is ticked");
+    const syncCollections = await scopeBar();
+    assert.ok(syncCollections.list, "the collection list shows below the scope bar");
+    await shot("8c-change-sync-collections-light");
+    await sheet.getByRole("tab", { name: "Everything" }).click();
+    const syncEverything = await scopeBar();
+    await shot("8d-change-sync-everything-light");
+    await sheet.getByRole("tab", { name: "Papers" }).click();
+    const syncPapers = await scopeBar();
+    await shot("8e-change-sync-papers-light");
+    scopeBarsMatch(syncEverything, syncCollections, syncPapers);
+    await sheet.getByRole("tab", { name: "Collections" }).click();
     await sheet.getByRole("button", { name: "Back" }).click();
     await overview.waitFor();
     await sheet.getByRole("button", { name: "Close" }).first().click();

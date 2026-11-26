@@ -224,12 +224,28 @@ fn splits_delimiter_paths_into_nested_short_names() {
 fn nests_without_cycles() {
     let mut index = messy();
     index.tree = tree(json!({ "Surveys": { "parent": "Methods" } }));
-    assert!(plan(&index, TagPlan::Nest { parent: "Surveys".into(), children: strings(&["Methods"]) }).is_err());
-    let abstracted = plan(&index, TagPlan::Nest { parent: "Learning".into(), children: strings(&["Machine learning", "Deep learning"]) }).unwrap();
+    assert!(plan(&index, TagPlan::Nest { parent: "Surveys".into(), children: strings(&["Methods"]), rename_parent: None }).is_err());
+    let abstracted = plan(&index, TagPlan::Nest { parent: "Learning".into(), children: strings(&["Machine learning", "Deep learning"]), rename_parent: None }).unwrap();
     assert_eq!(
         Json::Object(abstracted.operation.tree),
         json!({ "Learning": {}, "Machine learning": { "parent": "Learning" }, "Deep learning": { "parent": "Learning" } })
     );
+}
+
+#[test]
+fn nests_under_a_renamed_parent() {
+    let mut index = messy();
+    index.tree = tree(json!({ "Surveys": { "parent": "Methods", "color": "blue" } }));
+    let change = plan(&index, TagPlan::Nest { parent: "Methods".into(), children: strings(&["Interviews"]), rename_parent: Some("Research methods".into()) }).unwrap();
+    let replace: Vec<(String, Vec<String>)> = change.operation.replace.iter().map(|r| (r.from.clone(), r.to.clone())).collect();
+    assert_eq!(replace, vec![("Methods".into(), strings(&["Research methods"]))]);
+    let t = Json::Object(change.operation.tree.clone());
+    assert_eq!(t["Research methods"], json!({}));
+    assert_eq!(t["Surveys"], json!({ "parent": "Research methods", "color": "blue" }));
+    assert_eq!(t["Interviews"], json!({ "parent": "Research methods" }));
+    assert!(change.label.contains("renamed from"));
+    assert!(plan(&index, TagPlan::Nest { parent: "Methods".into(), children: strings(&["Interviews"]), rename_parent: Some("Surveys".into()) }).is_err());
+    assert!(plan(&index, TagPlan::Nest { parent: "Methods".into(), children: vec![], rename_parent: None }).is_err());
 }
 
 #[test]
