@@ -82,7 +82,13 @@ function Item({ item, onClick, className = "", hidden, expanded }: ItemProps) {
   const icon = iconName(item.icon);
   const content = (
     <>
-      {item.progress !== undefined || item.busy ? <ProgressRing fraction={item.busy ? undefined : item.progress} size={12} /> : icon && <Icon name={icon} size={12} />}
+      {item.progress !== undefined || item.busy ? (
+        <ProgressRing fraction={item.busy ? undefined : item.progress} size={12} />
+      ) : item.tone && item.tone !== "off" ? (
+        <span className="kx-status-light" aria-hidden="true" />
+      ) : (
+        icon && <Icon name={icon} size={12} />
+      )}
       {item.label && <span className="kx-status-label">{item.label}</span>}
     </>
   );
@@ -90,6 +96,7 @@ function Item({ item, onClick, className = "", hidden, expanded }: ItemProps) {
     className: `kx-status-item ${className}`,
     "data-status-item": item.id,
     "data-priority": item.priority,
+    "data-tone": item.tone,
     title: item.title ?? item.label,
     hidden,
   };
@@ -163,39 +170,71 @@ function StatusPopover({ anchor, label, onClose, children }: { anchor: HTMLEleme
   );
 }
 
-/** The Zotero library's sync status, gently polled. */
+/** The Zotero library's sync status: polled gently, again after each sync, and whether a
+ * sync is running now (main/zotero-sync.ts says so; only one that lasts shows). */
 function useZoteroSync(invoke: Invoke, workspaceId: string | undefined) {
   const [sync, setSync] = useState<ZoteroSyncStatus>();
+  const [syncing, setSyncing] = useState(false);
   useEffect(() => {
     if (!workspaceId) return setSync(undefined);
     let stopped = false;
+    let shown: ReturnType<typeof setTimeout> | undefined;
     const load = () =>
       void invoke<ZoteroSyncStatus>("store_zotero_plugin_status", {}, workspaceId)
         .then((s) => !stopped && setSync(s))
         .catch(() => {});
     load();
     const timer = setInterval(load, 30_000);
+    const off = bridge().on("zotero-syncing", (running) => {
+      clearTimeout(shown);
+      if (running) shown = setTimeout(() => !stopped && setSyncing(true), 600);
+      else {
+        setSyncing(false);
+        load();
+      }
+    });
+    const reload = () => load();
+    window.addEventListener("key:zotero-changed", reload);
     return () => {
       stopped = true;
       clearInterval(timer);
+      clearTimeout(shown);
+      off();
+      window.removeEventListener("key:zotero-changed", reload);
     };
   }, [invoke, workspaceId]);
-  return sync;
+  return { sync, syncing };
 }
 
-function zoteroItem(sync: ZoteroSyncStatus | undefined, now: number): StatusItem {
-  if (!sync?.configured) return { id: "zotero", label: "Zotero", icon: "sync", title: "Zotero sync is not set up. Click to set it up." };
-  if (sync.paused) return { id: "zotero", label: "Zotero paused", icon: "pause", title: "Zotero sync is paused" };
-  const synced = sync.syncedAt ?? sync.checkedAt;
+/** The Zotero item: a quiet light for how sync stands, the details in its tooltip. */
+export function zoteroItem(sync: ZoteroSyncStatus | undefined, syncing: boolean, now: number): StatusItem {
+  const base = { id: "zotero", icon: "sync" };
+  if (!sync?.configured)
+    return { ...base, label: "Set up Zotero", tone: "off", title: "Zotero sync is not set up. Click to import from Zotero or keep a workspace in sync with it." };
+  const synced = sync.syncedAt ?? null;
+  const details = [
+    sync.libraryName && `Library: ${sync.libraryName}`,
+    `${sync.items.toLocaleString()} ${sync.items === 1 ? "item" : "items"} synced`,
+    synced ? `Last synced ${ago(synced, now)} (${new Date(synced).toLocaleString()})` : "Not synced yet",
+    sync.checkedAt && sync.checkedAt !== synced ? `Last checked ${ago(sync.checkedAt, now)}` : "",
+    [sync.zoteroVersion && `Zotero ${sync.zoteroVersion}`, sync.pluginVersion && `Key Sync ${sync.pluginVersion}`].filter(Boolean).join(" · "),
+  ].filter(Boolean);
+  const title = (head: string, extra?: string | null) => [head, extra, ...details, "Click to see or change what syncs."].filter(Boolean).join("\n");
+  if (syncing) return { ...base, label: "Syncing Zotero…", busy: true, title: title("Syncing with Zotero now") };
+  if (sync.paused) return { ...base, label: "Zotero paused", icon: "pause", tone: "off", title: title("Zotero sync is paused") };
   switch (sync.connection) {
     case "not-running":
-      return { id: "zotero", label: "Zotero not running", icon: "sync", title: `Key catches up when Zotero runs.${synced ? ` Last synced ${ago(synced, now)}.` : ""}` };
+      return { ...base, label: "Zotero closed", tone: "idle", title: title("Zotero is not running. Key catches up when it runs.") };
     case "plugin-missing":
+      return { ...base, label: "Zotero needs Key Sync", tone: "warning", title: title("Install the Key Sync plugin in Zotero to keep syncing.", sync.message) };
     case "unpaired":
+      return { ...base, label: "Zotero not connected", tone: "warning", title: title("Key Sync in Zotero needs to be connected to Key again.", sync.message) };
     case "error":
-      return { id: "zotero", label: "Zotero needs attention", icon: "sync", title: sync.message || "The last sync did not finish" };
+      return { ...base, label: "Zotero sync failed", tone: "error", title: title("The last sync did not finish.", sync.message) };
+    case "off":
+      return { ...base, label: "Zotero sync off", tone: "off", title: title("Zotero sync is turned off") };
     default:
-      return { id: "zotero", label: synced ? `Zotero synced ${ago(synced, now)}` : "Zotero", icon: "sync", title: synced ? `Last synced ${new Date(synced).toLocaleString()}` : "Waiting for the first sync" };
+      return { ...base, label: synced ? `Zotero · ${ago(synced, now)}` : "Zotero", tone: "ready", title: title(synced ? "In sync with Zotero" : "Waiting for the first sync") };
   }
 }
 
@@ -220,7 +259,7 @@ export function StatusBar({
   onOpenLibrary: () => void;
 }) {
   const status = useLibraryStatus(invoke, workspaceId);
-  const sync = useZoteroSync(invoke, zoteroWorkspaceId);
+  const { sync, syncing } = useZoteroSync(invoke, zoteroWorkspaceId);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);
@@ -282,7 +321,7 @@ export function StatusBar({
   // Fixed items first, so they do not move when work comes and goes.
   const left: StatusItem[] = [
     ...(workspaceName ? [{ id: "workspace", label: workspaceName, icon: "folder", title: "Switch workspace", priority: 70 }] : []),
-    { ...zoteroItem(sync, now), priority: 40 },
+    { ...zoteroItem(sync, syncing, now), priority: 40 },
     ...(work ? [work] : []),
   ];
   const bar = useRef<HTMLElement>(null);

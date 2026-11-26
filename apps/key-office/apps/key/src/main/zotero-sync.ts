@@ -18,6 +18,8 @@ export interface ZoteroSyncDeps {
   /** The Zotero workspace, if it exists (never created here). */
   workspace: () => Promise<Workspace | undefined>;
   changed: () => void;
+  /** A sync with Zotero starts (true) or ends (false). */
+  syncing?: (running: boolean) => void;
   /** Throws unless the IPC sender is a Key window. */
   check: (sender: number) => void;
 }
@@ -61,7 +63,8 @@ export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
         delay = IDLE;
         return;
       }
-      const result = (await deps.invoke("store_zotero_plugin_sync", { force, $background: !force }, workspace.id)) as {
+      deps.syncing?.(true);
+      const result = (await deps.invoke("store_zotero_plugin_sync", { force, $background: !force }, workspace.id).finally(() => deps.syncing?.(false))) as {
         ran?: boolean;
         connection?: string;
       } | null;

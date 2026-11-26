@@ -152,6 +152,7 @@ const assert = require("node:assert/strict");
     assert.equal(await work.getAttribute("aria-expanded"), "true");
     const [pop, anchor] = [await popover.boundingBox(), await work.boundingBox()];
     assert(pop.y + pop.height <= anchor.y, `the popover hangs above its item: ${JSON.stringify({ pop, anchor })}`);
+    await page.waitForTimeout(300);
     await shot("status-bar-activity-light");
     await page.keyboard.press("Escape");
     await popover.waitFor({ state: "detached" });
@@ -161,7 +162,7 @@ const assert = require("node:assert/strict");
     await page.locator(".kx-library .kx-row").nth(1).click({ modifiers: ["Shift"] });
     await context.locator('[data-status-item="selected"]', { hasText: "2 selected" }).waitFor();
     await page.evaluate(() => window.key.setAppSettings({ theme: "dark" }));
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(700);
     await shot("status-bar-library-dark");
     await page.evaluate(() => window.key.setAppSettings({ theme: "light" }));
     await page.evaluate((id) => window.key.invoke("store_index_control", { action: "resume" }, id), ws.id);
@@ -181,17 +182,46 @@ const assert = require("node:assert/strict");
     await shot("status-bar-split-light");
 
     // Short of room, the lowest-priority items go first and the bar never wraps.
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(560, 820));
-    await until(
-      async () => (await bar.locator('[data-status-item="workspace"]').getAttribute("hidden")) !== null,
-      "the workspace item gives way first",
+    // The reader (focused again) asks for far more room than there is.
+    const readerGroup = groups.groups.find((g) => g.tabIds.includes(pdfTab.id));
+    await page.evaluate((groupId) => window.key.tabAction("focus-group", { groupId }), readerGroup.id);
+    await reader.evaluate(() =>
+      window.key.setStatusItems(
+        Array.from({ length: 6 }, (_, i) => ({ id: `wide${i}`, label: `A long reader status item number ${i + 1} that wants plenty of room`, priority: 10 + i * 15 })),
+      ),
     );
-    const fit = await bar.evaluate((el) => ({ height: el.offsetHeight, overflow: [...el.children].some((c) => c.scrollWidth > c.clientWidth + 1) }));
-    assert.deepEqual(fit, { height: 24, overflow: false }, "one line, nothing cut");
-    assert.equal(await count.isVisible(), true, "the view's count stays");
+    await context.locator('[data-status-item="wide0"]').waitFor({ state: "attached" });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 820));
+    await until(async () => (await bar.locator("[data-status-item][hidden]").count()) > 0, "items give way");
+    await page.waitForTimeout(200);
+    const fit = await bar.evaluate((el) => {
+      const items = [...el.querySelectorAll("[data-status-item]")].map((n) => ({ id: n.dataset.statusItem, priority: Number(n.dataset.priority ?? 50), hidden: n.hidden }));
+      return {
+        height: el.offsetHeight,
+        overflow: [...el.children].some((c) => c.scrollWidth > c.clientWidth + 1),
+        lowestShown: Math.min(...items.filter((i) => !i.hidden).map((i) => i.priority)),
+        highestHidden: Math.max(...items.filter((i) => i.hidden).map((i) => i.priority)),
+        workspace: items.find((i) => i.id === "workspace")?.hidden,
+      };
+    });
+    assert.equal(fit.height, 24, "one line");
+    assert.equal(fit.overflow, false, `nothing cut: ${JSON.stringify(fit)}`);
+    assert(fit.highestHidden <= fit.lowestShown, `the lowest priorities go first: ${JSON.stringify(fit)}`);
+    assert.equal(fit.workspace, false, "the workspace stays");
     await shot("status-bar-narrow-light");
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 820));
-    await until(async () => (await bar.locator('[data-status-item="workspace"]').getAttribute("hidden")) === null, "room again");
+    await reader.evaluate(() => window.key.setStatusItems([{ id: "refs", label: "References", icon: "quote" }]));
+    await until(async () => (await bar.locator("[data-status-item][hidden]").count()) === 0, "room again");
+
+    // Zotero, not set up: a muted "Set up Zotero" that opens the Zotero sheet over any tab.
+    const zotero = bar.locator('[data-status-item="zotero"]');
+    assert.equal(await zotero.getAttribute("data-tone"), "off");
+    assert.match(await zotero.innerText(), /Set up Zotero/);
+    await zotero.click();
+    await page.getByRole("heading", { name: "Bring in your Zotero library" }).waitFor();
+    await shot("status-bar-zotero-sheet-light");
+    await page.keyboard.press("Escape");
+    await page.locator(".kx-zotero-import").waitFor({ state: "detached" });
 
     // An uncaught main-process error and an unhandled rejection: notices, not boxes.
     await app.evaluate(() => {

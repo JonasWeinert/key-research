@@ -14,7 +14,9 @@
  * show no icon); `active` draws the item selected (a toggle that is on); `title` is the
  * tooltip; `text` makes it plain information ("2 items"), not a button; `progress` (0–1)
  * or `busy` draws a progress ring in place of the icon; `priority` (0–100, default 50)
- * decides what goes first when the bar is short of room: the lowest-priority items, the
+ * decides what goes first when the bar is short of room;
+ * `tone` draws a small status light in place of the icon ("ready" green, "idle" grey,
+ * "warning" amber and "error" red, both tinting the label too) or, as "off", mutes the item: the lowest-priority items, the
  * shell's own included, are hidden until everything left fits on one line. A DOM view can
  * also hang a popover above an item (useStatusItems' `popover`); native views get clicks. */
 export interface StatusItem {
@@ -27,7 +29,10 @@ export interface StatusItem {
   progress?: number;
   busy?: boolean;
   priority?: number;
+  tone?: StatusTone;
 }
+export type StatusTone = "ready" | "idle" | "warning" | "error" | "off";
+const TONES: StatusTone[] = ["ready", "idle", "warning", "error", "off"];
 
 /** The bar's height; native views end this far above the window's bottom. */
 export const STATUS_BAR_HEIGHT = 24;
@@ -69,6 +74,7 @@ export function sanitizeStatusItems(value: unknown): StatusItem[] {
       ...(item.text === true ? { text: true } : {}),
       ...(typeof item.progress === "number" && Number.isFinite(item.progress) ? { progress: Math.min(1, Math.max(0, item.progress)) } : {}),
       ...(item.busy === true ? { busy: true } : {}),
+      ...(TONES.includes(item.tone as StatusTone) ? { tone: item.tone as StatusTone } : {}),
       ...(typeof item.priority === "number" && Number.isFinite(item.priority) ? { priority: Math.min(100, Math.max(0, Math.round(item.priority))) } : {}),
     });
     if (out.length >= MAX_STATUS_ITEMS) break;

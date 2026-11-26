@@ -1,7 +1,9 @@
 // The Zotero sheet. First: import once, or keep in sync through the Key Sync plugin. Then,
 // for either: everything, chosen collections (a tree with item counts) or chosen papers (a
 // searchable list), and what comes along; then progress and a summary. Importing again
-// updates what was imported before and keeps edits made in Key.
+// updates what was imported before and keeps edits made in Key. Opened again once Zotero is
+// set up, the sheet starts on an overview of what is set up instead: the mode, how Zotero is
+// reached, what is synced and when, with ways to change it, sync now, pause or stop.
 import { Button } from "@key/design-system";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
@@ -17,9 +19,11 @@ import {
   type ZoteroProbe,
   type ZoteroProgress,
   type ZoteroReport,
+  type ZoteroStatus,
   type ZoteroSyncOutcome,
+  type ZoteroSyncStatus,
 } from "./library-api";
-import { blocker, choiceOf, filterItems, optionsOf, type Choice, type Mode, type Scope } from "./zotero-sheet-model";
+import { ago, blocker, choiceOf, filterItems, optionsOf, syncLine, type Choice, type Mode, type Scope } from "./zotero-sheet-model";
 import "./zotero-import.css";
 
 type Collection = ZoteroPreview["collections"][number];
@@ -34,7 +38,7 @@ export function ZoteroImportSheet(props: Omit<Props, "onDone"> & { onDone?: Prop
   const [busy, setBusy] = useState(false);
   return (
     <GlobalDrawer onClose={props.onClose} busy={busy} presentation="sheet" label="Zotero">
-      <ZoteroImport {...props} onDone={props.onDone ?? (() => {})} onBusy={setBusy} />
+      <ZoteroImport overview {...props} onDone={props.onDone ?? (() => {})} onBusy={setBusy} />
     </GlobalDrawer>
   );
 }
@@ -51,12 +55,26 @@ interface Props {
   initialMode?: Mode;
   /** The sync's current options, when changing what it covers. */
   current?: ZoteroOptions | null;
+  /** Start on what is already set up (when anything is), not on the first step. */
+  overview?: boolean;
 }
 
-export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, initialMode, current }: Props) {
+/** What Zotero is already set up as: the sync (through the plugin) and the last import. */
+interface Existing {
+  workspace: WorkspaceSummary;
+  sync?: ZoteroSyncStatus;
+  imported?: ZoteroStatus;
+}
+
+/** Tells the shell (the status bar) that Zotero's setup changed. */
+const zoteroChanged = () => window.dispatchEvent(new CustomEvent("key:zotero-changed"));
+
+export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, initialMode, current: given, overview }: Props) {
   const [mode, setMode] = useState<Mode>(initialMode ?? "import");
-  const [step, setStep] = useState<"mode" | "scope">(initialMode ? "scope" : "mode");
-  const [choice, setChoice] = useState<Choice>(() => choiceOf(current));
+  const [step, setStep] = useState<"checking" | "overview" | "mode" | "scope">(initialMode ? "scope" : overview ? "checking" : "mode");
+  const [current, setCurrent] = useState(given);
+  const [existing, setExisting] = useState<Existing>();
+  const [choice, setChoice] = useState<Choice>(() => choiceOf(given));
   const [preview, setPreview] = useState<ZoteroPreview>();
   const [items, setItems] = useState<ZoteroItem[]>();
   const [error, setError] = useState("");
@@ -66,10 +84,72 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
   const [token, setToken] = useState("");
   const [library, setLibrary] = useState<number>();
   const request = useMemo(() => optionsOf(choice), [choice]);
-  const changing = !!current;
+  const changing = !!current && mode === "sync";
+
+  // What is set up already, read from the Zotero workspace (there once anything came across).
+  const readExisting = async (): Promise<Existing | undefined> => {
+    const zotero = (await bridge().workspaces?.().catch(() => []))?.find((w) => /\/Zotero$/.test(w.root));
+    if (!zotero) return undefined;
+    const [sync, imported] = await Promise.all([
+      invoke<ZoteroSyncStatus>("store_zotero_plugin_status", {}, zotero.id).catch(() => undefined),
+      invoke<ZoteroStatus>("store_zotero_status", {}, zotero.id).catch(() => undefined),
+    ]);
+    return sync?.configured || imported?.at ? { workspace: zotero, sync, imported } : undefined;
+  };
+  useEffect(() => {
+    if (step !== "checking") return;
+    let stale = false;
+    void readExisting().then((found) => {
+      if (stale) return;
+      setExisting(found);
+      if (!found) return setStep("mode");
+      // The overview counts what the sync (or the last import) covers.
+      const options = found.sync?.configured ? found.sync.options : found.imported?.options;
+      setMode(found.sync?.configured ? "sync" : "import");
+      setChoice(choiceOf(options));
+      setStep("overview");
+    });
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+  const refresh = async () => {
+    const found = await readExisting();
+    setExisting(found);
+    zoteroChanged();
+    if (!found) {
+      setCurrent(undefined);
+      setChoice(choiceOf(undefined));
+      setMode("import");
+      setStep("mode");
+    }
+  };
+  const [acting, setActing] = useState<string>();
+  const act = async (what: string, work: () => Promise<unknown>) => {
+    setActing(what);
+    setError("");
+    try {
+      await work();
+    } catch (e) {
+      setError(message(e));
+    } finally {
+      await refresh();
+      setActing(undefined);
+    }
+  };
+  /** From the overview to the pickers, with what is set up ticked. */
+  const change = (to: Mode) => {
+    const options = existing?.sync?.configured ? existing.sync.options : existing?.imported?.options;
+    setMode(to);
+    setCurrent(to === "sync" && existing?.sync?.configured ? existing.sync.options : undefined);
+    setChoice(choiceOf(options));
+    setStep("scope");
+  };
 
   // The counts follow every change of choice; the library is read once and kept by the host.
   useEffect(() => {
+    if (step === "checking") return;
     let stale = false;
     const timer = setTimeout(() => {
       void invoke<ZoteroPreview>("store_zotero_preview", request as unknown as Record<string, unknown>, workspaceId)
@@ -81,7 +161,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoke, workspaceId, request]);
+  }, [invoke, workspaceId, request, step === "checking"]);
 
   // The paper list, the first time it is needed.
   useEffect(() => {
@@ -138,6 +218,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
       stop = pollProgress(workspace.id);
       if (mode === "import") {
         const done = await bridge().importZotero(request);
+        zoteroChanged();
         setResult(done);
         onDone(done.workspace, done.report, mode);
         return;
@@ -155,6 +236,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
       const outcome = await invoke<ZoteroSyncOutcome>("store_zotero_plugin_sync", { force: true }, workspace.id);
       if (outcome.connection !== "ok" || !outcome.report) throw new Error(outcome.message || "Zotero did not answer. Key will try again on its own.");
       void bridge().zoteroPlugin?.("wake").catch(() => {});
+      zoteroChanged();
       setResult({ workspace, report: outcome.report });
       onDone(workspace, outcome.report, mode);
     } catch (e) {
@@ -167,9 +249,20 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
 
   const blocked = blocker(mode, choice, probe?.connection);
   const verb = mode === "import" ? "import" : "sync";
-  const title = step === "mode" ? "Bring in your Zotero library" : changing ? "Change what Key syncs" : mode === "import" ? "Import from Zotero" : "Keep in sync with Zotero";
+  const syncing = !!existing?.sync?.configured;
+  const title = step === "overview" || step === "checking"
+    ? "Zotero"
+    : step === "mode"
+      ? "Bring in your Zotero library"
+      : changing ? "Change what Key syncs" : mode === "import" ? "Import from Zotero" : "Keep in sync with Zotero";
   const lede =
-    step === "mode"
+    step === "checking"
+      ? ""
+      : step === "overview"
+        ? syncing
+          ? `“${existing!.workspace.name}” is kept in sync with Zotero. Key only reads from Zotero.`
+          : `Imported into “${existing!.workspace.name}” ${ago(existing?.imported?.at, Date.now())}. Key only reads from Zotero.`
+        : step === "mode"
       ? "Key only reads from Zotero; nothing there is changed."
       : mode === "import"
         ? preview
@@ -190,6 +283,10 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
           <Summary report={result.report} workspace={result.workspace} mode={mode} />
         ) : running ? (
           <ProgressView progress={progress} preview={preview} mode={mode} />
+        ) : step === "checking" ? (
+          <div className="kx-zotero-checking" aria-busy="true" />
+        ) : step === "overview" && existing ? (
+          <Overview existing={existing} choice={choice} preview={preview} />
         ) : step === "mode" ? (
           <div className="kx-zotero-modes" role="radiogroup" aria-label="How to bring it in">
             <ModeCard
@@ -258,11 +355,62 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
             {blocked && (choice.scope !== "library" || mode === "sync") ? blocked : preview ? <Counts counts={preview.selected} /> : null}
           </span>
         )}
+        {step === "overview" && existing && !result && !running && (
+          <Button
+            type="button"
+            className="kx-zotero-stop"
+            disabled={!!acting}
+            onClick={() => {
+              if (!syncing) return change("sync");
+              if (window.confirm("Stop keeping this library in sync with Zotero? What came from Zotero stays in Key."))
+                void act("stop", () => invoke("store_zotero_plugin_configure", { remove: true }, existing.workspace.id).then(() => bridge().zoteroPlugin?.("wake")));
+            }}
+          >
+            {syncing ? "Stop syncing" : "Keep in sync instead…"}
+          </Button>
+        )}
         <span className="kx-footer-spacer" />
         {result ? (
           <Button variant="primary" onClick={onClose}>
             Done
           </Button>
+        ) : step === "checking" ? (
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+        ) : step === "overview" && existing ? (
+          syncing ? (
+            <>
+              <Button
+                type="button"
+                disabled={!!acting}
+                onClick={() => void act("pause", () => invoke("store_zotero_plugin_configure", { paused: !existing.sync!.paused }, existing.workspace.id).then(() => bridge().zoteroPlugin?.("wake")))}
+              >
+                {existing.sync!.paused ? "Resume" : "Pause"}
+              </Button>
+              {!existing.sync!.paused && (
+                <Button
+                  type="button"
+                  disabled={!!acting}
+                  onClick={() => void act("sync", () => invoke("store_zotero_plugin_sync", { force: true }, existing.workspace.id))}
+                >
+                  {acting === "sync" ? "Syncing…" : "Sync now"}
+                </Button>
+              )}
+              <Button variant="primary" className="key-property-primary" disabled={!!acting} onClick={() => change("sync")}>
+                Change what syncs…
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button type="button" onClick={onClose}>
+                Close
+              </Button>
+              <Button variant="primary" className="key-property-primary" onClick={() => change("import")}>
+                Import again…
+              </Button>
+            </>
+          )
         ) : step === "mode" ? (
           <>
             <Button type="button" onClick={onClose}>
@@ -275,7 +423,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
         ) : (
           <>
             {!initialMode ? (
-              <Button type="button" disabled={running} onClick={() => setStep("mode")}>
+              <Button type="button" disabled={running} onClick={() => setStep(existing ? "overview" : "mode")}>
                 Back
               </Button>
             ) : (
@@ -294,6 +442,80 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
           </>
         )}
       </footer>
+    </div>
+  );
+}
+
+/** What is set up: the mode, how Zotero is reached, what is covered and when it last ran. */
+function Overview({ existing, choice, preview }: { existing: Existing; choice: Choice; preview?: ZoteroPreview }) {
+  const now = Date.now();
+  const { sync, imported } = existing;
+  const syncing = !!sync?.configured;
+  const names = (keys: Set<string>) =>
+    preview?.collections
+      .filter((c) => keys.has(c.key))
+      .map((c) => c.name)
+      .sort((a, b) => a.localeCompare(b)) ?? [];
+  const chosen = names(choice.collections);
+  const what =
+    choice.scope === "library"
+      ? "Everything"
+      : choice.scope === "collections"
+        ? `${plural(choice.collections.size, "collection")}${chosen.length ? `: ${chosen.slice(0, 4).join(", ")}${chosen.length > 4 ? ` and ${n(chosen.length - 4)} more` : ""}` : ""}`
+        : plural(choice.papers.size, "chosen paper");
+  const bring = [
+    choice.bring.attachments && "PDFs and files",
+    choice.bring.notes && "notes",
+    choice.bring.annotations && "PDF annotations",
+    choice.bring.mirrorCollections && "collections",
+  ].filter(Boolean) as string[];
+  const report = syncing ? sync!.report : imported?.report;
+  const tone = !syncing ? "off" : sync!.paused ? "off" : sync!.connection === "ok" || !sync!.connection ? "ready" : sync!.connection === "not-running" ? "idle" : "warning";
+  return (
+    <div className="kx-zotero-overview">
+      <div className="kx-zotero-state" data-tone={tone} role="status">
+        <span className="kx-zotero-state-light" aria-hidden="true" />
+        <div>
+          <strong>{syncing ? (sync!.paused ? "Sync paused" : "Keeping in sync") : "Imported once"}</strong>
+          <span>{syncing ? syncLine(sync!, now) : `Last import ${ago(imported?.at, now)}. Later changes in Zotero come across when you import again.`}</span>
+          {syncing && (sync!.zoteroVersion || sync!.pluginVersion) && (
+            <small>{[sync!.libraryName, sync!.zoteroVersion && `Zotero ${sync!.zoteroVersion}`, sync!.pluginVersion && `Key Sync ${sync!.pluginVersion}`].filter(Boolean).join(" · ")}</small>
+          )}
+        </div>
+      </div>
+      <dl className="kx-zotero-facts">
+        <dt>{syncing ? "Syncing" : "Imported"}</dt>
+        <dd data-fact="scope">
+          {what}
+          {preview && (
+            <small>
+              <Counts counts={preview.selected} />
+            </small>
+          )}
+        </dd>
+        <dt>In Key</dt>
+        <dd data-fact="items">
+          {plural(syncing ? sync!.items : (report?.items ?? 0), "item")} in “{existing.workspace.name}”
+          {syncing && <small>{sync!.syncedAt ? `Last synced ${ago(sync!.syncedAt, now)}` : "Not synced yet"}</small>}
+        </dd>
+        <dt>Brought along</dt>
+        <dd data-fact="bring">{bring.length ? bring.join(", ").replace(/^./, (c) => c.toUpperCase()) : "Items only"}</dd>
+        {report && (
+          <>
+            <dt>Last run</dt>
+            <dd data-fact="report">
+              {[
+                report.added ? `${plural(report.added, "item")} added` : "",
+                report.updated ? `${plural(report.updated, "item")} updated` : "",
+                report.unchanged ? `${n(report.unchanged)} up to date` : "",
+              ]
+                .filter(Boolean)
+                .join(" · ") || "Nothing changed"}
+            </dd>
+          </>
+        )}
+      </dl>
+      {!!report?.conflictCount && <Conflicts report={report} />}
     </div>
   );
 }
@@ -685,7 +907,7 @@ function Summary({ report, workspace, mode }: { report: ZoteroReport; workspace:
           <li key={line}>{line}</li>
         ))}
       </ul>
-      {mode === "sync" && <small>Key keeps following Zotero while both are open. Pause or change the sync in Settings → Libraries.</small>}
+      {mode === "sync" && <small>Key keeps following Zotero while both are open. Pause or change the sync from Zotero in the status bar.</small>}
       {report.conflictCount > 0 && <Conflicts report={report} />}
     </div>
   );

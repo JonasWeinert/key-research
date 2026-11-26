@@ -480,6 +480,89 @@
 .kx-zotero-conflicts small {
   color: var(--kx-text-3);
 }
+/* Opened again: what is set up, before anything changes. */
+.key-global-drawer.key-global-sheet:has(.kx-zotero-import[data-step="overview"]),
+.key-global-drawer.key-global-sheet:has(.kx-zotero-import[data-step="checking"]) {
+  width: min(560px, calc(100vw - 48px));
+  margin-left: calc(min(560px, 100vw - 48px) / -2);
+}
+.kx-zotero-checking {
+  min-height: 180px;
+}
+.kx-zotero-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0 6px;
+}
+.kx-zotero-state {
+  --light: var(--kx-text-3);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+}
+.kx-zotero-state[data-tone="ready"] {
+  --light: var(--kx-green);
+}
+.kx-zotero-state[data-tone="warning"] {
+  --light: var(--kx-amber);
+}
+.kx-zotero-state-light {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--light);
+}
+.kx-zotero-state[data-tone="idle"] .kx-zotero-state-light {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--light);
+}
+.kx-zotero-state > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.kx-zotero-state strong {
+  color: var(--kx-text);
+  font-weight: 600;
+}
+.kx-zotero-state span {
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.kx-zotero-state small,
+.kx-zotero-facts small {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-zotero-facts {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0;
+  padding: 0 4px;
+}
+.kx-zotero-facts dt {
+  color: var(--kx-text-2);
+}
+.kx-zotero-facts dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--kx-text);
+}
+.kx-zotero-stop {
+  color: var(--kx-red);
+}
 .kx-zotero-summary small {
   max-width: 380px;
   color: var(--kx-text-3);

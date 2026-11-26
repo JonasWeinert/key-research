@@ -47,7 +47,6 @@ import {
 import { DatabaseToolbar, DatabaseView, useDatabaseViewState, type DatabaseViewHandle } from "./DatabaseView";
 import { DEFAULT_SORTS, SOURCE_SORTS, SourceCard, legacyColumnSettings, useSourceColumns } from "./library-columns";
 import "./reference-library.css";
-import { ZoteroImportSheet } from "./ZoteroImport";
 
 const PAGE = 300;
 const ROW = 58;
@@ -116,7 +115,6 @@ export default function ReferenceLibrary({
   const [agent, setAgent] = useState<{ targets: Source[]; name?: string }>();
   const [tagManager, setTagManager] = useState(false);
   const [identifier, setIdentifier] = useState(false);
-  const [zotero, setZotero] = useState(false);
   // Layout, columns and sorting are remembered per workspace library.
   const [viewState, setViewState] = useDatabaseViewState(`library:${workspaceId}`, {
     layout: (() => {
@@ -651,7 +649,7 @@ export default function ReferenceLibrary({
                 setInspector(source);
               }}
               onIdentifier={() => setIdentifier(true)}
-              onZotero={() => setZotero(true)}
+              onZotero={() => window.dispatchEvent(new CustomEvent("key:open-zotero"))}
             />
           </div>
         </header>
@@ -873,18 +871,6 @@ export default function ReferenceLibrary({
           workspaceId={workspaceId}
           onClose={() => setTagManager(false)}
           onSaved={() => void load(0)}
-        />
-      )}
-      {zotero && (
-        <ZoteroImportSheet
-          invoke={invoke}
-          workspaceId={workspaceId}
-          onClose={() => setZotero(false)}
-          onDone={(workspace, report, mode) => {
-            setToast({ text: mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”` });
-            selectLibrary({ workspaceId: workspace.id });
-            libraryChanged();
-          }}
         />
       )}
       {identifier && (
