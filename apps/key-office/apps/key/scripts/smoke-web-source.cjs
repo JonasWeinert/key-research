@@ -364,11 +364,14 @@ async function serve() {
     await reopened.evaluate(() => document.querySelector('mark.key-hl[data-color="green"]').click());
     const info = shell.locator(".key-highlight-info");
     await info.waitFor();
+    // A quote left on the clipboard (an earlier run) must not pass for this one.
+    await app.evaluate(({ clipboard }) => clipboard.clear());
     await info.getByRole("button", { name: "Cite" }).click();
     await until(async () => (await app.evaluate(({ clipboard }) => clipboard.readHTML())).includes("data-key-quote"), "the quote on the clipboard");
     const clip = await app.evaluate(({ clipboard }) => clipboard.readText());
     report.cite = clip;
-    assert(/^“Rivers supplied water, food and a road for trade\.” — Okafor & Lindqvist \(2021\), How rivers shaped early cities$/.test(clip), `cite text: ${clip}`);
+    // Attributed in the chosen citation style (APA by default).
+    assert(/^“Rivers supplied water, food and a road for trade\.” — Okafor & Lindqvist, 2021$/.test(clip), `cite text: ${clip}`);
     const note = await call("store_note_save", { id: null, sourceId: null, title: "River notes", body: "Draft." });
     await shell.evaluate(({ id, noteId }) => window.key.tabAction("open-content", { section: "note", workspaceId: id, noteId, title: "River notes" }), { id: ws.id, noteId: note.id });
     const editor = shell.locator(".kx-note-page .ProseMirror, .ProseMirror").last();

@@ -1,0 +1,142 @@
+/* Settings › Citations (CitationSettings.tsx): the style pop-up, its searchable list and the preview. */
+.kx-cite-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+}
+.kx-cite-current > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kx-cite-current svg {
+  flex: none;
+  color: var(--kx-text-2);
+}
+
+.kx-cite-picker {
+  display: grid;
+  gap: 8px;
+  padding: 8px 12px 10px;
+}
+.kx-cite-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  color: var(--kx-text-3);
+}
+.kx-cite-search:focus-within {
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+.kx-cite-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--kx-text);
+  font: 12.5px var(--kx-font);
+}
+.kx-cite-search input::placeholder {
+  color: var(--kx-text-3);
+}
+.kx-cite-list {
+  display: grid;
+  max-height: 248px;
+  overflow-y: auto;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+}
+.kx-cite-list button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 8px 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--kx-text);
+  font: 12.5px var(--kx-font);
+  text-align: left;
+}
+.kx-cite-list button:hover {
+  background: color-mix(in srgb, var(--kx-text) 6%, transparent);
+}
+.kx-cite-list button[aria-selected="true"] {
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+}
+.kx-cite-list button:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--kx-accent);
+}
+.kx-cite-check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 14px;
+}
+.kx-cite-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-cite-format,
+.kx-cite-tag {
+  flex: none;
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-cite-list button[aria-selected="true"] .kx-cite-format,
+.kx-cite-list button[aria-selected="true"] .kx-cite-tag {
+  color: inherit;
+  opacity: 0.8;
+}
+.kx-cite-tag {
+  padding: 0 5px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 0.5px currentColor;
+}
+.kx-cite-empty {
+  margin: 0;
+  padding: 10px 8px;
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+
+.kx-cite-preview {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px 12px;
+}
+.kx-cite-preview small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-cite-preview p {
+  margin: 0 0 6px;
+  color: var(--kx-text);
+  font: 12.5px/1.45 var(--kx-font);
+  user-select: text;
+}
+.kx-cite-preview p:last-child {
+  margin-bottom: 0;
+  padding-left: 2em;
+  text-indent: -2em;
+}
+.kx-cite-preview a {
+  color: var(--kx-accent-text);
+}
+.kx-cite-error {
+  color: var(--kx-red);
+}

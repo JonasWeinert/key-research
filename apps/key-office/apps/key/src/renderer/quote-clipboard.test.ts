@@ -41,6 +41,9 @@ describe("quote text", () => {
       "“Each nurse scanned 30 patients aged at least 18 years.” — Narang et al. (2021), Utility of a Deep-Learning Algorithm, p. 4",
     );
   });
+  it("uses the citation engine's attribution when it has one", () => {
+    expect(quotePlainText({ ...quote, attribution: "Narang et al., 2021, p. 4" })).toBe("“Each nurse scanned 30 patients aged at least 18 years.” — Narang et al., 2021, p. 4");
+  });
   it("leaves out what is not known", () => {
     expect(quoteAttribution({ page: 0, citation: { authors: [] } })).toBe("p. 1");
     expect(quoteAttribution({ page: 1, citation: { authors: [], title: "A title" } })).toBe("A title, p. 2");

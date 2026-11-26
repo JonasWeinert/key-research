@@ -171,7 +171,15 @@ export default function PdfReader() {
       })();
       const source = await citeSource.current;
       try {
+        // The attribution in the chosen citation style (the fallback formats it when this fails).
+        const attribution = source.sourceId
+          ? await bridge()
+              .invoke?.<{ text: string }>("store_cite_attribution", { id: source.sourceId, page: passage.page >= 0 ? String(passage.page + 1) : null })
+              .then((a) => a.text)
+              .catch(() => undefined)
+          : undefined;
         await writeQuoteClipboard({
+          attribution,
           v: 1,
           text: passage.text,
           workspaceId: initial.workspaceId,

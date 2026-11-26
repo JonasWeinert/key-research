@@ -5,7 +5,7 @@
 // panel (`variant="side"`), so a source looks the same wherever it is shown.
 import { AnnotationText } from "./annotation-text";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { apa, apaInText, bibtex } from "./citation";
+import { bibliography, inTextCitation, rtfDocument, writeRichClipboard } from "./cite";
 import { Icon } from "./icons";
 import { ProgressRing } from "./index-activity";
 import { useSourceProgress } from "./source-progress";
@@ -329,14 +329,21 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
       setError(String(e));
     }
   };
-  const copy = async (label: string, text: string, html?: string) => {
+  // The reference and in-text citation in the style chosen in Settings; BibTeX through the
+  // engine's BibTeX style.
+  const copyCitation = async (kind: "reference" | "in-text" | "bibtex") => {
     try {
-      if (html && "ClipboardItem" in window)
-        await navigator.clipboard.write([
-          new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) }),
-        ]);
-      else await navigator.clipboard.writeText(text);
-      setCopied(label);
+      if (kind === "in-text") {
+        const c = await inTextCitation(invoke, workspaceId, sourceId);
+        await writeRichClipboard({ text: c.text, html: c.html, rtf: rtfDocument([c.rtf]) });
+      } else {
+        const bib = await bibliography(invoke, workspaceId, [sourceId], kind === "bibtex" ? { style: "bibtex" } : {});
+        const entry = bib?.entries[0];
+        if (!entry) throw Error("This style has no reference list");
+        if (kind === "bibtex") await writeRichClipboard({ text: entry.text });
+        else await writeRichClipboard({ text: entry.text, html: `<div class="csl-entry">${entry.html}</div>`, rtf: rtfDocument([entry.rtf]) });
+      }
+      setCopied(kind === "bibtex" ? "BibTeX" : kind);
       setTimeout(() => setCopied(""), 1400);
     } catch (e) {
       setError(String(e));
@@ -666,9 +673,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <Icon name="more" size={14} />
             </summary>
             <div className="kx-menu-popover" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
-              <button onClick={() => void copy("APA", apa(source), apa(source, true))}>Copy APA reference</button>
-              <button onClick={() => void copy("in-text", apaInText(source))}>Copy in-text citation</button>
-              <button onClick={() => void copy("BibTeX", bibtex(source))}>Copy BibTeX</button>
+              <button onClick={() => void copyCitation("reference")}>Copy reference</button>
+              <button onClick={() => void copyCitation("in-text")}>Copy in-text citation</button>
+              <button onClick={() => void copyCitation("bibtex")}>Copy BibTeX</button>
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
               {!source.filePath && canFindPdf && <button onClick={() => void findPdf()}>Find PDF</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
@@ -809,6 +816,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             searchItems={sources.searchItems}
             searchItemsMore={sources.searchItemsMore}
             citeLabel={sources.citeLabel}
+            formatCitations={sources.formatCitations}
+            formatBibliography={sources.formatBibliography}
             onOpenItem={sources.onOpenItem}
             placeholder="Write about this source. Type / for blocks, @ to link anything"
           />
@@ -847,6 +856,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   searchItems={sources.searchItems}
                   searchItemsMore={sources.searchItemsMore}
                   citeLabel={sources.citeLabel}
+                  formatCitations={sources.formatCitations}
+                  formatBibliography={sources.formatBibliography}
                   onOpenItem={sources.onOpenItem}
                 />
               </div>

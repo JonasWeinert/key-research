@@ -64,6 +64,15 @@ export const SLASH_ITEMS: SlashItem[] = [
   },
   { id: "quote-source", label: "Quote from a source", hint: "Quotation with attribution", group: "Research", icon: "quote", keywords: ["citation", "excerpt", "cite"], run: (e, r) => openPicker(e, r, "quote") },
   {
+    id: "bibliography",
+    label: "Bibliography",
+    hint: "The sources this note cites, in your citation style",
+    group: "Research",
+    icon: "list",
+    keywords: ["references", "works cited", "reference list", "citations", "sources"],
+    run: (e, r) => clear(e, r).insertContent([{ type: "noteBibliography", attrs: { title: "References" } }, { type: "paragraph" }]).run(),
+  },
+  {
     id: "image",
     label: "Image",
     hint: "Upload from your Mac",

@@ -1,0 +1,22 @@
+Citations:
+[1]
+[2, p. 12]
+[3]
+[1, p. 626]
+[4], [5]
+[6], [7]
+see [8] for a review
+
+Bibliography:
+[1] A. Narang, R. Bae, H. Hong, Y. Thomas, and S. Surette, “Utility of a deep-learning algorithm to guide novices to acquire echocardiograms for limited diagnostic use,” JAMA Cardiology, vol. 6, no. 6, pp. 624–632, Feb. 2021, doi: 10.1001/jamacardio.2021.0185.
+[2] D. Kahneman, Thinking, fast and slow. New York: Farrar, Straus and Giroux, 2011.
+[3] M. A. Palma and S. Huseynov, “Consumer willingness to pay for food safety,” in The Oxford handbook of food economics, 2nd ed., J. L. Lusk, Ed., Oxford: Oxford University Press, 2022, pp. 112–130.
+[4] J. Doe, “Measuring attention in reading,” Cognition, vol. 201, pp. 104–118, 2020.
+[5] J. Doe, “Attention across scripts,” Cognition, vol. 205, pp. 1–15, 2020.
+[6] A. Smith, “Soil carbon under grazing,” Geoderma, vol. 340, pp. 50–60, 2019.
+[7] B. Smith, “Grazing and nitrogen,” Geoderma, vol. 341, pp. 10–20, 2019.
+[8] A. Vaswani, N. Shazeer, and N. Parmar, “Attention is all you need,” 2017, arXiv: arXiv:1706.03762. [Online]. Available: https://arxiv.org/abs/1706.03762
+[9] World Health Organization, “Malaria fact sheet,” WHO. Accessed: Jan. 15, 2024. [Online]. Available: https://www.who.int/news-room/fact-sheets/detail/malaria
+[10] M.-jun Lee, “Neural correlates of reading fluency,” PhD thesis, University of Toronto, 2018.
+[11] Intergovernmental Panel on Climate Change, “Climate change 2021: The physical science basis,” Cambridge University Press, Cambridge, 2021. doi: 10.1017/9781009157896.
+[12] K. He and X. Zhang, “Deep residual learning for image recognition,” in Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, Las Vegas, NV: IEEE, 2016, pp. 770–778.

@@ -1,0 +1,22 @@
+Citations:
+Akhil Narang et al., “Utility of a Deep-Learning Algorithm to Guide Novices to Acquire Echocardiograms for Limited Diagnostic Use,” JAMA Cardiology 6, no. 6 (2021): 624–32, https://doi.org/10.1001/jamacardio.2021.0185.
+Daniel Kahneman, Thinking, Fast and Slow (Farrar, Straus and Giroux, 2011), 12.
+“Consumer Willingness to Pay for Food Safety,” in The Oxford Handbook of Food Economics, 2nd ed., (Oxford University Press, 2022).
+Narang et al., “Utility of a Deep-Learning Algorithm to Guide Novices to Acquire Echocardiograms for Limited Diagnostic Use,” 626.
+Jane Doe, “Measuring Attention in Reading,” Cognition 201 (2020): 104–18; Jane Doe, “Attention across Scripts,” Cognition 205 (2020): 1–15.
+Anna Smith, “Soil Carbon under Grazing,” Geoderma 340 (2019): 50–60; Bob Smith, “Grazing and Nitrogen,” Geoderma 341 (2019): 10–20.
+see Ashish Vaswani et al., “Attention Is All You Need,” Preprint arXiv:1706.03762 (arXiv, 2017), https://arxiv.org/abs/1706.03762 for a review.
+
+Bibliography:
+Doe, Jane. “Attention across Scripts.” Cognition 205 (2020): 1–15.
+Doe, Jane. “Measuring Attention in Reading.” Cognition 201 (2020): 104–18.
+He, Kaiming, and Xiangyu Zhang. “Deep Residual Learning for Image Recognition.” Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (Las Vegas, NV), 2016, 770–78.
+Intergovernmental Panel on Climate Change. Climate Change 2021: The Physical Science Basis. Cambridge University Press, 2021. https://doi.org/10.1017/9781009157896.
+Kahneman, Daniel. Thinking, Fast and Slow. Farrar, Straus and Giroux, 2011.
+Lee, Min-jun. “Neural Correlates of Reading Fluency.” PhD thesis, University of Toronto, 2018.
+Narang, Akhil, Richard Bae, Ha Hong, Yngvil Thomas, and Samuel Surette. “Utility of a Deep-Learning Algorithm to Guide Novices to Acquire Echocardiograms for Limited Diagnostic Use.” JAMA Cardiology 6, no. 6 (2021): 624–32. https://doi.org/10.1001/jamacardio.2021.0185.
+Palma, Marco A., and Samir Huseynov. “Consumer Willingness to Pay for Food Safety.” In The Oxford Handbook of Food Economics, 2nd ed., edited by Jayson L. Lusk. Oxford University Press, 2022.
+Smith, Anna. “Soil Carbon under Grazing.” Geoderma 340 (2019): 50–60.
+Smith, Bob. “Grazing and Nitrogen.” Geoderma 341 (2019): 10–20.
+Vaswani, Ashish, Noam Shazeer, and Niki Parmar. “Attention Is All You Need.” Preprint ArXiv:1706.03762. ArXiv, 2017. https://arxiv.org/abs/1706.03762.
+World Health Organization. “Malaria Fact Sheet.” WHO, December 4, 2023. https://www.who.int/news-room/fact-sheets/detail/malaria.

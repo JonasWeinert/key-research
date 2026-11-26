@@ -64,7 +64,21 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
     citeLabel: async (ref: SourceRef, page?: number) => {
       const { describeItem, inTextCitation } = await import("./item-actions");
       const info = await describeItem(invoke, workspaceId, { kind: "source", id: ref.id, anchor: ref.anchor });
-      return info.source ? inTextCitation(info.source, page ?? info.highlight?.page) : undefined;
+      return info.source ? inTextCitation(invoke, workspaceId, info.source, page ?? info.highlight?.page) : undefined;
+    },
+    // A note's citations in one call (numbering and disambiguation across the note).
+    formatCitations: async (cites: { id: string; page?: number }[]) => {
+      const { renderCitations } = await import("./cite");
+      const out = await renderCitations(invoke, workspaceId, {
+        citations: cites.map((c) => ({ items: [{ id: c.id, locator: c.page === undefined || c.page < 0 ? undefined : String(c.page + 1) }] })),
+        bibliography: false,
+      });
+      return out.citations.map((c) => c.text);
+    },
+    formatBibliography: async (ids: string[]) => {
+      const { bibliography } = await import("./cite");
+      const bib = await bibliography(invoke, workspaceId, ids);
+      return bib && { entries: bib.entries, hangingIndent: bib.hangingIndent };
     },
     onOpenItem: (item: ItemLink) => void import("./item-links").then(({ openItem }) => openItem(invoke, workspaceId, item)),
     searchSources: async (query: string): Promise<SourceRef[]> => {

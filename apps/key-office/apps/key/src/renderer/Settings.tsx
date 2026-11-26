@@ -16,8 +16,9 @@ import { ModelProgressCard, useModelProgress } from "./model-progress";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
+import CitationSettings from "./CitationSettings";
 
-export type SettingsSection = "general" | "libraries" | "zotero" | "search" | "web" | "services" | "ai" | "about";
+export type SettingsSection = "general" | "libraries" | "zotero" | "citations" | "search" | "web" | "services" | "ai" | "about";
 interface SectionInfo {
   id: SettingsSection;
   label: string;
@@ -31,6 +32,7 @@ const GROUPS: SectionInfo[][] = [
   [
     { id: "libraries", label: "Libraries", icon: "books", keywords: "workspace folder finder add library adding sources collections" },
     { id: "zotero", label: "Zotero", icon: "zotero", keywords: "import sync plugin conflicts" },
+    { id: "citations", label: "Citations", icon: "quote", keywords: "citation style csl apa chicago mla harvard ieee vancouver bibliography reference locale language install quick copy" },
   ],
   [
     { id: "search", label: "Search & indexing", icon: "search", keywords: "model embedding index pause retry layout analysis pdf openalex email duplicates people metadata" },
@@ -155,6 +157,7 @@ export default function Settings({
               <Libraries invoke={invoke} workspaces={workspaces} settings={settings} onSettings={onSettings} onOpenLibrary={onOpenLibrary} onChanged={onWorkspacesChanged} />
             )}
             {section === "zotero" && <Zotero invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onChanged={onWorkspacesChanged} />}
+            {section === "citations" && <CitationSettings invoke={invoke} workspaceId={workspaces[0]?.id} settings={settings} onSettings={onSettings} />}
             {section === "search" && <SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
             {section === "web" && (
               <>

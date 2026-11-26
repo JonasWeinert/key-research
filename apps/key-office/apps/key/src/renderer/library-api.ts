@@ -376,6 +376,9 @@ export interface AppSettings {
   addFromSource: "ask" | "origin" | "library";
   /** Find PDF for references as they are added (off by default). */
   findPdfOnAdd?: boolean;
+  /** The CSL style id and locale citations use (the host reads them from the settings file). */
+  citationStyle?: string;
+  citationLocale?: string;
 }
 export interface AppInfo {
   version: string;
@@ -413,6 +416,7 @@ export interface Bridge {
   zoteroPlugin(action?: "wake" | "status" | "install" | "restart" | "open"): Promise<{ file: string | null; install?: ZoteroInstall; error?: string } | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
+  writeClipboard?(data: { text: string; html?: string; rtf?: string }): Promise<void>;
   /** A Quick Look thumbnail as a data URL, or null when the file has none. */
   thumbnail(path: string, size?: number): Promise<string | null>;
   pathForFile(file: File): string;

@@ -104,6 +104,15 @@ describe("note markdown round-trip", () => {
     expect(stable).toBe(true);
   });
 
+  it("bibliography fence keeps its heading", () => {
+    const md = "Text citing [(Doe, 2020)](key://source/abc).\n\n```bibliography\nWorks cited\n```";
+    const { out, doc, stable } = roundTrip(md);
+    expect(types(doc)).toEqual(["paragraph", "noteBibliography"]);
+    expect(doc.content?.[1].attrs).toEqual({ title: "Works cited" });
+    expect(out).toBe(md);
+    expect(stable).toBe(true);
+  });
+
   it("video without a title writes its link as the body", () => {
     editor.commands.setContent({ type: "doc", content: [{ type: "videoEmbed", attrs: { url: "https://vimeo.com/76979871" } }] });
     const out = serializeNote(editor);
