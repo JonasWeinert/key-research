@@ -106,8 +106,10 @@ export class RustHost {
     const slow = table ? !table.quick.includes(command) && table.slowPrefixes.some((p) => command.startsWith(p)) : SLOW_FALLBACK.test(command);
     let name: PriorityClass | undefined =
       (typeof args.$priority === "string" && CLASSES.includes(args.$priority as PriorityClass) ? (args.$priority as PriorityClass) : undefined) ?? options.priority;
-    if (!name && (args.$background === true || BACKGROUND.has(command))) name = "background";
-    if (!name) name = table?.classes[command] ?? table?.default ?? "foreground";
+    if (!name && args.$background === true) name = "background";
+    // The host's table first (status polls drive what is on screen: "visible"); the bridge's
+    // own list of background commands stands in for an older host.
+    if (!name) name = table?.classes[command] ?? (BACKGROUND.has(command) ? "background" : table?.default ?? "foreground");
     if (options.gesture && (name === "foreground" || name === "visible")) name = "interactive";
     // Network work never counts as interactive (it would hold the user's lane for seconds).
     if (slow && name === "interactive") name = "foreground";
@@ -160,8 +162,8 @@ export class RustHost {
         clearTimeout(old.timer);
         this.settle(old, undefined, new Error("Superseded by a newer request"));
       }
-    // The same background request already waiting: share its answer.
-    const key = background ? `${command}\u0000${JSON.stringify(args)}` : undefined;
+    // The same poll or background request already waiting: share its answer.
+    const key = background || BACKGROUND.has(command) ? `${command}\u0000${JSON.stringify(args)}` : undefined;
     const twin = key && this.queue.find((p) => p.key === key);
     if (twin)
       return new Promise<T>((resolve, reject) => (twin.followers ??= []).push({ resolve, reject }));

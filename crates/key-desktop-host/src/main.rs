@@ -164,11 +164,17 @@ fn run() -> Result<(), String> {
             }
             // The class follows the request, also where its lane's thread says otherwise
             // (a visible-class read on a foreground thread).
+            let started = std::time::Instant::now();
+            let command = envelope.command.clone();
             let result = key_store::priority::with_class(class, || {
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(host.dispatch(&envelope.command, &envelope.args, &binary, &headers))
                 })
             });
+            // KEY_LOCK_TRACE_MS: user actions slower than this are reported (stderr).
+            if class == Class::Interactive && std::env::var("KEY_LOCK_TRACE_MS").ok().and_then(|v| v.parse::<u128>().ok()).is_some_and(|ms| started.elapsed().as_millis() > ms) {
+                eprintln!("key slow: {command} took {:?}", started.elapsed());
+            }
             if let Err(error) = ipc::write_response(&mut *out.lock().unwrap(), envelope.id, result)
             {
                 eprintln!("Key IPC output: {error}");

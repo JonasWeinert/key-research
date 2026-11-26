@@ -144,7 +144,7 @@ async function run(executable) {
     tagEdit: () => h.invoke("store_bulk_tag", { ids: [ids[Math.floor(Math.random() * ids.length)]], add: ["bench"], remove: [] }, "interactive"),
     undo: () => h.invoke("store_undo", {}, "interactive").catch(() => {}),
     tagManager: () => h.invoke("store_tag_index", {}, "interactive"),
-    status: () => h.invoke("store_status", {}, "background"),
+    status: () => h.invoke("store_status", {}, "visible"),
   };
   const measure = async (seconds, stopWhen) => {
     const times = Object.fromEntries(Object.keys(ops).map((k) => [k, []]));

@@ -191,13 +191,15 @@ impl<T> Drop for Guard<'_, T> {
         }
         self.inner.take();
         HELD.with(|h| h.set(h.get().saturating_sub(1)));
-        if self.boosted {
-            qos::apply(current());
-        }
         let mut state = self.pool.state.lock().unwrap_or_else(|e| e.into_inner());
         state.free.push(self.slot);
         drop(state);
         self.pool.freed.notify_all();
+        // Back to its own QoS only once the connection is handed on: a background thread
+        // lowered first could be parked by the OS before it lets go.
+        if self.boosted {
+            qos::apply(current());
+        }
     }
 }
 
@@ -228,12 +230,27 @@ impl<T> PriorityPool<T> {
     }
 
     pub fn lock_as(&self, class: Class) -> Result<Guard<'_, T>, String> {
+        // A background thread asking for a connection runs at the user's QoS until it lets go
+        // (waiting costs no CPU): on a loaded machine the OS would otherwise park it between
+        // being handed the connection and releasing it, while a click waits (priority inversion).
+        let boosted = HELD.with(|h| h.get() == 0) && current() >= Class::Background;
+        if boosted {
+            qos::apply(Class::Foreground);
+        }
+        let result = self.acquire(class, boosted);
+        if result.is_err() && boosted {
+            qos::apply(current());
+        }
+        result
+    }
+
+    fn acquire(&self, class: Class, boosted: bool) -> Result<Guard<'_, T>, String> {
         let mut state = self.state.lock().map_err(|_| "Library database lock poisoned".to_string())?;
         // Free and nobody better waiting: take it.
         if !state.free.is_empty() && !state.waiting.keys().any(|(rank, _)| *rank <= class.rank()) {
             let slot = state.free.pop().expect("free slot");
             drop(state);
-            return self.take(slot);
+            return self.take(slot, boosted);
         }
         let ticket = (class.rank(), state.next);
         state.next += 1;
@@ -256,28 +273,22 @@ impl<T> PriorityPool<T> {
             };
         };
         state.waiting.remove(&ticket);
+        if let Some(threshold) = trace_threshold().filter(|t| class < Class::Background && since.elapsed() > *t) {
+            eprintln!("key lock: {} waited {:?} ({} slots, {} others waiting) {threshold:?}", class.name(), since.elapsed(), self.slots.len(), state.waiting.len());
+        }
         WAITING[class.rank()].fetch_sub(1, Ordering::SeqCst);
         let more = !state.free.is_empty() && !state.waiting.is_empty();
         drop(state);
         if more {
             self.freed.notify_all();
         }
-        self.take(slot)
+        self.take(slot, boosted)
     }
 
-    fn take(&self, slot: usize) -> Result<Guard<'_, T>, String> {
+    fn take(&self, slot: usize, boosted: bool) -> Result<Guard<'_, T>, String> {
         match self.slots[slot].lock() {
             Ok(inner) => {
-                // A background thread holding a connection runs at the user's QoS until it lets
-                // go: on a loaded machine the OS would otherwise park it mid-transaction while a
-                // click waits for the connection (priority inversion).
-                let boosted = HELD.with(|h| {
-                    h.set(h.get() + 1);
-                    h.get() == 1
-                }) && current() >= Class::Background;
-                if boosted {
-                    qos::apply(Class::Foreground);
-                }
+                HELD.with(|h| h.set(h.get() + 1));
                 Ok(Guard { pool: self, slot, inner: Some(inner), since: Instant::now(), boosted })
             }
             Err(_) => {

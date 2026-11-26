@@ -26,9 +26,13 @@ const INTERACTIVE: &[&str] = &[
     "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set",
 ];
 
-/// Nobody waits on these: timers, polls, syncs, bulk imports and maintenance.
+/// Polls behind what is on screen (the status bar, progress): after the user's own work, but
+/// not starved by bulk work, or progress would look frozen.
+const VISIBLE: &[&str] = &["store_status", "store_zotero_progress", "pdfjs_companion_snapshot"];
+
+/// Nobody waits on these: timers, syncs, bulk imports and maintenance.
 const BACKGROUND: &[&str] = &[
-    "store_status", "store_zotero_sync", "store_zotero_progress", "store_zotero_status", "store_zotero_plugin_status", "store_zotero_plugin_sync",
+    "store_zotero_sync", "store_zotero_status", "store_zotero_plugin_status", "store_zotero_plugin_sync",
     "store_linked_sync", "store_index_priority", "store_linked_priority", "store_enrich_options", "store_duplicates_summary", "store_key_usage",
     "store_import_zotero", "store_biblio_progress", "store_md_export_status", "store_autoexport_run", "store_file_mirror_run", "store_md_export_run",
     "store_retractions_seen", "web_key_usage", "web_options", "feeds_refresh", "feeds_counts", "feeds_environment", "feeds_retention", "feeds_purge",
@@ -49,6 +53,8 @@ pub fn is_slow(command: &str) -> bool {
 pub fn class_of(command: &str) -> Class {
     if INTERACTIVE.contains(&command) {
         Class::Interactive
+    } else if VISIBLE.contains(&command) {
+        Class::Visible
     } else if BACKGROUND.contains(&command) {
         Class::Background
     } else {
@@ -69,6 +75,9 @@ pub fn table() -> serde_json::Value {
     for command in INTERACTIVE {
         classes.insert((*command).into(), Class::Interactive.name().into());
     }
+    for command in VISIBLE {
+        classes.insert((*command).into(), Class::Visible.name().into());
+    }
     for command in BACKGROUND {
         classes.insert((*command).into(), Class::Background.name().into());
     }
@@ -88,7 +97,8 @@ mod tests {
     fn clicks_are_interactive_polls_background_and_network_never_interactive() {
         assert_eq!(resolve("store_create", None), Class::Interactive);
         assert_eq!(resolve("library_apply_annotations", None), Class::Interactive);
-        assert_eq!(resolve("store_status", None), Class::Background);
+        assert_eq!(resolve("store_status", None), Class::Visible);
+        assert_eq!(resolve("store_zotero_sync", None), Class::Background);
         assert_eq!(resolve("store_analysis", None), Class::Foreground);
         // A click on a web search is still not allowed to pause the library for seconds.
         assert_eq!(resolve("web_search", Some("interactive")), Class::Foreground);
