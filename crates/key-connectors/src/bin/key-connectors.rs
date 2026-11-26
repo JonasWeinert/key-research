@@ -107,7 +107,12 @@ fn test(args: &[String]) -> ExitCode {
         if only.as_ref().is_some_and(|o| *o != spec.id) {
             continue;
         }
-        let creds = creds_from_env(&spec);
+        let mut creds = creds_from_env(&spec);
+        if !live {
+            for (k, v) in testing::placeholder_credentials(&spec) {
+                creds.entry(k).or_insert(v);
+            }
+        }
         let missing_required = spec.credentials.iter().any(|c| c.required && !creds.contains_key(&c.id));
         for t in &spec.tests {
             if live && t.offline_only {

@@ -113,6 +113,12 @@ pub fn run_test(engine: &Engine, spec: &Spec, test: &TestSpec, creds: &Credentia
     out
 }
 
+/// Placeholder values for every credential (replaying fixtures: credentials never decide
+/// which recorded answer is meant, but templates need a value).
+pub fn placeholder_credentials(spec: &Spec) -> Credentials {
+    spec.credentials.iter().map(|c| (c.id.clone(), "fixture".to_string())).collect()
+}
+
 pub fn run_all(engine: &Engine, spec: &Spec, creds: &Credentials, ctl: &RunControl, live: bool) -> Vec<TestOutcome> {
     spec.tests.iter().filter(|t| !(live && t.offline_only)).map(|t| run_test(engine, spec, t, creds, ctl)).collect()
 }

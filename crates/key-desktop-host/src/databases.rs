@@ -692,6 +692,12 @@ impl Databases {
             }
         }
         let mut d = run.data.lock().unwrap_or_else(|e| e.into_inner());
+        // Results reported but none readable: the answers changed shape.
+        if let (Ok(()), Some(p)) = (&outcome, d.progress.get(cid)) {
+            if p.raw == 0 && p.total.is_some_and(|t| t > 0) {
+                outcome = Err(EngineError::new("parse", format!("{} reported {} results, but none could be read; the connector may be out of date", spec.name, p.total.unwrap_or(0))));
+            }
+        }
         if let Some(p) = d.progress.get_mut(cid) {
             p.has_more = !state.done;
             p.wait_ms = None;
@@ -703,6 +709,18 @@ impl Databases {
                     p.state = "failed".into();
                     p.error = Some(e.message.clone());
                     p.error_kind = Some(e.kind.clone());
+                }
+            }
+            if outcome.is_ok() && p.fetched == 0 {
+                let why = if p.raw > 0 {
+                    format!("{} records were read, but none matched the whole query (this source cannot search it all, so Key checks each record)", p.raw)
+                } else if p.total.is_some_and(|t| t > 0) {
+                    format!("The source reported {} results, but none could be read; the connector may be out of date", p.total.unwrap_or(0))
+                } else {
+                    "No records found".to_string()
+                };
+                if !p.warnings.contains(&why) {
+                    p.warnings.push(why);
                 }
             }
             if p.undated > 0 && !p.warnings.iter().any(|w| w.contains("without a year")) {

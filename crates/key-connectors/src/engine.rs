@@ -756,7 +756,9 @@ impl Engine {
         let root = doc.root();
         if let Some(code) = paths::select(&root, "//error/@code").ok().and_then(|n| n.first().and_then(paths::text)) {
             if code == "noRecordsMatch" {
-                state.totals[state.chunk] = Some(0);
+                if state.pages == 0 {
+                    state.totals[state.chunk] = Some(0);
+                }
                 state.next_chunk();
                 return Ok(Vec::new());
             }

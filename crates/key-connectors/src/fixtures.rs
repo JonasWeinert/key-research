@@ -96,6 +96,13 @@ impl Transport for Replay {
     }
 }
 
+/// E-mail addresses (authors' affiliations, trial contacts) are left out of recorded answers:
+/// fixtures are published with the repository.
+pub fn scrub(text: &str) -> String {
+    static EMAIL: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    EMAIL.get_or_init(|| regex::Regex::new(r"[\w.+-]+@[\w-]+(\.[\w-]+)+").expect("regex")).replace_all(text, "email-removed@example.org").into_owned()
+}
+
 /// Sends through another transport and keeps what came back.
 pub struct Recorder {
     inner: Arc<dyn Transport>,
@@ -126,7 +133,7 @@ impl Transport for Recorder {
             request_body: (!request.body.is_empty()).then(|| String::from_utf8_lossy(&request.body).into_owned()),
             status: response.status,
             headers: response.headers.iter().filter(|(k, _)| keep.contains(&k.to_ascii_lowercase().as_str())).map(|(k, v)| (k.to_ascii_lowercase(), v.clone())).collect(),
-            body: String::from_utf8_lossy(&response.body).into_owned(),
+            body: scrub(&String::from_utf8_lossy(&response.body)),
         });
         Ok(response)
     }

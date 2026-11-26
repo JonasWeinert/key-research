@@ -25,7 +25,7 @@ fn embedded_tests_pass_on_recorded_answers() {
             continue;
         }
         let engine = Engine::new(Arc::new(Replay::new(&fixtures)));
-        for outcome in testing::run_all(&engine, &c.spec, &Default::default(), &RunControl::instant(), false) {
+        for outcome in testing::run_all(&engine, &c.spec, &testing::placeholder_credentials(&c.spec), &RunControl::instant(), false) {
             ran += 1;
             assert!(outcome.passed, "{} / {}: {:#?}", outcome.connector, outcome.test, outcome.failures);
         }

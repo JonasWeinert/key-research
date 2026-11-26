@@ -297,7 +297,7 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
             }
             None => {
                 local = true;
-                render.warn(format!("Filter {name} is applied by Key to the results (the service cannot)"));
+                render.warn(if spec.kind == "manual" { format!("Set the {name} filter on the site") } else { format!("Filter {name} is applied by Key to the results (the service cannot)") });
             }
         }
     }
@@ -327,7 +327,7 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
     let dates_var = spec_uses_year_vars(spec);
     if (filters.year_from.is_some() || filters.year_to.is_some()) && !dates_native && !dates_var {
         local = true;
-        render.warn("Years are filtered by Key on the results (the service cannot)".into());
+        render.warn(if spec.kind == "manual" { "Set the years on the site".into() } else { "Years are filtered by Key on the results (the service cannot)".into() });
     }
     match q.mode.as_str() {
         "harvest" => {
@@ -386,6 +386,9 @@ fn spec_uses_year_vars(spec: &Spec) -> bool {
         if let Some(body) = &plan.request.body {
             templates.push(body.to_string());
         }
+    }
+    if let Some(manual) = &spec.manual {
+        templates.push(manual.url.clone());
     }
     let vars_with_years: Vec<&String> = spec.query.vars.iter().filter(|(_, v)| v.template.contains("{year")).map(|(k, _)| k).collect();
     templates.iter().any(|t| t.contains("{yearFrom") || t.contains("{yearTo") || vars_with_years.iter().any(|v| t.contains(&format!("{{{v}"))))
