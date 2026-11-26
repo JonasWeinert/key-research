@@ -248,6 +248,28 @@ const FOCUS_PROBES = [{ name: "focus ring", selector: ".ne-toggle-chevron:focus-
         // If the page was still settling, the click can land as a small drag: keep only the
         // caret, so Enter adds a line rather than replacing a selection.
         await page.evaluate(() => getSelection()?.collapseToEnd());
+        // ProseMirror takes a click's caret from the asynchronous `selectionchange` event, and
+        // synthetic keys can arrive before it: wait until the editor holds the caret the page
+        // shows, or Enter lands on the old selection (the top of the note, or "Last line.").
+        await prose.evaluate((el) =>
+          new Promise((resolve, reject) => {
+            const view = el.editor?.view;
+            if (!view) return reject(new Error("no editor view"));
+            const t0 = performance.now();
+            const check = () => {
+              const s = getSelection();
+              let pos = -1;
+              try {
+                pos = s?.focusNode ? view.posAtDOM(s.focusNode, s.focusOffset) : -1;
+              } catch {}
+              const { from, to } = view.state.selection;
+              if (from === to && from === pos) resolve();
+              else if (performance.now() - t0 > 2000) reject(new Error(`editor selection ${from}-${to} never matched the caret at ${pos}`));
+              else setTimeout(check, 10);
+            };
+            check();
+          }),
+        );
         await page.keyboard.press("End");
         await page.keyboard.press("Enter");
         await page.waitForTimeout(300);
