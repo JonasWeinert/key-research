@@ -1,4 +1,4 @@
-// Settings → Search & indexing → Web search: each provider from the registry in the main
+// Settings → Web & browser → Web search: each provider from the registry in the main
 // process, on or off, with its API key when it takes one.
 import { Fragment, useEffect, useState } from "react";
 import type { WebProviderInfo } from "../shared/web-search";
@@ -16,15 +16,12 @@ export default function WebSearchSettings({ invoke, settings, onSettings }: { in
   const change = (id: string, patch: { enabled?: boolean; apiKey?: string }) => onSettings({ webProviders: { ...entries, [id]: { ...entries[id], ...patch } } });
   if (!providers.length) return null;
   return (
-    <Group
-      title="Web search"
-      footer="The Web pill on the search page asks these catalogues; nothing is sent until you choose it, and then only what you type. Works you add become references in the library, with the open-access PDF when there is one."
-    >
+    <Group title="Web search" footer="Asked only when you search the web, with only what you type.">
       {providers.map((p) => {
         const entry = entries[p.id] ?? {};
         return (
           <Fragment key={p.id}>
-            <Row label={p.label} detail={p.id === "openalex" ? "Uses the contact email and API key above." : p.keyRequired && !p.apiKey ? p.keyHelp : undefined}>
+            <Row label={p.label} detail={p.id === "openalex" ? "Uses your OpenAlex email and key." : p.keyRequired && !p.apiKey ? p.keyHelp : undefined}>
               <input
                 type="checkbox"
                 className="kx-switch"

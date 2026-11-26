@@ -237,6 +237,7 @@ async function fixturesIn(temp) {
     // 8. Settings › Library access: import from Zotero and its Connectors, and the edit sheet.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("open-settings")));
     const settings = shell.locator(".kx-settings");
+    await settings.getByRole("button", { name: "Web & browser", exact: true }).click();
     await settings.getByText("Library access").scrollIntoViewIfNeeded();
     await settings.getByRole("button", { name: "Import from Zotero" }).click();
     await until(async () => (await proxies()).proxies.length >= 4, "the imported proxies");

@@ -251,7 +251,7 @@ const library = (pdf) => ({
     // 4. Settings: status, Zotero not running, pause.
     const openSettings = async () => {
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("open-settings")));
-      await page.getByRole("button", { name: "Libraries" }).click();
+      await page.locator(".kx-settings-nav").getByRole("button", { name: "Zotero", exact: true }).click();
     };
     await openSettings();
     const group = page.locator(".kx-settings-group", { has: page.getByText("Keep in sync with Zotero") }).last();

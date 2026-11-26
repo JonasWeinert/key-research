@@ -1,7 +1,4 @@
 /* Settings › Services & API keys (ServiceKeys.tsx). */
-.kx-settings-glyph[data-section="services"] {
-  --glyph: var(--kx-amber);
-}
 .kx-service-glyph {
   display: grid;
   place-items: center;
@@ -31,15 +28,6 @@
   align-items: center;
   gap: 8px;
   font-size: 13px;
-}
-.kx-service-badge {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--kx-fill-2);
-  color: var(--kx-text-2);
-  font-size: 10.5px;
-  font-style: normal;
-  font-weight: 500;
 }
 .kx-service-status {
   display: inline-flex;
@@ -79,15 +67,6 @@
 }
 .kx-service-input::placeholder {
   color: var(--kx-text-3);
-}
-.kx-settings-button.kx-service-primary {
-  background: var(--kx-accent);
-  box-shadow: none;
-  color: var(--kx-accent-ink);
-}
-.kx-settings-button.kx-service-primary:hover:not(:disabled) {
-  background: var(--kx-accent);
-  filter: brightness(1.06);
 }
 .kx-service-link {
   display: inline-flex;

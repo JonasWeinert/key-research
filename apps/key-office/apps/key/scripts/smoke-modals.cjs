@@ -90,7 +90,7 @@ const MARGIN = 20;
         let r = await settled(`Settings at ${tag}`);
         result.modals[`settings-${tag}`] = r;
         if (!dark) {
-          for (const section of ["Libraries", "Search & indexing", "AI assistant", "About Key", "General"]) {
+          for (const section of ["Libraries", "Zotero", "Search & indexing", "Services & API keys", "AI assistant", "About Key", "General", "Web & browser"]) {
             await modal().getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: section, exact: true }).click();
             await page.waitForTimeout(400);
             const a = await settled(`Settings (${section}) at ${tag}`);

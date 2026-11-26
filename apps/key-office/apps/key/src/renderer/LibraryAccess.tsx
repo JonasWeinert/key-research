@@ -110,14 +110,14 @@ export default function LibraryAccess() {
   const proxies = data?.proxies ?? [];
   return (
     <>
-      <Group title="Library access" footer={error || report || "Key’s browser sends a proxy’s sites through it, so articles and PDFs open with your library’s access. Saved sources keep the article’s own address."}>
-        <Row label="Use library proxies automatically" detail="Sites of a proxy below go through it, like the Zotero Connector’s transparent redirection.">
+      <Group title="Library access" footer={error || report || "Articles open with your library’s access; saved sources keep their own address."}>
+        <Row label="Use library proxies automatically" detail="A proxy’s sites always go through it.">
           <input type="checkbox" className="kx-switch" aria-label="Use library proxies automatically" disabled={!prefs} checked={!!prefs?.transparent} onChange={(e) => void call("prefs", { transparent: e.target.checked })} />
         </Row>
-        <Row label="Recognise proxies while browsing" detail="Offers to remember an EZproxy or OpenAthens sign-in, and adds the sites you visit through it.">
+        <Row label="Recognise proxies while browsing" detail="Offers to remember EZproxy and OpenAthens sign-ins.">
           <input type="checkbox" className="kx-switch" aria-label="Recognise proxies while browsing" disabled={!prefs} checked={!!prefs?.autoRecognize} onChange={(e) => void call("prefs", { autoRecognize: e.target.checked })} />
         </Row>
-        <Row label="Proxies from Zotero" detail="From Zotero and from the Zotero Connector in Chrome, Edge, Brave, Firefox or Safari. Nothing there is changed.">
+        <Row label="Proxies from Zotero" detail="From Zotero and its browser connectors.">
           <button className="kx-settings-button" disabled={importing} onClick={() => void importNow()}>
             {importing ? "Importing…" : "Import from Zotero"}
           </button>
@@ -149,7 +149,7 @@ export default function LibraryAccess() {
         <div className="kx-settings-row kx-proxy-add">
           <div>
             <span>{proxies.length ? "Another proxy" : "No library proxies yet"}</span>
-            <small>EZproxy, OpenAthens, or your library’s link prefix.</small>
+            <small>EZproxy, OpenAthens or a link prefix</small>
           </div>
           <div className="kx-settings-control">
             <button className="kx-settings-button" onClick={() => setEditing("new")}>

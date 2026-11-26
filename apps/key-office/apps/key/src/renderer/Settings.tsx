@@ -1,11 +1,12 @@
-// Settings: a window-sized sheet with a sidebar of sections, like macOS System Settings.
-// General (appearance), Libraries, Search & indexing, AI and About.
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+// Settings: a window-sized sheet with a sidebar of sections in groups, like macOS System
+// Settings, with a search over the sections. Styles in settings.css.
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
 import { ActivityPanel, olderSources, useLibraryStatus } from "./index-activity";
 import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type Theme, type WorkspaceSummary, type ZoteroOptions } from "./library-api";
 import "./entity.css";
+import "./settings.css";
 import MergeReview from "./MergeReview";
 import { ZoteroImport } from "./ZoteroImport";
 import { ZoteroSettings } from "./ZoteroSyncSettings";
@@ -16,15 +17,37 @@ import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
 
-export type SettingsSection = "general" | "libraries" | "search" | "services" | "ai" | "about";
-const SECTIONS: [SettingsSection, string, IconName][] = [
-  ["general", "General", "gear"],
-  ["libraries", "Libraries", "books"],
-  ["search", "Search & indexing", "search"],
-  ["services", "Services & API keys", "key"],
-  ["ai", "AI assistant", "sparkle"],
-  ["about", "About Key", "info"],
+export type SettingsSection = "general" | "libraries" | "zotero" | "search" | "web" | "services" | "ai" | "about";
+interface SectionInfo {
+  id: SettingsSection;
+  label: string;
+  icon: IconName;
+  /** Words a settings search finds this section by, besides its label. */
+  keywords: string;
+}
+/** The sidebar, in groups. */
+const GROUPS: SectionInfo[][] = [
+  [{ id: "general", label: "General", icon: "gear", keywords: "appearance theme light dark automatic welcome tour keyboard shortcuts" }],
+  [
+    { id: "libraries", label: "Libraries", icon: "books", keywords: "workspace folder finder add library adding sources collections" },
+    { id: "zotero", label: "Zotero", icon: "zotero", keywords: "import sync plugin conflicts" },
+  ],
+  [
+    { id: "search", label: "Search & indexing", icon: "search", keywords: "model embedding index pause retry layout analysis pdf openalex email duplicates people metadata" },
+    { id: "web", label: "Web & browser", icon: "globe", keywords: "web search providers semantic scholar crossref browsing data cookies library access proxy ezproxy openathens" },
+  ],
+  [
+    { id: "services", label: "Services & API keys", icon: "key", keywords: "api key keychain serpapi openalex google scholar usage" },
+    { id: "ai", label: "AI assistant", icon: "sparkle", keywords: "provider openai ollama lm studio endpoint model" },
+  ],
+  [{ id: "about", label: "About Key", icon: "info", keywords: "version data folder electron" }],
 ];
+const SECTIONS = GROUPS.flat();
+const matches = (s: SectionInfo, query: string) => {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = `${s.label} ${s.keywords}`.toLowerCase();
+  return words.every((w) => hay.includes(w));
+};
 
 export default function Settings({
   section: initial = "general",
@@ -50,33 +73,95 @@ export default function Settings({
   onWorkspacesChanged: () => void;
 }) {
   const [section, setSection] = useState<SettingsSection>(initial);
+  const [query, setQuery] = useState("");
+  const nav = useRef<HTMLElement>(null);
+  const visible = query.trim() ? SECTIONS.filter((s) => matches(s, query)) : SECTIONS;
+  // Searching moves to the first section that matches, as System Settings does.
+  useEffect(() => {
+    if (query.trim() && visible.length && !visible.some((s) => s.id === section)) setSection(visible[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+  const step = (by: number) => {
+    const list = visible.map((s) => s.id);
+    const next = list[(list.indexOf(section) + by + list.length) % list.length];
+    if (!next) return;
+    setSection(next);
+    nav.current?.querySelector<HTMLButtonElement>(`[data-section="${next}"]`)?.focus();
+  };
+  const current = SECTIONS.find((s) => s.id === section)!;
   return (
     <GlobalDrawer presentation="window" label="Settings" onClose={onClose}>
       <div className="kx-settings" data-modal-view={section}>
-        <nav className="kx-settings-nav" aria-label="Settings sections">
-          <h2>Settings</h2>
-          {SECTIONS.map(([id, label, icon]) => (
-            <button key={id} aria-current={section === id ? "page" : undefined} onClick={() => setSection(id)}>
-              <span className="kx-settings-glyph" data-section={id}>
-                <Icon name={icon} size={13} />
-              </span>
-              {label}
-            </button>
-          ))}
+        <nav
+          ref={nav}
+          className="kx-settings-nav"
+          aria-label="Settings sections"
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              step(e.key === "ArrowDown" ? 1 : -1);
+            }
+          }}
+        >
+          <label className="kx-settings-search">
+            <Icon name="search" size={12} />
+            <input
+              type="search"
+              placeholder="Search"
+              aria-label="Search settings"
+              value={query}
+              spellCheck={false}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && query) {
+                  e.stopPropagation();
+                  setQuery("");
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  nav.current?.querySelector<HTMLButtonElement>("button[aria-current]")?.focus();
+                }
+              }}
+            />
+          </label>
+          {GROUPS.map((group, i) => {
+            const shown = group.filter((s) => visible.includes(s));
+            if (!shown.length) return null;
+            return (
+              <div className="kx-settings-nav-group" key={i}>
+                {shown.map(({ id, label, icon }) => (
+                  <button key={id} data-section={id} aria-current={section === id ? "page" : undefined} tabIndex={section === id ? 0 : -1} onClick={() => setSection(id)}>
+                    <span className="kx-settings-glyph" data-section={id}>
+                      <Icon name={icon} size={12} />
+                    </span>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
+          {!visible.length && <p className="kx-settings-nav-empty">No results</p>}
         </nav>
         <div className="kx-settings-body">
           <header>
-            <h1>{SECTIONS.find(([id]) => id === section)?.[1]}</h1>
+            <h1>{current.label}</h1>
             <button className="kx-sheet-close" aria-label="Close settings" onClick={onClose}>
               <Icon name="close" size={10} />
             </button>
           </header>
-          <div className="kx-settings-scroll">
-            {section === "general" && <General settings={settings} onSettings={onSettings} onShowWelcome={onShowWelcome} />}
+          <div className="kx-settings-scroll" key={section}>
+            {section === "general" && <General settings={settings} onSettings={onSettings} onShowWelcome={onShowWelcome} onClose={onClose} />}
             {section === "libraries" && (
-              <Libraries invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpenLibrary={onOpenLibrary} onChanged={onWorkspacesChanged} />
+              <Libraries invoke={invoke} workspaces={workspaces} settings={settings} onSettings={onSettings} onOpenLibrary={onOpenLibrary} onChanged={onWorkspacesChanged} />
             )}
+            {section === "zotero" && <Zotero invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onChanged={onWorkspacesChanged} />}
             {section === "search" && <SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
+            {section === "web" && (
+              <>
+                <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />
+                <BrowserSettings />
+              </>
+            )}
             {section === "services" && <ServiceKeys invoke={invoke} />}
             {section === "ai" && <AiSettings invoke={invoke} workspaceId={workspaces[0]?.id} />}
             {section === "about" && <About info={info} />}
@@ -141,23 +226,64 @@ export function ThemePicker({ value, onChange }: { value: Theme; onChange: (them
   );
 }
 
-function General({ settings, onSettings, onShowWelcome }: { settings: AppSettings; onSettings: (patch: Partial<AppSettings>) => void; onShowWelcome: () => void }) {
+const SHORTCUTS: [string, string][] = [
+  ["Search everything", "⌘⇧F"],
+  ["Open quickly", "⌘P"],
+  ["New tab", "⌘T"],
+  ["Commands", "⌘K"],
+  ["Settings", "⌘,"],
+];
+
+function General({
+  settings,
+  onSettings,
+  onShowWelcome,
+  onClose,
+}: {
+  settings: AppSettings;
+  onSettings: (patch: Partial<AppSettings>) => void;
+  onShowWelcome: () => void;
+  onClose: () => void;
+}) {
   return (
     <>
-      <Group title="Appearance" footer="Automatic follows your Mac’s light and dark setting. Documents keep their own colours.">
+      <Group title="Appearance" footer="Documents keep their own colours.">
         <div className="kx-settings-row kx-settings-row-wide">
           <ThemePicker value={settings.theme} onChange={(theme) => onSettings({ theme })} />
         </div>
       </Group>
+      <Group title="Keyboard">
+        <div className="kx-settings-row kx-settings-row-wide">
+          <dl className="kx-settings-keys">
+            {SHORTCUTS.map(([label, keys]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>
+                  <kbd>{keys}</kbd>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <Row label="All keyboard shortcuts">
+          <button
+            className="kx-settings-button"
+            onClick={() => {
+              onClose();
+              window.dispatchEvent(new CustomEvent("key:shortcuts"));
+            }}
+          >
+            Show all
+          </button>
+        </Row>
+      </Group>
       <Group title="Getting started">
-        <Row label="Welcome tour" detail="Set up libraries, imports and search again.">
+        <Row label="Welcome tour" detail="Set up a library, Zotero and appearance again.">
           <button className="kx-settings-button" onClick={onShowWelcome}>
             Show welcome
           </button>
         </Row>
-        <Row label="Keyboard" detail="⌘F search the library · ⌘T new tab · ⌘, settings" />
       </Group>
-      <BrowserSettings />
     </>
   );
 }
@@ -165,7 +291,6 @@ function General({ settings, onSettings, onShowWelcome }: { settings: AppSetting
 function Libraries({
   invoke,
   workspaces,
-  info,
   settings,
   onSettings,
   onOpenLibrary,
@@ -173,30 +298,21 @@ function Libraries({
 }: {
   invoke: Invoke;
   workspaces: WorkspaceSummary[];
-  info: AppInfo;
   settings: AppSettings;
   onSettings: (patch: Partial<AppSettings>) => void;
   onOpenLibrary: (workspaceId: string) => void;
   onChanged: () => void;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [importing, setImporting] = useState<{ mode?: ZoteroMode; current?: ZoteroOptions | null } | null>(null);
   useEffect(() => {
     for (const w of workspaces)
       void invoke<{ counts: { all: number } }>("store_status", {}, w.id)
         .then((s) => setCounts((c) => ({ ...c, [w.id]: s.counts.all })))
         .catch(() => {});
   }, [invoke, workspaces]);
-  // One sheet at a time: the import dialogue takes the place of this page.
-  if (importing)
-    return (
-      <div className="kx-settings-group kx-settings-zotero-import">
-        <ZoteroImport invoke={invoke} workspaceId={workspaces[0]?.id} initialMode={importing.mode} current={importing.current} onClose={() => setImporting(null)} onDone={() => onChanged()} />
-      </div>
-    );
   return (
     <>
-      <Group title="Your libraries" footer="Each library is a folder on this Mac. Linked files stay where they are; Key keeps its index in a hidden .key folder inside.">
+      <Group title="Your libraries" footer="Each library is a folder on this Mac. Files stay where they are.">
         {workspaces.map((w) => (
           <Row
             key={w.id}
@@ -219,14 +335,15 @@ function Libraries({
             </button>
           </Row>
         ))}
-        <Row label="Add a library" detail="Use any folder, for example one per project.">
-          <button className="kx-settings-button" onClick={() => void bridge().addWorkspace().then((added) => added && onChanged())}>
-            Choose folder…
+        <div className="kx-settings-row kx-settings-row-action">
+          <button className="kx-settings-link" onClick={() => void bridge().addWorkspace().then((added) => added && onChanged())}>
+            <Icon name="plus" size={11} />
+            Add library…
           </button>
-        </Row>
+        </div>
       </Group>
-      <Group title="Adding sources" footer="For works added from another source: from its references, related works or a citation card in its PDF.">
-        <Row label="Put them in" detail="Asking offers the source's own collections first; you can pick several.">
+      <Group title="Adding sources">
+        <Row label="Works added from a source" detail="From its references, related works or a citation in its PDF.">
           <select className="kx-settings-select" aria-label="Where sources added from another source go" value={settings.addFromSource ?? "ask"} onChange={(e) => onSettings({ addFromSource: e.target.value as AppSettings["addFromSource"] })}>
             {ADD_MODES.map(([id, label]) => (
               <option key={id} value={id}>
@@ -236,9 +353,34 @@ function Libraries({
           </select>
         </Row>
       </Group>
-      <ZoteroSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />
     </>
   );
+}
+
+function Zotero({
+  invoke,
+  workspaces,
+  info,
+  settings,
+  onSettings,
+  onChanged,
+}: {
+  invoke: Invoke;
+  workspaces: WorkspaceSummary[];
+  info: AppInfo;
+  settings: AppSettings;
+  onSettings: (patch: Partial<AppSettings>) => void;
+  onChanged: () => void;
+}) {
+  const [importing, setImporting] = useState<{ mode?: ZoteroMode; current?: ZoteroOptions | null } | null>(null);
+  // One sheet at a time: the import dialogue takes the place of this page.
+  if (importing)
+    return (
+      <div className="kx-settings-group kx-settings-zotero-import">
+        <ZoteroImport invoke={invoke} workspaceId={workspaces[0]?.id} initialMode={importing.mode} current={importing.current} onClose={() => setImporting(null)} onDone={() => onChanged()} />
+      </div>
+    );
+  return <ZoteroSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />;
 }
 
 function SearchSettings({
@@ -279,19 +421,20 @@ function SearchSettings({
   const failed = counts?.attention ?? 0;
   return (
     <>
-      <Group
-        title="On-device search model"
-        footer="EmbeddingGemma 2 runs on this Mac through llama.cpp. Your sources, their text and every search stay here."
-      >
-        {model && model.state !== "ready" ? (
+      <Group title="Search model" footer="Runs on this Mac. Your sources and searches never leave it.">
+        {model && ["downloading", "missing", "failed"].includes(model.state) ? (
           <div className="kx-settings-row kx-settings-row-wide">
             <ModelProgressCard progress={model} compact />
           </div>
         ) : (
-          <Row label="EmbeddingGemma 2 · 768 dimensions" detail={accelerator ? `Ready · accelerated by ${accelerator}` : "Ready"}>
-            <span className="kx-settings-ok">
-              <Icon name="check" size={12} /> Ready
-            </span>
+          <Row label="EmbeddingGemma 2" detail={accelerator ? `768 dimensions · ${accelerator}` : "768 dimensions"}>
+            {model?.state === "ready" ? (
+              <span className="kx-settings-ok">
+                <Icon name="check" size={12} /> Ready
+              </span>
+            ) : (
+              <span className="kx-settings-state">{model ? "Starting…" : "Checking…"}</span>
+            )}
           </Row>
         )}
         <Row label="Model folder" path detail={info.modelDir.replace(/^\/Users\/[^/]+/, "~")}>
@@ -313,7 +456,7 @@ function SearchSettings({
           </Row>
         </Group>
       )}
-      <Group title="Indexing" footer={message || "Key reads each source’s text, splits it into passages and indexes them for search. Sources you open, select or scroll to go first."}>
+      <Group title="Indexing" footer={message || "Sources you open or scroll to are indexed first."}>
         {counts && (
           <div className="kx-settings-stats">
             <div>
@@ -352,7 +495,7 @@ function SearchSettings({
             <span className="kx-search-spinner" aria-hidden="true" />
           </Row>
         )}
-        <Row label="Pause indexing" detail="Stops reading and indexing until you resume. Search keeps working.">
+        <Row label="Pause indexing" detail="Search keeps working.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -361,7 +504,7 @@ function SearchSettings({
             onChange={(e) => setPaused(e.target.checked)}
           />
         </Row>
-        <Row label="Retry sources that failed" detail="Files that could not be read are tried again.">
+        <Row label="Retry failed sources" detail={failed ? `${failed.toLocaleString()} could not be read` : "None failed"}>
           <button
             className="kx-settings-button"
             disabled={!failed}
@@ -374,11 +517,8 @@ function SearchSettings({
           </button>
         </Row>
       </Group>
-      <Group
-        title="Document analysis"
-        footer="Each PDF is read with layout analysis: reading order, headings, tables and columns, without running headers and page numbers. Its references are then found and looked up, and linked to sources already in your library."
-      >
-        <Row label="Use the layout model" detail="PP-DocLayout, on this Mac. Recognises complex layouts more reliably; takes about a second per page.">
+      <Group title="PDF analysis">
+        <Row label="Use the layout model" detail="Better reading order, tables and columns; about a second per page.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -391,10 +531,10 @@ function SearchSettings({
           label="Analyse PDFs again"
           detail={
             outdated === undefined
-              ? "Reads PDFs again with the current settings."
+              ? "Read PDFs again with the current settings."
               : outdated
-                ? `${outdated.toLocaleString()} ${outdated === 1 ? "PDF was" : "PDFs were"} read without the current analysis.`
-                : "Every PDF uses the current analysis."
+                ? `${outdated.toLocaleString()} ${outdated === 1 ? "PDF uses" : "PDFs use"} an older analysis`
+                : "Every PDF is up to date"
           }
         >
           <button
@@ -410,18 +550,15 @@ function SearchSettings({
           </button>
         </Row>
       </Group>
-      <Group
-        title="OpenAlex"
-        footer="Sources with a DOI, PMID or OpenAlex id are looked up in OpenAlex, the open catalogue of research: authors with their ORCID, the journal, topics, funding, open-access status, retractions and the works each one cites. Citation counts are refreshed when a page is opened. PDFs without a DOI are matched by their title, also in Crossref; older ones are looked up when the library is otherwise idle. Only identifiers and titles are sent, never your files or notes."
-      >
-        <Row label="Look up new sources" detail={
+      <Group title="Metadata" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
+        <Row label="Look up new sources in OpenAlex" detail={
             !settings.openalex
-              ? "Off: only when you choose Look up in OpenAlex."
+              ? "Only when you ask"
               : status?.enrichment
                 ? `${status.enrichment.toLocaleString()} waiting`
                 : olderSources(status?.backfill)
-                  ? `Looking up ${olderSources(status?.backfill).toLocaleString()} older sources when idle`
-                  : "On"
+                  ? `${olderSources(status?.backfill).toLocaleString()} older sources when idle`
+                  : "Authors, journal, topics, citations and retractions"
           }>
           <input
             type="checkbox"
@@ -431,7 +568,7 @@ function SearchSettings({
             onChange={(e) => onSettings({ openalex: e.target.checked })}
           />
         </Row>
-        <Row label="Contact email" detail="OpenAlex asks for one so it can reach whoever sends many requests.">
+        <Row label="Contact email" detail="OpenAlex asks for one for heavy use.">
           <input
             className="kx-settings-select"
             type="email"
@@ -441,10 +578,8 @@ function SearchSettings({
             onBlur={(e) => e.target.value.trim() !== settings.openalexMailto && onSettings({ openalexMailto: e.target.value.trim() })}
           />
         </Row>
-        <Row label="API key" detail="Optional, used when requests without it are limited. Set it under Services & API keys." />
         <PossibleDuplicates invoke={invoke} workspaceId={workspaceId} />
       </Group>
-      <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />
     </>
   );
 }
@@ -459,7 +594,7 @@ function PossibleDuplicates({ invoke, workspaceId }: { invoke: Invoke; workspace
   useEffect(load, [load]);
   return (
     <>
-      <Row label="Possible duplicate people" detail={count ? `${count} to review, side by side` : "None to review."}>
+      <Row label="Possible duplicate people" detail={count ? `${count} to review` : "None to review"}>
         <button className="kx-settings-button" disabled={!count} onClick={() => setOpen(true)}>
           Review…
         </button>
@@ -502,10 +637,10 @@ function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: str
   }, [invoke, workspaceId]);
   return (
     <>
-      <Group title="Provider" footer="Used only when you ask for it, for example to fill a property or merge tags. Key sends the passages that task needs, never your whole library.">
+      <Group title="Provider" footer="Used only when you ask, with just the passages a task needs.">
         <Row
           label={status?.available ? `${PROVIDER_LABEL[status.provider ?? ""] ?? status.provider} · ${status.model}` : "Not connected"}
-          detail={status?.available ? "Connected" : status?.reason || "Checking…"}
+          detail={status ? (status.available ? "Connected" : status.reason || "Connect a provider below") : "Checking…"}
         >
           {status?.available ? (
             <span className="kx-settings-ok">
@@ -514,10 +649,7 @@ function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: str
           ) : null}
         </Row>
       </Group>
-      <Group
-        title="Connect an OpenAI-compatible provider"
-        footer="Works with local servers such as Ollama or LM Studio (http://localhost) and hosted APIs over HTTPS. The key is stored on this Mac only."
-      >
+      <Group title="OpenAI-compatible provider" footer="Ollama, LM Studio or any hosted API over HTTPS. The key stays on this Mac.">
         <form
           className="kx-settings-form"
           onSubmit={async (e) => {

@@ -53,16 +53,16 @@ const ago = (at?: number) => {
 };
 
 function storageLine(storage: Storage) {
-  if (storage.backend === "keychain") return "Stored in the Keychain, encrypted with Key’s own Keychain item.";
+  if (storage.backend === "keychain") return "Encrypted in your Keychain";
   const why =
     storage.reason === "unsigned"
-      ? " This copy of Key is not signed, so it does not use the Keychain: macOS would ask again after every update."
+      ? " (this copy of Key is not signed)"
       : storage.reason === "development"
-        ? " Development builds do not use the Keychain."
+        ? " (development build)"
         : storage.reason === "unavailable"
-          ? " The Keychain was not available."
+          ? " (Keychain unavailable)"
           : "";
-  return `Stored on this Mac, encrypted in Key’s data folder that only your account can read.${why}`;
+  return `Encrypted in Key’s data folder${why}`;
 }
 
 export default function ServiceKeys({ invoke }: { invoke: Invoke }) {
@@ -77,17 +77,14 @@ export default function ServiceKeys({ invoke }: { invoke: Invoke }) {
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, [load]);
-  if (!listing) return null;
+  if (!listing) return <p className="kx-settings-loading">Loading…</p>;
   const { storage } = listing;
   return (
     <>
       {listing.services.map((service) => (
         <ServiceGroup key={service.id} service={service} storage={storage} invoke={invoke} onChange={setListing} />
       ))}
-      <Group
-        title="Where keys are kept"
-        footer="Keys stay in Key’s main process. Library helpers receive the OpenAlex key directly when they start, never through their environment, and no key is written to a log."
-      >
+      <Group title="Storage" footer="Keys never reach a page or a log.">
         <Row label={storage.backend === "keychain" ? "Keychain" : "This Mac"} detail={storageLine(storage)}>
           <span className="kx-service-storage" data-backend={storage.backend}>
             <Icon name={storage.backend === "keychain" ? "lock" : "disk"} size={13} />
@@ -96,7 +93,7 @@ export default function ServiceKeys({ invoke }: { invoke: Invoke }) {
         {storage.locked && (
           <Row
             label="Keys saved by another copy of Key"
-            detail={storage.error ?? "A signed copy of Key saved them in the Keychain. Unlocking may ask for your permission once; afterwards they are kept on this Mac."}
+            detail={storage.error ?? "Saved in the Keychain by a signed copy. macOS may ask once."}
           >
             <button className="kx-settings-button" onClick={() => void invoke<Listing>("services_unlock", {}).then(setListing)}>
               Unlock…
@@ -153,7 +150,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
   };
 
   return (
-    <Group title={service.via ? `${service.name} via ${service.via}` : service.name} footer={`${service.summary} Used for: ${service.usedFor.charAt(0).toLowerCase()}${service.usedFor.slice(1)}.`}>
+    <Group title={service.via ? `${service.name} via ${service.via}` : service.name} footer={`Used for ${/^\S+ [a-z]/.test(service.usedFor) ? service.usedFor.charAt(0).toLowerCase() + service.usedFor.slice(1) : service.usedFor}.`}>
       <div className="kx-settings-row kx-service-head" data-service={service.id}>
         <span className="kx-service-glyph" data-state={key.set ? (validity === "invalid" ? "invalid" : "set") : undefined}>
           <Icon name="key" size={14} />
@@ -165,10 +162,10 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
           </span>
           <small>
             {key.set
-              ? `${storage.locked ? "Locked in the Keychain" : storage.backend === "keychain" ? "Stored in the Keychain" : "Stored on this Mac"}`
+              ? `${storage.locked ? "Locked in the Keychain" : storage.backend === "keychain" ? "In the Keychain" : "On this Mac"}`
               : service.keyRequired
-                ? `Not used until you add a key from ${service.keyUrlLabel}.`
-                : `Optional. Requests work without one; get a key at ${service.keyUrlLabel}.`}
+                ? `Required · from ${service.keyUrlLabel}`
+                : `Optional · from ${service.keyUrlLabel}`}
           </small>
         </div>
         <span className="kx-service-status" data-state={!key.set ? "none" : validity ?? "set"} aria-label={`${service.name} key status`}>
@@ -245,7 +242,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
           </button>
         </div>
       ) : (
-        <Row label="Use the key" detail={service.keyRequired ? "Searches Google Scholar when the other catalogues fail or find nothing, or always when turned on under Web search." : service.mode === "always" ? "Every request carries the key." : "Requests go out without it first; the key is used when they are limited, refused or keep failing."}>
+        <Row label="Use the key" detail={service.keyRequired ? "When other catalogues find nothing, or always if on under Web search." : service.mode === "always" ? "Every request carries it." : "Only when requests without it are limited or refused."}>
           {!service.keyRequired && (
             <select
               className="kx-settings-select"
