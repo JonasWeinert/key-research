@@ -2,6 +2,7 @@
 // and never pulls Tiptap into the importing chunk.
 export { default, default as NoteEditor, loadNoteEditor, preloadNoteEditorWhenIdle } from "./LazyNoteEditor";
 export { markdownToPlainText } from "./plainText";
+export type { NoteCheckIssue, NoteCiteItem, NoteCiteRequest, NoteCiteResult, NoteCiteStyle } from "./types";
 export type { DraggedItem, ItemKind, ItemLink, NoteEditorHandle, NoteEditorProps, NoteMediaHost, QuoteInsert, SourceRef } from "./types";
 export { CITE_DRAG_TYPE, QUOTE_DRAG_TYPE } from "./types";
 export { ITEM_DRAG_TYPE, hasItemDrag, itemFromHref, itemHref, readItemDrag, setItemDrag } from "./types";

@@ -144,6 +144,9 @@ export default function LinkedFileView({ invoke, workspaceId, fileId }: { invoke
             searchItemsMore={sources.searchItemsMore}
             citeLabel={sources.citeLabel}
             formatCitations={sources.formatCitations}
+            renderCitations={sources.renderCitations}
+            checkCitations={sources.checkCitations}
+            restoreSource={sources.restoreSource}
             formatBibliography={sources.formatBibliography}
             onOpenItem={sources.onOpenItem}
             className="kx-note-page-editor"

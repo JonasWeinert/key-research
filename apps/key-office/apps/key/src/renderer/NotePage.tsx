@@ -26,6 +26,8 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
   const [error, setError] = useState("");
   const [saved, setSaved] = useState<"saved" | "saving">("saved");
   const [sheet, setSheet] = useState<PropertySheetState>();
+  // The note's own citation style and language (kept with its page header), else Settings'.
+  const [citationStyle, setCitationStyle] = useState<{ style?: string; locale?: string }>({});
   const latest = useRef<{ title: string; body: string }>({ title: "", body: "" });
   const titleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const sources = useMemo(() => noteSources(invoke, workspaceId), [invoke, workspaceId]);
@@ -49,6 +51,8 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
         if (!current) return;
         if (!loaded) return setError("This note no longer exists.");
         latest.current = { title: loaded.title, body: loaded.body };
+        const look = (loaded.appearance ?? {}) as Record<string, unknown>;
+        setCitationStyle({ style: typeof look.citationStyle === "string" ? look.citationStyle : undefined, locale: typeof look.citationLocale === "string" ? look.citationLocale : undefined });
         setNote(loaded);
         if (loaded.sourceId) void invoke<Source | null>("store_source", { id: loaded.sourceId }, workspaceId).then((s) => current && setSource(s ?? undefined));
       })
@@ -229,6 +233,15 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
             citeLabel={sources.citeLabel}
             formatCitations={sources.formatCitations}
             formatBibliography={sources.formatBibliography}
+            renderCitations={sources.renderCitations}
+            checkCitations={sources.checkCitations}
+            listCitationStyles={sources.listCitationStyles}
+            restoreSource={sources.restoreSource}
+            citationStyle={citationStyle}
+            onCitationStyle={(next) => {
+              setCitationStyle(next);
+              void saveMeta({ appearance: { citationStyle: next.style ?? null, citationLocale: next.locale ?? null } as AppearancePatch });
+            }}
             onOpenItem={sources.onOpenItem}
             className="kx-note-page-editor"
             apiRef={editorApi}

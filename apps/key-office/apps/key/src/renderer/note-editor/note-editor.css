@@ -1283,3 +1283,319 @@
   color: var(--kx-text-3);
   font-size: 0.92em;
 }
+
+/* ── Bibliography header: style, language, checker ──────────────────────── */
+
+.ne-bibliography-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 0.45em;
+}
+.ne-bibliography-head .ne-bibliography-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.ne-bibliography-style {
+  max-width: 180px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-3);
+  font: 12px var(--kx-font);
+  opacity: 0;
+  transition: opacity 120ms var(--kx-ease);
+}
+.ne-bibliography-locale {
+  max-width: 120px;
+}
+.ne-bibliography:hover .ne-bibliography-style,
+.ne-bibliography.is-selected .ne-bibliography-style,
+.ne-bibliography-style:focus-visible,
+.ne-bibliography-style[data-own] {
+  opacity: 1;
+}
+.ne-bibliography-style:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+}
+.ne-bibliography-stylename {
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+.ne-bibliography-issues {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--kx-amber) 14%, transparent);
+  color: var(--kx-text-2);
+  font: 12px var(--kx-font);
+}
+.ne-bibliography-issues svg {
+  color: var(--kx-amber);
+}
+.ne-bibliography-issues:hover {
+  background: color-mix(in srgb, var(--kx-amber) 24%, transparent);
+}
+.ne-bibliography-flag {
+  display: inline-flex;
+  margin-left: 5px;
+  color: var(--kx-amber);
+  vertical-align: -1px;
+  text-indent: 0;
+}
+
+/* ── Citation picker ─────────────────────────────────────────────────────── */
+
+.ne-cite-picker,
+.ne-check-panel {
+  position: fixed;
+  z-index: 1000;
+  width: 380px;
+  max-width: calc(100vw - 16px);
+}
+.ne-cite-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  margin: 0 0 4px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--kx-fill);
+  color: var(--kx-text-3);
+}
+.ne-cite-search:focus-within {
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+.ne-cite-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+}
+.ne-cite-results {
+  max-height: 210px;
+  overflow-y: auto;
+}
+.ne-cite-results .ne-menu-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.ne-cite-picked {
+  max-height: 300px;
+  margin: 4px 0 0;
+  padding: 4px 0 0;
+  overflow-y: auto;
+  border-top: 0.5px solid var(--kx-line);
+  list-style: none;
+}
+.ne-cite-picked-item + .ne-cite-picked-item {
+  margin-top: 2px;
+}
+.ne-cite-picked-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.ne-cite-picked-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 26px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  text-align: left;
+}
+.ne-cite-picked-title > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ne-cite-picked-title svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.ne-cite-picked-title:hover {
+  background: var(--kx-fill);
+}
+.ne-cite-picked-summary {
+  color: var(--kx-text-3);
+}
+.ne-cite-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+.ne-cite-icon:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+.ne-cite-flag {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  color: var(--kx-amber);
+}
+.ne-cite-fields {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 5px;
+  padding: 4px 6px 8px 23px;
+}
+.ne-cite-fields input:not([type="checkbox"]),
+.ne-cite-fields select {
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+}
+.ne-cite-fields input:not([type="checkbox"]):focus,
+.ne-cite-fields select:focus {
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+.ne-cite-check {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 6px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.ne-cite-check input {
+  margin: 0;
+  accent-color: var(--kx-accent);
+}
+.ne-cite-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 3px 2px;
+  border-top: 0.5px solid var(--kx-line);
+}
+.ne-cite-spacer {
+  flex: 1;
+}
+.ne-cite-cancel,
+.ne-cite-remove {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: 13px var(--kx-font);
+}
+.ne-cite-cancel:hover {
+  background: var(--kx-fill);
+}
+.ne-cite-remove {
+  color: var(--kx-red);
+}
+.ne-cite-remove:hover {
+  background: color-mix(in srgb, var(--kx-red) 10%, transparent);
+}
+
+/* ── Check references ────────────────────────────────────────────────────── */
+
+.ne-check-clean {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 8px;
+  color: var(--kx-text-2);
+}
+.ne-check-clean svg {
+  color: var(--kx-green);
+}
+.ne-check-list {
+  max-height: min(60vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.ne-check-issue {
+  display: flex;
+  gap: 8px;
+  padding: 7px 8px;
+}
+.ne-check-issue + .ne-check-issue {
+  border-top: 0.5px solid var(--kx-line);
+}
+.ne-check-icon {
+  flex: none;
+  padding-top: 1px;
+  color: var(--kx-text-3);
+}
+.ne-check-issue[data-severity="error"] .ne-check-icon {
+  color: var(--kx-red);
+}
+.ne-check-issue[data-severity="warning"] .ne-check-icon {
+  color: var(--kx-amber);
+}
+.ne-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.ne-check-message {
+  color: var(--kx-text);
+  line-height: 1.4;
+}
+.ne-check-actions {
+  display: flex;
+  gap: 4px;
+}
+.ne-check-actions:empty {
+  display: none;
+}
+.ne-check-actions button {
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font: 12px var(--kx-font);
+}
+.ne-check-actions button:hover {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+.ne-check-actions .ne-check-fix {
+  color: var(--kx-accent-text);
+}

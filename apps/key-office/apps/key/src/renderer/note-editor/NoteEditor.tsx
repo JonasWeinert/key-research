@@ -15,13 +15,15 @@ import { QuotePaste } from "./quotePaste";
 import { BibliographyView } from "./bibliographyView";
 import { CalloutView, ImageView, ItemEmbedView, SourceEmbedView, SourceQuoteView, ToggleView, VideoEmbedView, defaultMapCenterSearch } from "./nodeViews";
 import { NoteRuntimeExtension } from "./runtime";
-import { CitationRefresh } from "./citations";
+import { CitationRefresh, citationAt, placeCitation, removeCitation } from "./citations";
+import { CitationPicker } from "./CitationPicker";
+import { CheckPanel } from "./CheckPanel";
 import type { NoteRuntime, UrlPromptRequest } from "./runtime";
 import { Callout, ItemEmbed, NoteBibliography, NoteImage, SourceEmbed, SourceQuote, Toggle, VideoEmbed, buildSchemaExtensions, serializeNote } from "./schema";
 import { resolveSourceCached } from "./sourceCache";
 import { SuggestionMenu, usePopoverPosition } from "./SuggestionMenu";
 import type { SuggestionMenuHandle } from "./SuggestionMenu";
-import type { DraggedItem, NoteEditorHandle, NoteEditorProps } from "./types";
+import type { DraggedItem, NoteCiteItem, NoteCiteResult, NoteEditorHandle, NoteEditorProps } from "./types";
 import { insertDroppedItems, insertLinks, type DropMode } from "./mediaBehaviors";
 import { editorTargetFocused, registerEditorTarget, type EditorTarget } from "./targets";
 import { revealText } from "./reveal";
@@ -31,6 +33,12 @@ import { exitSuggestion } from "@tiptap/suggestion";
 
 const SAVE_DELAY_MS = 400;
 const DEFAULT_PLACEHOLDER = "Type / for blocks, [[ to link, @ to cite";
+
+/** Where a popover for the text at `pos` goes. */
+function caretRect(editor: NonNullable<ReturnType<typeof useEditor>>, pos: number) {
+  const c = editor.view.coordsAtPos(Math.min(pos, editor.state.doc.content.size));
+  return new DOMRect(c.left, c.top, 0, c.bottom - c.top);
+}
 
 function buildEditorExtensions(runtime: NoteRuntime, controller: MenuController): AnyExtension[] {
   return [
@@ -149,6 +157,8 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
   const [prompt, setPrompt] = useState<{ request: UrlPromptRequest; rect: DOMRect | null } | null>(null);
   const [dropChoice, setDropChoice] = useState<{ items: DraggedItem[]; from: number; to: number; rect: DOMRect } | null>(null);
   const editorRef = useRef<ReturnType<typeof useEditor>>(null);
+  const [citePicker, setCitePicker] = useState<{ range: { from: number; to: number }; initial: NoteCiteItem[]; text?: string; rect: DOMRect } | null>(null);
+  const [checkPanel, setCheckPanel] = useState<DOMRect | null>(null);
 
   const controller = useMemo<MenuController>(
     () => ({
@@ -188,6 +198,39 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
       cite: async (ref, page) => propsRef.current.citeLabel?.(ref, page),
       citeMany: async (cites) => (propsRef.current.formatCitations ? propsRef.current.formatCitations(cites) : []),
       bibliography: async (ids) => propsRef.current.formatBibliography?.(ids),
+      // One call for the note's citations and reference list; hosts without it render the two apart.
+      renderNote: async (request): Promise<NoteCiteResult> => {
+        const p = propsRef.current;
+        if (p.renderCitations) return p.renderCitations(request);
+        const cites = request.citations.map((c) => {
+          const page = Number(c.items[0]?.locator);
+          return { id: c.items[0]?.id ?? "", page: Number.isFinite(page) && page > 0 ? page - 1 : undefined };
+        });
+        const [citations, bibliography] = await Promise.all([cites.length && p.formatCitations ? p.formatCitations(cites) : Promise.resolve([]), request.bibliography ? p.formatBibliography?.(request.ids) : undefined]);
+        return { citations, bibliography };
+      },
+      checkNote: async (request) => (propsRef.current.checkCitations ? propsRef.current.checkCitations(request) : []),
+      citationStyle: () => propsRef.current.citationStyle ?? {},
+      get setCitationStyle() {
+        return propsRef.current.onCitationStyle;
+      },
+      get listStyles() {
+        return propsRef.current.listCitationStyles;
+      },
+      get restoreSource() {
+        return propsRef.current.restoreSource;
+      },
+      pickCitation: (range) => {
+        const editor = editorRef.current;
+        if (!editor || editor.isDestroyed) return;
+        const at = range.to > range.from ? citationAt(editor.state.doc, range.from) : undefined;
+        setCitePicker({ range, initial: at?.items ?? [], text: at?.text, rect: caretRect(editor, range.from) });
+      },
+      openCheck: () => {
+        const editor = editorRef.current;
+        if (!editor || editor.isDestroyed) return;
+        setCheckPanel(caretRect(editor, editor.state.selection.from));
+      },
       dropped: (items, from, to) => {
         const editor = editorRef.current;
         if (!editor || editor.isDestroyed) return;
@@ -375,6 +418,25 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
           would otherwise make them the frame for these fixed-position menus. */}
       {createPortal(<SuggestionMenu ref={menuRef} state={menu} />, document.body)}
       {prompt && createPortal(<UrlPrompt request={prompt.request} rect={prompt.rect} onClose={() => setPrompt(null)} />, document.body)}
+      {editor &&
+        citePicker &&
+        createPortal(
+          <CitationPicker
+            rect={citePicker.rect}
+            initial={citePicker.initial}
+            search={(query) => runtime.search(query, "cite")}
+            resolve={runtime.resolve}
+            onOpen={(id) => runtime.open(id)}
+            onSubmit={(items) => placeCitation(editor, citePicker.range, items, citePicker.initial.length ? citePicker.text : undefined)}
+            onRemove={citePicker.initial.length ? () => removeCitation(editor, citePicker.range) : undefined}
+            onClose={() => {
+              setCitePicker(null);
+              if (!editor.isDestroyed) editor.commands.focus();
+            }}
+          />,
+          document.body,
+        )}
+      {editor && checkPanel && createPortal(<CheckPanel editor={editor} rect={checkPanel} onClose={() => setCheckPanel(null)} />, document.body)}
       {editor && dropChoice && createPortal(<DropChoice editor={editor} choice={dropChoice} onClose={() => setDropChoice(null)} />, document.body)}
     </div>
   );

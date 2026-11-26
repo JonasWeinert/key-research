@@ -836,6 +836,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             searchItemsMore={sources.searchItemsMore}
             citeLabel={sources.citeLabel}
             formatCitations={sources.formatCitations}
+            renderCitations={sources.renderCitations}
+            checkCitations={sources.checkCitations}
+            restoreSource={sources.restoreSource}
             formatBibliography={sources.formatBibliography}
             onOpenItem={sources.onOpenItem}
             placeholder="Write about this source. Type / for blocks, @ to link anything"
@@ -876,6 +879,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   searchItemsMore={sources.searchItemsMore}
                   citeLabel={sources.citeLabel}
                   formatCitations={sources.formatCitations}
+                  renderCitations={sources.renderCitations}
+                  checkCitations={sources.checkCitations}
+                  restoreSource={sources.restoreSource}
                   formatBibliography={sources.formatBibliography}
                   onOpenItem={sources.onOpenItem}
                 />

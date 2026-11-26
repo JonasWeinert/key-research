@@ -6,6 +6,7 @@ import { Suggestion } from "@tiptap/suggestion";
 import type { SuggestionProps } from "@tiptap/suggestion";
 import type { IconName } from "../icons";
 import { insertVideo, pickImageFiles } from "./mediaBehaviors";
+import { placeCitation } from "./citations";
 import { getRuntime } from "./runtime";
 import type { PickMode } from "./runtime";
 import { mentionLabel, rememberSource, sourceLine } from "./sourceCache";
@@ -51,7 +52,30 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: "callout", label: "Callout", hint: "Highlighted note box", group: "Research", icon: "info", keywords: ["note", "tip", "warning", "admonition", "box"], run: (e, r) => clear(e, r).wrapIn("callout", { tone: "info" }).run() },
   { id: "toggle", label: "Toggle", hint: "Collapsible section", group: "Research", icon: "chevronRight", keywords: ["collapse", "details", "fold"], run: (e, r) => clear(e, r).wrapIn("toggle", { title: "" }).run() },
   { id: "link-source", label: "Link to anything", hint: "Note, source, highlight or canvas, like [[", group: "Research", icon: "link", keywords: ["mention", "reference", "[[", "note", "canvas", "highlight", "backlink"], run: (e, r) => openPicker(e, r, "link") },
-  { id: "cite-source", label: "Cite a source", hint: "In-text citation, like @ (add p. 12 for a page)", group: "Research", icon: "quote", keywords: ["citation", "reference", "@", "apa", "page"], run: (e, r) => openPicker(e, r, "cite") },
+  {
+    id: "cite-source",
+    label: "Cite sources",
+    hint: "Citation with pages, prefix and suffix (⌃⌘C); @ cites one quickly",
+    group: "Research",
+    icon: "quote",
+    keywords: ["citation", "cite", "reference", "@", "apa", "page", "locator"],
+    run: (e, r) => {
+      clear(e, r).run();
+      getRuntime(e)?.pickCitation({ from: r.from, to: r.from });
+    },
+  },
+  {
+    id: "check-references",
+    label: "Check references",
+    hint: "Missing, retracted or duplicate sources, gaps in details",
+    group: "Research",
+    icon: "check",
+    keywords: ["citations", "references", "retracted", "duplicates", "bibliography", "checker"],
+    run: (e, r) => {
+      clear(e, r).run();
+      getRuntime(e)?.openCheck();
+    },
+  },
   { id: "embed-source", label: "Embed anything", hint: "A live note, highlight, canvas or source, like ![[", group: "Research", icon: "books", keywords: ["card", "transclude", "include", "paper", "![["], run: (e, r) => openPicker(e, r, "embed") },
   {
     id: "relation-map",
@@ -338,6 +362,12 @@ export function insertSource(editor: Editor, range: Range, ref: SourceRef, mode:
       .deleteRange(range)
       .setNode("sourceQuote", { source: ref.id, page: typeof ref.page === "number" ? ref.page : null })
       .run();
+    return;
+  }
+  // A whole source is cited as the picker cites it: its page is the citation's locator.
+  if (mode === "cite" && wholeSource) {
+    if (ref.flag) void import("../item-actions").then(({ toast }) => toast(`${ref.title.slice(0, 60)}: ${ref.flag!.toLowerCase()}. Check it before citing.`));
+    placeCitation(editor, range, [{ id: ref.id, ...(page !== undefined && page >= 0 ? { locator: String(page + 1) } : {}) }]);
     return;
   }
   // A cited page is part of the link, so it opens there.

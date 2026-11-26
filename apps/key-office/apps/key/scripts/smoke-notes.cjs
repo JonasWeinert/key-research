@@ -106,7 +106,8 @@ function png(width, height, [r, g, b]) {
       body = (await call("store_notes", { sourceId: created.id }))[0]?.body ?? "";
     }
     assert.match(body, /^```callout tone="info"\n/m);
-    assert.match(body, new RegExp(`\\]\\(key://source/${created.id}\\)`));
+    // @ cites: the link keeps the cited work in its `cite` parameter.
+    assert.match(body, new RegExp(`\\]\\(key://source/${created.id}\\?cite=[^)]+\\)`));
     // Keys typed in a note never reach the list: Backspace must not trash, Enter must not open.
     await page.keyboard.press("Enter");
     await page.keyboard.type("x");

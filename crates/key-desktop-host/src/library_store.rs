@@ -478,6 +478,7 @@ impl Library {
                     .or_else(|| super::linked_folders::dispatch(self, command, args, root))
                     .or_else(|| super::core_commands::dispatch(self, command, args))
                     .or_else(|| super::cite_commands::dispatch(self, command, args))
+                    .or_else(|| super::cite_check::dispatch(self, command, args))
                     .or_else(|| super::biblio_commands::dispatch(self, command, args, root))
                     .or_else(|| super::export_commands::dispatch(self, command, args, root));
             }

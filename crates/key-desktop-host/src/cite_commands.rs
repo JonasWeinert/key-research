@@ -13,14 +13,14 @@ use std::{sync::OnceLock, time::Duration};
 const REPOSITORY_HOST: &str = "raw.githubusercontent.com";
 const REPOSITORY: &str = "https://raw.githubusercontent.com/citation-style-language/styles/master";
 
-fn styles() -> &'static Styles {
+pub(super) fn styles() -> &'static Styles {
     static STYLES: OnceLock<Styles> = OnceLock::new();
     STYLES.get_or_init(|| Styles::new(std::env::var_os("KEY_CITATION_STYLES_DIR").map(Into::into)))
 }
 
 /// The style and locale asked for, else the ones chosen in Settings (the app's settings
 /// file, KEY_APP_SETTINGS_FILE, read each time so a change applies at once), else APA.
-fn chosen(args: &Json) -> Result<(String, Option<String>), String> {
+pub(super) fn chosen(args: &Json) -> Result<(String, Option<String>), String> {
     let style: Option<String> = arg::<Option<String>>(args, "style")?.filter(|s| !s.trim().is_empty());
     let locale: Option<String> = arg::<Option<String>>(args, "locale")?.filter(|s| !s.trim().is_empty());
     if style.is_some() && locale.is_some() {
@@ -111,7 +111,7 @@ pub fn reference_markdown(source: &key_store::Source) -> Option<String> {
     Some(key_biblio::md_export::html_to_markdown(&entry.formatted.html)).filter(|t| !t.is_empty())
 }
 
-fn csl_items(library: &Library, ids: &[String]) -> Result<Vec<Json>, String> {
+pub(super) fn csl_items(library: &Library, ids: &[String]) -> Result<Vec<Json>, String> {
     let mut items = Vec::with_capacity(ids.len());
     for id in ids {
         if let Some(source) = library.store.source(id)? {

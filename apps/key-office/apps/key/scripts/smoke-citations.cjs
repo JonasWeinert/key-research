@@ -234,6 +234,80 @@ const HOUSE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     assert.match(body, /```bibliography\nReferences\n```/);
     result.notes = true;
 
+    // 6b. The citation picker: cite with a locator and prefix, edit, a style for this note only,
+    // the reference checker with its fixes, and the source page's "Cited in".
+    await editor.locator("p").first().click({ position: { x: 4, y: 8 } });
+    await page.waitForFunction(() => {
+      const sel = window.getSelection();
+      return !!sel && sel.rangeCount > 0 && !!sel.anchorNode && !!document.querySelector(".kx-note-page .ProseMirror")?.contains(sel.anchorNode);
+    });
+    // Not on a citation: a click there opens it in the picker.
+    await editor.locator("p").first().click({ position: { x: 4, y: 8 } });
+    await page.keyboard.press("Home");
+    await page.keyboard.type("Attention matters ");
+    await page.keyboard.press("Control+Meta+c");
+    const picker = page.locator(".ne-cite-picker");
+    await picker.waitFor();
+    await picker.getByRole("textbox", { name: "Search the library" }).fill("Measuring attention");
+    await picker.getByRole("option", { name: /Measuring attention/ }).click();
+    await picker.getByRole("textbox", { name: "Locator" }).fill("7-9");
+    await picker.getByRole("textbox", { name: "Prefix" }).fill("see");
+    await shot(page, "7-picker");
+    await picker.getByRole("button", { name: "Cite", exact: true }).click();
+    const doeCite = editor.locator("a", { hasText: "see Doe, 2020, pp. 7–9" });
+    await doeCite.waitFor();
+    // Clicking a citation edits it: the author is named in the sentence.
+    await doeCite.click();
+    await picker.waitFor();
+    assert.equal(await picker.getAttribute("aria-label"), "Edit citation");
+    await picker.getByRole("checkbox", { name: /Leave out the author/ }).check();
+    await picker.getByRole("button", { name: "Update" }).click();
+    await editor.locator("a", { hasText: "(see 2020, pp. 7–9)" }).waitFor();
+    // A style for this note alone, kept with the note.
+    await editor.locator(".ne-bibliography").hover();
+    await editor.locator("select[aria-label='Citation style for this note']").selectOption("ieee");
+    await editor.locator("a", { hasText: /^\[2\]$/ }).first().waitFor();
+    await editor.locator("a", { hasText: "see [1, pp. 7–9]" }).waitFor();
+    await editor.locator(".ne-bibliography-list p").first().waitFor();
+    await shot(page, "8-note-own-style");
+    let saved;
+    for (let i = 0; i < 40; i++) {
+      saved = await call("store_note", { id: note.id });
+      if (saved?.appearance?.citationStyle === "ieee" && saved.body.includes("?cite=")) break;
+      await page.waitForTimeout(150);
+    }
+    assert.equal(saved.appearance.citationStyle, "ieee", "the note keeps its own style");
+    assert.match(saved.body, /key:\/\/source\/[^)]*\?cite=/, "the citation keeps its locator in the link");
+    // The checker: a trashed source (restored in one click) and a locator written differently.
+    await call("store_trash", { ids: [kahneman.id], trashed: true });
+    await editor.locator(".ne-bibliography").hover();
+    await editor.locator(".ne-bibliography-style").first().selectOption("");
+    const issues = editor.locator(".ne-bibliography-issues");
+    await issues.waitFor();
+    await issues.click();
+    const panel = page.locator(".ne-check-panel");
+    await panel.locator(".ne-check-issue", { hasText: "is in the trash" }).waitFor();
+    await panel.locator(".ne-check-issue", { hasText: "Locator “7-9”" }).waitFor();
+    await shot(page, "9-check-references");
+    await panel.locator(".ne-check-issue", { hasText: "is in the trash" }).getByRole("button", { name: "Restore" }).click();
+    await panel.locator(".ne-check-issue", { hasText: "Locator “7-9”" }).getByRole("button", { name: "Use “7–9”" }).click();
+    for (let i = 0; i < 40; i++) {
+      const s = await call("store_source", { id: kahneman.id });
+      if (!s.trashedAt) break;
+      await page.waitForTimeout(150);
+    }
+    assert.ok(!(await call("store_source", { id: kahneman.id })).trashedAt, "restored from the trash");
+    await panel.locator(".ne-check-issue", { hasText: "is in the trash" }).waitFor({ state: "detached" });
+    await page.keyboard.press("Escape");
+    result.picker = true;
+    // Where the source is cited: its page counts the note's citation.
+    await page.evaluate(({ id, sourceId }) => window.key.tabAction("open-source-page", { workspaceId: id, sourceId }), { id: ws.id, sourceId: doe.id });
+    const citedIn = page.locator(".kx-linked-from").last();
+    await citedIn.locator("h3", { hasText: "Cited in" }).waitFor();
+    await citedIn.locator(".kx-linked-from-row", { hasText: "1 citation" }).waitFor();
+    await shot(page, "10-cited-in");
+    result.citedIn = true;
+
     // 7. A whole document's citations in one call: numbering and disambiguation.
     const doc = await call("store_cite_render", {
       style: "ieee",

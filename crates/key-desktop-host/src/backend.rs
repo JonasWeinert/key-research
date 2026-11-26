@@ -9,6 +9,8 @@ mod library_store;
 mod linked_folders;
 #[path = "cite_commands.rs"]
 mod cite_commands;
+#[path = "cite_check.rs"]
+mod cite_check;
 #[path = "core_commands.rs"]
 mod core_commands;
 #[path = "biblio_commands.rs"]
