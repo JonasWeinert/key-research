@@ -2,6 +2,7 @@
 // columns plus user JSON properties), collections, notes, annotations and the
 // chunked text of documents and notes that full-text and vector search run over.
 mod analysis;
+pub mod cancel;
 pub mod citation_keys;
 mod filters;
 mod graph;
@@ -454,6 +455,9 @@ pub struct Store {
 
 /// Read-only connections: a user's list or search never waits for one background query.
 const READERS: usize = 3;
+/// Rows a bulk write commits at once before it lets a waiting user action have the writer
+/// (a few milliseconds of work each).
+pub(crate) const WRITE_BATCH: usize = 200;
 
 pub fn now_ms() -> i64 {
     SystemTime::now()
@@ -526,6 +530,7 @@ impl Store {
                 let reader = Connection::open(root.join("key.db")).map_err(e)?;
                 formula::register(&reader)?;
                 duplicates::register(&reader)?;
+                cancel::install(&reader);
                 reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
                 Ok(reader)
             })
@@ -1215,31 +1220,43 @@ impl Store {
             .map_err(e)
     }
 
-    /// Atomically replaces a source's chunks (text, rects and optional embeddings).
+    /// Replaces a source's chunks (text, rects and optional embeddings). A long document is
+    /// written in batches, each its own transaction with a pause for user actions between
+    /// (`yield_if_needed`), so an edit never waits for a whole book. Its source stays
+    /// `indexing` meanwhile, so an interrupted write is redone from the start.
     pub fn replace_chunks(&self, source_id: &str, chunks: &[ChunkInput]) -> Result<()> {
-        let db = self.db()?;
-        let tx = db.unchecked_transaction().map_err(e)?;
-        tx.execute("DELETE FROM chunks WHERE source_id = ?", [source_id]).map_err(e)?;
-        {
-            let mut insert = tx
-                .prepare("INSERT INTO chunks(source_id, seq, page, start_seconds, text, rects, embedded, kind, section) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
-                .map_err(e)?;
-            let mut vector = tx
-                .prepare("INSERT INTO chunk_vectors(rowid, embedding) VALUES (?1, ?2)")
-                .map_err(e)?;
-            for (seq, chunk) in chunks.iter().enumerate() {
-                let rects = (!chunk.rects.is_empty()).then(|| serde_json::to_string(&chunk.rects).unwrap_or_default());
-                insert
-                    .execute(params![source_id, seq as i64, chunk.page, chunk.start_seconds, chunk.text, rects, chunk.embedding.is_some(), chunk.kind, chunk.section])
+        let mut batches = chunks.chunks(WRITE_BATCH).enumerate().peekable();
+        if batches.peek().is_none() {
+            return self.db()?.execute("DELETE FROM chunks WHERE source_id = ?", [source_id]).map(|_| ()).map_err(e);
+        }
+        for (batch, list) in batches {
+            if batch > 0 {
+                priority::yield_if_needed();
+            }
+            let db = self.db()?;
+            let tx = db.unchecked_transaction().map_err(e)?;
+            if batch == 0 {
+                tx.execute("DELETE FROM chunks WHERE source_id = ?", [source_id]).map_err(e)?;
+            }
+            {
+                let mut insert = tx
+                    .prepare_cached("INSERT INTO chunks(source_id, seq, page, start_seconds, text, rects, embedded, kind, section) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)")
                     .map_err(e)?;
-                if let Some(embedding) = &chunk.embedding {
-                    vector
-                        .execute(params![tx.last_insert_rowid(), vector_blob(embedding)?])
+                let mut vector = tx.prepare_cached("INSERT INTO chunk_vectors(rowid, embedding) VALUES (?1, ?2)").map_err(e)?;
+                for (at, chunk) in list.iter().enumerate() {
+                    let seq = batch * WRITE_BATCH + at;
+                    let rects = (!chunk.rects.is_empty()).then(|| serde_json::to_string(&chunk.rects).unwrap_or_default());
+                    insert
+                        .execute(params![source_id, seq as i64, chunk.page, chunk.start_seconds, chunk.text, rects, chunk.embedding.is_some(), chunk.kind, chunk.section])
                         .map_err(e)?;
+                    if let Some(embedding) = &chunk.embedding {
+                        vector.execute(params![tx.last_insert_rowid(), vector_blob(embedding)?]).map_err(e)?;
+                    }
                 }
             }
+            tx.commit().map_err(e)?;
         }
-        tx.commit().map_err(e)
+        Ok(())
     }
 
     /// Passages waiting for their vector, with the title they are embedded under: the
@@ -1258,20 +1275,25 @@ impl Store {
             .map_err(e)
     }
 
+    /// Stores passages' vectors, in batches with a pause for user actions between.
     pub fn set_chunk_vectors(&self, vectors: &[(i64, Vec<f32>)]) -> Result<()> {
-        let db = self.db()?;
-        let tx = db.unchecked_transaction().map_err(e)?;
-        {
-            let mut statement = tx
-                .prepare("INSERT OR REPLACE INTO chunk_vectors(rowid, embedding) VALUES (?1, ?2)")
-                .map_err(e)?;
-            let mut mark = tx.prepare("UPDATE chunks SET embedded = 1 WHERE id = ?").map_err(e)?;
-            for (id, vector) in vectors {
-                statement.execute(params![id, vector_blob(vector)?]).map_err(e)?;
-                mark.execute([id]).map_err(e)?;
+        for (batch, list) in vectors.chunks(WRITE_BATCH).enumerate() {
+            if batch > 0 {
+                priority::yield_if_needed();
             }
+            let db = self.db()?;
+            let tx = db.unchecked_transaction().map_err(e)?;
+            {
+                let mut statement = tx.prepare_cached("INSERT OR REPLACE INTO chunk_vectors(rowid, embedding) VALUES (?1, ?2)").map_err(e)?;
+                let mut mark = tx.prepare_cached("UPDATE chunks SET embedded = 1 WHERE id = ?").map_err(e)?;
+                for (id, vector) in list {
+                    statement.execute(params![id, vector_blob(vector)?]).map_err(e)?;
+                    mark.execute([id]).map_err(e)?;
+                }
+            }
+            tx.commit().map_err(e)?;
         }
-        tx.commit().map_err(e)
+        Ok(())
     }
 
     pub fn vector_count(&self) -> Result<i64> {
