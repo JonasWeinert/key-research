@@ -88,7 +88,7 @@ impl Transport for Replay {
         let key = match_key(&request.method, &request.url);
         self.calls.lock().unwrap_or_else(|e| e.into_inner()).push(key.clone());
         let body = String::from_utf8_lossy(&request.body);
-        let found = self.answers.get(&key).and_then(|list| list.iter().find(|e| e.request_body.as_deref().is_none_or(|b| b == body)).or(list.first()));
+        let found = self.answers.get(&key).and_then(|list| list.iter().find(|e| e.request_body.as_deref().is_none_or(|b| b == body) && e.status < 400).or(list.first()));
         match found {
             Some(e) => Ok(Response { status: e.status, headers: e.headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(), body: e.body.clone().into_bytes() }),
             None => Err(TransportError::Failed(format!("no recorded answer for {key}"))),
@@ -115,6 +115,10 @@ impl Recorder {
 impl Transport for Recorder {
     fn send(&self, request: &Request, cancel: &CancellationToken) -> Result<Response, TransportError> {
         let response = self.inner.send(request, cancel)?;
+        // A retried answer (slow down, server trouble) is not what the test is about.
+        if response.status == 429 || response.status >= 500 {
+            return Ok(response);
+        }
         let keep = ["content-type", "x-ratelimit-remaining"];
         self.exchanges.lock().unwrap_or_else(|e| e.into_inner()).push(Exchange {
             method: request.method.clone(),

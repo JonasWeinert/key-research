@@ -35,7 +35,7 @@ fn has(args: &[String], name: &str) -> bool {
 }
 
 fn spec_files(args: &[String]) -> Vec<PathBuf> {
-    let explicit: Vec<PathBuf> = args.iter().filter(|a| a.ends_with(".json")).map(PathBuf::from).collect();
+    let explicit: Vec<PathBuf> = args.iter().enumerate().filter(|(i, a)| a.ends_with(".json") && (*i == 0 || !args[i - 1].starts_with("--"))).map(|(_, a)| PathBuf::from(a)).collect();
     if !explicit.is_empty() {
         return explicit;
     }
@@ -156,6 +156,12 @@ fn test(args: &[String]) -> ExitCode {
             } else {
                 failed += 1;
                 println!("FAIL  {} / {}:\n      {}", spec.id, t.name, outcome.failures.join("\n      "));
+                if let Some(r) = &outcome.request {
+                    println!("      request: {r}");
+                }
+                if let Some(x) = &outcome.excerpt {
+                    println!("      answer: {}", x.chars().take(400).collect::<String>());
+                }
             }
             outcomes.push(outcome);
         }
