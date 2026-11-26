@@ -2,7 +2,7 @@
 // cards and quotes, and open them (at a page when a quote has one).
 import { retractionOf } from "./library-hygiene";
 import { bridge, shortCreators, type Invoke, type Source, type SourcePage } from "./library-api";
-import type { ItemLink, NoteMediaHost, SourceRef } from "./note-editor";
+import type { ItemLink, NoteCheckIssue, NoteCiteRequest, NoteCiteResult, NoteMediaHost, SourceRef } from "./note-editor";
 import type { Found } from "./unified-search";
 
 type OpenSource = (source: unknown, hit?: unknown) => Promise<unknown>;
@@ -74,6 +74,28 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
         bibliography: false,
       });
       return out.citations.map((c) => c.text);
+    },
+    // The note's citations and its reference list together, in the note's style when it has one.
+    renderCitations: async (request: NoteCiteRequest): Promise<NoteCiteResult> => {
+      const { renderCitations } = await import("./cite");
+      const out = await renderCitations(invoke, workspaceId, {
+        citations: request.citations,
+        ids: request.ids,
+        bibliography: request.bibliography,
+        style: request.style,
+        locale: request.locale,
+      });
+      return { citations: out.citations.map((c) => c.text), bibliography: out.bibliography && { entries: out.bibliography.entries, hangingIndent: out.bibliography.hangingIndent }, style: out.style };
+    },
+    checkCitations: async (request: { citations: NoteCiteRequest["citations"]; bibliographyIds?: string[]; style?: string; locale?: string }) =>
+      (await invoke<{ issues: NoteCheckIssue[] }>("store_cite_check", request, workspaceId)).issues,
+    listCitationStyles: async () => {
+      const { listStyles } = await import("./cite");
+      return listStyles(invoke, workspaceId);
+    },
+    restoreSource: async (id: string) => {
+      await invoke("store_trash", { ids: [id], trashed: false }, workspaceId);
+      cache.delete(id);
     },
     formatBibliography: async (ids: string[]) => {
       const { bibliography } = await import("./cite");

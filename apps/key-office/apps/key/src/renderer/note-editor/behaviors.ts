@@ -3,6 +3,7 @@ import type { Editor } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import { citationAt } from "./citations";
 import { getRuntime } from "./runtime";
 import { peekSource, sourceLine, subscribeSources } from "./sourceCache";
 import { itemFromHref } from "./types";
@@ -79,7 +80,8 @@ function buildDecorations(doc: PMNode): DecorationSet {
 
 /**
  * Item links (`[label](key://<kind>/<id>#<anchor>)`): tooltip with the resolved
- * source, and a plain click opens the item. Other links open on Cmd/Ctrl-click.
+ * source, and a plain click opens the item (a citation: the citation picker, ⌘-click the
+ * source). Other links open on Cmd/Ctrl-click.
  */
 export const SourceLinks = Extension.create({
   name: "noteSourceLinks",
@@ -96,12 +98,21 @@ export const SourceLinks = Extension.create({
         props: {
           decorations: (state) => sourceLinkKey.getState(state),
           handleDOMEvents: {
-            click: (_view, event) => {
+            click: (view, event) => {
               const anchor = (event.target as HTMLElement | null)?.closest?.("a[href]");
               if (!anchor) return false;
               event.preventDefault();
               const href = anchor.getAttribute("href") ?? "";
               const item = itemFromHref(href);
+              // A citation opens the citation picker to change it; ⌘-click opens the source.
+              if (item?.kind === "source" && editor.isEditable && !(event.metaKey || event.ctrlKey)) {
+                const pos = view.posAtDOM(anchor, 0);
+                const citation = citationAt(view.state.doc, pos);
+                if (citation) {
+                  getRuntime(editor)?.pickCitation({ from: citation.from, to: citation.to });
+                  return true;
+                }
+              }
               if (item) {
                 getRuntime(editor)?.openItem(item);
                 return true;

@@ -1,6 +1,6 @@
 import { Extension } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
-import type { DraggedItem, ItemLink, SourceRef } from "./types";
+import type { DraggedItem, ItemLink, NoteCheckIssue, NoteCheckRequest, NoteCiteRequest, NoteCiteResult, NoteCiteStyle, SourceRef } from "./types";
 
 /** What the @ source picker inserts when an item is chosen. */
 export type PickMode = "link" | "embed" | "quote" | "cite" | "map";
@@ -26,6 +26,20 @@ export interface NoteRuntime {
   citeMany?(cites: { id: string; page?: number }[]): Promise<string[]>;
   /** The reference list of these sources in the chosen style (HTML of its entries). */
   bibliography?(ids: string[]): Promise<{ entries: { id: string; html: string; text: string }[]; hangingIndent: boolean } | undefined>;
+  /** The note's citations and reference list in one engine call, in the note's style. */
+  renderNote?(request: NoteCiteRequest): Promise<NoteCiteResult>;
+  /** The reference checker. */
+  checkNote?(request: NoteCheckRequest): Promise<NoteCheckIssue[]>;
+  /** The note's own style and language (empty: Settings › Citations). */
+  citationStyle(): NoteCiteStyle;
+  /** Saves the note's own style (absent where a note can't keep one). */
+  setCitationStyle?(style: NoteCiteStyle): void;
+  listStyles?(): Promise<{ styles: { id: string; title: string }[]; locales: { code: string; name: string }[]; style: string; locale?: string }>;
+  restoreSource?(id: string): Promise<void>;
+  /** Opens the citation picker: a new citation at `range` (a trigger to replace), or the citation there. */
+  pickCitation(range: { from: number; to: number }): void;
+  /** Opens the "Check references" panel. */
+  openCheck(): void;
   /** Items dropped in at [from, to): offers to turn the links into embeds or citations. */
   dropped(items: DraggedItem[], from: number, to: number): void;
   resolve(id: string): Promise<SourceRef | null>;

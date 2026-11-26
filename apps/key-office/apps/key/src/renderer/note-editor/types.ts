@@ -60,6 +60,53 @@ export interface NoteEditorHandle {
   reveal(text: string): boolean;
 }
 
+/** One cited work in a citation: where in it, and the words around it. */
+export interface NoteCiteItem {
+  id: string;
+  /** "12", "12–14" */
+  locator?: string;
+  /** page (default), chapter, section, paragraph, figure, … */
+  label?: string;
+  prefix?: string;
+  suffix?: string;
+  /** "(2021)": the author is named in the sentence. */
+  suppressAuthor?: boolean;
+}
+export interface NoteCiteStyle {
+  style?: string;
+  locale?: string;
+}
+export interface NoteCiteRequest extends NoteCiteStyle {
+  citations: { items: NoteCiteItem[] }[];
+  /** Listed in the reference list as well (quoted or embedded sources). */
+  ids: string[];
+  bibliography: boolean;
+}
+export interface NoteCiteResult {
+  citations: string[];
+  bibliography?: { entries: { id: string; html: string; text: string }[]; hangingIndent: boolean };
+  /** The style used, for the Bibliography block's header. */
+  style?: { id: string; title: string; shortTitle?: string; class?: string };
+}
+export interface NoteCheckRequest extends NoteCiteStyle {
+  citations: { items: NoteCiteItem[] }[];
+  /** What the Bibliography block lists; absent when the note has none. */
+  bibliographyIds?: string[];
+}
+export type NoteCheckFix =
+  | { action: "replace"; from: string; to: string; label: string }
+  | { action: "locator"; citation: number; item: number; locator: string; locatorLabel: string; label: string }
+  | { action: "insertBibliography"; label: string }
+  | { action: "restore"; id: string; label: string };
+export interface NoteCheckIssue {
+  kind: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+  sourceId?: string;
+  citations: number[];
+  fix?: NoteCheckFix;
+}
+
 export interface NoteEditorProps {
   /** Markdown (GFM plus the note fences). */
   value: string;
@@ -86,6 +133,19 @@ export interface NoteEditorProps {
   formatCitations?: (cites: { id: string; page?: number }[]) => Promise<string[]>;
   /** The Bibliography block's entries for these sources. */
   formatBibliography?: (ids: string[]) => Promise<{ entries: { id: string; html: string; text: string }[]; hangingIndent: boolean } | undefined>;
+  /** The note's citations and reference list in one call, in the note's style (one batch:
+   *  numbering, ibid and disambiguation hold). Preferred over formatCitations/formatBibliography. */
+  renderCitations?: (request: NoteCiteRequest) => Promise<NoteCiteResult>;
+  /** The reference checker over the note's citations. */
+  checkCitations?: (request: NoteCheckRequest) => Promise<NoteCheckIssue[]>;
+  /** The note's own citation style and language (empty: Settings › Citations). */
+  citationStyle?: NoteCiteStyle;
+  /** Saves the note's own style; omitted where the note has no page to keep it on. */
+  onCitationStyle?: (style: NoteCiteStyle) => void;
+  /** Styles and languages to choose from. */
+  listCitationStyles?: () => Promise<{ styles: { id: string; title: string }[]; locales: { code: string; name: string }[]; style: string; locale?: string }>;
+  /** Takes a source out of the trash (a checker fix). */
+  restoreSource?: (id: string) => Promise<void>;
   placeholder?: string;
   autoFocus?: boolean;
   /** Shows the note without editing it (a canvas card); links and media still work. */
@@ -121,7 +181,8 @@ export function itemHref(item: ItemLink): string {
 
 export function itemFromHref(href: string | null | undefined): ItemLink | null {
   if (!href || !href.startsWith(ITEM_HREF_PREFIX)) return null;
-  const match = /^([a-z]+)\/([^?#]+)(?:\?page=(\d+))?(?:#(.+))?$/.exec(href.slice(ITEM_HREF_PREFIX.length));
+  // `?page=3` from older notes; `?cite=…` on citations (see citations.ts).
+  const match = /^([a-z]+)\/([^?#]+)(?:\?(?:page=(\d+)|[^#]*))?(?:#(.+))?$/.exec(href.slice(ITEM_HREF_PREFIX.length));
   if (!match || !(ITEM_KINDS as readonly string[]).includes(match[1])) return null;
   const anchor = match[4] ? decodeURIComponent(match[4]) : match[3] ? `page:${match[3]}` : undefined;
   return { kind: match[1] as ItemKind, id: decodeURIComponent(match[2]), ...(anchor ? { anchor } : {}) };
