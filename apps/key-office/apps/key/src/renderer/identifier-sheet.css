@@ -96,3 +96,16 @@
 .kx-identifier-results li[data-tone="muted"] .kx-identifier-row-text > strong {
   color: var(--kx-text-2);
 }
+.kx-identifier-sheet .kx-identifier-open {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-accent);
+  font: 500 12px var(--kx-font);
+}
+.kx-identifier-sheet .kx-identifier-open:hover {
+  background: var(--kx-fill);
+}

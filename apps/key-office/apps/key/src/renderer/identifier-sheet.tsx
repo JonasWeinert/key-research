@@ -155,15 +155,15 @@ export function IdentifierSheet({
             }
           }}
         />
-        <div className="kx-identifier-meta">
+        <section className="kx-identifier-meta">
           <span role="status">{text.trim() ? (link ? "An article link" : summary(pasted) || "Reading…") : ""}</span>
           <label className="kx-check">
             <input type="checkbox" checked={findPdf} onChange={(e) => setFindPdf(e.target.checked)} />
             Find open-access PDFs
           </label>
-        </div>
+        </section>
         {results && counts && (
-          <div className="kx-identifier-results" aria-label="Results">
+          <section className="kx-identifier-results" aria-label="Results">
             <p className="kx-identifier-tally">
               {[counts.added && `${counts.added} added`, counts.exists && `${counts.exists} already in library`, counts.missing && `${counts.missing} not added`].filter(Boolean).join(" · ")}
             </p>
@@ -182,7 +182,7 @@ export function IdentifierSheet({
                       </small>
                     </span>
                     {r.sourceId && (
-                      <button type="button" className="kx-page-action" onClick={() => openItemAt({ kind: "source", id: r.sourceId! }, "tab", r.title || r.text)}>
+                      <button type="button" className="kx-identifier-open" onClick={() => openItemAt({ kind: "source", id: r.sourceId! }, "tab", r.title || r.text)}>
                         Open
                       </button>
                     )}
@@ -190,16 +190,24 @@ export function IdentifierSheet({
                 );
               })}
             </ul>
-          </div>
+          </section>
         )}
         {error && <p className="kx-inline-error">{error}</p>}
         <div>
-          <button type="button" onClick={onClose}>
-            {results ? "Done" : "Cancel"}
-          </button>
-          <button type="submit" className="kx-button-primary" disabled={busy || !(valid || link)}>
-            {busy ? (valid > 1 ? `Adding ${valid}…` : "Adding…") : valid > 1 ? `Add ${valid}` : "Add to library"}
-          </button>
+          {results ? (
+            <button type="button" className="kx-button-primary" onClick={onClose}>
+              Done
+            </button>
+          ) : (
+            <>
+              <button type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button type="submit" className="kx-button-primary" disabled={busy || !(valid || link)}>
+                {busy ? (valid > 1 ? `Adding ${valid}…` : "Adding…") : valid > 1 ? `Add ${valid}` : "Add to library"}
+              </button>
+            </>
+          )}
         </div>
       </form>
     </GlobalDialog>
