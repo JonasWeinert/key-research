@@ -1,0 +1,113 @@
+{
+ "meta": {
+  "count": 3,
+  "page": 1,
+  "per_page": 4
+ },
+ "results": [
+  {
+   "id": "https://openalex.org/A5086198262",
+   "display_name": "Yoshua Bengio",
+   "orcid": "https://orcid.org/0000-0002-9322-3515",
+   "works_count": 1443,
+   "last_known_institutions": [
+    {
+     "id": "https://openalex.org/I109736498",
+     "ror": "https://ror.org/01sdtdd95",
+     "display_name": "Canadian Institute for Advanced Research",
+     "country_code": "CA",
+     "type": "facility",
+     "lineage": [
+      "https://openalex.org/I109736498"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I1290206253",
+     "ror": "https://ror.org/00d0nc645",
+     "display_name": "Microsoft (United States)",
+     "country_code": "US",
+     "type": "company",
+     "lineage": [
+      "https://openalex.org/I1290206253"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I201448701",
+     "ror": "https://ror.org/00cvxb145",
+     "display_name": "University of Washington",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I201448701"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I32971472",
+     "ror": "https://ror.org/03v76x132",
+     "display_name": "Yale University",
+     "country_code": "US",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I32971472"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I4210164802",
+     "ror": "https://ror.org/05c22rx21",
+     "display_name": "Mila - Quebec Artificial Intelligence Institute",
+     "country_code": "CA",
+     "type": "facility",
+     "lineage": [
+      "https://openalex.org/I4210164802"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I4405260498",
+     "ror": "https://ror.org/03v7q6847",
+     "display_name": "SaferAI",
+     "country_code": "FR",
+     "type": "nonprofit",
+     "lineage": [
+      "https://openalex.org/I4405260498"
+     ]
+    },
+    {
+     "id": "https://openalex.org/I70931966",
+     "ror": "https://ror.org/0161xgx34",
+     "display_name": "Université de Montréal",
+     "country_code": "CA",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I70931966"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "https://openalex.org/A5129842707",
+   "display_name": "Yoshua Bengio",
+   "orcid": null,
+   "works_count": 9,
+   "last_known_institutions": [
+    {
+     "id": "https://openalex.org/I70931966",
+     "ror": "https://ror.org/0161xgx34",
+     "display_name": "Université de Montréal",
+     "country_code": "CA",
+     "type": "education",
+     "lineage": [
+      "https://openalex.org/I70931966"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "https://openalex.org/A5160219784",
+   "display_name": "Yoshua Bengio",
+   "orcid": null,
+   "works_count": 1,
+   "last_known_institutions": null
+  }
+ ],
+ "group_by": []
+}

@@ -64,8 +64,8 @@ pub(crate) fn ensure_schema(db: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// rss | openalex | author | venue | topic | citing
-pub const KINDS: &[&str] = &["rss", "openalex", "author", "venue", "topic", "citing"];
+/// rss | openalex | author | venue | topic | citing | pubmed
+pub const KINDS: &[&str] = &["rss", "openalex", "author", "venue", "topic", "citing", "pubmed"];
 pub const MIN_INTERVAL: i64 = 15;
 pub const MAX_INTERVAL: i64 = 7 * 24 * 60;
 
@@ -94,6 +94,9 @@ pub struct Subscription {
     pub unread: i64,
     #[serde(default)]
     pub total: i64,
+    /// When it last brought something new.
+    #[serde(default)]
+    pub last_item_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -337,12 +340,14 @@ fn read_subscription(r: &rusqlite::Row) -> rusqlite::Result<Subscription> {
         cursor: r.get(13)?,
         unread: r.get(14)?,
         total: r.get(15)?,
+        last_item_at: r.get(16)?,
     })
 }
 
 const SUBSCRIPTION_COLUMNS: &str = "s.id, s.kind, s.title, s.config, s.interval_minutes, s.paused, s.created_at, s.checked_at, s.next_at, s.failures, s.last_error, s.etag, s.last_modified, s.cursor,
   (SELECT count(*) FROM feed_item_subscriptions x JOIN feed_items i ON i.id = x.item_id WHERE x.subscription_id = s.id AND i.read = 0 AND i.dismissed_at IS NULL),
-  (SELECT count(*) FROM feed_item_subscriptions x WHERE x.subscription_id = s.id)";
+  (SELECT count(*) FROM feed_item_subscriptions x WHERE x.subscription_id = s.id),
+  (SELECT max(i.found_at) FROM feed_item_subscriptions x JOIN feed_items i ON i.id = x.item_id WHERE x.subscription_id = s.id)";
 
 /// The default check interval for a kind, in minutes: feeds change more often than catalogues.
 pub fn default_interval(kind: &str) -> i64 {
@@ -358,6 +363,7 @@ pub fn identity(kind: &str, config: &Map<String, Json>) -> String {
     match kind {
         "rss" => format!("rss:{}", pick("url").unwrap_or_default().trim_end_matches('/')),
         "openalex" => format!("openalex:{}|{}", pick("query").unwrap_or_default(), pick("filters").unwrap_or_default()),
+        "pubmed" => format!("pubmed:{}", pick("query").unwrap_or_default()),
         "citing" => format!("citing:{}|{}", pick("collectionId").unwrap_or_default(), pick("sourceId").unwrap_or_default()),
         other => format!("{other}:{}", pick("openalexId").or_else(|| pick("orcid")).or_else(|| pick("issn")).unwrap_or_default()),
     }
