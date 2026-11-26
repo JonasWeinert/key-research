@@ -1,4 +1,4 @@
-// Status bar items that native views (the PDF reader, office editors, browser pages)
+// Status bar items that native views (the PDF reader, browser pages)
 // contribute over IPC. See shared/status-items.ts for the contract. A view's items live
 // until it replaces them or its web contents go away; the shell shows the focused view's.
 import { ipcMain, type WebContents } from "electron";
