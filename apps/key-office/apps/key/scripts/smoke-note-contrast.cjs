@@ -227,7 +227,10 @@ const FOCUS_PROBES = [{ name: "focus ring", selector: ".ne-toggle-chevron:focus-
     const openNote = async (title) => {
       const note = await call("store_note_save", { id: null, sourceId: null, title, body: BODY(source.id) });
       await page.evaluate(({ id, noteId, title }) => window.key.tabAction("open-content", { section: "note", workspaceId: id, noteId, title }), { id: ws.id, noteId: note.id, title });
-      notePage = page.locator(".kx-note-page:visible").filter({ has: page.locator(`input[value='${title}']`) });
+      // The new note's tab is the visible one; its title arrives with the note (the input's
+      // value attribute does not reliably follow, so match the live value).
+      notePage = page.locator(".kx-note-page:visible");
+      await page.waitForFunction((title) => [...document.querySelectorAll(".kx-note-page input")].some((i) => i.offsetParent && i.value === title), title);
       prose = notePage.locator(".ne-prose");
       await prose.waitFor();
       await page.evaluate(() => document.querySelector("[data-contrast-root]")?.removeAttribute("data-contrast-root"));
@@ -242,6 +245,9 @@ const FOCUS_PROBES = [{ name: "focus ring", selector: ".ne-toggle-chevron:focus-
       for (let attempt = 0; attempt < 6; attempt++) {
         await prose.locator("p", { hasText: "Last line." }).click();
         await notePage.locator(".ProseMirror:focus").waitFor();
+        // If the page was still settling, the click can land as a small drag: keep only the
+        // caret, so Enter adds a line rather than replacing a selection.
+        await page.evaluate(() => getSelection()?.collapseToEnd());
         await page.keyboard.press("End");
         await page.keyboard.press("Enter");
         await page.waitForTimeout(300);

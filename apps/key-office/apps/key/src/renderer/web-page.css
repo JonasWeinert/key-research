@@ -25,7 +25,15 @@
   flex: none;
 }
 .key-web-bar > .key-web-save {
+  display: inline-flex;
+  width: auto;
+  padding: 0 8px 0 7px;
   margin-left: auto;
+}
+/* After the page's own actions (proxy notice, Add to library) it simply follows them. */
+.key-web-actions ~ .key-web-save,
+.key-web-actions ~ .key-web-saved {
+  margin-left: 6px;
 }
 .key-web-save {
   display: inline-flex;

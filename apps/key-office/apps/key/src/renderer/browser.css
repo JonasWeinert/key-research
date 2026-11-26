@@ -59,7 +59,9 @@
   gap: 6px;
   margin-left: auto;
   padding-left: 8px;
-  flex: none;
+  /* Notices give way before the bar's buttons do. */
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .key-web-actions > button {
   display: inline-flex;
