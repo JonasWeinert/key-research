@@ -6,6 +6,7 @@
 // Anything dragged in (library rows, sidebar items, files, web links) lands as cards where
 // it is dropped, and notes and pages show their whole text, rendered.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { coverBackground, readAppearance } from "../page-appearance";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { Icon, type IconName } from "../icons";
@@ -1320,13 +1321,14 @@ function ItemCard({
       {title && <div className="kx-canvas-card-title">{title}</div>}
       {meta && <div className="kx-canvas-card-meta">{meta}</div>}
       {kind === "source" && !highlight && selected && (
-        <div className="kx-canvas-card-faces kx-canvas-chrome" role="tablist" aria-label="Show">
-          {faces.map(([key, label]) => (
-            <button key={key} role="tab" aria-selected={face === key} onClick={() => onFace(key)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <SegmentedTabs
+          className="kx-canvas-card-faces kx-canvas-chrome"
+          size="small"
+          label="Show"
+          value={face}
+          onChange={onFace}
+          tabs={faces.map(([id, label]) => ({ id, label }))}
+        />
       )}
       {kind === "source" && !highlight && face === "preview" && preview && <img className="kx-canvas-card-preview" src={preview} alt="" draggable={false} />}
       {kind === "source" && !highlight && face === "abstract" && abstract && (

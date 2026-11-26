@@ -7,7 +7,8 @@
 // same card grows in place into the work's details: summary, abstract, identifiers and links;
 // it then stays until a press outside it or Escape.
 import { invoke } from '@tauri-apps/api/core';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { SegmentedTabs } from '../ui/SegmentedTabs';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { ScholarlyMetadata, ScientificCitation, ScientificReference } from '../engines/types';
 import { Icon } from '../ui/Icon';
 import { citationAuthorsSnippet, citationLinks, citationSummary, isNumberedCitation, type CitationLink } from './citation-details';
@@ -244,56 +245,20 @@ function WorkChips({
   metadataFor: (number: number) => ScholarlyMetadata | undefined;
   idFor: (number: number) => string;
 }) {
-  const strip = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ start: false, end: false });
-  const measure = useCallback(() => {
-    const element = strip.current;
-    if (!element) return;
-    const start = element.scrollLeft > 1;
-    const end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1;
-    setEdges(current => (current.start === start && current.end === end ? current : { start, end }));
-  }, []);
-  useLayoutEffect(measure, [measure, citation.id]);
-  useEffect(() => {
-    strip.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    measure();
-  }, [active, measure]);
   const numbered = isNumberedCitation(citation.source);
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
-    event.preventDefault();
-    const index = citation.numbers.indexOf(active ?? citation.numbers[0]);
-    const next = citation.numbers[(index + (event.key === 'ArrowRight' ? 1 : -1) + citation.numbers.length) % citation.numbers.length];
-    onSelect(next);
-    requestAnimationFrame(() => strip.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
-  };
   return (
-    <div
-      ref={strip}
+    <SegmentedTabs
       className="pdfjs-cite-chips"
-      role="tablist"
-      aria-label="Works in this citation"
-      data-fade-start={edges.start || undefined}
-      data-fade-end={edges.end || undefined}
-      onScroll={measure}
-      onKeyDown={onKeyDown}
-    >
-      {citation.numbers.map((number, position) => (
-        <button
-          type="button"
-          key={number}
-          role="tab"
-          aria-selected={active === number}
-          aria-controls={idFor(number)}
-          tabIndex={active === number ? 0 : -1}
-          onClick={() => onSelect(number)}
-        >
-          {chipLabel(number, numbered, position, metadataFor(number))}
-        </button>
-      ))}
-    </div>
+      size="small"
+      label="Works in this citation"
+      value={String(active ?? citation.numbers[0])}
+      onChange={id => onSelect(Number(id))}
+      panelId={id => idFor(Number(id))}
+      tabs={citation.numbers.map((number, position) => ({
+        id: String(number),
+        label: chipLabel(number, numbered, position, metadataFor(number)),
+      }))}
+    />
   );
 }
 

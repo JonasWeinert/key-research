@@ -149,24 +149,6 @@
   font: inherit;
   font-size: 12px;
 }
-.kx-segmented.kx-zotero-segmented {
-  display: flex;
-}
-.kx-segmented.kx-zotero-segmented button {
-  flex: 1;
-  width: auto;
-  height: 24px;
-  font: inherit;
-  font-size: 12.5px;
-}
-.kx-segmented.kx-zotero-segmented button[aria-checked="true"] {
-  background: var(--kx-bg-raised);
-  color: var(--kx-text);
-  box-shadow: var(--kx-shadow-card);
-}
-.kx-segmented.kx-zotero-segmented button:disabled {
-  opacity: 0.45;
-}
 .kx-zotero-scope-detail {
   margin: 7px 2px 0;
   color: var(--kx-text-2);

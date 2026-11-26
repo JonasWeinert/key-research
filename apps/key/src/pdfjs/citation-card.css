@@ -64,56 +64,14 @@
   height: 13px;
 }
 /* Several works: chips in one row that scrolls inside the card, faded at a clipped edge. */
-.pdfjs-cite-chips {
-  --fade-start: 0px;
-  --fade-end: 0px;
-  display: flex;
+/* The works switch is the shared SegmentedTabs; here it takes the header's free width. */
+.pdfjs-cite-chips.key-segmented {
   flex: 1;
-  gap: 2px;
-  min-width: 0;
-  margin-left: -6px;
-  padding: 2px 0;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+  --key-segmented-min: 56px;
 }
-.pdfjs-cite-chips[data-fade-start] {
-  --fade-start: 24px;
-}
-.pdfjs-cite-chips[data-fade-end] {
-  --fade-end: 24px;
-}
-.pdfjs-cite-chips::-webkit-scrollbar {
-  display: none;
-}
-.pdfjs-cite-chips button {
-  flex: none;
-  max-width: 150px;
-  height: 22px;
-  padding: 0 7px;
-  overflow: hidden;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--key-text-secondary);
-  font: inherit;
-  font-size: 11.5px;
+.pdfjs-cite-chips [role="tab"] {
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.pdfjs-cite-chips button:hover {
-  background: var(--key-hover);
-  color: var(--key-text);
-}
-.pdfjs-cite-chips button[aria-selected="true"] {
-  background: var(--key-press);
-  color: var(--key-text);
-  font-weight: 600;
-}
-.pdfjs-cite-chips button:focus-visible,
 .pdfjs-cite-action:focus-visible,
 .pdfjs-cite-close:focus-visible {
   outline: 2px solid var(--key-accent);

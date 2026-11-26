@@ -1,5 +1,6 @@
 import { GlobalDialog } from "./GlobalDrawer";
 import "./content-design.css";
+import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { Button, Input, Select, Badge } from "@key/design-system";
 import SearchSourceMetadata from "./SearchSourceMetadata";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -811,10 +812,13 @@ export default function LibraryHome({
           </div>
         </header>
         <div className="kx-subnav">
-          <nav className="kx-tabs" aria-label="Source types">
-            <button aria-pressed={sourceKind === "pdf"} onClick={() => setSourceKind("pdf")}>PDFs</button>
-            <button aria-pressed={sourceKind === "other"} onClick={() => setSourceKind("other")}>References, web & media</button>
-          </nav>
+          <SegmentedTabs
+            className="kx-source-tabs"
+            label="Source types"
+            value={sourceKind}
+            onChange={setSourceKind}
+            tabs={[{ id: "pdf", label: "PDFs" }, { id: "other", label: "References, web & media" }]}
+          />
           {sourceKind === "pdf" && (
             <p className="kx-library-stats" aria-label="Library status">
               <span><span className="kx-status-dot" data-tone="idle" />{total.toLocaleString()} {total === 1 ? "source" : "sources"}</span>
@@ -837,19 +841,18 @@ export default function LibraryHome({
         )}
         <div style={{ display: sourceKind === "pdf" ? "contents" : "none" }}>
           <div className="kx-controls">
-            <div className="kx-scopes" role="group" aria-label="Library views">
-              {([
+            <SegmentedTabs
+              className="kx-scope-tabs"
+              label="Library views"
+              value={scope}
+              onChange={setScope}
+              tabs={([
                 ["all", "All", counts?.all],
                 ["open", "Open", openDocumentIds.size || undefined],
                 ["attention", "Needs attention", counts?.attention || undefined],
                 ["removed", "Removed", counts?.removed || undefined],
-              ] as const).map(([value, label, count]) => (
-                <button key={value} aria-pressed={scope === value} onClick={() => setScope(value)}>
-                  {label}
-                  {count !== undefined && <span className="kx-count">{count.toLocaleString()}</span>}
-                </button>
-              ))}
-            </div>
+              ] as const).map(([id, label, count]) => ({ id, label, badge: count?.toLocaleString() }))}
+            />
             <div className="kx-controls-end">
               <button
                 className="kx-control"
