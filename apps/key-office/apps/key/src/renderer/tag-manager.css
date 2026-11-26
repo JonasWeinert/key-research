@@ -1,9 +1,9 @@
 /* The tag manager: a window-sized sheet, tree on the left, suggestions on the right. */
 .key-global-drawer.key-global-window:has(.kx-tag-manager) {
-  width: min(1040px, calc(100vw - 48px));
-  height: min(700px, calc(100vh - 72px));
-  margin-left: calc(min(1040px, 100vw - 48px) / -2);
-  top: max(36px, calc(50vh - 350px));
+  /* Sized by the shared modal rules (modal.css): wider and taller than the default. */
+  --kx-modal-width: 1040px;
+  --kx-modal-min-height: 700px;
+  height: min(700px, var(--kx-modal-max-height));
 }
 .kx-tag-manager {
   position: relative;

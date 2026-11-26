@@ -148,7 +148,11 @@ const SEED = [
       const find = (items) => items.flatMap((i) => (i.label === "Commands…" ? [i] : i.submenu ? find(i.submenu.items) : []));
       find(Menu.getApplicationMenu().items)[0].click();
     });
+    // Type once the palette's field has focus, and run the command once it is listed.
+    await page.locator(".kx-palette input").first().waitFor();
+    await page.waitForFunction(() => document.activeElement?.closest(".kx-palette"));
     await page.keyboard.type("Organise tags");
+    await page.locator(".kx-palette").getByText("Organise tags", { exact: false }).first().waitFor();
     await page.keyboard.press("Enter");
     await manager.waitFor();
     await page.keyboard.press("Escape");

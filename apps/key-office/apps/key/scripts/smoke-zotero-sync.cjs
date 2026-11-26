@@ -135,12 +135,12 @@ const library = (pdf) => ({
     await page.getByRole("heading", { name: "Import from Zotero" }).waitFor();
     await sheet.locator(".kx-zotero-count", { hasText: "3 items" }).waitFor();
     await shot("2-import-everything-light");
-    await sheet.getByRole("radio", { name: "Collections" }).click();
+    await sheet.getByRole("tab", { name: "Collections" }).click();
     await sheet.getByRole("checkbox", { name: "Thesis" }).check();
     await sheet.getByRole("button", { name: "Expand Thesis" }).click();
     await sheet.locator(".kx-zotero-count", { hasText: "1 item" }).waitFor();
     await shot("3-import-collections-light");
-    await sheet.getByRole("radio", { name: "Papers" }).click();
+    await sheet.getByRole("tab", { name: "Papers" }).click();
     await sheet.getByRole("searchbox", { name: "Search papers" }).fill("rossi");
     await sheet.getByRole("checkbox", { name: "Reading in groups" }).check();
     await sheet.getByRole("searchbox", { name: "Search papers" }).fill("");
@@ -189,7 +189,7 @@ const library = (pdf) => ({
     await shot("6-sync-pair-light");
     await sheet.getByRole("button", { name: "Pair" }).click();
     await sheet.getByText(/Connected to Zotero 9\.0\.6/).waitFor();
-    await sheet.getByRole("radio", { name: "Collections" }).click();
+    await sheet.getByRole("tab", { name: "Collections" }).click();
     await sheet.getByRole("checkbox", { name: "Thesis" }).check();
     await shot("7-sync-collections-light");
     await sheet.getByRole("button", { name: "Start syncing" }).click();
@@ -213,7 +213,7 @@ const library = (pdf) => ({
     await shot("8b-overview-sync-light");
     await sheet.getByRole("button", { name: "Change what syncs…" }).click();
     await sheet.getByRole("heading", { name: "Change what Key syncs" }).waitFor();
-    assert.equal(await sheet.getByRole("radio", { name: "Collections" }).getAttribute("aria-checked"), "true", "the synced scope is picked");
+    assert.equal(await sheet.getByRole("tab", { name: "Collections" }).getAttribute("aria-selected"), "true", "the synced scope is picked");
     assert.equal(await sheet.getByRole("checkbox", { name: "Thesis" }).isChecked(), true, "the synced collection is ticked");
     await sheet.getByRole("button", { name: "Back" }).click();
     await overview.waitFor();
@@ -279,7 +279,7 @@ const library = (pdf) => ({
     await sheet.getByRole("heading", { name: "Change what Key syncs" }).waitFor();
     await sheet.getByText(/Connected to Zotero/).waitFor();
     await shot("12-sync-change-dark");
-    await sheet.getByRole("radio", { name: "Papers" }).click();
+    await sheet.getByRole("tab", { name: "Papers" }).click();
     await sheet.getByRole("checkbox", { name: "Annual report on literacy" }).waitFor();
     await shot("13-sync-papers-dark");
     await sheet.getByRole("button", { name: "Cancel" }).click();
