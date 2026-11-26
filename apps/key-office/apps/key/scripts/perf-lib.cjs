@@ -142,7 +142,6 @@ function pageName(url) {
   if (!url) return "blank";
   if (url.endsWith("/pdf.html")) return "pdf";
   if (/\/index\.html(#.*)?$/.test(url) || /^http:\/\/localhost:5199\/?$/.test(url)) return "shell";
-  if (url.startsWith("file:") && url.includes("/modules/")) return "office";
   try {
     return `web(${new URL(url).host || url.slice(0, 24)})`;
   } catch {

@@ -1,5 +1,5 @@
-/* Key library layout adapted from the supplied mock. Chrome colors use the
-   vendored GenOffice token vocabulary; PDF content is unaffected. */
+/* Key library layout adapted from the supplied mock. Chrome colors use the short
+   aliases in chrome-tokens.css; PDF content is unaffected. */
 .key-library {
   display: flex;
   height: 100%;
@@ -7,7 +7,7 @@
   min-width: 0;
   color: var(--text-primary, #232425);
   background: var(--surface, #fff);
-  font: 13px var(--gs-font-sans, Arial, sans-serif);
+  font: 13px var(--key-ui-font, var(--kx-font));
 }
 .key-library * {
   box-sizing: border-box;

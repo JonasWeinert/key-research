@@ -152,7 +152,7 @@ git clone https://github.com/JonasWeinert/key-research.git
 cd key-research/apps/key-office
 npm install
 npm run build:backend -w @key/electron   # the Rust host (PDFium, search, the library)
-npm run build:all                        # the editors and the Key shell
+npm run build                            # the Key app
 npm run start -w @key/electron
 ```
 
@@ -182,6 +182,7 @@ The layout model and the embedding model run on your Mac.
 ## What Key does not do yet
 
 - **No word-processor plugins.** There is no Word, Google Docs or LibreOffice plugin; cite through Zotero for now.
+- **No editing of Word, Excel or PowerPoint files.** They are listed and linked in a workspace, preview with Quick Look and open in their default app.
 - **No sync between your devices, no shared libraries and no collaboration.** A workspace is a local folder.
 - **No mobile app.**
 - **macOS on Apple silicon only.** Windows and Linux builds are not tested, and there is no signed or notarized release.
@@ -243,7 +244,7 @@ Interface colours come only from theme tokens; see [`apps/key-office/CLAUDE.md`]
 | Path | Purpose |
 |----|----|
 | [`apps/key-office/apps/key`](apps/key-office/apps/key/) | The Key app: Electron main process, React interface, smokes |
-| [`apps/key-office`](apps/key-office/) | The workspace it builds in, with the bundled Office editors |
+| [`apps/key-office`](apps/key-office/) | The npm workspace it builds in |
 | [`apps/key`](apps/key/) | The PDF reader package (PDF.js workspace) and the earlier Tauri shell |
 | [`crates/key-desktop-host`](crates/key-desktop-host/) | The per-workspace host process |
 | [`crates/key-store`](crates/key-store/) | The library database: sources, metadata graph, notes, links, search |
@@ -270,4 +271,4 @@ Reports are most useful with a reproducible PDF, what you expected and what happ
 
 ## License
 
-Key's own code is released under the [MIT License](LICENSE). The bundled Office editors in `apps/key-office` are a modified copy of [GenOffice](https://github.com/genspark-ai/genoffice) and stay under the Apache License 2.0. Other third-party components keep their own licences, among them the CC BY-SA 3.0 citation styles, PDFium, fonts and models. [LICENSES.md](LICENSES.md) lists each one, and the app shows them under Settings › About Key › Acknowledgements.
+Key's own code is released under the [MIT License](LICENSE). Third-party components keep their own licences, among them the CC BY-SA 3.0 citation styles, PDFium, fonts and models. [LICENSES.md](LICENSES.md) lists each one, and the app shows them under Settings › About Key › Acknowledgements.
