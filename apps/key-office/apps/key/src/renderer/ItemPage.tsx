@@ -11,7 +11,7 @@ import { COVER_COLORS, COVER_GRADIENTS, PAGE_ICONS, coverBackground, type PageAp
 import "./item-page.css";
 import { useDismiss } from "@key-reader/ui/dismiss";
 
-export type ItemKind = "note" | "source" | "record" | "person" | "venue" | "topic";
+export type ItemKind = "note" | "source" | "record" | "person" | "venue" | "topic" | "tag";
 
 /** Saves a cover image and turns a stored path back into a URL (the notes' media host). */
 export interface PageMedia {

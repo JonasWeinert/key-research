@@ -215,7 +215,7 @@ function parseFilterValue(value: string): unknown {
 }
 
 export interface ContentSpec {
-  section: "home" | "sources" | "records" | "record" | "note" | "source" | "canvas" | "highlights" | "search" | "file" | "person" | "venue" | "topic";
+  section: "home" | "sources" | "records" | "record" | "note" | "source" | "canvas" | "highlights" | "search" | "file" | "person" | "venue" | "topic" | "tag";
   workspaceId?: string;
   projectId?: string;
   record?: RecordItem;
@@ -737,7 +737,7 @@ export default function WorkspaceContent({
       {section === "highlights" && workspaceId && <HighlightsPage invoke={invoke} workspaceId={workspaceId} />}
       {section === "search" && workspaceId && <SearchPage invoke={invoke} workspaceId={workspaceId} active={visible && tabs.activeViewId === viewId} viewId={viewId} />}
       {section === "file" && workspaceId && spec.fileId && <LinkedFileView invoke={invoke} workspaceId={workspaceId} fileId={spec.fileId} />}
-      {(section === "person" || section === "venue" || section === "topic") && workspaceId && spec.entityId && (
+      {(section === "person" || section === "venue" || section === "topic" || section === "tag") && workspaceId && spec.entityId && (
         <EntityPage invoke={invoke} workspaceId={workspaceId} kind={section} id={spec.entityId} viewId={viewId} />
       )}
       {section === "note" && workspaceId && spec.noteId && (

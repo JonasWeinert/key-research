@@ -1603,8 +1603,8 @@ function freezeWindows() {
 }
 
 /** People, journals and topics open as pages of their own; the host command that reads each. */
-const ENTITY_SECTIONS = ["person", "venue", "topic"];
-const ENTITY_COMMAND: Record<string, string> = { person: "store_person", venue: "store_venue", topic: "store_topic" };
+const ENTITY_SECTIONS = ["person", "venue", "topic", "tag"];
+const ENTITY_COMMAND: Record<string, string> = { person: "store_person", venue: "store_venue", topic: "store_topic", tag: "store_tag" };
 const contentKey = (section: string, workspaceId?: string, projectId?: string, id?: string | null) =>
   section === "record" && id
     ? JSON.stringify(["record", workspaceId, id])
@@ -1659,7 +1659,7 @@ async function openContent(w: ShellWindow, p: any) {
         : p.section === "note"
           ? String(p.title || "Untitled note").slice(0, 200)
           : p.section === "canvas" || p.section === "file" || ENTITY_SECTIONS.includes(p.section)
-            ? String(p.title || (p.section === "file" ? "File" : p.section === "canvas" ? "Untitled canvas" : p.section === "person" ? "Person" : p.section === "venue" ? "Journal" : "Topic")).slice(0, 200)
+            ? String(p.title || (p.section === "file" ? "File" : p.section === "canvas" ? "Untitled canvas" : p.section === "person" ? "Person" : p.section === "venue" ? "Journal" : p.section === "tag" ? "Tag" : "Topic")).slice(0, 200)
             : p.section === "highlights"
               ? "Highlights"
               : p.section === "search"

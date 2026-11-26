@@ -143,6 +143,27 @@ export interface TopicPageData {
   people: NamedCount[];
   venues: NamedCount[];
 }
+export interface TagPageData {
+  name: string;
+  sourceCount: number;
+  firstYear?: number | null;
+  lastYear?: number | null;
+}
+/** What `store_relation_map` answers: the centre and the strongest of each kind around it. */
+export type MapKind = "topic" | "field" | "person" | "venue" | "tag" | "collection" | "source";
+export interface MapNode {
+  kind: MapKind;
+  id: string;
+  name: string;
+  count: number;
+  detail?: string;
+}
+export interface RelationMapData {
+  center: MapNode;
+  nodes: MapNode[];
+  links: { a: string; b: string; weight: number }[];
+  more: Partial<Record<MapKind, number>>;
+}
 export interface WorkReference {
   origin: "pdf" | "openalex";
   seq: number;

@@ -138,7 +138,7 @@ function paneItem(content?: ContentSpec, title?: string): DraggedItem | undefine
   if (content.section === "source" && content.sourceId) return { kind: "source", id: content.sourceId, title: name };
   if (content.section === "record" && content.record?.id) return { kind: "record", id: content.record.id, title: name };
   if (content.section === "file" && content.fileId) return { kind: "file", id: content.fileId, title: name };
-  if ((content.section === "person" || content.section === "venue" || content.section === "topic") && content.entityId) return { kind: content.section, id: content.entityId, title: name };
+  if ((content.section === "person" || content.section === "venue" || content.section === "topic" || content.section === "tag") && content.entityId) return { kind: content.section, id: content.entityId, title: name };
   return undefined;
 }
 /** What a pane shows, so the selection follows it when that changes. */
