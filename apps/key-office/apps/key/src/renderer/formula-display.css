@@ -1,0 +1,92 @@
+/* Formula values (formula-display.tsx): labels, progress bars, checkmarks. */
+.kx-fv-badge {
+  --tone: var(--kx-accent);
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--tone) 15%, transparent);
+  color: color-mix(in srgb, var(--tone) 80%, var(--kx-text));
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.kx-fv-badge[data-tone="1"] {
+  --tone: var(--kx-indigo);
+}
+.kx-fv-badge[data-tone="2"] {
+  --tone: var(--kx-green);
+}
+.kx-fv-badge[data-tone="3"] {
+  --tone: var(--kx-amber);
+}
+.kx-fv-badge[data-tone="4"] {
+  --tone: var(--kx-red);
+}
+.kx-fv-badge[data-tone="5"] {
+  --tone: var(--kx-text-2);
+}
+.kx-fv-list {
+  display: inline-flex;
+  gap: 3px;
+  overflow: hidden;
+}
+.kx-fv-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 140px;
+}
+.kx-fv-bar {
+  flex: 1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--kx-fill-2);
+}
+.kx-fv-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--kx-accent);
+}
+.kx-fv-progress small {
+  min-width: 30px;
+  color: var(--kx-text-2);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.kx-fv-check {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--kx-accent);
+  color: var(--kx-on-accent);
+  vertical-align: middle;
+}
+.kx-fv-no {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--kx-line-strong);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.kx-fv-number {
+  font-variant-numeric: tabular-nums;
+}
+.kx-fv-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--kx-amber);
+  font-size: 11.5px;
+}

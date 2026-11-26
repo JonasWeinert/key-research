@@ -13,6 +13,7 @@ import { useLibraryStatus } from "./index-activity";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
+import AiSetup from "./AiSetup";
 import CitationSettings from "./CitationSettings";
 import { APP_GROUPS, APP_SECTIONS, WORKSPACE_SECTIONS, matches, openWorkspaceSettings, type SectionInfo, type SettingsSection } from "./settings-catalog";
 import { Explain, Glossary, Hint, resetTips, setTipsShown, useTips } from "./explain";
@@ -238,7 +239,7 @@ export default function Settings({
         </>
       )}
       {section === "services" && <ServiceKeys invoke={invoke} />}
-      {section === "ai" && <AiSettings invoke={invoke} workspaceId={host} />}
+      {section === "ai" && <AiSetup invoke={invoke} />}
       {section === "about" && <About info={info} />}
     </SettingsFrame>
   );
@@ -552,82 +553,6 @@ function PrivacySettings({ settings, onSettings }: { settings: AppSettings; onSe
         <Row label="Identifiers and titles" detail="To OpenAlex and Crossref, when lookups are on or you ask." />
         <Row label="Web searches" detail="To the providers turned on in Web & browser." />
         <Row label="AI assistant" detail="Only when you ask, with just the passages a task needs." />
-      </Group>
-    </>
-  );
-}
-
-const PROVIDER_LABEL: Record<string, string> = {
-  codex: "Codex",
-  anthropic: "Anthropic",
-  gemini: "Gemini",
-  deepseek: "DeepSeek",
-  openai: "OpenAI",
-  kimi: "Kimi",
-  glm: "GLM",
-  custom: "Custom endpoint",
-};
-
-function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: string }) {
-  const [status, setStatus] = useState<{ available: boolean; provider?: string; model?: string; reason?: string }>();
-  const [endpoint, setEndpoint] = useState("http://localhost:11434/v1");
-  const [model, setModel] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    void invoke<typeof status>("agent_fill_status", {}, workspaceId).then(setStatus).catch(() => {});
-  }, [invoke, workspaceId]);
-  return (
-    <>
-      <Group title="Provider" help="settings.ai.provider" footer="Used only when you ask, with just the passages a task needs.">
-        <Row
-          label={status?.available ? `${PROVIDER_LABEL[status.provider ?? ""] ?? status.provider} · ${status.model}` : "Not connected"}
-          detail={status ? (status.available ? "Connected" : status.reason || "Connect a provider below") : "Checking…"}
-        >
-          {status?.available ? (
-            <span className="kx-settings-ok">
-              <Icon name="check" size={12} /> Ready
-            </span>
-          ) : null}
-        </Row>
-      </Group>
-      <Group title="OpenAI-compatible provider" help="settings.ai.endpoint" footer="Ollama, LM Studio or any hosted API over HTTPS. The key stays on this Mac.">
-        <form
-          className="kx-settings-form"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError("");
-            try {
-              setStatus(await invoke("agent_fill_configure", { baseUrl: endpoint, model, apiKey: apiKey || undefined }, workspaceId));
-              setApiKey("");
-            } catch (err) {
-              setError(String(err).replace(/^Error: /, ""));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            <span>Endpoint</span>
-            <input value={endpoint} onChange={(e) => setEndpoint(e.target.value)} placeholder="https://api.example.com/v1" />
-          </label>
-          <label>
-            <span>Model</span>
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="llama3.1:8b" />
-          </label>
-          <label>
-            <span>API key</span>
-            <input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Optional for local servers" />
-          </label>
-          {error && <p className="kx-inline-error">{error}</p>}
-          <div>
-            <button type="submit" className="kx-button-primary" disabled={busy || !model.trim() || !endpoint.trim()}>
-              {busy ? "Connecting…" : "Save provider"}
-            </button>
-          </div>
-        </form>
       </Group>
     </>
   );

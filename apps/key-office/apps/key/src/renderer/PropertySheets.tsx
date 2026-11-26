@@ -12,9 +12,13 @@ import TagManagerDialog from "./TagManagerDialog";
 
 export interface PropertyDefinition {
   name: string;
-  type: "text" | "number" | "boolean" | "select" | "formula";
+  type: "text" | "number" | "boolean" | "select" | "multiselect" | "date" | "formula";
   options?: string[];
   formula?: string;
+  /** A formula's result type, worked out by the host when it is saved. */
+  resultType?: string;
+  /** How a formula's value shows (formula-display.tsx). */
+  display?: string;
 }
 
 /** Workspace property definitions; callers reload them after saves and library changes. */
@@ -84,6 +88,7 @@ export function PropertySheet({
     value: editing && single ? String(single.properties[editing.name] ?? "") : "",
     options: editing?.options ?? [],
     formula: editing?.formula ?? "",
+    display: editing?.display,
     applyValues: state.mode === "new" ? state.targets.length > 0 : !!state.applyValue,
   };
   const save = async (draft: PropertyDraft, configureAgent: boolean) => {
@@ -131,6 +136,9 @@ export function PropertySheet({
       error={error || undefined}
       targetCount={state.targets.length}
       targetLabel="source"
+      invoke={invoke}
+      workspaceId={workspaceId}
+      sampleIds={state.targets.slice(0, 6).map((t) => t.id)}
       properties={single ? formulaContext(single) : {}}
       evaluate={formulaEvaluator(invoke, workspaceId, single ? { id: single.id } : { properties: {} })}
       previewTitle={single?.title}

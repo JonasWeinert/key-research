@@ -134,7 +134,7 @@ describe("AI settings", () => {
     const path = join(dir, "ai-settings.json");
     await writeFile(path, JSON.stringify({ provider: "openai", providers: { openai: { apiKey: " sk-old ", model: "gpt-4.1" }, codex: { apiKey: "" } } }));
     const secrets = new MemorySecrets();
-    const service = new AiService({ settingsPath: path, secrets: () => secrets as any, invoke: async () => ({}), emit: () => {}, noTimers: true });
+    const service = new AiService({ settingsPath: path, secrets: () => secrets as any, invoke: (async () => ({})) as any, emit: () => {}, noTimers: true });
     const status: any = await service.handle("ai_status", {});
     expect(status).toMatchObject({ configured: true, provider: "openai", model: "gpt-4.1" });
     expect(secrets.get(secretFor("openai"))).toBe("sk-old");
