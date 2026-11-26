@@ -216,6 +216,7 @@
   opacity: 1;
 }
 .kx-page-author .kx-creators {
+  flex-wrap: nowrap;
   margin: 0;
 }
 .kx-add-property {

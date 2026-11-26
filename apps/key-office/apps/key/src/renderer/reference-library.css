@@ -770,6 +770,7 @@
   text-align: left;
 }
 .kx-creators > span {
+  flex: 1 1 auto;
   min-width: 0;
 }
 /* A name is one unbreakable button: very long ones ellipsize, leaving room for the comma. */
