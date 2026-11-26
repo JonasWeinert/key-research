@@ -69,6 +69,7 @@ export const semanticScholar: WebProvider = {
     apiKey: true,
     keyHelp: "Optional. Without one, Semantic Scholar answers slowly when many people search at once.",
     enabledByDefault: true,
+    service: "semantic-scholar",
   },
   async search(query, { limit, cursor, signal, filters }, { apiKey, fetch }) {
     const params = new URLSearchParams({ query, offset: cursor ?? "0", limit: String(limit), fields: FIELDS });

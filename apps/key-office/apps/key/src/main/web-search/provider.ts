@@ -31,6 +31,8 @@ export interface WebProvider {
     keyHelp?: string;
     /** On unless the user turns it off. */
     enabledByDefault: boolean;
+    /** Its key is managed as this service (main/services/registry.ts), used as a fallback. */
+    service?: string;
   };
   search(query: string, request: SearchRequest, context: ProviderContext): Promise<WebPage>;
   /** One work by DOI or the provider's own id. */

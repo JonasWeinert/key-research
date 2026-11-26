@@ -1,0 +1,118 @@
+// Services the user can give an API key to (Settings → Services & API keys).
+//
+// To add one: an entry here (where to get a key, how to check it, what it is used for) and,
+// when it searches, a web provider whose `capabilities.service` names this id. The key is
+// stored by SecretStore under `service:<id>`; requests use it as a fallback (fallback.ts).
+// Base URLs follow the web providers' environment overrides so smokes can use mock servers.
+import type { Fetch } from "../web-search/http";
+
+export interface Validation {
+  ok: boolean;
+  message: string;
+  remaining?: { value: number; label: string };
+}
+export interface KeyedService {
+  id: string;
+  name: string;
+  /** "via SerpApi": who actually answers. */
+  via?: string;
+  /** One line: what the key gives. */
+  summary: string;
+  /** Where the app uses it. */
+  usedFor: string;
+  keyUrl: string;
+  keyUrlLabel: string;
+  /** The web search provider this key belongs to, if any. */
+  webProvider?: string;
+  /** Without a key the service is not asked at all. */
+  keyRequired?: boolean;
+  validate(key: string, context: { fetch?: Fetch; mailto: string; signal?: AbortSignal }): Promise<Validation>;
+}
+
+export const secretName = (id: string) => `service:${id}`;
+
+const openalexBase = () => (process.env.KEY_WEB_OPENALEX_URL || "https://api.openalex.org").replace(/\/$/, "");
+const s2Base = () => (process.env.KEY_WEB_S2_URL || "https://api.semanticscholar.org").replace(/\/$/, "");
+export const serpapiBase = () => (process.env.KEY_WEB_SERPAPI_URL || "https://serpapi.com").replace(/\/$/, "");
+
+async function probe(url: string, context: { fetch?: Fetch; signal?: AbortSignal }, headers: Record<string, string> = {}) {
+  const signal = context.signal ? AbortSignal.any([context.signal, AbortSignal.timeout(12_000)]) : AbortSignal.timeout(12_000);
+  try {
+    return await (context.fetch ?? fetch)(url, { headers: { Accept: "application/json", ...headers }, signal });
+  } catch {
+    return undefined;
+  }
+}
+
+/** A rate-limit header, when the service sends one. */
+export function remainingFrom(headers: Headers | undefined) {
+  const value = headers?.get("x-ratelimit-remaining") ?? headers?.get("x-ratelimit-remaining-day");
+  const n = value == null ? NaN : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+const refused = (status: number) => status === 401 || status === 403;
+
+export const SERVICES: KeyedService[] = [
+  {
+    id: "openalex",
+    name: "OpenAlex",
+    summary: "A key of your own gives a daily budget that does not share the anonymous limit.",
+    usedFor: "Source lookups, citation counts, title matches and OpenAlex web search",
+    keyUrl: "https://openalex.org/settings/api",
+    keyUrlLabel: "openalex.org",
+    webProvider: "openalex",
+    async validate(key, context) {
+      const params = new URLSearchParams({ "per-page": "1", select: "id", mailto: context.mailto, api_key: key });
+      const response = await probe(`${openalexBase()}/works?${params}`, context);
+      if (!response) return { ok: false, message: "Couldn't reach OpenAlex" };
+      if (refused(response.status)) return { ok: false, message: "OpenAlex refused this key" };
+      if (response.status === 429) return { ok: false, message: "OpenAlex says this key is over its limit" };
+      if (!response.ok) return { ok: false, message: `OpenAlex returned HTTP ${response.status}` };
+      const remaining = remainingFrom(response.headers);
+      return { ok: true, message: "OpenAlex accepted the key", remaining: remaining === undefined ? undefined : { value: remaining, label: "requests left today" } };
+    },
+  },
+  {
+    id: "scholar-serpapi",
+    name: "Google Scholar",
+    via: "SerpApi",
+    summary: "Google Scholar has no public API. SerpApi, a paid third party, runs the searches with your SerpApi key.",
+    usedFor: "Web search, when the other catalogues fail or find nothing, or when turned on under Web search",
+    keyUrl: "https://serpapi.com/manage-api-key",
+    keyUrlLabel: "serpapi.com",
+    webProvider: "scholar",
+    keyRequired: true,
+    async validate(key, context) {
+      // The account endpoint is free: checking a key does not use a search.
+      const response = await probe(`${serpapiBase()}/account.json?${new URLSearchParams({ api_key: key })}`, context);
+      if (!response) return { ok: false, message: "Couldn't reach SerpApi" };
+      if (refused(response.status)) return { ok: false, message: "SerpApi refused this key" };
+      if (!response.ok) return { ok: false, message: `SerpApi returned HTTP ${response.status}` };
+      const account = (await response.json().catch(() => ({}))) as { plan_searches_left?: number; total_searches_left?: number; error?: string };
+      if (account.error) return { ok: false, message: "SerpApi refused this key" };
+      const left = account.total_searches_left ?? account.plan_searches_left;
+      return { ok: true, message: "SerpApi accepted the key", remaining: typeof left === "number" ? { value: left, label: "searches left this month" } : undefined };
+    },
+  },
+  {
+    id: "semantic-scholar",
+    name: "Semantic Scholar",
+    summary: "A key raises the shared, low rate limit of anonymous requests.",
+    usedFor: "Semantic Scholar web search",
+    keyUrl: "https://www.semanticscholar.org/product/api#api-key-form",
+    keyUrlLabel: "semanticscholar.org",
+    webProvider: "s2",
+    async validate(key, context) {
+      const params = new URLSearchParams({ query: "attention", limit: "1", fields: "title" });
+      const response = await probe(`${s2Base()}/graph/v1/paper/search?${params}`, context, { "x-api-key": key });
+      if (!response) return { ok: false, message: "Couldn't reach Semantic Scholar" };
+      if (refused(response.status)) return { ok: false, message: "Semantic Scholar refused this key" };
+      if (!response.ok && response.status !== 429) return { ok: false, message: `Semantic Scholar returned HTTP ${response.status}` };
+      return { ok: true, message: response.status === 429 ? "Key accepted; Semantic Scholar is busy right now" : "Semantic Scholar accepted the key" };
+    },
+  },
+];
+
+export const serviceFor = (id: string) => SERVICES.find((s) => s.id === id);
+export const serviceForProvider = (providerId: string) => SERVICES.find((s) => s.webProvider === providerId);

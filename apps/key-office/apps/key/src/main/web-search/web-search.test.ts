@@ -225,6 +225,8 @@ describe("the library side", () => {
     expect(providers.map((p) => [p.id, p.enabled])).toEqual([
       ["openalex", false],
       ["s2", true],
+      // Google Scholar needs a SerpApi key: off without one.
+      ["scholar", false],
     ]);
   });
 });

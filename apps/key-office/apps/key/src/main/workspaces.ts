@@ -1,6 +1,6 @@
 import { mkdir, open, readFile, realpath, rename } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { RustHost, type InvokeOptions } from './rust-bridge'
+import { RustHost, type HostRequest, type InvokeOptions } from './rust-bridge'
 
 export interface WorkspaceInfo {
   id: string
@@ -17,6 +17,8 @@ export interface RegistryOptions {
   defaultWorkspaceParent: string
   hostExecutable: string
   pdfiumPath?: string
+  /** Sent to every host when it starts (see RustHost's prelude). */
+  prelude?: () => HostRequest[]
 }
 type SearchPage = {
   hits: Record<string, unknown>[]
@@ -144,6 +146,7 @@ export class Registry {
           name: name.trim(),
           workspaceRoot: canonical,
         })
+        this.adoptPrelude(host)
         if (this.closed) throw new Error('Workspace registry is closed')
         if (this.entries.some((w) => w.id === info.id))
           throw new Error(
@@ -187,6 +190,7 @@ export class Registry {
     try {
       const info = await host.invoke<WorkspaceInfo>('workspace_initialize', { name, workspaceRoot: canonical })
       if (this.entries.some((w) => w.id === info.id)) throw new Error('This library is already a workspace')
+      this.adoptPrelude(host)
       const entry: HiddenWorkspace = { id: info.id, name: info.name, root: canonical, env }
       this.hidden.set(entry.id, entry)
       this.hosts.set(entry.id, host)
@@ -196,6 +200,25 @@ export class Registry {
       host.close()
       throw error
     }
+  }
+  /** A host made for workspace_initialize: from now on (and on restarts) it gets the prelude. */
+  private adoptPrelude(host: RustHost) {
+    const prelude = this.options.prelude
+    if (!prelude) return
+    host.setPrelude(prelude)
+    for (const request of prelude()) void host.invoke(request.command, request.args).catch(() => {})
+  }
+  /** Sends a request to every host that is running now, without starting any. */
+  async broadcast<T = unknown>(command: string, args: Record<string, unknown>): Promise<{ workspaceId: string; result?: T }[]> {
+    const running = [...this.hosts.entries()].filter(([, host]) => host.isRunning())
+    return Promise.all(
+      running.map(([workspaceId, host]) =>
+        host.invoke<T>(command, { ...args, $background: true }).then(
+          (result) => ({ workspaceId, result }),
+          () => ({ workspaceId }),
+        ),
+      ),
+    )
   }
   isHidden(id: string | undefined): boolean {
     return !!id && this.hidden.has(id)
@@ -210,6 +233,7 @@ export class Registry {
         libraryRoot: join(workspace.root, '.key'),
         pdfiumPath: this.options.pdfiumPath,
         env: (workspace as HiddenWorkspace).env,
+        prelude: this.options.prelude,
       })
       this.hosts.set(workspace.id, host)
     }

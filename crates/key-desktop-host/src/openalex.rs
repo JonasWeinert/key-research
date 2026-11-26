@@ -4,6 +4,12 @@
 // enrich, one at a time: requests are paced, carry the `mailto` of the polite pool, retry
 // with backoff when OpenAlex is busy, and a failed source is tried again later.
 //
+// A user's API key (Settings → Services & API keys) arrives from the app in
+// `store_enrich_options`, never through the environment, and is a fallback: requests go out
+// without it, and only one OpenAlex refuses or limits is sent again with the key (or every
+// request carries it when the user chose "Always use"). Requests made with the key are
+// counted for the app, which reads and clears the counts with `store_key_usage`.
+//
 // With KEY_OPENALEX_FIXTURES set to a folder of recorded responses (W….json, A….json,
 // S….json and works-batch.json), nothing goes to the network; tests and smokes use it.
 use super::{json_output, library_store::Library};
@@ -36,6 +42,8 @@ pub struct Options {
     pub auto: bool,
     pub mailto: String,
     pub api_key: Option<String>,
+    /// Send the key with every request, not only when a keyless one fails.
+    pub key_always: bool,
 }
 
 impl Options {
@@ -44,7 +52,9 @@ impl Options {
         Self {
             auto: var("KEY_OPENALEX_ENABLED").is_none_or(|v| v != "0"),
             mailto: var("KEY_OPENALEX_MAILTO").filter(|m| m.contains('@')).unwrap_or_else(|| DEFAULT_MAILTO.into()),
+            // Older apps passed the key this way; the app now sends it in store_enrich_options.
             api_key: var("KEY_OPENALEX_API_KEY"),
+            key_always: false,
         }
     }
 }
@@ -192,8 +202,7 @@ fn fetch(path: &str, query: &[(&str, &str)], options: &Options, attempts: usize)
         return fixture(&dir, path, query);
     }
     static LAST: Mutex<Option<Instant>> = Mutex::new(None);
-    let mut delay = Duration::from_secs(1);
-    for attempt in 0..attempts {
+    let send = |path: &str, query: &[(&str, &str)], mailto: &str, key: Option<&str>| {
         {
             let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
             if let Some(wait) = last.and_then(|l| PACE.checked_sub(l.elapsed())) {
@@ -201,25 +210,116 @@ fn fetch(path: &str, query: &[(&str, &str)], options: &Options, attempts: usize)
             }
             *last = Some(Instant::now());
         }
-        let busy = match key_reference::openalex_get(path, query, Some(&options.mailto), options.api_key.as_deref()) {
+        key_reference::openalex_get(path, query, Some(mailto), key)
+    };
+    fetch_with(&send, &thread::sleep, path, query, options, attempts)
+}
+
+type Request<'a> = dyn Fn(&str, &[(&str, &str)], &str, Option<&str>) -> Result<key_reference::OpenAlexResponse, String> + 'a;
+
+/// The keyless request first; the same request with the user's key only when OpenAlex limits
+/// or refuses it, or stays busy through the retries (see the top of this file).
+fn fetch_with(send: &Request<'_>, sleep: &dyn Fn(Duration), path: &str, query: &[(&str, &str)], options: &Options, attempts: usize) -> Result<Json, Fail> {
+    let key = options.api_key.as_deref().map(str::trim).filter(|k| !k.is_empty());
+    let Some(key) = key else {
+        return attempt(send, sleep, path, query, options, None, attempts, false).map_err(|(fail, _)| fail);
+    };
+    if options.key_always {
+        return attempt(send, sleep, path, query, options, Some(key), attempts, false).map_err(|(fail, _)| fail);
+    }
+    match attempt(send, sleep, path, query, options, None, attempts, true) {
+        Err((_, true)) => attempt(send, sleep, path, query, options, Some(key), attempts, false).map_err(|(fail, _)| fail),
+        other => other.map_err(|(fail, _)| fail),
+    }
+}
+
+/// One request, retried with backoff while OpenAlex is busy. The flag on an error says whether
+/// a key could help; `hand_over` gives up at the first rate limit so the keyed request goes
+/// at once rather than after the waits.
+#[allow(clippy::too_many_arguments)]
+fn attempt(send: &Request<'_>, sleep: &dyn Fn(Duration), path: &str, query: &[(&str, &str)], options: &Options, key: Option<&str>, attempts: usize, hand_over: bool) -> Result<Json, (Fail, bool)> {
+    let mut delay = Duration::from_secs(1);
+    for n in 0..attempts {
+        let answer = send(path, query, &options.mailto, key);
+        if key.is_some() {
+            count_key_use(&answer);
+        }
+        let busy = match answer {
             Ok(response) => match response.status {
-                200..=299 => return serde_json::from_slice(&response.body).map_err(|e| Fail::Error(format!("OpenAlex sent an unreadable answer: {e}"))),
-                404 => return Err(Fail::NotFound),
+                200..=299 => return serde_json::from_slice(&response.body).map_err(|e| (Fail::Error(format!("OpenAlex sent an unreadable answer: {e}")), false)),
+                404 => return Err((Fail::NotFound, false)),
+                401 | 402 | 403 if key.is_some() => return Err((Fail::Error(format!("OpenAlex refused the API key (HTTP {})", response.status)), false)),
+                401 | 402 | 403 => return Err((Fail::Error(format!("OpenAlex refused the request (HTTP {})", response.status)), true)),
+                429 if hand_over => return Err((Fail::Busy("OpenAlex is limiting requests (HTTP 429)".into()), true)),
                 429 | 500..=599 => {
                     delay = response.retry_after.map_or(delay, |d| d.min(Duration::from_secs(60)));
                     format!("OpenAlex is busy (HTTP {})", response.status)
                 }
-                status => return Err(Fail::Error(format!("OpenAlex returned HTTP {status}"))),
+                status => return Err((Fail::Error(format!("OpenAlex returned HTTP {status}")), false)),
             },
-            Err(error) => error,
+            Err(error) => redact(&error, key),
         };
-        if attempt + 1 == attempts {
-            return Err(Fail::Busy(busy));
+        if n + 1 == attempts {
+            return Err((Fail::Busy(busy), true));
         }
-        thread::sleep(delay);
+        sleep(delay);
         delay *= 2;
     }
-    Err(Fail::Busy("OpenAlex did not answer".into()))
+    Err((Fail::Busy("OpenAlex did not answer".into()), true))
+}
+
+/// An error never quotes the key (a URL in a message would carry it).
+fn redact(message: &str, key: Option<&str>) -> String {
+    match key {
+        Some(key) if !key.is_empty() => message.replace(key, "••••"),
+        _ => message.to_string(),
+    }
+}
+
+#[derive(Default)]
+struct KeyUsage {
+    requests: u64,
+    failures: u64,
+    last_error: Option<String>,
+    last_at: Option<i64>,
+    remaining: Option<u64>,
+    invalid: bool,
+}
+static KEY_USAGE: Mutex<KeyUsage> = Mutex::new(KeyUsage { requests: 0, failures: 0, last_error: None, last_at: None, remaining: None, invalid: false });
+
+fn count_key_use(answer: &Result<key_reference::OpenAlexResponse, String>) {
+    let mut usage = KEY_USAGE.lock().unwrap_or_else(|e| e.into_inner());
+    usage.requests += 1;
+    usage.last_at = Some(key_store::now_ms());
+    match answer {
+        Ok(response) if (200..300).contains(&response.status) || response.status == 404 => {
+            if response.remaining.is_some() {
+                usage.remaining = response.remaining;
+            }
+        }
+        Ok(response) => {
+            usage.failures += 1;
+            usage.invalid |= matches!(response.status, 401 | 403);
+            usage.last_error = Some(match response.status {
+                401 | 403 => "OpenAlex refused the API key".into(),
+                429 => "OpenAlex is limiting requests with this key".into(),
+                status => format!("OpenAlex returned HTTP {status}"),
+            });
+            if response.remaining.is_some() {
+                usage.remaining = response.remaining;
+            }
+        }
+        Err(_) => {
+            usage.failures += 1;
+            usage.last_error = Some("Couldn't reach OpenAlex".into());
+        }
+    }
+}
+
+/// The counts since the last call, which starts them again.
+fn take_key_usage() -> Json {
+    let usage = std::mem::take(&mut *KEY_USAGE.lock().unwrap_or_else(|e| e.into_inner()));
+    json!({ "requests": usage.requests, "failures": usage.failures, "lastError": usage.last_error, "lastAt": usage.last_at, "remaining": usage.remaining, "invalid": usage.invalid })
 }
 
 /// Recorded responses: `works/W1` reads W1.json; `works/doi:…`, `works/pmid:…` and
@@ -570,11 +670,16 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
                 if let Some(key) = arg::<Option<String>>(args, "apiKey")? {
                     options.api_key = Some(key.trim().to_string()).filter(|k| !k.is_empty());
                 }
+                if let Some(mode) = arg::<Option<String>>(args, "keyMode")? {
+                    options.key_always = mode == "always";
+                }
             }
             openalex.wake();
             let options = openalex.options();
             json_output(json!({ "auto": options.auto, "mailto": options.mailto, "queue": store.enrichment_queue(options.auto)? }))
         })(),
+        // What was asked with the user's key since the last read (Settings shows the usage).
+        "store_key_usage" => json_output(take_key_usage()),
         // Cached counts (tier b), fetched again when stale and viewed. Without automatic
         // lookups only `force` (the user's Refresh) goes to the network.
         // Cached counts (tier b): answered at once with what is stored; when they are old (or
@@ -710,6 +815,76 @@ mod tests {
     use super::*;
     use key_store::SourceInput;
 
+    /// Recorded answers, one per request, and what each request carried.
+    struct Recorded {
+        answers: std::cell::RefCell<Vec<(u16, &'static str)>>,
+        keys: std::cell::RefCell<Vec<Option<String>>>,
+    }
+    impl Recorded {
+        fn new(answers: &[(u16, &'static str)]) -> Self {
+            Self { answers: std::cell::RefCell::new(answers.iter().rev().cloned().collect()), keys: Default::default() }
+        }
+        fn send(&self, _path: &str, _query: &[(&str, &str)], _mailto: &str, key: Option<&str>) -> Result<key_reference::OpenAlexResponse, String> {
+            self.keys.borrow_mut().push(key.map(String::from));
+            let (status, body) = self.answers.borrow_mut().pop().expect("an answer for every request");
+            Ok(key_reference::OpenAlexResponse { status, retry_after: None, remaining: (status == 200 && key.is_some()).then_some(41), body: body.as_bytes().to_vec() })
+        }
+    }
+    const WORK: &str = r#"{"id":"https://openalex.org/W1","display_name":"A work"}"#;
+    const LIMITED: &str = r#"{"error":"Rate limit exceeded"}"#;
+
+    /// The usage counts are one per process; these tests take turns.
+    static USAGE_TESTS: Mutex<()> = Mutex::new(());
+
+    fn keyed(always: bool) -> Options {
+        Options { auto: true, mailto: DEFAULT_MAILTO.into(), api_key: Some("sk-test-1234".into()), key_always: always }
+    }
+
+    /// The keyed retry path, from recorded answers: limited without a key → asked again with it.
+    #[test]
+    fn a_rate_limited_keyless_request_is_sent_again_with_the_key_and_counted() {
+        let _turn = USAGE_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = take_key_usage();
+        let recorded = Recorded::new(&[(429, LIMITED), (200, WORK)]);
+        let send = |p: &str, q: &[(&str, &str)], m: &str, k: Option<&str>| recorded.send(p, q, m, k);
+        let work = fetch_with(&send, &|_| {}, "works/W1", &[], &keyed(false), 3).unwrap();
+        assert_eq!(work["id"], "https://openalex.org/W1");
+        assert_eq!(*recorded.keys.borrow(), vec![None, Some("sk-test-1234".to_string())]);
+        let usage = take_key_usage();
+        assert_eq!((usage["requests"].as_u64(), usage["failures"].as_u64(), usage["remaining"].as_u64()), (Some(1), Some(0), Some(41)));
+        assert_eq!(take_key_usage()["requests"], 0, "reading clears the counts");
+
+        // A keyless success never touches the key; without a key a limit just retries.
+        let recorded = Recorded::new(&[(200, WORK)]);
+        let send = |p: &str, q: &[(&str, &str)], m: &str, k: Option<&str>| recorded.send(p, q, m, k);
+        fetch_with(&send, &|_| {}, "works/W1", &[], &keyed(false), 3).unwrap();
+        assert_eq!(*recorded.keys.borrow(), vec![None]);
+        let recorded = Recorded::new(&[(429, LIMITED), (429, LIMITED), (200, WORK)]);
+        let send = |p: &str, q: &[(&str, &str)], m: &str, k: Option<&str>| recorded.send(p, q, m, k);
+        let plain = Options { api_key: None, ..keyed(false) };
+        fetch_with(&send, &|_| {}, "works/W1", &[], &plain, 3).unwrap();
+        assert_eq!(recorded.keys.borrow().len(), 3);
+        assert_eq!(take_key_usage()["requests"], 0);
+    }
+
+    #[test]
+    fn always_sends_the_key_and_a_refused_key_is_reported_without_quoting_it() {
+        let _turn = USAGE_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let _ = take_key_usage();
+        let recorded = Recorded::new(&[(200, WORK)]);
+        let send = |p: &str, q: &[(&str, &str)], m: &str, k: Option<&str>| recorded.send(p, q, m, k);
+        fetch_with(&send, &|_| {}, "works/W1", &[], &keyed(true), 3).unwrap();
+        assert_eq!(*recorded.keys.borrow(), vec![Some("sk-test-1234".to_string())]);
+        let recorded = Recorded::new(&[(503, LIMITED), (403, LIMITED)]);
+        let send = |p: &str, q: &[(&str, &str)], m: &str, k: Option<&str>| recorded.send(p, q, m, k);
+        let fail = fetch_with(&send, &|_| {}, "works/W1", &[], &keyed(false), 1).unwrap_err();
+        assert!(fail.message().contains("refused the API key"));
+        let usage = take_key_usage();
+        assert_eq!((usage["requests"].as_u64(), usage["failures"].as_u64(), usage["invalid"].as_bool()), (Some(2), Some(1), Some(true)));
+        assert!(!usage.to_string().contains("sk-test-1234"));
+        assert_eq!(redact("GET https://api.openalex.org/works?api_key=sk-test-1234 failed", Some("sk-test-1234")), "GET https://api.openalex.org/works?api_key=•••• failed");
+    }
+
     fn input(value: Json) -> SourceInput {
         serde_json::from_value(value).unwrap()
     }
@@ -734,7 +909,7 @@ mod tests {
         // SAFETY: the only test in this binary that reads the fixtures setting.
         unsafe { std::env::set_var("KEY_OPENALEX_FIXTURES", &fixtures) };
         let store = Store::open(dir.path().join("library")).unwrap();
-        let options = Options { auto: true, mailto: DEFAULT_MAILTO.into(), api_key: None };
+        let options = Options { auto: true, mailto: DEFAULT_MAILTO.into(), api_key: None, key_always: false };
         let reference = store.insert_source(input(json!({"kind": "reference", "title": "Falls paper (to read)", "doi": "10.5555/falls"}))).unwrap();
         let added = store.insert_source(input(json!({"kind": "pdf", "title": "Downloaded paper", "filePath": "/tmp/x.pdf", "fileHash": "h1"}))).unwrap();
         let record = Identification {

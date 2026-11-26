@@ -89,7 +89,7 @@ export const openalex: WebProvider = {
   id: "openalex",
   label: "OpenAlex",
   icon: "globe",
-  capabilities: { apiKey: true, keyHelp: "Optional. Uses the key from OpenAlex above.", enabledByDefault: true },
+  capabilities: { apiKey: true, keyHelp: "Optional. Uses the key from OpenAlex above.", enabledByDefault: true, service: "openalex" },
   async search(query, { limit, cursor, signal, filters }, { mailto, apiKey, fetch }) {
     const filter = [
       filters?.yearFrom || filters?.yearTo ? `publication_year:${filters.yearFrom ?? ""}-${filters.yearTo ?? ""}` : "",
