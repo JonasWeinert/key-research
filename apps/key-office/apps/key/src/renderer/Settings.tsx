@@ -18,8 +18,9 @@ import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
 import CitationSettings from "./CitationSettings";
 import { CitationKeySettings } from "./citation-keys";
+import { FeedsSettings } from "./FeedsManager";
 
-export type SettingsSection = "general" | "libraries" | "zotero" | "citations" | "export" | "search" | "web" | "services" | "ai" | "about";
+export type SettingsSection = "general" | "libraries" | "zotero" | "citations" | "export" | "search" | "web" | "feeds" | "services" | "ai" | "about";
 interface SectionInfo {
   id: SettingsSection;
   label: string;
@@ -39,6 +40,7 @@ const GROUPS: SectionInfo[][] = [
   [
     { id: "search", label: "Search & indexing", icon: "search", keywords: "model embedding index pause retry layout analysis pdf openalex email duplicates people metadata" },
     { id: "web", label: "Web & browser", icon: "globe", keywords: "web search providers semantic scholar crossref browsing data cookies library access proxy ezproxy openathens" },
+    { id: "feeds", label: "Feeds & alerts", icon: "feed", keywords: "inbox rss atom opml journal table of contents arxiv blog follow author alert citations subscriptions" },
   ],
   [
     { id: "services", label: "Services & API keys", icon: "key", keywords: "api key keychain serpapi openalex google scholar usage" },
@@ -168,6 +170,7 @@ export default function Settings({
                 <BrowserSettings />
               </>
             )}
+            {section === "feeds" && <FeedsSettings invoke={invoke} workspaces={workspaces} />}
             {section === "services" && <ServiceKeys invoke={invoke} />}
             {section === "ai" && <AiSettings invoke={invoke} workspaceId={workspaces[0]?.id} />}
             {section === "about" && <About info={info} />}

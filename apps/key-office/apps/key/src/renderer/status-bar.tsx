@@ -10,6 +10,7 @@ import { ActivityPanel, activityLabel, isActive, olderSources, ProgressRing, ref
 import type { Invoke, LibraryStatus, ZoteroSyncStatus } from "./library-api";
 import { ago } from "./zotero-sheet-model";
 import { useAutoExportStatus } from "./BiblioSheets";
+import { inboxStatusItem, openInbox, useFeedCounts } from "./feeds-ui";
 import { overflowingStatusItems, sanitizeStatusItems, STATUS_BAR_HEIGHT, type StatusItem } from "../shared/status-items";
 
 interface Notice {
@@ -299,6 +300,8 @@ export function StatusBar({
 
   const work = workItem(status);
   const autoExport = useAutoExportStatus(invoke, workspaceId);
+  // Nothing unless new items came in (feeds-ui.tsx).
+  const inbox = inboxStatusItem(useFeedCounts(invoke, workspaceId));
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId).catch(() => {});
 
   const dom = activeViewId ? domItems.get(activeViewId) : undefined;
@@ -326,6 +329,7 @@ export function StatusBar({
     { ...zoteroItem(sync, syncing, now), priority: 40 },
     ...(work ? [work] : []),
     ...(autoExport ? [autoExport] : []),
+    ...(inbox ? [inbox] : []),
   ];
   const bar = useRef<HTMLElement>(null);
   const widths = useRef(new Map<string, number>());
@@ -371,6 +375,8 @@ export function StatusBar({
                 ? onOpenZotero()
                 : item.id === "autoexport"
                   ? window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "export" }))
+                : item.id === "inbox"
+                  ? openInbox(workspaceId)
                 : item.id === "workspace"
                   ? onOpenWorkspace()
                   : workPanel

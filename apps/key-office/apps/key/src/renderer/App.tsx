@@ -35,6 +35,7 @@ import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
 import { StatusBar } from "./status-bar";
+import { InboxRow } from "./inbox-row";
 import { zoteroWorkspaceOf } from "./zotero-workspace";
 // Loaded on first use: most sessions never open these.
 const Settings = lazyComponent(() => import("./Settings").then((m) => m.default));
@@ -876,6 +877,7 @@ export default function App() {
                 onShowSources={() => action("open-content", { section: "sources", workspaceId, projectId })}
               />
             )}
+            {workspaceId && <InboxRow invoke={invoke} workspaceId={workspaceId} current={section === "inbox"} onOpen={() => action("open-content", { section: "inbox", workspaceId })} />}
             <WorkspaceSection
               invoke={invoke}
               workspaceId={workspaceId}

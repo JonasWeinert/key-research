@@ -45,6 +45,8 @@ import { PageActions } from "./browser/page-actions";
 import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browser/temp-pdfs";
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
 import { webPageRect } from "../shared/browser-layout";
+import { feedsEnvironmentRequest, watchFeedsEnvironment } from "./feeds-environment";
+import { forgetReading, reportReading } from "./reading-events";
 import { WindowStateStore, type SavedGroup, type SavedTab, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
 import {
   setOfficeShellWindow,
@@ -241,6 +243,7 @@ const views = new Map<string, OwnedView>();
 const readerCalls = new Map<number, Set<Promise<unknown>>>();
 const readerReleases = new Map<string, Promise<void>>();
 function disposePdf(record: OwnedView) {
+  forgetReading(record.id);
   const view = record.view;
   if (!view) return;
   const calls = [...(readerCalls.get(view.webContents.id) ?? [])];
@@ -432,7 +435,7 @@ function viewKind(v: OwnedView | undefined) {
   if (section === "record") return v?.content?.record?.kind || "page";
   if (!v?.contentKey) return v?.kind;
   if (section === "sources") return "library";
-  if (section === "note" || section === "canvas" || section === "search") return section;
+  if (section === "note" || section === "canvas" || section === "search" || section === "inbox") return section;
   if (section === "webpage") return "web";
   if (section === "source" || section === "file" || ENTITY_SECTIONS.includes(section ?? "")) return "page";
   return "records";
@@ -1711,7 +1714,7 @@ function savedView(id: string): SavedView | undefined {
   if (!c || c.section === "home") return { type: "home" };
   // A record that was never saved has nothing to reopen.
   if (c.section === "record" && !c.record?.id) return undefined;
-  if (!["sources", "records", "record", "note", "source", "webpage", "canvas", "search", "file", ...ENTITY_SECTIONS].includes(c.section)) return undefined;
+  if (!["sources", "records", "record", "note", "source", "webpage", "canvas", "search", "inbox", "file", ...ENTITY_SECTIONS].includes(c.section)) return undefined;
   return {
     type: "content",
     section: c.section as "sources",
@@ -1779,7 +1782,7 @@ const contentKey = (section: string, workspaceId?: string, projectId?: string, i
     : JSON.stringify([section, workspaceId || null, projectId || null, id ?? null]);
 /** Opens (or focuses) a library list, record, note or source page in `w`. */
 async function openContent(w: ShellWindow, p: any) {
-  if (!["sources", "records", "record", "note", "canvas", "highlights", "search", "file", "webpage", ...ENTITY_SECTIONS].includes(p.section))
+  if (!["sources", "records", "record", "note", "canvas", "highlights", "search", "inbox", "file", "webpage", ...ENTITY_SECTIONS].includes(p.section))
     throw Error("Invalid content view");
   if (p.section === "webpage" && (typeof p.sourceId !== "string" || !p.sourceId))
     throw Error("Choose a saved page");
@@ -1832,6 +1835,8 @@ async function openContent(w: ShellWindow, p: any) {
             ? String(p.title || (p.section === "file" ? "File" : p.section === "canvas" ? "Untitled canvas" : p.section === "person" ? "Person" : p.section === "venue" ? "Journal" : p.section === "tag" ? "Tag" : "Topic")).slice(0, 200)
             : p.section === "highlights"
               ? "Highlights"
+              : p.section === "inbox"
+                ? "Inbox"
               : p.section === "search"
                 ? "Search"
                 : `${p.section === "records" ? "All items" : "Sources"}${scope ? ` · ${scope}` : ""}`,
@@ -2275,8 +2280,9 @@ else
           (app.isPackaged
             ? join(process.resourcesPath, "backend/libpdfium.dylib")
             : join(root, "vendor/pdfium/lib/libpdfium.dylib")),
-        prelude: hostKeyRequests,
+        prelude: () => [...hostKeyRequests(), feedsEnvironmentRequest()],
       });
+      watchFeedsEnvironment((command, args) => void registry.broadcast(command, args).catch(() => undefined));
       serveNoteMedia(registry);
       tempPdfs = new TempPdfs(browserCache(), { workspace: scratchWorkspace, invoke: (c, a, id) => registry.invoke(c, a, id) });
       void tempPdfs.list().catch(() => undefined);
@@ -2973,7 +2979,11 @@ else
       });
       ipcMain.on("key:reader-state", (event, value) => {
         const v = bound(event.sender.id);
-        if (v?.kind === "pdf") v.viewState = value;
+        if (v?.kind === "pdf") {
+          v.viewState = value;
+          // Reading status and history (reading-events.ts).
+          reportReading((c, a, id) => registry.invoke(c, a, id), v, value, () => emit("library-changed"));
+        }
       });
       ipcMain.handle("key:tab-action", async (event, action, p = {}) => {
         const w = shell(event.sender.id);
@@ -3154,7 +3164,8 @@ else
               openLink(proxiedUrlOf(String(webUrl(p.url))), w, {
                 pdfFor: { workspaceId: String(p.pdfFor.workspaceId || w.workspaceId), sourceId: p.pdfFor.sourceId, title: typeof p.pdfFor.title === "string" ? p.pdfFor.title.slice(0, 200) : undefined },
               });
-            else openLink(p.url, w, { background: Boolean(p.background) });
+            // Beside the view that asked (the Inbox's "o"), when it says so.
+            else await withPlacement(p, async () => openLink(p.url, w, { background: Boolean(p.background) }));
             return snapshot(w);
           }
           case "sidebar-width":

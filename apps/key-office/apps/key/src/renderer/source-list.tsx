@@ -4,7 +4,7 @@
 // entity links, and what can be done with it: Open, Open to the side, or Add to library for
 // works not in it yet (asking where, see add-from-source.tsx). ⌥-click opens it to the side,
 // ⌘-click or a double-click in a tab.
-import { useState, type MouseEvent } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRetryingLookup } from "@key-reader/pdfjs/use-retrying-lookup";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { Icon } from "./icons";
@@ -16,7 +16,12 @@ import { addFromSource, type AddOrigin } from "./add-from-source";
 import { useLibraryMatch } from "./library-match";
 import "./entity.css";
 
-export type ListWork = Pick<WorkReference, "title" | "byline" | "year" | "container" | "doi" | "openalexId" | "matchedSourceId" | "text">;
+export type ListWork = Pick<WorkReference, "title" | "byline" | "year" | "container" | "doi" | "openalexId" | "matchedSourceId" | "text"> & {
+  /** What the context already knows of its abstract (a feed's summary): shown when no lookup has one. */
+  abstract?: string | null;
+  url?: string | null;
+  authors?: string[] | null;
+};
 type About = { abstract?: string | null; doi?: string | null; oaUrl?: string | null; source?: Source | null };
 
 export function SourceListItem({
@@ -27,6 +32,10 @@ export function SourceListItem({
   origin,
   onAdded,
   badge = !source,
+  selected,
+  onSelect,
+  aside,
+  actions,
 }: {
   /** A work known by its metadata (a reference, a related work). */
   work?: ListWork;
@@ -39,6 +48,13 @@ export function SourceListItem({
   onAdded?: (source: Source) => void;
   /** Says "In library" on works the library has (off where every row is in it). */
   badge?: boolean;
+  /** The row the keyboard is on, in lists that triage (the Inbox). */
+  selected?: boolean;
+  onSelect?: () => void;
+  /** Marks beside the title (unread, saved, where it came from). */
+  aside?: ReactNode;
+  /** More actions after the row's own, when opened. */
+  actions?: ReactNode;
 }) {
   // A work the host did not match already (related works, cited-by): asked by its identifiers,
   // with its title only ever "possibly" the library's.
@@ -66,7 +82,8 @@ export function SourceListItem({
         ? invoke<About>("store_openalex_work", { openalexId: work.openalexId }, workspaceId)
         : Promise.resolve({ abstract: null, doi: work?.doi }),
   );
-  const about: About | undefined = source ? { abstract: source.abstract, doi: source.doi, oaUrl: source.oaUrl, source } : lookup.status === "ready" ? lookup.value : undefined;
+  const looked: About | undefined = source ? { abstract: source.abstract, doi: source.doi, oaUrl: source.oaUrl, source } : lookup.status === "ready" ? lookup.value : undefined;
+  const about: About | undefined = looked && !looked.abstract && work?.abstract ? { ...looked, abstract: work.abstract } : looked;
   const status = source ? "ready" : lookup.status;
   const record = about?.source ?? undefined;
   const [adding, setAdding] = useState(false);
@@ -84,7 +101,7 @@ export function SourceListItem({
   const add = (e: MouseEvent<HTMLButtonElement>) => {
     if (!work) return;
     setAdding(true);
-    void addFromSource(invoke, origin ?? { workspaceId }, { ...work, doi: work.doi ?? about?.doi }, e.currentTarget)
+    void addFromSource(invoke, origin ?? { workspaceId }, { ...work, doi: work.doi ?? about?.doi, url: work.url ?? undefined }, e.currentTarget)
       .then((s) => {
         if (!s) return;
         setAdded(s);
@@ -99,6 +116,8 @@ export function SourceListItem({
       className="kx-source-item"
       data-in-library={inLibrary || !!added}
       data-open={open}
+      data-selected={selected || undefined}
+      onMouseDown={onSelect}
       {...(id ? itemAttrs({ kind: "source", id, title }) : {})}
       draggable={!!id}
       onDragStart={id ? (e) => setItemDrag(e.dataTransfer, [{ kind: "source", id, title }]) : undefined}
@@ -122,6 +141,7 @@ export function SourceListItem({
           <span className="kx-work-title">{title}</span>
           {detail && <small>{detail}</small>}
         </span>
+        {aside}
         {badge && (inLibrary || added) && <span className="kx-work-badge">In library</span>}
         {badge && possible && !added && (
           <span className="kx-work-badge" data-possible title="A source with this title is in your library">
@@ -193,6 +213,7 @@ export function SourceListItem({
                 </>
               )
             )}
+            {actions}
             {link && (
               <a className="kx-page-action" href={link} target="_blank" rel="noreferrer">
                 <Icon name="external" size={12} /> {link.includes("doi.org") ? "DOI" : "Open access copy"}
