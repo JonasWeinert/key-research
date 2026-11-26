@@ -9,6 +9,7 @@ import "./entity.css";
 import MergeReview from "./MergeReview";
 import { Conflicts, ZoteroImport } from "./ZoteroImport";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
+import WebSearchSettings from "./WebSearchSettings";
 
 export type SettingsSection = "general" | "libraries" | "search" | "ai" | "about";
 const SECTIONS: [SettingsSection, string, IconName][] = [
@@ -91,7 +92,7 @@ export function Group({ title, footer, children }: { title?: string; footer?: Re
 }
 /** A setting: its label and a quiet line beneath. A `path` line stays on one line, cut at
  *  the end, with the whole path on hover. */
-function Row({ label, detail, children, path }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean }) {
+export function Row({ label, detail, children, path }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean }) {
   return (
     <div className="kx-settings-row">
       <div>
@@ -539,6 +540,7 @@ function SearchSettings({
         </Row>
         <PossibleDuplicates invoke={invoke} workspaceId={workspaceId} />
       </Group>
+      <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />
     </>
   );
 }
