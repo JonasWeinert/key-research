@@ -1,7 +1,6 @@
 use crate::{
     ChunkSource, PreparedChunks, SemanticDocumentDto,
     chunk_source::ChunkFile,
-    embedder::default_model_dir,
     search::{IndexStats, SemanticSearchHitDto, index_document, index_keywords, search_index_at},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -37,7 +36,6 @@ struct StoredPage {
 #[derive(Clone)]
 pub struct SemanticSearchService {
     executable: Arc<Result<PathBuf, String>>,
-    model_dir: Arc<Result<PathBuf, String>>,
     index_root: PathBuf,
     chunk_root: PathBuf,
     library: key_library::Library,
@@ -192,7 +190,6 @@ impl SemanticSearchService {
         Ok(Self {
             query_worker: sender,
             executable: Arc::new(env::current_exe().map_err(|error| error.to_string())),
-            model_dir: Arc::new(default_model_dir()),
             index_root: storage_root.join("frankensearch"),
             chunk_root: storage_root.join("chunks"),
             library,
@@ -428,7 +425,8 @@ impl SemanticSearchService {
         let request = SearchRequest {
             index_root: self.index_root.clone(),
             chunk_root: self.chunk_root.clone(),
-            model_dir: self.model_dir().unwrap_or_default(),
+            // Keyword search meanwhile; the model is fetched in the background.
+            model_dir: crate::embedder::model_dir_on_demand(false).unwrap_or_default(),
             document_ids,
             query,
             limit,
@@ -442,8 +440,10 @@ impl SemanticSearchService {
             .map_err(|_| "Search worker stopped before responding")?
     }
 
+    /// The reader's search model, downloaded first if it is missing (indexing runs in the
+    /// background, so it can wait for it).
     fn model_dir(&self) -> Result<PathBuf, String> {
-        self.model_dir.as_ref().clone()
+        crate::embedder::model_dir_on_demand(true)
     }
 
     fn executable(&self) -> Result<PathBuf, String> {

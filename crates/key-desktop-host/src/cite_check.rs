@@ -50,7 +50,7 @@ fn work_of(source: &Source) -> Work {
 /// { style?, citations: [{ items: [{ id, locator?, label? }] }], bibliographyIds? (what the
 /// reference list shows; absent when there is none) } -> { issues, style }
 fn check_note(library: &Library, args: &Json) -> Result<Json, String> {
-    let (style_id, _) = chosen(args)?;
+    let (style_id, _) = chosen(&library.store, args)?;
     let summary = styles().summary(&style_id);
     let citations: Vec<CitationArg> = arg::<Option<Vec<CitationArg>>>(args, "citations")?.unwrap_or_default();
     if citations.len() > 5000 {

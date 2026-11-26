@@ -182,6 +182,10 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
     launcher = await waitFor(app, isLauncher, "launcher");
     await launcher.locator('[data-workspace-id] .kx-launcher-badge[data-kind="open"]').waitFor();
     await shot(launcher, "launcher-over-workspace");
+    // One list: a rename here reaches the open workspace window at once (its switcher, its title).
+    await launcher.evaluate((id) => window.key.launcher("rename", { id, name: "Dissertation" }), thesis.id);
+    await shell.waitForFunction(() => document.querySelector(".key-workspace-home strong")?.textContent === "Dissertation");
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("index.html")).getTitle()), "Dissertation");
 
     // 8. "Reopen windows from last time": the next launch restores as before.
     await send("settings");

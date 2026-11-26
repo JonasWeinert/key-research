@@ -281,7 +281,7 @@ const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host
     await shot(page, "settings-web-light");
     await s2Switch.click();
     await page.waitForFunction(async () => (await window.key.appSettings()).settings.webProviders?.s2?.enabled === false);
-    await settings.getByRole("button", { name: "Close settings" }).click();
+    await settings.getByRole("button", { name: "Close Key Settings" }).click();
     await pill.click();
     await pill.click();
     const s2Before = webRequests().filter((l) => l.startsWith("/graph")).length;

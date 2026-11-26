@@ -540,21 +540,18 @@ https://github.com/microsoft/onnxruntime/blob/main/ThirdPartyNotices.txt
 ${readRepo('LICENSE').replace(/^Copyright .*$/m, 'Copyright (c) Microsoft Corporation')}
 `
 
-out += hr('7. Machine-learning models')
-const MODELS = [
-  [
-    'PP-DocLayoutV3 layout model (ONNX fp16 export) — Apache-2.0',
-    'models/layout/model_fp16.onnx. Upstream: https://huggingface.co/PaddlePaddle/PP-DocLayoutV3\n' +
-      'ONNX export obtained from https://huggingface.co/datasets/embedpdf/embed-pdf-viewer\n' +
-      '(SHA-256 e549a04370b88c3f26fe8a975d7f15d76cb15876b54588270c977426793445ad).',
-  ],
-  [
-    'Snowflake Arctic Embed XS (quantized ONNX) — Apache-2.0',
-    'models/snowflake-arctic-embed-xs-q. Upstream: https://huggingface.co/Snowflake/snowflake-arctic-embed-xs\n' +
-      'revision d8c86521100d3556476a063fc2342036d45c106f. Copyright Snowflake Inc.',
-  ],
-]
-for (const [name, text] of MODELS) out += sub(name) + text + '\nThe Apache License 2.0 text is reproduced in section 0.\n'
+out += hr('7. Machine-learning models (downloaded on first need, not shipped)')
+// The app downloads these from Key's pinned Hugging Face repositories (crates/key-models).
+out += `Key does not include model weights. On first need it downloads each model below from
+its Hugging Face repository at the pinned revision, checks every file's SHA-256 and keeps
+it on this computer. Each repository's model card and LICENSE name the original authors.
+`
+for (const model of JSON.parse(readRepo('crates/key-models/manifest.json')).models)
+  out +=
+    sub(`${model.title} — ${model.license}`) +
+    `${model.purpose}\nOriginal model: ${model.upstream}\nDownloaded from: https://huggingface.co/${model.repo} (revision ${model.revision})\n` +
+    model.files.map((f) => `  ${f.path}  ${f.size} bytes  SHA-256 ${f.sha256}`).join('\n') +
+    '\nThe Apache License 2.0 text is reproduced in section 0.\n'
 
 out += hr('8. Citation Style Language styles and locales — CC BY-SA 3.0')
 out += readRepo('crates/key-cite/NOTICE') + '\n'

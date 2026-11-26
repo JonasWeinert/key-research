@@ -90,8 +90,8 @@ const MARGIN = 20;
         let r = await settled(`Settings at ${tag}`);
         result.modals[`settings-${tag}`] = r;
         if (!dark) {
-          for (const section of ["Libraries", "Zotero", "Search & indexing", "Services & API keys", "AI assistant", "About Key", "General", "Web & browser"]) {
-            await modal().getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: section, exact: true }).click();
+          for (const section of ["Workspaces", "Citations", "Search & indexing", "Privacy & network", "Services & API keys", "AI assistant", "About Key", "General", "Web & browser"]) {
+            await modal().getByRole("navigation", { name: "Key Settings sections" }).getByRole("button", { name: section, exact: true }).click();
             await page.waitForTimeout(400);
             const a = await settled(`Settings (${section}) at ${tag}`);
             await page.waitForTimeout(600);
@@ -119,6 +119,23 @@ const MARGIN = 20;
           }
         }
         await shot(`settings-${tag}-${mode}`);
+        await close();
+
+        // Workspace Settings: the same frame, every section fits and holds its size.
+        await send("open-workspace-settings");
+        r = await settled(`Workspace Settings at ${tag}`);
+        result.modals[`workspace-settings-${tag}`] = r;
+        if (!dark) {
+          for (const section of ["Zotero", "Indexing & lookups", "Citations & export", "Markdown export", "Files", "Feeds & alerts", "General"]) {
+            await modal().getByRole("navigation", { name: "Workspace Settings sections" }).getByRole("button", { name: section, exact: true }).click();
+            await page.waitForTimeout(400);
+            const a = await settled(`Workspace Settings (${section}) at ${tag}`);
+            await page.waitForTimeout(600);
+            const b = await rect();
+            assert.ok(Math.abs(a.height - b.height) < 1, `Workspace Settings (${section}) changed size while shown: ${a.height} → ${b.height}`);
+          }
+        }
+        await shot(`workspace-settings-${tag}-${mode}`);
         await close();
 
         // Commands: typing a filter that matches less keeps the frame still.

@@ -46,6 +46,12 @@ export interface LauncherOptions {
   menuChanged: () => void;
 }
 
+/** Moves a workspace's folder; only within one disk, so nothing is copied half-way. */
+export async function moveFolder(from: string, to: string) {
+  await rename(from, to).catch((e: NodeJS.ErrnoException) => {
+    throw Error(e.code === "EXDEV" ? "Key can only move a workspace within the same disk. Move it in Finder, then use Locate… in the workspaces window." : e.message);
+  });
+}
 const exists = (path: string) => access(path).then(() => true, () => false);
 const tilde = (path: string) => path.replace(homedir(), "~");
 
@@ -346,11 +352,7 @@ export class Launcher {
         const target = join(resolve(parent), basename(w.root));
         if (target === w.root) return null;
         if (await exists(target)) throw Error(`${tilde(parent)} already has a “${basename(w.root)}”`);
-        const moved = await this.o.registry().relocate(w.id, target, async (from, to) => {
-          await rename(from, to).catch((e: NodeJS.ErrnoException) => {
-            throw Error(e.code === "EXDEV" ? "Key can only move a workspace within the same disk. Move it in Finder, then use Locate…" : e.message);
-          });
-        });
+        const moved = await this.o.registry().relocate(w.id, target, moveFolder);
         await this.o.workspacesChanged();
         await this.refreshKnown();
         this.changed();

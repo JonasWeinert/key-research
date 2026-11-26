@@ -12,7 +12,7 @@ export interface WorkspaceAppearance {
   color?: string;
 }
 /** Library colours, shared with the welcome. */
-export { WORKSPACE_COLORS };
+export { WORKSPACE_COLORS, WORKSPACE_ICONS };
 const icons = WORKSPACE_ICONS;
 const colors = WORKSPACE_COLORS;
 export default function WorkspaceSwitcher({

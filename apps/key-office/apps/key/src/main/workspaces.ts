@@ -139,12 +139,24 @@ export class Registry {
   }
   /** Takes a workspace off the list. Its folder and everything in it stay on disk. */
   forget(id: string): Promise<void> {
-    return this.mutate(id, async (workspace) => {
+    const action = async () => {
+      await this.ready
+      const index = this.entries.findIndex((w) => w.id === id)
+      if (index < 0) throw Error('This workspace is no longer in the list')
+      const [removed] = this.entries.splice(index, 1)
+      try {
+        await this.persist()
+      } catch (error) {
+        this.entries.splice(index, 0, removed)
+        throw error
+      }
       this.hosts.get(id)?.close()
       this.hosts.delete(id)
       this.lastUsed.delete(id)
-      this.entries = this.entries.filter((w) => w !== workspace)
-    })
+    }
+    const result = this.mutations.then(action, action)
+    this.mutations = result.catch(() => undefined)
+    return result
   }
   /** Points a workspace at the folder it now lives in (found again, or moved there by
    * `move`). The folder must hold this very workspace. */

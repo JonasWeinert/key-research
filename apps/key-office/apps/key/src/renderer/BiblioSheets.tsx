@@ -721,7 +721,7 @@ function ExportSheet({ invoke, workspaceId, request, onClose }: { invoke: Invoke
           workspaceId,
         );
         if (target.lastError) throw new Error(target.lastError);
-        setNotice("Key keeps this file up to date. Change it in Settings › Citation keys & export.");
+        setNotice("Key keeps this file up to date. Change it in Workspace Settings › Citations & export.");
       }
     } catch (e) {
       setError(message(e));
@@ -863,7 +863,7 @@ export function useAutoExportStatus(invoke: Invoke, workspaceId?: string): Statu
     id: "autoexport",
     label: failing.length === 1 ? `Export to ${name} failed` : `${failing.length} auto-exports failed`,
     tone: "error",
-    title: `${failing.map((t) => `${t.path}: ${t.lastError}`).join("\n")}\n\nOpen Settings › Citation keys & export`,
+    title: `${failing.map((t) => `${t.path}: ${t.lastError}`).join("\n")}\n\nOpen Workspace Settings › Citations & export`,
     priority: 60,
   };
 }

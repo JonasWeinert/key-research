@@ -259,7 +259,7 @@ fn resolve_onnx_model(explicit: Option<&std::path::Path>) -> Result<PathBuf> {
     {
         let bundled = opendataloader_pdf::bundled_onnx_model_path();
         if !bundled.is_file() {
-            bail!("bundled ONNX model is missing: {}", bundled.display());
+            bail!("no ONNX model at {}: pass --model (see README: tools/models/fetch.mjs)", bundled.display());
         }
         return Ok(bundled);
     }

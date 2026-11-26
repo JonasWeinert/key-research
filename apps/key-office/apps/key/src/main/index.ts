@@ -15,9 +15,9 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { existsSync } from "node:fs";
-import { join, resolve, basename, extname } from "node:path";
+import { join, resolve, basename, dirname, extname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { setUiLang, normalizeLang } from "@key/i18n";
 import { AgentFill } from "./agent-fill";
@@ -31,7 +31,7 @@ import { hostKeyRequests, pushHostKeys, startKeyedServices } from "./services/se
 import { startZoteroPluginSync } from "./zotero-sync";
 import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
-import { Launcher, launcherEnabled } from "./launcher";
+import { Launcher, launcherEnabled, moveFolder } from "./launcher";
 import { fatal, installErrorHandlers, serveNotices } from "./app-notices";
 import { serveStatusItems } from "./status-items";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
@@ -1665,8 +1665,14 @@ function visibleBounds(bounds: { x: number; y: number; width: number; height: nu
 let knownWorkspaces: WorkspaceInfo[] = [];
 async function refreshWorkspaces() {
   // The workspaces window can show an empty list; workspace windows always have one.
+  const before = JSON.stringify(knownWorkspaces);
   knownWorkspaces = launcherMode && !liveShells().length ? await registry.known() : await registry.list();
   await launcher?.refreshKnown();
+  // One list for every window: the switcher, Workspace Settings' picker and the workspaces window.
+  if (JSON.stringify(knownWorkspaces) !== before) {
+    emit("workspaces-changed");
+    launcher?.changed();
+  }
   for (const w of liveShells()) titleWindow(w);
   refreshMenu();
   return knownWorkspaces;
@@ -2181,7 +2187,8 @@ function baseMenu() {
         submenu: [
           { role: "about" },
           { type: "separator" },
-          { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
+          { label: "Key Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
+          { label: "Workspace Settings…", accelerator: "CmdOrCtrl+Alt+,", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           { type: "separator" },
           { role: "services" },
           { type: "separator" },
@@ -2201,6 +2208,7 @@ function baseMenu() {
           { label: "Switch Workspace…", accelerator: "CmdOrCtrl+Shift+O", click: () => emitTo(focusedShell(), "open-workspace-switcher") },
           { label: "Switch to Workspace", submenu: workspaceItems(false) },
           { label: "Open Workspace in New Window", submenu: workspaceItems(true) },
+          { label: "Workspace Settings…", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           ...(launcher
             ? [
                 { label: "New Workspace…", click: () => launcher?.request("new") },
@@ -2455,8 +2463,6 @@ else
       startupMark("settings-loaded");
       keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
       startupMark("keys-loaded");
-      // The bundled layout model, for packaged builds (development finds it in the crate).
-      if (app.isPackaged) process.env.KEY_LAYOUT_MODEL ??= join(process.resourcesPath, "models/layout/model_fp16.onnx");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
       windowState = await windowStore.load();
       launcher = new Launcher(join(app.getPath("userData"), "launcher.json"), {
@@ -2736,6 +2742,9 @@ else
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
+        if (before.modelsAutoDownload !== next.modelsAutoDownload)
+          for (const workspace of await registry.list())
+            void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});
         if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders)) pushHostKeys();
         if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
@@ -2761,6 +2770,58 @@ else
         await refreshWorkspaces();
         return added;
       });
+      // Workspace Settings › Remove from Key: the folder and its files stay where they are.
+      // The asking window moves to another workspace first; another window showing it stops it.
+      ipcMain.handle("key:remove-workspace", async (event, workspaceId: string) => {
+        const w = shell(event.sender.id);
+        const list = await registry.list();
+        if (!list.some((k) => k.id === workspaceId)) throw Error("This workspace is no longer available");
+        if (liveShells().some((s) => s !== w && s.workspaceId === workspaceId)) throw Error("Close the other window showing this workspace first");
+        const other = list.find((k) => k.id !== workspaceId);
+        if (!other) throw Error("Key needs at least one workspace");
+        if (w.workspaceId === workspaceId) {
+          await switchWorkspace(w, other.id);
+          if (w.workspaceId === workspaceId) throw Error("Close the open tabs first");
+        }
+        await registry.forget(workspaceId);
+        launcher?.changed();
+        windowState.recent = windowState.recent.filter((id) => id !== workspaceId);
+        delete windowState.layouts[workspaceId];
+        await refreshWorkspaces();
+        return { workspaceId: w.workspaceId };
+      });
+      // Workspace Settings › Location › Move…: the folder moves on the same disk; the window's
+      // tabs on it close first (asking about unsaved work) and come back afterwards.
+      ipcMain.handle("key:move-workspace", async (event, workspaceId: string) => {
+        const w = shell(event.sender.id);
+        const workspace = (await registry.known()).find((k) => k.id === workspaceId);
+        if (!workspace) throw Error("This workspace is no longer available");
+        if (liveShells().some((s) => s !== w && s.workspaceId === workspaceId)) throw Error("Close the other window showing this workspace first");
+        const picked = await dialog.showOpenDialog(w.window, { title: `Move “${workspace.name}” to…`, buttonLabel: "Move Here", defaultPath: dirname(workspace.root), properties: ["openDirectory", "createDirectory"] });
+        if (picked.canceled || !picked.filePaths[0]) return null;
+        const target = join(picked.filePaths[0], basename(workspace.root));
+        if (target === workspace.root) return null;
+        if (await access(target).then(() => true, () => false)) throw Error(`That folder already has a “${basename(workspace.root)}”`);
+        const showing = w.workspaceId === workspaceId;
+        const arrangement = savedTabs(w);
+        if (showing) {
+          if (!(await closeViews(w, windowViewIds(w)))) {
+            layout(w);
+            return null;
+          }
+          w.state = emptyTabsState();
+        }
+        try {
+          return await registry.relocate(workspaceId, target, moveFolder);
+        } finally {
+          await refreshWorkspaces();
+          if (showing) {
+            await restoreTabs(w, arrangement);
+            if (!allTabs(w.state).length) await openContent(w, { section: "sources", workspaceId });
+            layout(w);
+          }
+        }
+      });
       ipcMain.handle("key:tabs", (event) => snapshot(shell(event.sender.id)));
       ipcMain.handle("key:reader-back", (event) => {
         const v = bound(event.sender.id);
@@ -2777,18 +2838,18 @@ else
         } else home(w);
       });
       // A file to read or write (bibliography import, export and auto-export targets).
-      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }) => {
+      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[]; filterName?: string; allowFolders?: boolean }) => {
         const w = shell(event.sender.id);
         if (request.mode === "folder") {
           const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, buttonLabel: "Choose", properties: ["openDirectory", "createDirectory"] });
           return result.canceled ? null : result.filePaths[0] ?? null;
         }
-        const filters = request.extensions?.length ? [{ name: "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
+        const filters = request.extensions?.length ? [{ name: request.filterName ?? "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
         if (request.mode === "save") {
           const result = await dialog.showSaveDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["createDirectory", "showOverwriteConfirmation"] });
           return result.canceled ? null : result.filePath ?? null;
         }
-        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["openFile"] });
+        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: request.allowFolders ? ["openFile", "openDirectory"] : ["openFile"] });
         return result.canceled ? null : result.filePaths[0] ?? null;
       });
       ipcMain.handle("key:add-files", async (event, workspaceId, collectionId) => {

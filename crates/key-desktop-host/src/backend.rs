@@ -21,12 +21,16 @@ mod export_commands;
 mod openalex;
 #[path = "hygiene.rs"]
 mod hygiene;
+#[path = "workspace_settings.rs"]
+mod workspace_settings;
 #[path = "reference_worker.rs"]
 mod reference_worker;
 #[path = "web_search/mod.rs"]
 mod web_search;
 #[path = "feeds/mod.rs"]
 mod feeds;
+#[path = "models_commands.rs"]
+mod models_commands;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{
