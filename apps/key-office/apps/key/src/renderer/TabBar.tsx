@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+// Derived from GenOffice's apps/shell/src/renderer/src/TabBar.tsx (Copyright 2026 Mainfunc, Inc.,
+// Apache-2.0; see ../../../../LICENSE and NOTICE). Modified by Key: wired to Key's tab groups,
+// splits, item drags and movable Home tabs. This file stays Apache-2.0; the rest of @key/electron is MIT.
 import { hasItemDrag, readItemDrag } from "./item-links";
 import { openItemAt } from "./item-actions";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";

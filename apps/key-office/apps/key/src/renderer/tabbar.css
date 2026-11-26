@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: Apache-2.0
+ * Derived from GenOffice's apps/shell/src/renderer/src/tabbar.css (Copyright 2026 Mainfunc, Inc.,
+ * Apache-2.0; see ../../../../LICENSE and NOTICE). Modified by Key: Key's tokens, groups and
+ * split tabs. This file stays Apache-2.0; the rest of @key/electron is MIT. */
 /* Chrome-style tab strip: tinted bar, white active tab with rounded top
  * corners + concave "feet" merging into the content area below.
  * Metrics copied from Chrome (macOS, light): 40px strip, 34px tabs that
