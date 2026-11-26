@@ -1,0 +1,16 @@
+[package]
+name = "key-biblio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bibliographic import and export for the Key library: BibTeX, BibLaTeX, RIS, CSL-JSON, CSV and EndNote XML"
+
+[dependencies]
+key-store = { path = "../key-store" }
+key-cite = { path = "../key-cite" }
+serde.workspace = true
+serde_json.workspace = true
+unicode-normalization = "0.1.25"
+
+[dev-dependencies]
+tempfile.workspace = true

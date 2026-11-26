@@ -551,16 +551,33 @@ impl Store {
     /// An imported key, pinned. Taken by another source, it gets the next free suffix;
     /// the key it ended up with comes back.
     pub fn claim_citation_key(&self, id: &str, wanted: &str) -> Result<String> {
-        let wanted: String = wanted.trim().chars().filter(|c| !c.is_whitespace()).collect();
-        if !valid_key(&wanted) {
-            return Err(format!("“{wanted}” cannot be a citation key"));
-        }
+        self.claim_citation_keys(&[(id.to_string(), wanted.to_string())]).and_then(|mut keys| keys.pop().unwrap_or(Err("Nothing claimed".into())))
+    }
+
+    /// Many imported keys at once (one read of the keys in use).
+    pub fn claim_citation_keys(&self, wanted: &[(String, String)]) -> Result<Vec<Result<String>>> {
         let db = self.db()?;
-        let taken = taken_keys(&db, Some(id))?;
-        let key = unique_key(&wanted, &taken);
-        write_key(&db, id, &key, true, false)?;
-        bump_revision(&db)?;
-        Ok(key)
+        let tx = db.unchecked_transaction().map_err(e)?;
+        let mut taken = taken_keys(&tx, None)?;
+        let mut out = Vec::with_capacity(wanted.len());
+        for (id, key) in wanted {
+            let key: String = key.trim().chars().filter(|c| !c.is_whitespace()).collect();
+            if !valid_key(&key) {
+                out.push(Err(format!("“{key}” cannot be a citation key")));
+                continue;
+            }
+            let current: Option<String> = tx.query_row("SELECT citation_key FROM sources WHERE id = ?", [id], |r| r.get(0)).optional().map_err(e)?.flatten();
+            if let Some(current) = &current {
+                taken.remove(&current.to_lowercase());
+            }
+            let claimed = unique_key(&key, &taken);
+            taken.insert(claimed.to_lowercase());
+            write_key(&tx, id, &claimed, true, false)?;
+            out.push(Ok(claimed));
+        }
+        bump_revision(&tx)?;
+        tx.commit().map_err(e)?;
+        Ok(out)
     }
 
     /// Changes whenever a source, a collection, a note or a key changes: what the

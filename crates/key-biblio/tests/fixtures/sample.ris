@@ -1,0 +1,42 @@
+TY  - JOUR
+AU  - Palma, Michelle A.
+AU  - Huseynov, Samir
+AU  - Nayga, Rodolfo M.
+TI  - Health information and
+  dietary choices
+T2  - Journal of Health Economics
+J2  - J Health Econ
+PY  - 2022/03/15/
+VL  - 81
+SP  - 102565
+DO  - 10.1016/j.jhealeco.2021.102565
+SN  - 0167-6296
+KW  - nutrition
+KW  - labels
+AB  - An abstract that runs
+  over two lines.
+N1  - A reader's note.
+UR  - https://example.org/a
+UR  - https://example.org/b
+C1  - Custom one
+ER  -
+
+TY  - BOOK
+AU  - Knuth, Donald E.
+TI  - The Art of Computer Programming
+PB  - Addison-Wesley
+CY  - Reading, MA
+PY  - 1968
+SN  - 978-0-201-03801-3
+ET  - 1
+ER  -
+
+TY  - CHAP
+AU  - Doe, Jane
+A2  - Editor, Ed
+TI  - A Chapter
+T2  - A Book of Chapters
+PY  - 2010
+SP  - 5
+EP  - 25
+ER  -
