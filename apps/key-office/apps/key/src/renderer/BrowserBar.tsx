@@ -5,6 +5,8 @@ import { WEB_BAR_HEIGHT } from "../shared/browser-layout";
 import "./browser.css";
 import { FirstUseTip } from "./explain";
 import { hintText } from "./help-content";
+import { AddToInboxButton } from "./inbox-save";
+import { shellContext } from "./item-actions";
 
 /** What a browser tab's bar shows (main's view summary). */
 export interface WebBarState {
@@ -154,6 +156,15 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
               <Icon name="plus" size={12} />
               {article.busy ? "Adding…" : article.possiblyInLibrary ? "Add anyway" : "Add to library"}
             </button>
+            {shellContext().invoke && article.title && !article.busy && (
+              <AddToInboxButton
+                invoke={shellContext().invoke!}
+                workspaceId={shellContext().workspaceId}
+                work={{ title: article.title, doi: article.doi ?? null, landingUrl: state.url }}
+                origin={{ kind: "browser", label: state.host, url: state.url }}
+                className="key-web-article key-web-article-inbox"
+              />
+            )}
             </>
           )
         ) : null}

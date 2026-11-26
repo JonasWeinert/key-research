@@ -4,7 +4,8 @@
 import { useCallback, useState } from "react";
 import type { WebHit } from "../shared/web-search";
 import { Icon } from "./icons";
-import { openItemAt, toast } from "./item-actions";
+import { openItemAt, shellContext, toast } from "./item-actions";
+import { AddToInboxButton } from "./inbox-save";
 import type { Invoke, Source } from "./library-api";
 import { errorText, type WebSearchState } from "./web-search";
 import { findPdfAfterAdd } from "./find-pdf";
@@ -43,7 +44,24 @@ export function useWebAdd(web: WebSearchState, invoke: Invoke, workspaceId: stri
 
 export type WebAdd = ReturnType<typeof useWebAdd>;
 
-/** Adding…, In library · Open, or Add to library. */
+/** Add to Inbox beside Add to library: keeps the result to decide on later. */
+function WebInboxButton({ hit, web, large }: { hit: WebHit; web: WebSearchState; large?: boolean }) {
+  const { invoke, workspaceId } = shellContext();
+  const query = web.asked?.query?.trim();
+  if (!invoke) return null;
+  return (
+    <AddToInboxButton
+      invoke={invoke}
+      workspaceId={workspaceId}
+      work={hit}
+      origin={{ kind: "web-search", label: query ? `web search “${query}”` : "a web search", query: query || null }}
+      className={`kx-web-inbox${large ? " kx-web-inbox-large" : ""}`}
+      compact={!large}
+    />
+  );
+}
+
+/** Adding…, In library · Open, or Add to library (and Add to Inbox). */
 export function WebAddButton({ hit, web, adder, large }: { hit: WebHit; web: WebSearchState; adder: WebAdd; large?: boolean }) {
   const sourceId = web.inLibrary[hit.key];
   const state = adder.adding[hit.key];
@@ -63,10 +81,13 @@ export function WebAddButton({ hit, web, adder, large }: { hit: WebHit; web: Web
       </button>
     );
   const add = (
-    <button type="button" className="kx-web-add" data-large={large || undefined} onClick={(e) => (e.stopPropagation(), void adder.add(hit))}>
-      <Icon name="plus" size={11} />
-      {web.possible[hit.key] ? "Add anyway" : "Add to library"}
-    </button>
+    <>
+      <button type="button" className="kx-web-add" data-large={large || undefined} onClick={(e) => (e.stopPropagation(), void adder.add(hit))}>
+        <Icon name="plus" size={11} />
+        {web.possible[hit.key] ? "Add anyway" : "Add to library"}
+      </button>
+      <WebInboxButton hit={hit} web={web} large={large} />
+    </>
   );
   // Only the title matched: the library's copy is one click away, and adding stays possible.
   if (web.possible[hit.key])
