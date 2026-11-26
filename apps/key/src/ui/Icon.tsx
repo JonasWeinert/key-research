@@ -22,6 +22,7 @@ export type IconName =
   | 'check'
   | 'panel_left'
   | 'expand'
+  | 'collapse'
   | 'quote'
   | 'external'
   | 'retry';
@@ -48,6 +49,7 @@ const paths: Record<IconName, string[]> = {
   check: ['m5 12 4 4L19 6'],
   panel_left: ['M4 4h16v16H4z', 'M8 4v16'],
   expand: ['M14 4h6v6M20 4l-7 7', 'M10 20H4v-6M4 20l7-7'],
+  collapse: ['M20 10h-6V4M14 10l7-7', 'M4 14h6v6M10 14l-7 7'],
   quote: ['M5 14.5c0-3.6 1.5-6 4.5-7.2M5 14.5h4v4.5H5z', 'M14 14.5c0-3.6 1.5-6 4.5-7.2M14 14.5h4v4.5h-4z'],
   external: ['M14 4h6v6M20 4l-9 9', 'M17 14v4.5c0 .8-.7 1.5-1.5 1.5h-10c-.8 0-1.5-.7-1.5-1.5v-10C4 7.7 4.7 7 5.5 7H10'],
   retry: ['M19.5 12a7.5 7.5 0 1 1-2.2-5.3', 'M19.5 4.2v3.9h-3.9'],
