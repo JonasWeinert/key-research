@@ -15,6 +15,7 @@ import { addFromSource } from "./add-from-source";
 import { onLibraryChanged } from "./library-nav";
 import { SourceListItem, type ListWork } from "./source-list";
 import "./inbox.css";
+import { EmptyState, Explain, FirstUseTip } from "./explain";
 
 type View = "unread" | "all" | "saved";
 const PAGE = 100;
@@ -257,6 +258,7 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
           <kbd>j</kbd>
           <kbd>k</kbd> move · <kbd>a</kbd> add · <kbd>e</kbd> dismiss · <kbd>s</kbd> save · <kbd>o</kbd> open
         </span>
+        <Explain help="inbox.triage" />
       </div>
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} label="Show items from" onClose={() => setMenu(undefined)}>
@@ -290,21 +292,13 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
         </ContextMenu>
       )}
       {!subscriptions.length && page && (
-        <div className="kx-inbox-empty">
-          <Icon name="inbox" size={28} />
-          <h2>Nothing followed yet</h2>
-          <p>Follow a journal’s table of contents, an arXiv listing or a blog by its address, or follow authors, journals and topics from their pages. Alerts from a web search or a source’s citations land here too.</p>
-          <button className="kx-button-primary" onClick={() => setManaging(true)}>
-            <Icon name="plus" size={12} /> Add a feed…
-          </button>
-        </div>
+        <EmptyState className="kx-inbox-empty-state" help="empty.inbox" icon="inbox" action={{ label: "Add a feed…", icon: "plus", onClick: () => setManaging(true) }} learnMore="feeds.what" />
       )}
       {!!subscriptions.length && empty && (
-        <div className="kx-inbox-empty">
-          <Icon name="check" size={24} />
-          <h2>{view === "unread" ? "All caught up" : view === "saved" ? "Nothing saved" : "No items"}</h2>
-          <p>{view === "unread" ? "New items appear here as your feeds bring them." : view === "saved" ? "Press s on an item to keep it for later." : "Items your feeds bring in appear here."}</p>
-        </div>
+        <EmptyState className="kx-inbox-empty-state" help={view === "unread" ? "empty.inbox-caught-up" : view === "saved" ? "empty.inbox-saved" : "empty.inbox-none"} icon={view === "saved" ? "bookmark" : "check"} />
+      )}
+      {!!items.length && (
+        <FirstUseTip help="tip.inbox-keys" anchor=".kx-inbox-keys" />
       )}
       {!!items.length && (
         <ul ref={list} className="kx-work-list kx-inbox-list" tabIndex={0} aria-label="Inbox items" onKeyDown={keys} autoFocus>

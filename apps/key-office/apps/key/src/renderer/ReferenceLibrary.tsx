@@ -57,6 +57,7 @@ import { retractionOf, stepJournal, useHygiene } from "./library-hygiene";
 import "./reference-library.css";
 import { isBibliographyPath, openBibExport, openBibImport } from "./BiblioSheets";
 import { readablePaths } from "./file-names";
+import { EmptyState as Guide } from "./explain";
 
 const PAGE = 300;
 const ROW = 58;
@@ -838,7 +839,7 @@ export default function ReferenceLibrary({
             onChange={setViewState}
             columns={columns}
             label={`${title}, ${total} items`}
-            empty={!loading && <EmptyState scope={scope} filtered={!!(kind || tag || filters.length)} onAdd={() => void bridge().addFiles(workspaceId, collectionId).then(() => void load(0))} />}
+            empty={!loading && <EmptyState scope={scope} inCollection={!!collectionId} filtered={!!(kind || tag || filters.length)} onAdd={() => void bridge().addFiles(workspaceId, collectionId).then(() => void load(0))} />}
             isSelected={(source) => selected.has(source.id) || (!selected.size && focusId === source.id)}
             isFocused={(source) => focusId === source.id}
             onPointer={(source, e) => {
@@ -1258,7 +1259,7 @@ const SearchResults = memo(function SearchResults({
     <div className="kx-results" role="listbox" aria-label="Search results" aria-multiselectable tabIndex={0} data-busy={search.busy}>
       {search.error ? (
         <p className="kx-results-empty" role="alert">
-          Search failed: {search.error}
+          Search did not finish: {search.error}. Try again in a moment; Settings › Search & indexing shows whether the index needs attention.
         </p>
       ) : result ? (
         // With nothing found, the single message below says so.
@@ -1287,7 +1288,7 @@ const SearchResults = memo(function SearchResults({
           ))}
         </div>
       )}
-      {result && !hits.length && !notes.length && <p className="kx-results-empty">Nothing matched “{search.query}”. Try other words or a broader collection.</p>}
+      {result && !hits.length && !notes.length && <p className="kx-results-empty">Nothing matched “{search.query}”. Try other or fewer words, a broader collection, or search the web for works you do not have.</p>}
       {GROUPS.map((group) => {
         const inGroup = hits.filter((h) => hitGroup(h) === group);
         const notesInGroup = notes.filter((n) => noteGroup(n) === group);
@@ -1687,19 +1688,11 @@ function BulkBar({
   );
 }
 
-function EmptyState({ scope, filtered, onAdd }: { scope: string; filtered: boolean; onAdd: () => void }) {
-  if (filtered) return <p className="kx-results-empty">No items match these filters.</p>;
-  if (scope === "trashed") return <p className="kx-results-empty">Trash is empty.</p>;
-  return (
-    <div className="kx-empty-hero kx-library-empty">
-      <span className="kx-empty-icon">
-        <Icon name="books" size={22} />
-      </span>
-      <h3>Nothing here yet</h3>
-      <p>Drop PDFs, web pages, videos, audio or images here, or import your Zotero library from the Add menu.</p>
-      <button className="kx-button-primary" onClick={onAdd}>
-        <Icon name="upload" size={14} /> Add files…
-      </button>
-    </div>
-  );
+/** What an empty list is, and what fills it. */
+function EmptyState({ scope, inCollection, filtered, onAdd }: { scope: string; inCollection: boolean; filtered: boolean; onAdd: () => void }) {
+  if (filtered) return <Guide help="empty.results" icon="filter" compact />;
+  if (scope === "trashed") return <Guide help="empty.trash" icon="trash" compact />;
+  if (inCollection) return <Guide help="empty.collection" icon="collection" action={{ label: "Add files…", icon: "upload", onClick: onAdd }} learnMore="library.organise" />;
+  if (scope !== "all") return <Guide help="empty.scope" icon="books" compact />;
+  return <Guide className="kx-library-empty" help="empty.library" icon="books" action={{ label: "Add files…", icon: "upload", onClick: onAdd }} learnMore="settings.libraries.what" />;
 }

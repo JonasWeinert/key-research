@@ -143,6 +143,8 @@ export function CitationKeySettings({ invoke, workspaceId }: { invoke: Invoke; w
     <>
       <Group
         title="Citation keys"
+        help="settings.keys.what"
+        intro="settings.keys.pattern"
         footer={
           <>
             Fields: <code>auth</code>, <code>authors(n)</code>, <code>authorsetal(n)</code>, <code>year</code>, <code>shorttitle(n)</code>, <code>veryshorttitle</code>, <code>title</code>, <code>"text"</code>, joined with <code>+</code>. Modifiers:{" "}

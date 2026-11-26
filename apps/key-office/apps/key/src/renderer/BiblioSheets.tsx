@@ -13,6 +13,7 @@ import { libraryChanged } from "./library-nav";
 import { bridge, type Collection, type Invoke } from "./library-api";
 import type { StatusItem } from "../shared/status-items";
 import "./biblio.css";
+import { Explain } from "./explain";
 
 export type BibFormat = "bibtex" | "biblatex" | "ris" | "csl-json" | "csv" | "tsv" | "endnote-xml";
 export const EXPORT_FORMATS: [BibFormat, string, string][] = [
@@ -348,7 +349,15 @@ function ImportFlow({ invoke, workspaceId, request, onClose, onBusy }: { invoke:
     >
       <header>
         <h2>{title}</h2>
-        <p>{lede}</p>
+        <p>
+          {lede}
+          {step === "source" && (
+            <>
+              {" "}
+              <Explain help="import.formats" label="Which file do I need?" />
+            </>
+          )}
+        </p>
         <button className="kx-sheet-close" aria-label="Close" disabled={running || undoing} onClick={onClose}>
           <Icon name="close" size={10} />
         </button>
@@ -590,7 +599,9 @@ function ImportPreview(props: {
           </div>
         </div>
         <div className="kx-bib-field" role="radiogroup" aria-label="Duplicates">
-          <span>Already in the library</span>
+          <span>
+            Already in the library <Explain help="import.duplicates" />
+          </span>
           {(
             [
               ["skip", "Skip", "Same DOI, ISBN, PMID or arXiv ID: left out. Same title: imported and listed."],
@@ -735,7 +746,9 @@ function ExportSheet({ invoke, workspaceId, request, onClose }: { invoke: Invoke
       <div className="key-property-editor kx-bib-export" role="dialog" aria-label="Export references" data-modal-view="export">
         <header>
           <h2>Export references</h2>
-          <p>Entries are ordered by citation key, so a file exported again only changes where the library did.</p>
+          <p>
+            A file of references for another app. Entries are ordered by citation key, so a file exported again only changes where the library did. <Explain help="export.formats" label="Which format?" />
+          </p>
           <button className="kx-sheet-close" aria-label="Close" onClick={onClose}>
             <Icon name="close" size={10} />
           </button>

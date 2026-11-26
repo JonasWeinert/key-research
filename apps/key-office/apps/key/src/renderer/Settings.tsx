@@ -15,6 +15,8 @@ import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
 import CitationSettings from "./CitationSettings";
 import { APP_GROUPS, APP_SECTIONS, WORKSPACE_SECTIONS, matches, openWorkspaceSettings, type SectionInfo, type SettingsSection } from "./settings-catalog";
+import { Explain, Glossary, Hint, resetTips, setTipsShown, useTips } from "./explain";
+import { hintText, type ExplainId, type HintId } from "./help-content";
 
 export type { SettingsSection } from "./settings-catalog";
 
@@ -24,6 +26,7 @@ export function SettingsFrame<Id extends string>({
   label,
   title,
   scope,
+  scopeHelp,
   groups,
   section,
   onSection,
@@ -36,6 +39,8 @@ export function SettingsFrame<Id extends string>({
   title: ReactNode;
   /** Who the settings apply to: "Applies to Key on this Mac" / "Applies to Thesis". */
   scope: string;
+  /** What that scope means, one click away. */
+  scopeHelp?: ExplainId;
   groups: SectionInfo<Id>[][];
   section: Id;
   onSection: (id: Id) => void;
@@ -78,7 +83,10 @@ export function SettingsFrame<Id extends string>({
         >
           <div className="kx-settings-scope">
             {title}
-            <small data-settings-scope>{scope}</small>
+            <small data-settings-scope>
+              {scope}
+              {scopeHelp && <Explain help={scopeHelp} />}
+            </small>
           </div>
           <label className="kx-settings-search">
             <Icon name="search" size={12} />
@@ -164,6 +172,7 @@ export function Overridable({ own, fallback, onOwn, onReset, children }: { own: 
   ) : (
     <span className="kx-settings-default" data-default>
       <span>Using app default · {fallback}</span>
+      <Explain help="settings.override" />
       <button className="kx-settings-button" onClick={onOwn}>
         Change
       </button>
@@ -210,6 +219,7 @@ export default function Settings({
         </strong>
       }
       scope="Applies to Key on this Mac"
+      scopeHelp="settings.scope.app"
       groups={APP_GROUPS}
       section={APP_SECTIONS.some((s) => s.id === section) ? section : "general"}
       onSection={onSection}
@@ -235,10 +245,17 @@ export default function Settings({
 }
 
 /** A titled, rounded group of rows. */
-export function Group({ title, footer, children }: { title?: string; footer?: ReactNode; children: ReactNode }) {
+export function Group({ title, footer, children, help, intro }: { title?: string; footer?: ReactNode; children: ReactNode; help?: ExplainId; intro?: HintId }) {
   return (
     <section className="kx-settings-group">
-      {title && <h3>{title}</h3>}
+      {title && (
+        <h3>
+          {title}
+          {help && <Explain help={help} />}
+        </h3>
+      )}
+      {!title && help && <Explain help={help} label className="kx-settings-group-explain" />}
+      {intro && <Hint help={intro} />}
       <div className="kx-settings-rows">{children}</div>
       {footer && <p className="kx-settings-footnote">{footer}</p>}
     </section>
@@ -246,11 +263,14 @@ export function Group({ title, footer, children }: { title?: string; footer?: Re
 }
 /** A setting: its label and a quiet line beneath. A `path` line stays on one line, cut at
  *  the end, with the whole path on hover. */
-export function Row({ label, detail, children, path }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean }) {
+export function Row({ label, detail, children, path, help }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean; help?: ExplainId }) {
   return (
     <div className="kx-settings-row">
       <div>
-        <span>{label}</span>
+        <span>
+          {label}
+          {help && <Explain help={help} />}
+        </span>
         {detail && (
           <small className={path ? "kx-settings-path" : undefined} title={path && typeof detail === "string" ? detail : undefined}>
             {detail}
@@ -319,7 +339,7 @@ function General({
   const openAtLaunch = (settings as AppSettings & { openAtLaunch?: OpenAtLaunch }).openAtLaunch ?? "workspaces";
   return (
     <>
-      <Group title="Appearance" footer="Documents keep their own colours.">
+      <Group title="Appearance" intro="settings.general.appearance">
         <div className="kx-settings-row kx-settings-row-wide">
           <ThemePicker value={settings.theme} onChange={(theme) => onSettings({ theme })} />
         </div>
@@ -366,8 +386,27 @@ function General({
             Show welcome
           </button>
         </Row>
+        <TipsRow />
+      </Group>
+      <Group title="Glossary" intro="settings.general.glossary">
+        <div className="kx-settings-row kx-settings-row-wide kx-settings-glossary">
+          <Glossary />
+        </div>
       </Group>
     </>
+  );
+}
+
+/** First-use tips: on or off for the whole app, and the ones already seen shown again. */
+function TipsRow() {
+  const tips = useTips();
+  return (
+    <Row label="Show tips" detail={hintText("settings.general.tips")}>
+      <button className="kx-settings-button" disabled={tips.off || !tips.seen.length} onClick={resetTips}>
+        Show again
+      </button>
+      <input type="checkbox" className="kx-switch" aria-label="Show tips" checked={!tips.off} onChange={(e) => setTipsShown(e.target.checked)} />
+    </Row>
   );
 }
 
@@ -391,7 +430,7 @@ function Workspaces({
         .catch(() => {});
   }, [invoke, workspaces]);
   return (
-    <Group title="Your workspaces" footer="Each workspace is a folder on this Mac with its own settings. Files stay where they are.">
+    <Group title="Your workspaces" help="settings.libraries.what" intro="settings.libraries.intro" footer="Each workspace is a folder on this Mac with its own settings. Files you link stay where they are.">
       {workspaces.map((w) => (
         <Row
           key={w.id}
@@ -462,7 +501,7 @@ function SearchSettings({
         onChanged={refreshModels}
       />
       <Group title="PDF analysis">
-        <Row label="Use the layout model" detail="Better reading order, tables and columns; about a second per page.">
+        <Row label="Use the layout model" help="settings.search.layout" detail="Better reading order, tables and columns; about a second per page, on this Mac.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -487,8 +526,8 @@ function SearchSettings({
 function PrivacySettings({ settings, onSettings }: { settings: AppSettings; onSettings: (patch: Partial<AppSettings>) => void }) {
   return (
     <>
-      <Group title="Metadata lookups" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
-        <Row label="Look up new sources automatically" detail="The default for every workspace. A workspace can choose its own.">
+      <Group title="Metadata lookups" help="settings.search.metadata" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
+        <Row label="Look up new sources automatically" detail="Fills in authors, journal, topics, citation counts and retractions. The default for every workspace; a workspace can choose its own.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -497,7 +536,7 @@ function PrivacySettings({ settings, onSettings }: { settings: AppSettings; onSe
             onChange={(e) => onSettings({ openalex: e.target.checked })}
           />
         </Row>
-        <Row label="Contact email" detail="OpenAlex asks for one for heavy use.">
+        <Row label="Contact email" help="settings.search.email" detail="Optional. OpenAlex answers faster when requests carry one.">
           <input
             className="kx-settings-select"
             type="email"
@@ -541,7 +580,7 @@ function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: str
   }, [invoke, workspaceId]);
   return (
     <>
-      <Group title="Provider" footer="Used only when you ask, with just the passages a task needs.">
+      <Group title="Provider" help="settings.ai.provider" footer="Used only when you ask, with just the passages a task needs.">
         <Row
           label={status?.available ? `${PROVIDER_LABEL[status.provider ?? ""] ?? status.provider} · ${status.model}` : "Not connected"}
           detail={status ? (status.available ? "Connected" : status.reason || "Connect a provider below") : "Checking…"}
@@ -553,7 +592,7 @@ function AiSettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: str
           ) : null}
         </Row>
       </Group>
-      <Group title="OpenAI-compatible provider" footer="Ollama, LM Studio or any hosted API over HTTPS. The key stays on this Mac.">
+      <Group title="OpenAI-compatible provider" help="settings.ai.endpoint" footer="Ollama, LM Studio or any hosted API over HTTPS. The key stays on this Mac.">
         <form
           className="kx-settings-form"
           onSubmit={async (e) => {

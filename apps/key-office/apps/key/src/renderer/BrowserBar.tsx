@@ -3,6 +3,7 @@ import { Icon } from "./icons";
 import { WebSaveButton } from "./WebSaveButton";
 import { WEB_BAR_HEIGHT } from "../shared/browser-layout";
 import "./browser.css";
+import { FirstUseTip } from "./explain";
 
 /** What a browser tab's bar shows (main's view summary). */
 export interface WebBarState {
@@ -24,9 +25,10 @@ export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo"
 function ProxyNotice({ proxy, onPage }: { proxy: NonNullable<WebBarState["proxy"]>; onPage?(op: WebPageOp): void }) {
   if (proxy.offer)
     return (
-      <span className="key-web-proxy" role="status" data-offer>
+      <span className="key-web-proxy" role="status" data-offer title="A library proxy is your library’s sign-in page. Remembering it opens articles on this site with your library’s access.">
         <Icon name="institution" size={12} />
         <span className="key-web-proxy-text">Use {proxy.offer.name} for library access?</span>
+        <FirstUseTip help="tip.proxies" anchor=".key-web-proxy[data-offer]" />
         <button type="button" onClick={() => onPage?.("proxy-remember")} title={`Keep ${proxy.offer.name} and send ${proxy.offer.host || "sites"} through it`}>
           Remember
         </button>
@@ -39,13 +41,13 @@ function ProxyNotice({ proxy, onPage }: { proxy: NonNullable<WebBarState["proxy"
   if (!via) return null;
   if (!via.redirected)
     return (
-      <span className="key-web-proxy" data-quiet title={`${via.host} through ${via.name}`}>
+      <span className="key-web-proxy" data-quiet title={`Opened through ${via.name}, your library’s proxy, so you see ${via.host} with your library’s access. If it asks you to sign in, use your library account.`}>
         <Icon name="institution" size={12} />
         <span className="key-web-proxy-text">Via {via.name}</span>
       </span>
     );
   return (
-    <span className="key-web-proxy" role="status">
+    <span className="key-web-proxy" role="status" title={`Key sent ${via.host} through ${via.name}, your library’s proxy, so you see it with your library’s access.`}>
       <Icon name="institution" size={12} />
       <span className="key-web-proxy-text">Via {via.name}</span>
       <button type="button" title={`Open ${via.host} without the proxy this time`} onClick={() => onPage?.("proxy-undo")}>
@@ -105,7 +107,7 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
               type="button"
               className="key-web-article"
               disabled={article.busy}
-              title={article.doi ? `Add ${article.doi} to the library, with its PDF when one is available` : "Add this article to the library"}
+              title={article.doi ? `Add the article this page is about (${article.doi}) as a reference, with its PDF when one is open to you` : "Add the article this page is about as a reference"}
               onClick={() => onPage?.("add-article")}
             >
               <Icon name="plus" size={12} />

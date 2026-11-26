@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Group, Row } from "./Settings";
 import { Icon } from "./icons";
+import { Explain } from "./explain";
 import "./library-access.css";
 
 type Kind = "ezproxy" | "openathens" | "redirect" | "custom";
@@ -110,20 +111,20 @@ export default function LibraryAccess() {
   const proxies = data?.proxies ?? [];
   return (
     <>
-      <Group title="Library access" footer={error || report || "Articles open with your library’s access; saved sources keep their own address."}>
-        <Row label="Use library proxies automatically" detail="A proxy’s sites always go through it.">
+      <Group title="Library access" help="settings.web.access" footer={error || report || "Articles open with your library’s access; saved sources keep the publisher’s normal address."}>
+        <Row label="Use library proxies automatically" detail="Articles on a remembered proxy’s sites open through it, without asking.">
           <input type="checkbox" className="kx-switch" aria-label="Use library proxies automatically" disabled={!prefs} checked={!!prefs?.transparent} onChange={(e) => void call("prefs", { transparent: e.target.checked })} />
         </Row>
-        <Row label="Recognise proxies while browsing" detail="Offers to remember EZproxy and OpenAthens sign-ins.">
+        <Row label="Recognise proxies while browsing" help="settings.web.recognise" detail="When a page is a library sign-in (EZproxy, OpenAthens), offers to remember it.">
           <input type="checkbox" className="kx-switch" aria-label="Recognise proxies while browsing" disabled={!prefs} checked={!!prefs?.autoRecognize} onChange={(e) => void call("prefs", { autoRecognize: e.target.checked })} />
         </Row>
-        <Row label="Proxies from Zotero" detail="From Zotero and its browser connectors.">
+        <Row label="Proxies from Zotero" detail="Copies the proxies you set up in Zotero or its browser connector.">
           <button className="kx-settings-button" disabled={importing} onClick={() => void importNow()}>
             {importing ? "Importing…" : "Import from Zotero"}
           </button>
         </Row>
       </Group>
-      <Group title="Library proxies">
+      <Group title="Library proxies" help="settings.web.proxy-add">
         {proxies.map((proxy) => (
           <div className="kx-settings-row kx-proxy-row" key={proxy.id} data-enabled={proxy.enabled || undefined}>
             <span className="kx-proxy-glyph" aria-hidden>
@@ -149,7 +150,7 @@ export default function LibraryAccess() {
         <div className="kx-settings-row kx-proxy-add">
           <div>
             <span>{proxies.length ? "Another proxy" : "No library proxies yet"}</span>
-            <small>EZproxy, OpenAthens or a link prefix</small>
+            <small>Your library’s sign-in address: EZproxy, OpenAthens or a link prefix</small>
           </div>
           <div className="kx-settings-control">
             <button className="kx-settings-button" onClick={() => setEditing("new")}>
@@ -256,7 +257,9 @@ function ProxySheet({ proxy, onClose, onSave, onRemove }: { proxy?: LibraryProxy
       <div className="kx-proxy-sheet" role="dialog" aria-modal="true" aria-label={proxy ? `Edit ${proxy.name}` : "Add a library proxy"}>
         <header>
           <h2>{proxy ? "Edit library proxy" : "Add a library proxy"}</h2>
-          <p>{proxy ? SOURCE_LABEL[proxy.source] : "How your library gives access to journals and databases."}</p>
+          <p>
+            {proxy ? SOURCE_LABEL[proxy.source] : "How your library gives access to journals and databases off campus."} <Explain help="settings.web.proxy-add" label="Where do I find this?" />
+          </p>
         </header>
         <div className="kx-proxy-sheet-body">
           <div className="kx-proxy-presets" role="radiogroup" aria-label="Kind of proxy">

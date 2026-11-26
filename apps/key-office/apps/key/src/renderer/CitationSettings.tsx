@@ -156,7 +156,7 @@ export default function CitationSettings({
           </div>
         </Group>
       )}
-      <Group title={title} footer={footer}>
+      <Group title={title} help="settings.citations.style" footer={footer}>
         <Row label="Style" detail={current ? `${FORMAT_LABEL[current.format]}${current.bundled ? "" : " · installed"}` : undefined}>
           <button className="kx-settings-button kx-cite-current" aria-expanded={picking} aria-label="Citation style" onClick={() => setPicking(!picking)}>
             <span>{current?.title ?? style}</span>

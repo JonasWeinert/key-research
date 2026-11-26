@@ -8,6 +8,7 @@ import { hasItemDrag, readItemDrag } from "./item-links";
 import { openItemAt } from "./item-actions";
 import { dragHint, follow, isOverContent, moveTo, pressTab, release, shiftFor, type DropTarget, type StripGeometry, type TabDrag, type TabDrop } from "./tab-drag";
 import "./tab-strip.css";
+import { FirstUseTip } from "./explain";
 
 export type { DropTarget, TabDrop } from "./tab-drag";
 
@@ -426,6 +427,7 @@ export function GroupTabStrip({
     >
       <div className="kx-tabs-inset" />
       {chromeControl}
+      {first && <FirstUseTip help="tip.split-tabs" anchor='.kx-tabs[data-first] [role="tablist"]' when={tabs.length > 2} delay={2500} />}
       <div
         ref={listRef}
         className="kx-tabs-list"

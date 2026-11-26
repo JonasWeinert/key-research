@@ -137,6 +137,7 @@ export function ModelsGroup({
   return (
     <Group
       title="On-device models"
+      help="model.download"
       footer={
         message ||
         "Downloaded from Hugging Face once, when first needed, and checked against their published checksums. They run on this Mac; your sources and searches never leave it."

@@ -17,7 +17,8 @@
     .kx-suggest,
     .kx-status-popover,
     .kx-entity-popover,
-    .kx-page-popover
+    .kx-page-popover,
+    .kx-explain-popover
   ) {
   --kx-menu-text: var(--kx-text, var(--key-ui-text));
   --kx-menu-muted: var(--kx-text-2, var(--key-ui-muted));

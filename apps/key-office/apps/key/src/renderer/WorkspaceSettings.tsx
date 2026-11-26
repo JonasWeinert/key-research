@@ -115,6 +115,7 @@ export default function WorkspaceSettings({
         </label>
       }
       scope={`Applies to ${workspace.name}`}
+      scopeHelp="settings.scope.workspace"
       groups={WORKSPACE_GROUPS}
       section={current}
       onSection={onSection}
@@ -245,7 +246,7 @@ function General({ invoke, workspace, ws, onClose, onChanged, onRemoved }: { inv
         {moveError && <p className="kx-settings-footnote kx-cite-error" role="alert">{moveError}</p>}
       </Group>
       <Group title="Adding sources">
-        <Row label="Works added from a source" detail="From its references, related works or a citation in its PDF.">
+        <Row label="Works added from a source" help="settings.libraries.add-from-source" detail="From its references, related works or a citation in its PDF: which collections they join.">
           <select
             className="kx-settings-select"
             aria-label="Where sources added from another source go"
@@ -322,7 +323,7 @@ function Zotero({
   if (zotero?.id === workspace.id)
     return <ZoteroSettings invoke={invoke} workspaces={[workspace]} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />;
   return (
-    <Group title="Zotero" footer="Key keeps what comes from Zotero in a workspace of its own, in a folder named Zotero.">
+    <Group title="Zotero" help="zotero.import-vs-sync" intro="settings.zotero.intro" footer="Key keeps what comes from Zotero in a workspace of its own, in a folder named Zotero.">
       {zotero ? (
         <Row label={`Zotero syncs into “${zotero.name}”`} detail={home(zotero.root)} path>
           <button className="kx-settings-button" onClick={() => onWorkspace(zotero.id)}>
@@ -365,7 +366,7 @@ function Indexing({ invoke, workspaceId, ws }: { invoke: Invoke; workspaceId: st
   const ownLookups = ws.state?.own.lookups;
   return (
     <>
-      <Group title="Indexing" footer={message || "Sources you open or scroll to are indexed first."}>
+      <Group title="Indexing" help="settings.search.indexing" footer={message || "Indexing reads each source once so search can find it. Sources you open or scroll to go first."}>
         {counts && (
           <div className="kx-settings-stats">
             <div>
@@ -396,10 +397,10 @@ function Indexing({ invoke, workspaceId, ws }: { invoke: Invoke; workspaceId: st
             <span className="kx-search-spinner" aria-hidden="true" />
           </Row>
         )}
-        <Row label="Pause indexing" detail="Until Key quits. Search keeps working.">
+        <Row label="Pause indexing" detail="Stops reading new sources until Key quits. Search keeps working on what is already indexed.">
           <input type="checkbox" className="kx-switch" aria-label="Pause indexing" checked={paused} onChange={(e) => setPaused(e.target.checked)} />
         </Row>
-        <Row label="Retry failed sources" detail={failed ? `${failed.toLocaleString()} could not be read` : "None failed"}>
+        <Row label="Retry failed sources" detail={failed ? `${failed.toLocaleString()} could not be read, often a damaged or password-protected PDF` : "None failed"}>
           <button
             className="kx-settings-button"
             disabled={!failed}
@@ -434,7 +435,7 @@ function Indexing({ invoke, workspaceId, ws }: { invoke: Invoke; workspaceId: st
           </button>
         </Row>
       </Group>
-      <Group title="Lookups" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
+      <Group title="Lookups" help="settings.search.metadata" footer="Only identifiers and titles are sent to OpenAlex and Crossref, never your files or notes.">
         <Row
           label="Look up new sources in OpenAlex"
           detail={
@@ -453,7 +454,7 @@ function Indexing({ invoke, workspaceId, ws }: { invoke: Invoke; workspaceId: st
             </Overridable>
           )}
         </Row>
-        <Row label="Find PDFs automatically" detail="Look for an open-access PDF when a reference without one is added.">
+        <Row label="Find PDFs automatically" help="settings.libraries.find-pdf" detail="Look for a free, legal (open-access) PDF when a reference without one is added.">
           <input
             type="checkbox"
             className="kx-switch"
@@ -481,7 +482,7 @@ function PossibleDuplicates({ invoke, workspaceId }: { invoke: Invoke; workspace
   useEffect(load, [load]);
   return (
     <>
-      <Row label="Possible duplicate people" detail={count ? `${count} to review` : "None to review"}>
+      <Row label="Possible duplicate people" help="settings.search.people" detail={count ? `${count} to review. Nothing is merged until you choose.` : "None to review"}>
         <button className="kx-settings-button" disabled={!count} onClick={() => setOpen(true)}>
           Review…
         </button>

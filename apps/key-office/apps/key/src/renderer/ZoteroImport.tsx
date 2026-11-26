@@ -26,6 +26,8 @@ import {
 } from "./library-api";
 import { ago, blocker, choiceOf, filterItems, optionsOf, syncLine, type Choice, type Mode, type Scope } from "./zotero-sheet-model";
 import "./zotero-import.css";
+import { Explain, Hint } from "./explain";
+
 
 type Collection = ZoteroPreview["collections"][number];
 
@@ -277,7 +279,15 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
     <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title} data-step={result || running ? "done" : step} data-modal-view={result || running ? "done" : `${mode}-${step}`} data-scope={choice.scope}>
       <header>
         <h2>{title}</h2>
-        <p>{lede}</p>
+        <p>
+          {lede}
+          {step === "mode" && (
+            <>
+              {" "}
+              <Explain help="zotero.import-vs-sync" label="Which should I choose?" />
+            </>
+          )}
+        </p>
         <button className="kx-sheet-close" aria-label="Close" disabled={running} onClick={onClose}>
           <Icon name="close" size={10} />
         </button>
@@ -323,7 +333,10 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
             )}
             <section className="kx-form-section kx-zotero-what">
               <div className="kx-zotero-scope-head">
-                <h3>What to {verb}</h3>
+                <h3>
+                  What to {verb}
+                  {mode === "sync" && <Explain help="zotero.plugin" />}
+                </h3>
                 {mode === "sync" && connected && probe!.libraries.length > 1 && (
                   <select className="kx-zotero-library" aria-label="Zotero library" value={library ?? probe?.defaultLibraryID ?? ""} onChange={(e) => setLibrary(Number(e.target.value))}>
                     {probe!.libraries.map((l) => (
@@ -334,6 +347,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
                   </select>
                 )}
               </div>
+              <Hint help="zotero.scope" />
               <ScopePicker scope={choice.scope} preview={preview} onChange={(scope) => setChoice({ ...choice, scope })} />
               {choice.scope === "collections" && preview && (
                 <CollectionTree collections={preview.collections} chosen={choice.collections} onChange={(collections) => setChoice({ ...choice, collections })} />
@@ -341,7 +355,10 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
               {choice.scope === "papers" && <PaperPicker items={items} chosen={choice.papers} onChange={(papers) => setChoice({ ...choice, papers })} />}
             </section>
             <section className="kx-form-section kx-zotero-bring">
-              <h3>Bring along</h3>
+              <h3>
+                Bring along
+                <Explain help="zotero.bring" />
+              </h3>
               <div className="kx-form-group">
                 <Toggle label="PDFs and other files" detail="Linked where Zotero keeps them; nothing is copied." checked={choice.bring.attachments} onChange={(attachments) => setChoice({ ...choice, bring: { ...choice.bring, attachments } })} />
                 <Toggle label="Notes" detail="Converted to Markdown, with highlights as quotes." checked={choice.bring.notes} onChange={(notes) => setChoice({ ...choice, bring: { ...choice.bring, notes } })} />

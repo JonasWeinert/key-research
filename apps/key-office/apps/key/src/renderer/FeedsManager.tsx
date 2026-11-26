@@ -8,6 +8,7 @@ import { Icon } from "./icons";
 import { toast } from "./item-actions";
 import { bridge, relativeDate, type Invoke } from "./library-api";
 import "./inbox.css";
+import { EmptyState, Explain, Hint } from "./explain";
 
 interface Retention {
   unreadDays: number;
@@ -98,13 +99,20 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
 
   return (
     <div className="kx-feeds-manager">
+      <div className="kx-settings-intro">
+        <Hint help="feeds.intro" />
+        <Explain help="feeds.what" label="What are feeds and alerts?" />
+      </div>
       <section className="kx-settings-group">
-        <h3>Add a feed</h3>
+        <h3>
+          Add a feed
+          <Explain help="feeds.address" />
+        </h3>
         <div className="kx-settings-rows">
           <div className="kx-settings-row kx-feeds-add">
             <div>
               <span>Address</span>
-              <small>A feed, or the page that links to one</small>
+              <small>A feed, or a journal’s or blog’s page that links to one</small>
             </div>
             <form
               className="kx-settings-control kx-feeds-add-form"
@@ -121,12 +129,16 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
           </div>
         </div>
         {error && <p className="kx-inline-error">{error}</p>}
-        <p className="kx-settings-footnote">A journal’s table of contents, an arXiv listing or a blog. Authors, journals and topics are followed from their pages; “Alert me” on a web search, a source or a collection follows new results and citations.</p>
+        <p className="kx-settings-footnote">A journal’s table of contents, an arXiv listing or a blog. To follow an author, journal or topic, press Follow on their page; Alert me on a web search, a source or a collection follows new results and citations.</p>
       </section>
       <section className="kx-settings-group">
-        <h3>Following</h3>
+        <h3>
+          Following
+          <Explain help="feeds.kinds" />
+        </h3>
+        <Hint help="feeds.interval" />
         <div className="kx-settings-rows kx-feeds-list" aria-label="Feeds and alerts">
-          {subscriptions && !subscriptions.length && <p className="kx-feeds-none">Nothing yet.</p>}
+          {subscriptions && !subscriptions.length && <EmptyState help="empty.feeds" icon="feed" compact />}
           {subscriptions?.map((s) => (
             <div key={s.id} className="kx-settings-row kx-feeds-row" data-paused={s.paused || undefined} data-failing={s.failures > 0 || undefined}>
               <span className="kx-feeds-kind" title={KIND_LABEL[s.kind]}>
@@ -158,6 +170,7 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
           ))}
         </div>
         <div className="kx-feeds-opml">
+          <Explain help="feeds.opml-what" />
           <button className="kx-settings-button" onClick={() => void importOpml()}>
             <Icon name="download" size={12} /> Import OPML…
           </button>
@@ -169,6 +182,7 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
       {retention && (
         <section className="kx-settings-group">
           <h3>Keeping items</h3>
+          <Hint help="feeds.keeping" />
           <div className="kx-settings-rows">
             {(
               [
@@ -194,7 +208,7 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
               </div>
             ))}
           </div>
-          <p className="kx-settings-footnote">Feeds are checked only while Key is open, and not while the Mac is offline or saving power.</p>
+          <p className="kx-settings-footnote">Key checks feeds only while it is open, and not while the Mac is offline or saving power. Nothing is added to your library until you choose Add.</p>
         </section>
       )}
     </div>
@@ -208,7 +222,7 @@ export function FeedsSheet({ invoke, workspaceId, onClose }: { invoke: Invoke; w
       <div className="key-property-editor kx-feeds-sheet" data-modal-view="feeds">
         <header>
           <h2>Feeds &amp; alerts</h2>
-          <p>What your Inbox follows.</p>
+          <p>The journals, authors, topics and searches your Inbox follows.</p>
           <button className="kx-sheet-close" aria-label="Close" onClick={onClose}>
             <Icon name="close" size={10} />
           </button>

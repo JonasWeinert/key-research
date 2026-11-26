@@ -8,6 +8,7 @@ import { bridge, type AppInfo, type Invoke, type Theme, type WorkspaceSummary } 
 import { ThemePicker } from "./Settings";
 import { WORKSPACE_COLORS } from "./WorkspaceSwitcher";
 import "./onboarding.css";
+import { Explain } from "./explain";
 import "./models.css";
 
 const STEPS = ["welcome", "library", "sources", "appearance"] as const;
@@ -84,7 +85,8 @@ export default function Onboarding({
             </Copy>
           )}
           {step === "library" && (
-            <Copy eyebrow="Library" title="Your library" lead="A folder on this Mac. Files you add stay where they are.">
+            <Copy eyebrow="Library" title="Your library" lead="A folder on this Mac that holds your sources, notes and collections. You can add more libraries later.">
+              <Explain help="settings.libraries.what" label="What is a library?" className="kx-onboarding-explain" />
               {library && (
                 <div className="kx-onboarding-card">
                   <span className="kx-onboarding-swatch" style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
@@ -120,7 +122,7 @@ export default function Onboarding({
                 <Choice
                   icon="zotero"
                   title="Import from Zotero"
-                  detail={info.zoteroFound ? "Items, collections, notes and PDFs. Zotero is not changed." : "No Zotero library found on this Mac."}
+                  detail={info.zoteroFound ? "Copies items, collections, notes and links to PDFs. Key never changes your Zotero library." : "No Zotero library found on this Mac."}
                   busy={importing === "zotero"}
                   disabled={!info.zoteroFound || !!importing}
                   onClick={() =>
@@ -152,7 +154,7 @@ export default function Onboarding({
                 </p>
               )}
               {error && <p className="kx-inline-error">{error}</p>}
-              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Keep it in sync with Zotero later, in Workspace Settings.</p>}
+              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Importing copies your library once. To have later changes in Zotero follow into Key, turn on sync in Workspace Settings › Zotero.</p>}
             </Copy>
           )}
           {step === "appearance" && (

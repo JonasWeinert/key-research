@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon } from "./icons";
 import type { Invoke } from "./library-api";
 import { Group, Row } from "./Settings";
+import { Explain, Hint } from "./explain";
+import { HELP, type ExplainId } from "./help-content";
 import "./service-keys.css";
 
 type Mode = "fallback" | "always";
@@ -81,10 +83,14 @@ export default function ServiceKeys({ invoke }: { invoke: Invoke }) {
   const { storage } = listing;
   return (
     <>
+      <div className="kx-settings-intro" data-help="settings.services.intro">
+        <Hint help="settings.services.intro" />
+        <Explain help="settings.services.api-key" label="What is an API key?" />
+      </div>
       {listing.services.map((service) => (
         <ServiceGroup key={service.id} service={service} storage={storage} invoke={invoke} onChange={setListing} />
       ))}
-      <Group title="Storage" footer="Keys never reach a page or a log.">
+      <Group title="Storage" footer="Keys are sent only to the service they belong to, and never reach a page or a log.">
         <Row label={storage.backend === "keychain" ? "Keychain" : "This Mac"} detail={storageLine(storage)}>
           <span className="kx-service-storage" data-backend={storage.backend}>
             <Icon name={storage.backend === "keychain" ? "lock" : "disk"} size={13} />
@@ -107,6 +113,9 @@ export default function ServiceKeys({ invoke }: { invoke: Invoke }) {
     </>
   );
 }
+
+/** The explainer for a service, when help-content has one (new services may not yet). */
+const serviceHelp = (id: string) => (`settings.services.${id}` in HELP ? (`settings.services.${id}` as ExplainId) : undefined);
 
 function ServiceGroup({ service, storage, invoke, onChange }: { service: Service; storage: Storage; invoke: Invoke; onChange: (listing: Listing) => void }) {
   const [draft, setDraft] = useState("");
@@ -150,7 +159,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
   };
 
   return (
-    <Group title={service.via ? `${service.name} via ${service.via}` : service.name} footer={`Used for ${/^\S+ [a-z]/.test(service.usedFor) ? service.usedFor.charAt(0).toLowerCase() + service.usedFor.slice(1) : service.usedFor}.`}>
+    <Group title={service.via ? `${service.name} via ${service.via}` : service.name} help={serviceHelp(service.id)} footer={`Used for ${/^\S+ [a-z]/.test(service.usedFor) ? service.usedFor.charAt(0).toLowerCase() + service.usedFor.slice(1) : service.usedFor}.`}>
       <div className="kx-settings-row kx-service-head" data-service={service.id}>
         <span className="kx-service-glyph" data-state={key.set ? (validity === "invalid" ? "invalid" : "set") : undefined}>
           <Icon name="key" size={14} />
@@ -164,8 +173,8 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
             {key.set
               ? `${storage.locked ? "Locked in the Keychain" : storage.backend === "keychain" ? "In the Keychain" : "On this Mac"}`
               : service.keyRequired
-                ? `Required · from ${service.keyUrlLabel}`
-                : `Optional · from ${service.keyUrlLabel}`}
+                ? `Needed to use ${service.name} · from ${service.keyUrlLabel}`
+                : `Optional · works without one · from ${service.keyUrlLabel}`}
           </small>
         </div>
         <span className="kx-service-status" data-state={!key.set ? "none" : validity ?? "set"} aria-label={`${service.name} key status`}>
@@ -242,7 +251,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
           </button>
         </div>
       ) : (
-        <Row label="Use the key" detail={service.keyRequired ? "When other catalogues find nothing, or always if on under Web search." : service.mode === "always" ? "Every request carries it." : "Only when requests without it are limited or refused."}>
+        <Row label="Use the key" detail={service.keyRequired ? "When other catalogues find nothing, or always if on under Web search." : service.mode === "always" ? "Every request to the service carries it." : "Only when a request without it is limited or refused, so your own allowance lasts."}>
           {!service.keyRequired && (
             <select
               className="kx-settings-select"
@@ -250,7 +259,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
               value={service.mode}
               onChange={(e) => void invoke<Listing>("services_set_mode", { id: service.id, mode: e.target.value }).then(onChange)}
             >
-              <option value="fallback">Only when other requests fail</option>
+              <option value="fallback">Only when needed</option>
               <option value="always">Always</option>
             </select>
           )}

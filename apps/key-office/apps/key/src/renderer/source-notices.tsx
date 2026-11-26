@@ -8,6 +8,7 @@ import { libraryChanged } from "./library-nav";
 import type { Invoke, Source } from "./library-api";
 import { NOTICE_LABEL, retractionOf } from "./library-hygiene";
 import "./hygiene.css";
+import { Explain } from "./explain";
 
 const tabAction = (action: string, payload: unknown) => (window as unknown as { key: { tabAction(a: string, p?: unknown): Promise<unknown> } }).key.tabAction(action, payload);
 
@@ -34,7 +35,7 @@ export function RetractionNotice({ invoke, workspaceId, source, onChanged }: { i
         <span>
           {kind ? "Crossref and Retraction Watch list a notice for this work. " : "OpenAlex lists this work as retracted. "}
           {link}
-          {link ? ". " : ""}Check before citing it.
+          {link ? ". " : ""}Check before citing it. <Explain help="retraction.what" label="What does this mean?" />
         </span>
         <button title="Not a concern for this source (stops flagging it)" onClick={() => dismiss(true)}>
           Dismiss

@@ -14,6 +14,7 @@ import { useWebAnalysis } from "./web-reader-references";
 import "./reader-panel.css";
 import "./web-page.css";
 import "./web-reader-panel.css";
+import { EmptyState } from "./explain";
 
 export type WebPanelTab = "details" | "highlights" | "references";
 
@@ -142,7 +143,7 @@ function WebReferences({ invoke, workspaceId, sourceId }: { invoke: Invoke; work
         />
       }
       references={references}
-      empty={<p className="key-ref-empty">No reference list was found on this page.</p>}
+      empty={<EmptyState help="empty.references-page" icon="book" compact />}
       onSelect={(reference) => webPageEvent(WEB_REFERENCE_EVENT, { sourceId, number: reference.number })}
       aside={(reference) => {
         const meta = reference.metadata;
