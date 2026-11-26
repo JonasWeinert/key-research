@@ -23,6 +23,7 @@ members = [
     "crates/key-pdf-runtime",
     "crates/key-pdfium",
     "crates/key-safe-http",
+    "crates/key-connectors",
     "crates/key-semantic-search",
     "crates/key-sidecar-store",
     "crates/key-ui-core",

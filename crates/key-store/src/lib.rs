@@ -27,7 +27,7 @@ pub mod tag_plan;
 pub mod smart_query;
 pub mod web_references;
 pub mod web_pages;
-mod html_dom;
+pub mod html_dom;
 pub mod feeds;
 pub mod reading;
 pub mod priority;

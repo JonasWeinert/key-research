@@ -1,0 +1,95 @@
+{
+  "$schema": "../schema/connector-1.schema.json",
+  "format": 1,
+  "id": "econstor",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "EconStor",
+  "description": "The open-access repository of the ZBW Leibniz Information Centre for Economics: working papers, articles and reports from hundreds of series.",
+  "homepage": "https://www.econstor.eu/",
+  "category": "economics",
+  "coverage": "Over 250,000 full texts in economics and business, many working-paper series from German and European institutes.",
+  "terms": "Harvested through EconStor's documented OAI-PMH interface (its site search is closed to automated use). Metadata is CC0; full texts carry their own licences.",
+  "kind": "harvest",
+  "guide": {
+    "summary": "Economics working papers and articles, read in full and filtered by Key.",
+    "coverage": "Choose a document type in the options; years narrow what is read.",
+    "fields": "EconStor cannot search: Key reads every record of the chosen type changed since the start year and keeps those that match your query in title, abstract and keywords.",
+    "limits": ["Reading is slow (about 100 records every few seconds), so a wide year range can take minutes.", "Many records have German titles and abstracts: add German terms where it matters."],
+    "tips": ["Start with a narrow year range to check the query, then widen it."]
+  },
+  "credentials": [],
+  "hosts": ["www.econstor.eu"],
+  "politeness": { "minIntervalMs": 2000, "retries": 4, "backoffMs": 5000, "maxPages": 100 },
+  "capabilities": {
+    "fields": ["all", "title", "title_abstract", "abstract", "keywords", "author", "journal"],
+    "phrase": true, "truncation": true, "proximity": true, "dates": "year",
+    "filters": ["types", "languages"],
+    "maxResults": 100000,
+    "sort": [],
+    "exportFields": ["title", "authors", "year", "abstract", "doi", "handle", "url", "series", "number", "publisher", "language", "keywords"]
+  },
+  "options": [
+    {
+      "id": "set", "label": "Document type", "default": "doc-type:workingPaper", "free": true, "pattern": "^[A-Za-z0-9_:.-]+$",
+      "help": "An EconStor OAI set: a document type, a subject (ddc:...) or a community (com_10419_...).",
+      "choices": [
+        { "value": "doc-type:workingPaper", "label": "Working papers" },
+        { "value": "doc-type:article", "label": "Articles" },
+        { "value": "doc-type:report", "label": "Reports" },
+        { "value": "doc-type:book", "label": "Books" },
+        { "value": "doc-type:doctoralThesis", "label": "Doctoral theses" }
+      ]
+    }
+  ],
+  "query": {
+    "mode": "harvest",
+    "vars": { "fromDate": { "template": "{yearFrom}-01-01" } },
+    "localFilter": true
+  },
+  "search": {
+    "adapter": "oai-pmh",
+    "request": {
+      "url": "https://www.econstor.eu/oai/request",
+      "params": { "verb": "ListRecords", "metadataPrefix": "oai_dc", "set": "{opt.set?}", "from": "{fromDate?}" },
+      "format": "xml"
+    },
+    "pageSize": 100,
+    "items": "//record",
+    "itemsWhere": "metadata",
+    "record": {
+      "sourceId": "header/identifier",
+      "title": { "path": "metadata/dc/title", "type": "text" },
+      "authors": { "path": "metadata/dc/creator", "all": true },
+      "year": { "path": "metadata/dc/date", "type": "year" },
+      "date": { "path": "metadata/dc/date", "type": "date" },
+      "abstract": { "path": "metadata/dc/description", "all": true, "join": " ", "type": "text" },
+      "doi": { "path": "metadata/dc/identifier", "regex": "(10\\.\\d{4,9}/\\S+)", "type": "doi" },
+      "handle": { "path": "metadata/dc/identifier", "regex": "hdl\\.handle\\.net/(\\S+)" },
+      "url": { "path": "metadata/dc/identifier", "regex": "^(https?://hdl\\.handle\\.net/\\S+)$" },
+      "series": { "path": "metadata/dc/relation", "regex": "^Series:\\s*(.*?)\\s*;" },
+      "number": { "path": "metadata/dc/relation", "regex": "No\\.\\s*(\\S+)\\s*$" },
+      "publisher": "metadata/dc/publisher",
+      "type": { "path": "metadata/dc/type", "map": { "doc-type:workingPaper": "working-paper", "doc-type:article": "article", "doc-type:report": "report", "doc-type:book": "book", "doc-type:bookPart": "chapter", "doc-type:doctoralThesis": "thesis", "doc-type:preprint": "preprint", "doc-type:conferenceObject": "other" } },
+      "language": { "path": "metadata/dc/language", "type": "language" },
+      "keywords": { "path": "metadata/dc/subject", "all": true, "replace": [ { "find": "^ddc:\\S*$", "with": "" } ] },
+      "extras": { "fields": {
+        "repec": { "path": "metadata/dc/identifier", "regex": "^(RePEc:\\S+)$" },
+        "licence": { "path": "metadata/dc/rights", "regex": "(creativecommons\\.org\\S*)" }
+      } }
+    }
+  },
+  "tests": [
+    {
+      "name": "recent-working-papers",
+      "query": { "concepts": [ { "terms": [ { "text": "corona", "truncate": true, "field": "title_abstract" }, { "text": "covid", "truncate": true, "field": "title_abstract" }, { "text": "pandemie", "truncate": true, "field": "title_abstract" }, { "text": "pandemic", "truncate": true, "field": "title_abstract" } ] } ], "filters": { "yearFrom": 2026 } },
+      "options": { "set": "doc-type:workingPaper" },
+      "minTotal": 100,
+      "minResults": 1,
+      "pages": 1,
+      "fields": ["title", "authors", "year", "handle", "url"],
+      "mustFind": [ { "sourceId": "oai:econstor.eu:10419/339272" } ],
+      "fixture": "recent-working-papers"
+    }
+  ]
+}
