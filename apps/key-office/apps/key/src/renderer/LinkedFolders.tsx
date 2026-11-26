@@ -13,7 +13,7 @@ import "./linked-folders.css";
 
 /** The sidebar's grid, as in the Workspace section: 2px, then 12px per level. */
 const indent = (depth: number) => `min(${2 + depth * 12}px, 40%)`;
-const FILE_ICON: Record<string, IconName> = { markdown: "note", text: "doc", pdf: "doc", image: "image", other: "doc" };
+const FILE_ICON: Record<string, IconName> = { markdown: "fileMarkdown", text: "doc", pdf: "filePdf", image: "image", other: "doc" };
 
 const readOpen = (key: string) => {
   try {

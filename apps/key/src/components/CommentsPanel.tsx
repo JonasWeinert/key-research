@@ -1,3 +1,4 @@
+import { Icon } from '../ui/Icon';
 import type { ReaderAnnotation } from '../model/annotations';
 
 interface Props {
@@ -16,7 +17,7 @@ export function CommentsPanel({ documentId, annotations, onDelete, onClose }: Pr
           <strong>Comments</strong>
           <small>{visible.length} annotations</small>
         </div>
-        <button onClick={onClose}>×</button>
+        <button onClick={onClose} aria-label="Close"><Icon name="close" size={12} /></button>
       </div>
       <div className="panel-list">
         {visible.map(annotation => (

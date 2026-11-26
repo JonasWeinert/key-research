@@ -1,3 +1,4 @@
+import { Icon } from '../ui/Icon';
 import { useScroll } from '@embedpdf/plugin-scroll/react';
 import { usePaperAnalysis } from '../preprocessing/paper-analysis';
 
@@ -26,7 +27,7 @@ export function ReferencesPanel({
                   : 'Waiting for paper'}
           </small>
         </div>
-        <button onClick={onClose}>×</button>
+        <button onClick={onClose} aria-label="Close"><Icon name="close" size={12} /></button>
       </div>
       <div className="panel-list">
         {analysis.status === 'ready' && (

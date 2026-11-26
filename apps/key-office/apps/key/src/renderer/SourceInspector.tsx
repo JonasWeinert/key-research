@@ -4,7 +4,7 @@ import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "reac
 import type { Creator } from "./citation";
 import { FilterButton, FilterLink, FilterLinks, fieldFilter, sourceFilter } from "./filter-links";
 import type { SearchFilter } from "./search-suggest";
-import { Icon } from "./icons";
+import { Icon, propertyTypeIcon } from "./icons";
 import { EntityButton, EntityLink, TagLink, type EntityRef } from "./entity-ui";
 import { formulaValue, type PropertyDefinition } from "./PropertySheets";
 import type { Facet, Source } from "./library-api";
@@ -285,7 +285,7 @@ export function TypedProperties({
 }) {
   const defined = new Set(definitions.map((d) => d.name));
   const extra = Object.fromEntries(Object.entries(source.properties).filter(([key]) => !defined.has(key)));
-  const glyph = (type: string) => (type === "number" ? "#" : type === "boolean" ? "✓" : type === "select" ? "◦" : type === "formula" ? "ƒ" : "Aa");
+  const glyph = (type: string) => <Icon name={propertyTypeIcon(type)} size={11} />;
   // Rows only: they sit in the Details list under the bibliographic fields.
   return (
     <>

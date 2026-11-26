@@ -400,7 +400,7 @@ export default function PdfReader() {
                   title="Show or hide this source’s details and note beside the PDF"
                   onClick={() => showPanel("details")}
                 >
-                  <Icon name="panelRight" />
+                  <Icon name="panelRight" filled={panelTab === "details"} />
                 </button>
               )}
             </span>

@@ -6,7 +6,7 @@ import { itemLinks, openItem, type ItemLink, type Link } from "./item-links";
 import { bridge as libraryBridge, type Invoke } from "./library-api";
 import "./linked-from.css";
 
-const KIND_ICON: Record<string, IconName> = { note: "note", canvas: "canvas", source: "doc", record: "doc", file: "doc", person: "user", venue: "book", topic: "tag" };
+const KIND_ICON: Record<string, IconName> = { note: "note", canvas: "canvas", source: "doc", record: "doc", file: "doc", person: "person", venue: "journal", topic: "topic" };
 
 interface Group {
   key: string;

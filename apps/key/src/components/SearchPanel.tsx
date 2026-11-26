@@ -1,3 +1,4 @@
+import { Icon } from '../ui/Icon';
 import { useSearch } from '@embedpdf/plugin-search/react';
 
 export function SearchPanel({ documentId, onClose }: { documentId: string; onClose: () => void }) {
@@ -9,7 +10,7 @@ export function SearchPanel({ documentId, onClose }: { documentId: string; onClo
           <strong>Search</strong>
           <small>{state.loading ? 'Searching…' : `${state.total} results`}</small>
         </div>
-        <button onClick={onClose}>×</button>
+        <button onClick={onClose} aria-label="Close"><Icon name="close" size={12} /></button>
       </div>
       <div className="panel-list">
         {state.results.map((result, index) => (

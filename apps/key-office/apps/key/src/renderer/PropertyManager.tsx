@@ -2,7 +2,7 @@ import { Button, Input } from "@key/design-system";
 import { useState } from "react";
 import type { SourceColumn } from "./LibraryTable";
 import "./property-tools.css";
-import { Icon } from "./icons";
+import { Icon, propertyTypeIcon } from "./icons";
 export default function PropertyManager({
   columns,
   onChange,
@@ -61,17 +61,7 @@ export default function PropertyManager({
                 onClick={() => onEdit(c)}
               >
                 <span className="kx-type-badge" aria-hidden="true">
-                  {c.type === "formula" ? (
-                    "ƒ"
-                  ) : c.type === "number" ? (
-                    "#"
-                  ) : c.type === "boolean" ? (
-                    <Icon name="check" size={11} />
-                  ) : c.type === "select" ? (
-                    <Icon name="list" size={11} />
-                  ) : (
-                    "Aa"
-                  )}
+                  <Icon name={propertyTypeIcon(c.type)} size={11} />
                 </span>
                 <span className="kx-property-label">{c.label}</span>
                 <small>{c.type || "Built-in"}</small>

@@ -1,5 +1,6 @@
 import { Button } from "@key/design-system";
 import { useEffect, useState } from "react";
+import { Icon } from "./icons";
 import type {
   LibrarySource,
   LibraryHit,
@@ -65,7 +66,7 @@ export default function SearchSourceMetadata({
       <header>
         <strong>Source metadata</strong>
         <Button aria-label="Close source metadata" onClick={onClose}>
-          ×
+          <Icon name="close" size={12} />
         </Button>
       </header>
       <h2>{source?.title || hit.documentTitle || "Document"}</h2>

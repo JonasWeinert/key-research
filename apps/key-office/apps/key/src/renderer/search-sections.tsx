@@ -60,7 +60,7 @@ export function Snippet({ text }: { text: string }) {
   );
 }
 
-const SOURCE_ICON: Record<string, IconName> = { pdf: "doc", web: "globe", video: "video", audio: "audio", image: "image", book: "book", reference: "quote" };
+const SOURCE_ICON: Record<string, IconName> = { pdf: "filePdf", web: "globe", video: "video", audio: "audio", image: "image", book: "book", reference: "quote" };
 export function foundIcon(found: Pick<Found, "kind" | "anchor" | "sourceKind" | "group">): IconName {
   if (found.anchor?.startsWith("highlight:")) return "quote";
   if (found.kind === "note") return "note";
