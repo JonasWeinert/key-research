@@ -24,6 +24,11 @@ export function hostKeyRequests(): HostRequest[] {
   const keys = Object.fromEntries(SERVICES.map((s) => [s.id, { key: keyed.key(s.id) ?? "", mode: keyed.mode(s.id) }]));
   const requests: HostRequest[] = [{ command: "store_enrich_options", args: { apiKey: keyed.key("openalex") ?? "", keyMode: keyed.mode("openalex") } }];
   if (settingsStore) requests.push({ command: "web_options", args: webOptions(settingsStore.get(), keys) });
+  // Database search connectors name the keys they use by service id (connectors/COMMANDS.md);
+  // downloaded connector bundles are app-wide, so every workspace shares one folder.
+  const dbKeys = Object.fromEntries(SERVICES.map((s) => [s.id, keyed.key(s.id) ?? null]));
+  const mailto = settingsStore?.get().openalexMailto ?? "";
+  requests.push({ command: "db_options", args: { keys: dbKeys, mailto, connectorsDir: join(app.getPath("userData"), "connectors") } });
   return requests;
 }
 
