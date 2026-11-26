@@ -748,6 +748,9 @@ async function tempPdfView(entry: TempPdf): Promise<OwnedView> {
 async function openDownloadedPdf(contents: Electron.WebContents | undefined, file: { path: string; url: string; filename: string }, replace = false) {
   const from = contents && [...views.values()].find((v) => v.kind === "web" && v.view?.webContents === contents);
   const w = (from && shellOfView(from.id)) ?? focusedShell();
+  // The tab in front while the PDF is analysed: when the person moves to another tab
+  // meanwhile, the reader opens behind it instead of taking it away.
+  const frontBefore = w && activeWorkspaceTab(w.state)?.id;
   try {
     const page = from && (from.web?.committed ? from.web.title : from.referrer);
     // The landing page that led to the PDF (the tab's page, or the page that opened the tab).
@@ -769,7 +772,12 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
       focusShown(w);
       return;
     }
+    const front = activeWorkspaceTab(w.state)?.id;
     add(record, w, found ? { groupId: found.group.id, index: found.index + 1 } : {});
+    if (front && front !== frontBefore && findTab(w.state, front)) {
+      w.state = activateWorkspaceTab(w.state, front);
+      layout(w);
+    }
     focusShown(w);
   } catch (error) {
     await rm(file.path, { force: true }).catch(() => undefined);
