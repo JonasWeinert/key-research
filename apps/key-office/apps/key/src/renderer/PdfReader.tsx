@@ -315,10 +315,13 @@ export default function PdfReader() {
       if (latestState.current) bridge().readerState(latestState.current);
     };
   }, []);
+  // The page count goes with the state, so reaching the last page can mark the source read.
+  const pageCount = useRef(0);
+  pageCount.current = chrome?.pageCount ?? 0;
   const viewChanged = useCallback((state: PdfJsViewState) => {
     latestState.current = state;
     setPage(state.pageIndex + 1);
-    bridge().readerState(state);
+    bridge().readerState({ ...state, ...(pageCount.current ? { pageCount: pageCount.current } : {}) } as PdfJsViewState);
   }, []);
   // A library PDF's details and references share the panel beside it (the shell's); a PDF
   // from the web has only references, in the reader's own panel.

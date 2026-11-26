@@ -17,7 +17,8 @@ export function reportReading(invoke: Invoke, view: { id: string; workspaceId?: 
   const before = seen.get(view.id);
   if (before && before.page === page) return;
   seen.set(view.id, { page, status: before?.status });
-  void invoke<{ status: string }>("store_reading_event", { id: hash, kind: before ? "page" : "open", page }, view.workspaceId)
+  const count = Number((state as { pageCount?: unknown } | null)?.pageCount);
+  void invoke<{ status: string }>("store_reading_event", { id: hash, kind: before ? "page" : "open", page, pageCount: count > 0 ? count : null }, view.workspaceId)
     .then((reading) => {
       const now = seen.get(view.id);
       if (now && reading?.status && now.status !== reading.status) {
