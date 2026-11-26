@@ -165,6 +165,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
           onFilters={(filters) => setState((s) => ({ ...s, filters }))}
           busy={result.found.pending}
           inputRef={input}
+          onKinds={(kinds) => setState((s) => ({ ...s, kinds }))}
           label="Search everything"
           placeholder="Search sources, notes, pages, canvases and highlights"
           onSubmit={() => web !== "only" && open(visible[Math.max(0, current)])}

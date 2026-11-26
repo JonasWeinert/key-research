@@ -1660,6 +1660,45 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+/* A reading of the query (a DOI, years, a citation …) shows the tokens it would add. */
+.kx-suggest-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-text);
+  font-size: 11.5px;
+  font-weight: 550;
+  vertical-align: 1px;
+}
+.kx-suggest-token-scope {
+  color: color-mix(in srgb, var(--kx-accent) 75%, var(--kx-text-2));
+  font-weight: 400;
+}
+.kx-suggest-item[data-detected] + .kx-suggest-item:not([data-detected]) {
+  position: relative;
+  margin-top: 9px;
+}
+.kx-suggest-item[data-detected] + .kx-suggest-item:not([data-detected])::before {
+  position: absolute;
+  top: -5px;
+  right: 10px;
+  left: 10px;
+  height: 1px;
+  background: var(--kx-line);
+  content: "";
+}
+.kx-suggest-item[aria-selected="true"] .kx-suggest-token {
+  background: color-mix(in srgb, var(--kx-accent-ink) 22%, transparent);
+  color: var(--kx-accent-ink);
+}
+.kx-suggest-item[aria-selected="true"] .kx-suggest-token-scope {
+  color: color-mix(in srgb, var(--kx-accent-ink) 80%, transparent);
+}
 .kx-suggest-item[aria-selected="true"],
 .kx-suggest-item[aria-selected="true"] :is(svg, .kx-suggest-value, .kx-suggest-value mark, .kx-suggest-scope, .kx-suggest-count) {
   background: none;
