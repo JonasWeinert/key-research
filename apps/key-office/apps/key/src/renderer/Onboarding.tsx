@@ -40,7 +40,7 @@ export default function Onboarding({
 
   return (
     <GlobalDrawer presentation="window" label="Welcome to Key" onClose={finish}>
-      <div className="kx-onboarding" data-step={step}>
+      <div className="kx-onboarding" data-step={step} data-modal-view={step}>
         <div className="kx-onboarding-stage" key={step}>
           {step === "welcome" && (
             <Hero icon="books" title="Welcome to Key" lead="A calm place to collect, read and search your research.">

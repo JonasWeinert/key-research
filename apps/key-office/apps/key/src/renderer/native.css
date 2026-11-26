@@ -2653,20 +2653,8 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
 html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titlebar) {
   -webkit-app-region: no-drag;
 }
-.key-global-dialog.key-global-drawer {
-  top: 50%;
-}
+/* Position and size come from modal.css; this is the sheet's look. */
 .key-global-drawer.key-global-sheet {
-  overflow: auto;
-}
-.key-global-drawer.key-global-sheet {
-  top: 48px;
-  bottom: auto;
-  left: 50%;
-  width: min(520px, calc(100vw - 48px));
-  height: auto;
-  max-height: calc(100vh - 72px);
-  margin-left: max(calc(min(520px, 100vw - 48px) / -2), -260px);
   border: 0;
   border-radius: 14px;
   background: var(--kx-bg-sunken);
@@ -2681,7 +2669,6 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
 /* The editor slide sizes the sheet; the agent slide overlays it. */
 .key-global-sheet .key-drawer-slide:first-child {
   position: relative;
-  max-height: calc(100vh - 72px);
 }
 .key-global-sheet .key-property-editor {
   display: flex;
@@ -3656,17 +3643,13 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
 
 /* ── Settings and onboarding (window-sized sheet) ───────────────── */
 .key-global-drawer.key-global-window {
-  top: max(40px, calc(50vh - 310px));
-  width: min(820px, calc(100vw - 48px));
-  height: min(620px, calc(100vh - 72px));
-  max-height: none;
-  margin-left: calc(min(820px, 100vw - 48px) / -2);
   overflow: hidden;
   background: var(--kx-bg);
 }
 .kx-settings {
   display: grid;
   grid-template-columns: 210px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 .kx-settings-nav {

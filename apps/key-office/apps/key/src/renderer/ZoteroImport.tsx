@@ -274,7 +274,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
           : "Reading your Zotero library…"
         : "Changes made in Zotero come to Key while both apps are open; edits made in Key are kept.";
   return (
-    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title} data-step={result || running ? "done" : step} data-scope={choice.scope}>
+    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title} data-step={result || running ? "done" : step} data-modal-view={result || running ? "done" : `${mode}-${step}`} data-scope={choice.scope}>
       <header>
         <h2>{title}</h2>
         <p>{lede}</p>

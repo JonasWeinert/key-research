@@ -49,7 +49,7 @@ export default function Settings({
   const [section, setSection] = useState<SettingsSection>(initial);
   return (
     <GlobalDrawer presentation="window" label="Settings" onClose={onClose}>
-      <div className="kx-settings">
+      <div className="kx-settings" data-modal-view={section}>
         <nav className="kx-settings-nav" aria-label="Settings sections">
           <h2>Settings</h2>
           {SECTIONS.map(([id, label, icon]) => (
