@@ -125,5 +125,17 @@ export async function appInfo(workspaceParent: string) {
     modelDir: process.env.KEY_MODEL_DIR ?? join(app.getPath('appData'), 'Key', 'models'),
     zoteroDir,
     zoteroFound,
+    notices: await bundledNotices(),
   }
+}
+
+/** The acknowledgements file packaging ships (Resources/), or the generated copy in a dev build. */
+async function bundledNotices(): Promise<string | null> {
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, 'THIRD-PARTY-NOTICES.txt')]
+    : [join(app.getAppPath(), 'build', 'THIRD-PARTY-NOTICES.txt')]
+  for (const path of candidates) {
+    if (await access(path).then(() => true, () => false)) return path
+  }
+  return null
 }

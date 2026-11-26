@@ -397,6 +397,8 @@ export interface AppInfo {
   modelDir: string;
   zoteroDir: string;
   zoteroFound: boolean;
+  /** Bundled third-party notices, when present in this build. */
+  notices: string | null;
 }
 export interface WorkspaceSummary {
   id: string;
