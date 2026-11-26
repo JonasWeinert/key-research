@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("key", {
     ipcRenderer.invoke("key:add-files", workspaceId, collectionId),
   importPaths: (workspaceId: string, paths: string[], collectionId?: string) =>
     ipcRenderer.invoke("key:import-paths", workspaceId, paths, collectionId),
+  choosePath: (request: unknown) => ipcRenderer.invoke("key:choose-path", request),
   openPath: (path: string) => ipcRenderer.invoke("key:open-path", path),
   revealPath: (path: string) => ipcRenderer.invoke("key:reveal-path", path),
   writeClipboard: (data: { text: string; html?: string; rtf?: string }) => ipcRenderer.invoke("key:write-clipboard", data),

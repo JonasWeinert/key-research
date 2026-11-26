@@ -2275,6 +2275,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "key-biblio"
+version = "0.1.0"
+dependencies = [
+ "key-cite",
+ "key-store",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "key-cite"
 version = "0.1.0"
 dependencies = [
@@ -2292,6 +2303,7 @@ dependencies = [
  "anyhow",
  "citationberg",
  "http",
+ "key-biblio",
  "key-cite",
  "key-embed",
  "key-index",

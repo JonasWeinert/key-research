@@ -6,6 +6,7 @@
 import { AnnotationText } from "./annotation-text";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { bibliography, inTextCitation, rtfDocument, writeRichClipboard } from "./cite";
+import { CitationKeyRow } from "./citation-keys";
 import { Icon } from "./icons";
 import { ProgressRing } from "./index-activity";
 import { useSourceProgress } from "./source-progress";
@@ -331,6 +332,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   };
   // The reference and in-text citation in the style chosen in Settings; BibTeX through the
   // engine's BibTeX style.
+  // BibTeX, RIS, pandoc and LaTeX copies come from the host's exporter (store_biblio_copy).
   const copyCitation = async (kind: "reference" | "in-text" | "bibtex") => {
     try {
       if (kind === "in-text") {
@@ -396,7 +398,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             <span>Author</span>
             <Creators creators={source.creators} onCommit={(creators) => void save({ creators })} />
           </div>
-          {shown.map(([key, label, kind]) => (
+          {shown.map(([key, label, kind]) => key === "citationKey" ? (
+            <CitationKeyRow key={key} invoke={invoke} workspaceId={workspaceId} source={source} onChanged={() => void loadSource()} />
+          ) : (
             <FieldRow
               key={key}
               label={label}
@@ -675,7 +679,22 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             <div className="kx-menu-popover" onClick={(e) => (e.currentTarget.parentElement as HTMLDetailsElement).removeAttribute("open")}>
               <button onClick={() => void copyCitation("reference")}>Copy reference</button>
               <button onClick={() => void copyCitation("in-text")}>Copy in-text citation</button>
-              <button onClick={() => void copyCitation("bibtex")}>Copy BibTeX</button>
+              {(
+                [
+                  ["bibtex", "BibTeX"],
+                  ["ris", "RIS"],
+                  ["pandoc", "Pandoc citation"],
+                  ["latex", "LaTeX \\cite"],
+                ] as const
+              ).map(([format, label]) => (
+                <button key={format} onClick={() => void invoke<string>("store_biblio_copy", { ids: [sourceId], format }, workspaceId).then(async (text) => {
+                      await navigator.clipboard.writeText(text);
+                      setCopied(label);
+                      setTimeout(() => setCopied(""), 1400);
+                    }).catch((e) => setError(String(e)))}>
+                  Copy {label}
+                </button>
+              ))}
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
               {!source.filePath && canFindPdf && <button onClick={() => void findPdf()}>Find PDF</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}

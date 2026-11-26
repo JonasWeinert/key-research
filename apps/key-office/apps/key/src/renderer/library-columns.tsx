@@ -18,6 +18,7 @@ export const SOURCE_SORTS: [string, string][] = [
   ["type", "Item type"],
   ["pages", "Pages"],
   ["updated", "Last modified"],
+  ["citationKey", "Citation key"],
 ];
 export const DEFAULT_SORTS: SortLevel[] = [{ field: "added", descending: true }];
 
@@ -63,6 +64,7 @@ export function useSourceColumns({
       { id: "container", label: "Journal / container", width: 180, sortField: "container", render: (s) => s.containerShort || s.containerTitle || "" },
       { id: "added", label: "Added", width: 100, sortField: "added", render: (s) => <span className="kx-cell-muted">{relativeDate(s.addedAt)}</span> },
       { id: "type", label: "Item type", width: 130, hidden: true, sortField: "type", render: (s) => itemTypeLabel(s.itemType) },
+      { id: "citationKey", label: "Citation key", width: 130, hidden: true, sortField: "citationKey", render: (s) => <span className="kx-cell-mono">{s.citationKey ?? ""}</span> },
       { id: "pages", label: "Pages", width: 70, hidden: true, numeric: true, sortField: "pages", render: (s) => s.pageCount ?? "" },
       { id: "tags", label: "Tags", width: 160, hidden: true, render: (s) => s.tags.join(", ") },
       { id: "collections", label: "Collections", width: 160, hidden: true, render: (s) => s.collections.map((id) => names.get(id)).filter(Boolean).join(", ") },

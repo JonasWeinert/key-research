@@ -2,6 +2,7 @@
 // columns plus user JSON properties), collections, notes, annotations and the
 // chunked text of documents and notes that full-text and vector search run over.
 mod analysis;
+pub mod citation_keys;
 mod filters;
 mod graph;
 mod identify;
@@ -315,6 +316,7 @@ fn sort_expression(field: &str) -> String {
         "citations" => "s.cited_by_count",
         "kind" => "s.kind",
         "pages" => "s.page_count",
+        "citationKey" => "s.citation_key COLLATE NOCASE",
         _ => "s.added_at",
     }
     .into()
@@ -487,6 +489,7 @@ impl Store {
             tx.execute_batch(&format!("PRAGMA user_version = {}", index + 1)).map_err(e)?;
             tx.commit().map_err(e)?;
         }
+        citation_keys::ensure_schema(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
         reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
         Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
@@ -608,6 +611,7 @@ impl Store {
         let mut source = db.query_row(&format!("{} WHERE s.id = ?", select_sources()), [id], read_source).optional().map_err(e)?;
         if let Some(source) = source.as_mut() {
             identify::decorate(&db, source)?;
+            citation_keys::decorate(&db, source)?;
         }
         Ok(source)
     }

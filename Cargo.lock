@@ -4438,6 +4438,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "key-biblio"
+version = "0.1.0"
+dependencies = [
+ "key-cite",
+ "key-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "key-cite"
 version = "0.1.0"
 dependencies = [

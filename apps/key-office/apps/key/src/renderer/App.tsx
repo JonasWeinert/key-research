@@ -29,6 +29,7 @@ import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
+import { BiblioSheets } from "./BiblioSheets";
 import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
@@ -305,6 +306,12 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
     return api().on("open-settings", () => setSettingsSection("general"));
+  }, []);
+  // A section of Settings, opened from elsewhere in the window (the status bar …).
+  useEffect(() => {
+    const open = (e: Event) => setSettingsSection(((e as CustomEvent<SettingsSection>).detail ?? "general") as SettingsSection);
+    window.addEventListener("key:open-settings-section", open);
+    return () => window.removeEventListener("key:open-settings-section", open);
   }, []);
   const updatePrefs = (patch: Partial<AppSettings>) =>
     void bridge()
@@ -1270,6 +1277,7 @@ export default function App() {
         onOpenWorkspace={() => setSwitcherRequest((n) => n + 1)}
         onOpenLibrary={() => action("open-content", { section: "sources", workspaceId })}
       />
+      <BiblioSheets invoke={invoke} workspaceId={workspaceId} />
       {zoteroSheet && (
         <ZoteroImportSheet
           invoke={invoke}

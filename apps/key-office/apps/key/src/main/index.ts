@@ -2609,6 +2609,17 @@ else
           layout(w);
         } else home(w);
       });
+      // A file to read or write (bibliography import, export and auto-export targets).
+      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save"; title?: string; defaultPath?: string; extensions?: string[] }) => {
+        const w = shell(event.sender.id);
+        const filters = request.extensions?.length ? [{ name: "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
+        if (request.mode === "save") {
+          const result = await dialog.showSaveDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["createDirectory", "showOverwriteConfirmation"] });
+          return result.canceled ? null : result.filePath ?? null;
+        }
+        const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["openFile"] });
+        return result.canceled ? null : result.filePaths[0] ?? null;
+      });
       ipcMain.handle("key:add-files", async (event, workspaceId, collectionId) => {
         const w = shell(event.sender.id);
         const result = await dialog.showOpenDialog(w.window, {
