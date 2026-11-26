@@ -64,6 +64,7 @@ import { isScholarlyResourceUrl } from './citation-details';
 import { quoteZoom, zoomTransitionFrame } from './quote-zoom';
 import { locateQuote } from './quote-locate';
 import { CitationCardBody, ExternalWorkCardBody } from './CitationCard';
+import type { LibraryWorks } from './library-works';
 import { ReferenceList } from './ReferenceList';
 import { SidePanel } from '../ui/SidePanel';
 import {
@@ -1537,6 +1538,8 @@ interface PdfJsBenchmarkAppProps {
   onCite?: (passage: { text: string; page: number; rects: number[][]; color?: string }) => void;
   /** Opens a cited work in the library when the host has it there (the citation card's action). */
   referenceInLibrary?: (number: number) => (() => void) | null | undefined;
+  /** Lets the citation cards add a cited work to the library in one click. */
+  libraryWorks?: LibraryWorks;
   /** Height of a toolbar floating over the top of the document: pages start below it. */
   topInset?: number;
   /** References kept by the host's library; when given they replace the reader's own analysis. */
@@ -1655,6 +1658,7 @@ function PdfJsBenchmarkApp({
   onAddToNote,
   onCite,
   referenceInLibrary,
+  libraryWorks,
   topInset = 0,
   referencesHeader,
   referenceAside,
@@ -3239,6 +3243,7 @@ function PdfJsBenchmarkApp({
             onResolved={resolveScholarly}
             uiId={citationUiId}
             libraryAction={referenceInLibrary}
+            libraryWorks={libraryWorks}
             onGoToReference={reference =>
               controllerRef.current?.scrollToBounds(reference.page, {
                 left: reference.xFraction ?? 0,
@@ -3276,6 +3281,7 @@ function PdfJsBenchmarkApp({
         >
           <ExternalWorkCardBody
             url={externalCitation.link.target.kind === 'external' ? externalCitation.link.target.url : ''}
+            libraryWorks={libraryWorks}
             onResolved={resolveExternal}
             onShowMore={() => setExternalCitationExpanded(true)}
             expanded={externalCitationExpanded}
