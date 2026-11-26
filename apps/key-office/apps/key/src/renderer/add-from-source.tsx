@@ -286,7 +286,7 @@ function Chooser({ request, onDone }: { request: Request; onDone: (choice: Choic
         </div>
         <p className="kx-add-chooser-hint">{selected.size ? `Into ${selected.size === 1 ? "1 collection" : `${selected.size} collections`}` : "Into the library, in no collection"}</p>
         <footer>
-          <label className="kx-add-chooser-dontask" title="Then sources added like this go to the same collections as the source they came from. Settings › Libraries turns asking back on.">
+          <label className="kx-add-chooser-dontask" title="Then sources added like this go to the same collections as the source they came from. Workspace Settings › General turns asking back on.">
             <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} />
             Don’t ask again
           </label>

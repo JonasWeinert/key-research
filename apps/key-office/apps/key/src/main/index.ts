@@ -2093,7 +2093,7 @@ function baseMenu() {
         submenu: [
           { role: "about" },
           { type: "separator" },
-          { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
+          { label: "Key Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
           { label: "Workspace Settings…", accelerator: "CmdOrCtrl+Alt+,", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           { type: "separator" },
           { role: "services" },

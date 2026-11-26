@@ -139,11 +139,11 @@ export default function Onboarding({
                 </p>
               )}
               {error && <p className="kx-inline-error">{error}</p>}
-              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Keep it in sync with Zotero later, in Settings.</p>}
+              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Keep it in sync with Zotero later, in Workspace Settings.</p>}
             </Copy>
           )}
           {step === "appearance" && (
-            <Copy eyebrow="Appearance" title="Choose a look" lead="Change it any time in Settings.">
+            <Copy eyebrow="Appearance" title="Choose a look" lead="Change it any time in Key Settings.">
               <ThemePicker value={theme} onChange={onTheme} />
             </Copy>
           )}

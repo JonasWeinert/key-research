@@ -137,7 +137,7 @@ async function interactions(app, shell, ws, rate) {
     // Settings (the app menu's item, as ⌘, does).
     t = Date.now();
     await app.evaluate(({ Menu }) => {
-      const find = (items) => items.flatMap((i) => (i.label === "Settings…" ? [i] : i.submenu ? find(i.submenu.items) : []));
+      const find = (items) => items.flatMap((i) => (i.label === "Key Settings…" ? [i] : i.submenu ? find(i.submenu.items) : []));
       find(Menu.getApplicationMenu().items)[0].click();
     });
     r.openSettingsMs = await until(shell, () => document.querySelector(".kx-settings-nav"), null, t);

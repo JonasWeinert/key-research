@@ -285,10 +285,11 @@ const library = (pdf) => ({
     });
     report.deltas = true;
 
-    // 4. Settings: status, Zotero not running, pause.
+    // 4. Workspace Settings of the Zotero workspace: status, Zotero not running, pause.
     const openSettings = async () => {
-      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("open-settings")));
-      await page.locator(".kx-settings-nav").getByRole("button", { name: "Zotero", exact: true }).click();
+      const id = (await zoteroWorkspace()).id;
+      await page.evaluate((id) => window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: { window: "workspace", section: "zotero", workspaceId: id } })), id);
+      await page.getByRole("dialog", { name: "Workspace Settings" }).getByRole("heading", { name: "Zotero", level: 1 }).waitFor();
     };
     await openSettings();
     const group = page.locator(".kx-settings-group", { has: page.getByText("Keep in sync with Zotero") }).last();

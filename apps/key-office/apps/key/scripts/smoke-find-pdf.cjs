@@ -232,9 +232,15 @@ const PUBMED = {
     assert.equal(await page.locator(".kx-identifier-sheet textarea").inputValue(), "10.5555/pasted-doi");
     report.searchOffer = true;
 
-    // 7. Settings: the automatic Find PDF switch (off by default).
-    const settings = await page.evaluate(() => window.key.appSettings());
-    assert.equal(settings.settings.findPdfOnAdd, false);
+    // 7. Workspace Settings: the automatic Find PDF switch (off by default, per workspace).
+    const [workspace] = await page.evaluate(() => window.key.workspaces());
+    const own = await page.evaluate((id) => window.key.invoke("store_workspace_settings", {}, id), workspace.id);
+    assert.equal(own.effective.findPdfOnAdd, false);
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: { window: "workspace", section: "indexing" } })));
+    const findSwitch = page.getByRole("dialog", { name: "Workspace Settings" }).getByRole("checkbox", { name: "Find PDFs automatically when adding" });
+    await findSwitch.waitFor();
+    assert.equal(await findSwitch.isChecked(), false);
+    await page.keyboard.press("Escape");
 
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, temp, ...report }));
