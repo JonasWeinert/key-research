@@ -53,6 +53,9 @@ impl PdfText for HostPdfText {
     fn layout(&self, path: &Path, _hash: &str, model: bool) -> Result<Option<key_index::Layout>, String> {
         crate::layout_helper::analyze(path, model).map(Some)
     }
+    fn layout_with_progress(&self, path: &Path, _hash: &str, model: bool, progress: &dyn Fn(&str, usize, usize)) -> Result<Option<key_index::Layout>, String> {
+        crate::layout_helper::analyze_with_progress(path, model, progress).map(Some)
+    }
     fn document_info(&self, path: &Path) -> Result<Option<key_index::DocumentInfo>, String> {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = format!("identify:{}", NEXT.fetch_add(1, Ordering::Relaxed));
@@ -388,6 +391,8 @@ impl Library {
                     "sections": self.store.sections(&id)?,
                     "layoutModel": self.indexer.layout_model(),
                     "indexStatus": self.store.source(&id)?.map(|s| s.index_status),
+                    // Where indexing has got with it, while it runs (stage, pages, passages).
+                    "job": self.indexer.job(&id),
                 }))
             }),
             "store_markdown" => arg::<String>(args, "id").and_then(|id| json_output(self.store.markdown(&id)?)),

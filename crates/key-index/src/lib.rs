@@ -53,6 +53,11 @@ pub trait PdfText: Send + Sync + 'static {
     fn layout(&self, _path: &Path, _hash: &str, _model: bool) -> Result<Option<Layout>> {
         Ok(None)
     }
+    /// `layout`, reporting `progress(phase, done, total)` per page as it goes: phase
+    /// "layout" reads the page geometry, "layout-model" runs the layout model.
+    fn layout_with_progress(&self, path: &Path, hash: &str, model: bool, _progress: &dyn Fn(&str, usize, usize)) -> Result<Option<Layout>> {
+        self.layout(path, hash, model)
+    }
     /// The document information and the text of the first pages and the last, for
     /// identifying an added PDF. `None` when the host cannot read them.
     fn document_info(&self, _path: &Path) -> Result<Option<DocumentInfo>> {
@@ -112,6 +117,14 @@ pub struct Job {
     pub done: u64,
     pub total: u64,
     pub priority: Option<Priority>,
+    /// Within `analysing`: "layout" (page geometry) or "layout-model"; `done`/`total` are
+    /// that pass's pages, and `step` of `steps` says which pass it is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steps: Option<u8>,
 }
 
 /// What indexing is doing right now, for progress displays.
@@ -223,6 +236,12 @@ impl Indexer {
         }
         drop(wanted);
         self.wake();
+    }
+
+    /// The stage `id` is in right now (reading before embedding), if it is being indexed.
+    pub fn job(&self, id: &str) -> Option<Job> {
+        let live = self.live.lock().ok()?;
+        [&live.reading, &live.embedding].into_iter().flatten().find(|job| job.id == id).cloned()
     }
 
     pub fn activity(&self) -> Activity {
@@ -574,7 +593,21 @@ impl Indexer {
             let mut analysed = None;
             if source.kind == "pdf" {
                 self.set_reading(Some(Job { stage: "analysing".into(), ..job.clone() }));
-                match pdf.layout(&path, &hash, self.layout_model()) {
+                let model = self.layout_model();
+                let steps = if model { 2 } else { 1 };
+                let progress = |phase: &str, done: usize, total: usize| {
+                    let step = if phase == "layout-model" { 2 } else { 1 };
+                    self.set_reading(Some(Job {
+                        stage: "analysing".into(),
+                        done: done as u64,
+                        total: total as u64,
+                        phase: Some(phase.to_string()),
+                        step: Some(step),
+                        steps: Some(steps.max(step)),
+                        ..job.clone()
+                    }))
+                };
+                match pdf.layout_with_progress(&path, &hash, model, &progress) {
                     Ok(layout) => analysed = layout,
                     Err(error) => eprintln!("Key layout analysis for {id} fell back to PDF text: {error}"),
                 }

@@ -28,6 +28,21 @@ use metrics::Profiler;
 use model::{Block, Document, Page};
 pub use tagged_pdf::TableReconciliationMode;
 
+/// Called per page as a conversion goes: ("layout", done, total) while pages are read,
+/// ("layout-model", done, total) while the layout model runs. One per process.
+static PROGRESS: std::sync::OnceLock<fn(&str, usize, usize)> = std::sync::OnceLock::new();
+
+/// Sets the per-page progress hook (once; later calls are ignored).
+pub fn set_progress_hook(hook: fn(&str, usize, usize)) {
+    let _ = PROGRESS.set(hook);
+}
+
+pub(crate) fn report_progress(phase: &str, done: usize, total: usize) {
+    if let Some(hook) = PROGRESS.get() {
+        hook(phase, done, total);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConvertOptions {
     pub password: Option<String>,
