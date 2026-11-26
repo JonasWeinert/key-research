@@ -38,6 +38,28 @@ async function fixtures(dir) {
   await writeFile(path.join(dir, "crossref-works.json"), JSON.stringify({ message: { items: [] } }));
 }
 
+// Elements inside `root` that scroll (or would clip) sideways: scrollWidth > clientWidth.
+async function sideways(page, selector, skip = "") {
+  return page.evaluate(([selector, skip]) => {
+    const out = [];
+    for (const root of document.querySelectorAll(selector)) {
+      for (const el of [root, ...root.querySelectorAll("*")]) {
+        const style = getComputedStyle(el);
+        if (!["auto", "scroll"].includes(style.overflowX) && el !== root) continue;
+        if (skip && el.matches(skip)) continue;
+        if (el.scrollWidth > el.clientWidth + 1) out.push(`${el.className || el.tagName} ${el.scrollWidth}>${el.clientWidth}`);
+      }
+    }
+    const doc = document.scrollingElement;
+    if (doc.scrollWidth > doc.clientWidth + 1) out.push(`document ${doc.scrollWidth}>${doc.clientWidth}`);
+    return out;
+  }, [selector, skip]);
+}
+const SIZES = [
+  [1440, 900],
+  [1200, 800],
+];
+
 (async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "key-duplicates-"));
   await fixtures(path.join(temp, "openalex"));
@@ -76,6 +98,10 @@ async function fixtures(dir) {
     const h = await add({ title: "Attention Is All You Need", year: 2017, doi: "10.5555/attn.2017", containerTitle: "Advances in Neural Information Processing Systems", creators: [{ family: "Vaswani", role: "author" }] });
     const f = await add({ title: "A retracted study of vaccines", year: 2010, doi: "10.5555/retracted.2010" });
 
+    // Fill the other views so the library shows most of its tabs.
+    await call("store_update", { id: g, patch: { starred: true } }).catch(() => {});
+    await call("store_set_reading_status", { ids: [h], status: "reading" }).catch(() => {});
+    await call("store_reading_event", { id: d, kind: "open", page: 1, pageCount: 10 }).catch(() => {});
     await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), ws.id);
     await page.getByRole("heading", { name: "All sources", exact: true }).waitFor();
     // The background count shows a Duplicates tab and a quiet status-bar item.
@@ -89,6 +115,22 @@ async function fixtures(dir) {
     assert.deepEqual(report.groups, ["exact", "likely", "version"]);
     await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(temp, "duplicates-light.png") });
+    // No sideways scrolling at ordinary window sizes, with the sidebar shown or hidden and
+    // with the details panel open.
+    const setSize = (w, h) => app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), [w, h]);
+    const sidebar = () => page.evaluate(() => document.querySelector(".key-sidebar-toggle")?.click());
+    report.overflow = {};
+    for (const [w, h] of SIZES) {
+      await setSize(w, h);
+      for (const variant of ["sidebar", "no-sidebar"]) {
+        await page.waitForTimeout(350);
+        const over = await sideways(page, ".kx-library-main, .kx-dup-view");
+        report.overflow[`${w}x${h} ${variant}`] = over;
+        if (over.length) await page.screenshot({ path: path.join(temp, `overflow-${w}-${variant}.png`) });
+        await sidebar();
+      }
+    }
+    await setSize(1320, 860);
 
     // Review the likely pair and merge into the one with the DOI.
     await view.locator('.kx-dup-group[data-kind="likely"]').getByRole("button", { name: "Review…" }).click();
@@ -101,6 +143,13 @@ async function fixtures(dir) {
     await sheet.locator(".kx-merge-card[aria-pressed=true] .kx-merge-name", { hasText: /^Poverty traps and growth$/ }).waitFor();
     await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(temp, "merge-sheet.png") });
+    for (const [w, h] of SIZES) {
+      await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), [w, h]);
+      await page.waitForTimeout(350);
+      report.overflow[`sheet ${w}x${h}`] = await sideways(page, 'div[role=dialog][aria-label="Merge sources"]');
+      await page.screenshot({ path: path.join(temp, `merge-sheet-${w}.png`) });
+    }
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1320, 860));
     await sheet.getByRole("button", { name: "Merge", exact: true }).click();
     await sheet.waitFor({ state: "detached" });
     const merged = await call("store_source", { id: b });
@@ -165,6 +214,17 @@ async function fixtures(dir) {
     // Update metadata from the source's menu: old → new per field, applied.
     await page.locator(".kx-scope-tabs").getByRole("tab", { name: /^All/ }).click();
     await page.locator(".kx-row", { hasText: "Poverty traps and growth" }).click();
+    // The other views, with the details panel open, fit too.
+    for (const [w, h] of SIZES) {
+      await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), [w, h]);
+      await page.waitForTimeout(350);
+      // A list pane under 640px wide (sidebar and details both open) may scroll its tab bar.
+      const narrow = await page.locator(".kx-library-main").evaluate((el) => el.clientWidth < 640);
+      report.overflow[`all+details ${w}x${h}`] = await sideways(page, ".kx-library-main", narrow ? ".key-segmented-track" : "");
+      await page.screenshot({ path: path.join(temp, `all-details-${w}.png`) });
+    }
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1320, 860));
+    assert.deepEqual(Object.entries(report.overflow).filter(([, v]) => v.length), [], "nothing scrolls sideways");
     await page.locator(".kx-inspector .kx-source-more > summary").click();
     await page.getByRole("button", { name: "Update metadata…" }).click();
     const update = page.locator("div[role=dialog][aria-label=\"Update metadata\"]");

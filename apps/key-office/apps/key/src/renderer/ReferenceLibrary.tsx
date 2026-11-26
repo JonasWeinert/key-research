@@ -784,7 +784,7 @@ export default function ReferenceLibrary({
               return [{ id: value, label, badge: count ? count.toLocaleString() : undefined }];
             })}
           />
-          {!search && (
+          {!search && scope !== "duplicates" && (
             <div className="kx-controls-end">
               <DatabaseToolbar
                 state={{ ...viewState, sorts }}

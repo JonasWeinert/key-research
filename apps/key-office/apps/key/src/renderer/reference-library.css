@@ -132,10 +132,26 @@
 /* Scope, sort and facet bars */
 .kx-filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 12px 20px 8px;
+}
+/* The views take the width their tabs need; when the view controls do not fit beside
+   them, the controls move to a line of their own rather than the tabs scrolling sideways.
+   Only a pane too narrow for every tab scrolls the tab bar (labels are never cut). */
+.kx-library .kx-filter-bar > .kx-scope-tabs {
+  flex: 1 1 max-content;
+  max-width: 100%;
+}
+.kx-library .kx-filter-bar > .kx-scope-tabs .key-segmented-track > [role="tab"] {
+  flex: 1 0 auto;
+  min-width: 0;
+  padding: 0 10px;
+}
+.kx-filter-bar > .kx-controls-end {
+  margin-left: auto;
 }
 .kx-library .kx-control {
   position: relative;
