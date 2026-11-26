@@ -1142,7 +1142,7 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
             confidence: 0.4 + 0.45 * support * ratio,
             tags: all,
             items: 0,
-            plan: TagPlan::Nest { parent: parent_name, children: names },
+            plan: TagPlan::Nest { parent: parent_name, children: names, rename_parent: None },
             change: None,
         });
     }
@@ -1267,7 +1267,7 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
             confidence: 0.6f64.min(0.25 + mean / 2.0),
             tags: all,
             items: 0,
-            plan: TagPlan::Nest { parent, children },
+            plan: TagPlan::Nest { parent, children, rename_parent: None },
             change: None,
         });
     }

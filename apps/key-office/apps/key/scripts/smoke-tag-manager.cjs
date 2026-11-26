@@ -78,20 +78,44 @@ const SEED = [
     await page.waitForFunction(async (id) => !(await window.key.invoke("store_tag_index", {}, id)).tags.some((t) => t.name === "ML"), ws.id);
     report.merge = true;
 
-    // Nest the method tags under Methods (a subsumption suggestion).
-    await manager.locator(".kx-tm-card", { hasText: "under “Methods”" }).first().getByRole("button", { name: "Apply", exact: true }).click();
-    await page.waitForFunction(async (id) => (await window.key.invoke("store_tag_index", {}, id)).tree?.Surveys?.parent === "Methods", ws.id);
-    report.nest = (await call("store_tag_index")).tree;
+    // The merge shows its success in the footer, and how long it took is logged.
+    await manager.locator(".kx-tm-foot .kx-tm-done").waitFor();
+    report.timings = await page.evaluate(() => window.keyTagTimings);
 
-    // Reading status becomes a select property.
-    await manager.locator(".kx-tm-card", { hasText: "“Status” property" }).getByRole("button", { name: "Apply", exact: true }).click();
-    await page.waitForFunction(async (id) => (await window.key.invoke("workspace_attributes", {}, id)).some((p) => p.name === "Status" && p.type === "select"), ws.id);
-    const status = await call("workspace_attributes");
-    assert.deepEqual(status.find((p) => p.name === "Status").options.sort(), ["Read", "Reading", "To read"]);
-    const sources = (await call("store_sources", { limit: 200 })).items;
-    assert.equal(sources.filter((s) => s.properties.Status === "Read").length, 4);
-    assert(!(await tagsOf()).some((t) => t.startsWith("status:")));
-    report.convert = true;
+    // Nest the method tags under Methods (a subsumption suggestion), edited first: one child
+    // taken out of the proposal stays where it is.
+    await manager.locator(".kx-tm-card", { hasText: "under “Methods”" }).first().getByRole("button", { name: "Edit…" }).click();
+    const form = manager.locator("form.kx-tm-action");
+    await form.locator(".kx-tm-member").first().waitFor();
+    const children = await form.locator(".kx-tm-member > span").allTextContents();
+    report.nestProposed = children;
+    assert(children.includes("Surveys") && children.length > 1, `nest proposal: ${children}`);
+    const left = children.find((c) => c !== "Surveys");
+    await form.getByRole("button", { name: `Take out ${left}` }).click();
+    await form.locator(".kx-tm-member", { hasText: left }).waitFor({ state: "detached" });
+    // The preview follows the edit.
+    await page.waitForFunction((left) => {
+      const lines = [...document.querySelectorAll("form.kx-tm-action .kx-tm-preview .kx-tm-lines li")].map((li) => li.textContent);
+      return lines.length && !lines.some((l) => l.startsWith(left));
+    }, left);
+    await page.screenshot({ path: path.join(temp, "tags-edit-nest.png") });
+    await form.getByRole("button", { name: "Nest", exact: true }).click();
+    await page.waitForFunction(async (id) => (await window.key.invoke("store_tag_index", {}, id)).tree?.Surveys?.parent === "Methods", ws.id);
+    const nested = (await call("store_tag_index")).tree;
+    assert.notEqual(nested[left]?.parent, "Methods", `${left} was taken out of the nest`);
+    report.nest = nested;
+    await manager.locator(".kx-tm-foot .kx-tm-done").waitFor();
+
+    // Un-nest from the row's menu.
+    const treeRow = (name) => manager.locator(`.kx-tm-row[data-tag="${name}"]`);
+    if (!(await treeRow("Surveys").isVisible())) await treeRow("Methods").locator(".kx-tm-disclosure").click();
+    await treeRow("Surveys").click({ button: "right" });
+    await manager.getByRole("menuitem", { name: "Remove from “Methods”" }).click();
+    await page.waitForFunction(async (id) => !(await window.key.invoke("store_tag_index", {}, id)).tree?.Surveys?.parent, ws.id);
+    report.unnest = true;
+    // Undo puts it back under Methods.
+    await manager.locator(".kx-tm-foot").getByRole("button", { name: "Undo" }).click();
+    await page.waitForFunction(async (id) => (await window.key.invoke("store_tag_index", {}, id)).tree?.Surveys?.parent === "Methods", ws.id);
 
     // Manual: select "_tablet" and make it a checkbox.
     const row = (name) => manager.locator(`.kx-tm-row[data-tag="${name}"]`);
@@ -113,6 +137,27 @@ const SEED = [
     await manager.getByLabel("Rename Behavior").press("Enter");
     await page.waitForFunction(async (id) => !(await window.key.invoke("store_tag_index", {}, id)).tags.some((t) => t.name === "Behavior"), ws.id);
     report.rename = true;
+
+    // Motion: frames while a card is applied (button check, then the card folds away).
+    const motionCard = manager.locator(".kx-tm-card", { hasText: "Neural networks" }).first();
+    if (await motionCard.count()) {
+      await motionCard.getByRole("button", { name: "Apply", exact: true }).click();
+      for (const at of [40, 120, 220, 340]) {
+        await page.waitForTimeout(at === 40 ? 40 : 90);
+        await manager.locator(".kx-tm-side").screenshot({ path: path.join(temp, `tags-motion-${at}.png`) });
+      }
+      await manager.locator(".kx-tm-foot .kx-tm-done").waitFor();
+    }
+
+    // Reading status becomes a select property.
+    await manager.locator(".kx-tm-card", { hasText: "“Status” property" }).getByRole("button", { name: "Apply", exact: true }).click();
+    await page.waitForFunction(async (id) => (await window.key.invoke("workspace_attributes", {}, id)).some((p) => p.name === "Status" && p.type === "select"), ws.id);
+    const status = await call("workspace_attributes");
+    assert.deepEqual(status.find((p) => p.name === "Status").options.sort(), ["Read", "Reading", "To read"]);
+    const sources = (await call("store_sources", { limit: 200 })).items;
+    assert.equal(sources.filter((s) => s.properties.Status === "Read").length, 4);
+    assert(!(await tagsOf()).some((t) => t.startsWith("status:")));
+    report.convert = true;
 
     // Drag a tag onto another to nest it.
     await row("Health economics").dragTo(row("Health policy"));
@@ -162,6 +207,7 @@ const SEED = [
     await manager.waitFor({ state: "detached" });
     report.palette = true;
 
+    report.timings = await page.evaluate(() => window.keyTagTimings);
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, temp, ...report }));
   } catch (e) {

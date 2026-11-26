@@ -20,16 +20,14 @@ function byline(source: Source) {
 }
 
 function MemberRow({ source }: { source: Source }) {
+  const notes = source.noteCount + source.annotationCount;
+  const detail = [byline(source), source.doi, notes > 0 && `${notes} notes and highlights`].filter(Boolean).join(" · ");
   return (
     <li className="kx-dup-member">
       <Icon name={source.filePath ? "filePdf" : "doc"} size={13} />
       <span>
-        <strong>{source.title || "Untitled"}</strong>
-        <small>
-          {byline(source)}
-          {source.doi && ` · ${source.doi}`}
-          {source.noteCount + source.annotationCount > 0 && ` · ${source.noteCount + source.annotationCount} notes and highlights`}
-        </small>
+        <strong title={source.title || undefined}>{source.title || "Untitled"}</strong>
+        <small title={detail}>{detail}</small>
       </span>
     </li>
   );
@@ -230,7 +228,7 @@ export function SourceMergeSheet({ invoke, workspaceId, ids, onClose, onDone }: 
             error ? <p className="kx-inline-error">{error}</p> : <div className="kx-skeleton-line" />
           ) : (
             <>
-              <div className="kx-merge-pair kx-source-merge-cards" style={{ gridTemplateColumns: `repeat(${sources.length}, minmax(0, 1fr))` }}>
+              <div className="kx-merge-pair kx-source-merge-cards" style={{ "--kx-merge-count": sources.length } as React.CSSProperties}>
                 {sources.map((s, i) => (
                   <button key={s.id} type="button" className="kx-merge-card" aria-pressed={i === 0} onClick={() => setKeep(s.id)} title={i === 0 ? "This one is kept" : "Keep this one"}>
                     <span className="kx-merge-keep">{i === 0 ? <><Icon name="check" size={11} /> Keep</> : "Keep this one"}</span>
@@ -283,7 +281,7 @@ export function SourceMergeSheet({ invoke, workspaceId, ids, onClose, onDone }: 
                             <td key={i}>
                               <label className="kx-merge-choice" data-empty={!text || undefined}>
                                 <input type="radio" name={`merge-${f.field}`} checked={(choices[f.field] ?? f.choice) === i} disabled={!text} onChange={() => setChoices({ ...choices, [f.field]: i })} />
-                                <span title={text}>{text || "—"}</span>
+                                <span title={text || undefined}>{text || "—"}</span>
                                 {f.edited[i] && <small title="Set by hand">edited</small>}
                               </label>
                             </td>

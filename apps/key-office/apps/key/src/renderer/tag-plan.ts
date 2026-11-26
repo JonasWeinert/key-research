@@ -90,8 +90,11 @@ export function buildTree(index: TagIndex): TagTree {
 }
 
 export type TagSort = "name" | "count";
+// One collator for every comparison: `localeCompare` with options builds one per call,
+// which on thousands of tags costs more than the rest of the tree.
+const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 export function sortTree(list: TagNode[], sort: TagSort): TagNode[] {
-  const sorted = [...list].sort((a, b) => (sort === "count" ? b.total - a.total : 0) || a.name.localeCompare(b.name, undefined, { sensitivity: "base", numeric: true }));
+  const sorted = [...list].sort((a, b) => (sort === "count" ? b.total - a.total : 0) || collator.compare(a.name, b.name));
   return sorted.map((node) => ({ ...node, children: sortTree(node.children, sort) }));
 }
 
@@ -142,7 +145,8 @@ export interface PlannedChange {
 }
 
 export type ManagerPlan =
-  | TagPlan
+  | Exclude<TagPlan, { type: "nest" }>
+  | { type: "nest"; parent: string; children: string[]; renameParent?: string }
   | { type: "rename"; tag: string; to: string }
   | { type: "unnest"; tags: string[] }
   | { type: "color"; tags: string[]; color: string | null };
@@ -150,4 +154,49 @@ export type ManagerPlan =
 /** The plan against the tags as they are now. Rejects with the reason when it cannot apply. */
 export function planChange(invoke: Invoke, workspaceId: string, plan: ManagerPlan): Promise<PlannedChange> {
   return invoke<PlannedChange>("store_tag_plan", { plan }, workspaceId);
+}
+
+/** `store_tag_apply_many` with `withIndex`: the whole index when items changed, else the tree. */
+export interface ApplyResult {
+  affected: number;
+  index?: TagIndex;
+  tree?: Record<string, TagMeta>;
+}
+
+/** The index as it will look once the host has applied `operations`, so the tree can move
+ *  at once; the host's answer replaces it. Display only: renames and removals carry over
+ *  to items, tree entries are set or cleared, and the rest waits for the host. */
+export function applyLocally(index: TagIndex, operations: TagOperation[]): TagIndex {
+  let { tags, items } = index;
+  const tree = { ...(index.tree ?? {}) };
+  for (const op of operations) {
+    for (const [name, meta] of Object.entries(op.tree)) {
+      if (meta) tree[name] = meta;
+      else delete tree[name];
+    }
+    const to = new Map(op.replace.map((r) => [key(r.from), r.to]));
+    if (op.property?.removeTags) op.property.values.forEach(([t]) => to.set(key(t), []));
+    if (!to.size) continue;
+    const at = new Map<string, number>();
+    const next: { name: string; count: number }[] = [];
+    const remap = tags.map((t) =>
+      (to.get(key(t.name)) ?? [t.name]).map((name) => {
+        let i = at.get(key(name));
+        if (i === undefined) {
+          i = next.length;
+          at.set(key(name), i);
+          next.push({ name, count: 0 });
+        }
+        return i;
+      }),
+    );
+    items = items.map((item) => ({ ...item, tags: [...new Set(item.tags.flatMap((t) => remap[t] ?? []))] }));
+    items.forEach((item) => item.tags.forEach((t) => next[t].count++));
+    // Tags no item holds any more drop out (indexes shift, so remap once more).
+    const keep = next.map((t, i) => [t, i] as const).filter(([t]) => t.count > 0);
+    const shift = new Map(keep.map(([, i], j) => [i, j]));
+    tags = keep.map(([t]) => t);
+    items = items.map((item) => ({ ...item, tags: item.tags.map((t) => shift.get(t)!).filter((t) => t !== undefined) }));
+  }
+  return { ...index, tags, items, tree };
 }
