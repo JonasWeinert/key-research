@@ -91,13 +91,13 @@ const assert = require("node:assert/strict");
     await page.waitForFunction(() => document.activeElement?.classList.contains("kx-note-library-results"));
     assert.equal(await panel.locator('.kx-found-hit[aria-selected="true"]').count(), 1);
     await page.keyboard.press("Enter");
-    await prose.locator(`a[href="key://source/${reference.id}"]`).waitFor();
+    await prose.locator(`a[href^="key://source/${reference.id}"]`).waitFor();
     await page.waitForFunction(() => document.activeElement?.classList.contains("ProseMirror"));
     assert.ok(await panel.isVisible(), "the panel stays open after inserting");
     let saved = await body((b) => b.includes(`key://source/${reference.id}`) && b.includes("Okafor"));
     assert.match(saved, /^Income matters a lot \[[^\]]*Okafor[^\]]*\]\(key:\/\/source\//, `cited after the cursor: ${saved}`);
     // The cursor stayed after the citation: typing goes on from there.
-    await prose.locator(`a[href="key://source/${reference.id}"]`, { hasText: "(Okafor, 2019)" }).waitFor();
+    await prose.locator(`a[href^="key://source/${reference.id}"]`, { hasText: "(Okafor, 2019)" }).waitFor();
     await page.keyboard.type("and more");
     saved = await body((b) => b.includes("and more"));
     assert.match(saved, /\(key:\/\/source\/[^)]+\) and more/, `typing continues after the citation: ${saved}`);
@@ -121,10 +121,10 @@ const assert = require("node:assert/strict");
     await search.fill("");
     const row = panel.locator(".kx-found-hit", { hasText: "Health versus income" }).first();
     await row.waitFor();
-    const before = await prose.locator(`a[href="key://source/${reference.id}"]`).count();
+    const before = await prose.locator(`a[href^="key://source/${reference.id}"]`).count();
     await row.dragTo(prose.locator("p").first(), { targetPosition: { x: 2, y: 8 } });
     await page.waitForFunction(
-      ({ id, before }) => document.querySelectorAll(`.kx-note-shell .ne-prose a[href="key://source/${id}"]`).length > before,
+      ({ id, before }) => document.querySelectorAll(`.kx-note-shell .ne-prose a[href^="key://source/${id}"]`).length > before,
       { id: reference.id, before },
     );
 
