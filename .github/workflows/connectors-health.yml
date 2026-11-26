@@ -1,0 +1,67 @@
+# Daily live health check of every database connector: runs each spec's embedded tests against
+# the real services (politely: the specs' own spacing and retries), keeps one issue per broken
+# connector up to date (with the failing request, the start of the answer and a reproduction
+# command) and closes it when the connector works again. Keyed services are tested only when
+# their KEY_CONNECTOR_* secret is set. With the repository variable CONNECTORS_AUTOFIX=true, a
+# broken connector also starts the connectors-autofix workflow.
+name: connectors-health
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      connector:
+        description: "Only this connector (id); empty for all"
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      KEY_CONNECTORS_MAILTO: ${{ vars.CONNECTORS_MAILTO }}
+      KEY_CONNECTOR_NCBI: ${{ secrets.KEY_CONNECTOR_NCBI }}
+      KEY_CONNECTOR_ELSEVIER: ${{ secrets.KEY_CONNECTOR_ELSEVIER }}
+      KEY_CONNECTOR_ELSEVIER_INSTTOKEN: ${{ secrets.KEY_CONNECTOR_ELSEVIER_INSTTOKEN }}
+      KEY_CONNECTOR_CLARIVATE_WOS: ${{ secrets.KEY_CONNECTOR_CLARIVATE_WOS }}
+      KEY_CONNECTOR_CLARIVATE_WOS_EXPANDED: ${{ secrets.KEY_CONNECTOR_CLARIVATE_WOS_EXPANDED }}
+      KEY_CONNECTOR_OPENALEX: ${{ secrets.KEY_CONNECTOR_OPENALEX }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: connectors-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Last good answers (fixtures)
+        run: tools/connectors/test ${{ inputs.connector && format('--id {0}', inputs.connector) || '' }} --report fixtures.json || true
+      - name: Live tests
+        run: tools/connectors/test --live ${{ inputs.connector && format('--id {0}', inputs.connector) || '' }} --report live.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: connectors-health
+          path: |
+            live.json
+            fixtures.json
+      - name: Open, update or close issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/connectors/health-issues.mjs live.json fixtures.json
+      - name: Start auto-fix for broken connectors
+        if: vars.CONNECTORS_AUTOFIX == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for id in $(node -e 'const r=require("./live.json");console.log([...new Set(r.filter(o=>!o.passed).map(o=>o.connector))].join(" "))'); do
+            gh workflow run connectors-autofix.yml -f connector="$id"
+          done

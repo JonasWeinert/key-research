@@ -17,6 +17,8 @@ sha2 = "0.10"
 url = "2"
 unicode-normalization = "0.1"
 key-safe-http = { path = "../key-safe-http" }
+key-connectors = { path = "../key-connectors" }
+regex = "1"
 key-processing = { path = "../key-processing" }
 key-library = { path = "../key-library" }
 key-pdf-core = { path = "../key-pdf-core" }
