@@ -2,6 +2,10 @@
 html body .key-shell {
   height: calc(100% - var(--kx-status-bar-height, 24px));
 }
+/* Sashes between groups (and a reader and its panel) end at the bar too. */
+html body .key-group-sash {
+  bottom: var(--kx-status-bar-height, 24px);
+}
 .kx-status-bar {
   position: fixed;
   z-index: 30;

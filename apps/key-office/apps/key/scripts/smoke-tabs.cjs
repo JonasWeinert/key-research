@@ -140,7 +140,8 @@ const assert = require("node:assert/strict");
         sidebar: document.querySelector(".key-sidebar-slot").getBoundingClientRect().right,
         sash: document.querySelector(".key-group-sash").getBoundingClientRect().toJSON(),
         width: innerWidth,
-        height: innerHeight,
+        // Native views end at the status bar.
+        height: document.querySelector(".kx-status-bar").getBoundingClientRect().top,
       }));
       const actual = await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0]
