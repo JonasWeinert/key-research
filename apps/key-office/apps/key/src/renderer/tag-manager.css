@@ -135,10 +135,14 @@
 .kx-tm-list[data-drop] {
   box-shadow: inset 0 0 0 2px var(--kx-accent-soft);
 }
-.kx-tm-row {
+.kx-tm-rowbox {
   position: absolute;
   left: 0;
   right: 0;
+  height: 28px;
+}
+.kx-tm-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -151,6 +155,10 @@
 }
 .kx-tm-row:hover {
   background: var(--kx-fill);
+}
+/* While the tree settles after a change, a row slides to its new depth. */
+.kx-tm-row[data-moving] {
+  transition: padding-left 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .kx-tm-row[data-highlight] {
   background: var(--kx-accent-soft);
@@ -309,7 +317,8 @@
   overflow-y: auto;
   padding: 12px 14px 16px;
 }
-.kx-tm-group + .kx-tm-group {
+.kx-tm-group + .kx-tm-group,
+.kx-tm-group-wrap + .kx-tm-group-wrap {
   margin-top: 18px;
 }
 .kx-tm-group > header {
@@ -784,4 +793,218 @@
 .kx-tm-swatches .kx-tm-dot[data-none] {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--kx-line-strong);
+}
+
+/* Dropping a nested tag here moves it to the top level. */
+.kx-tm-topzone {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  margin-bottom: 4px;
+  border: 1.5px dashed var(--kx-line-strong);
+  border-radius: 7px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-tm-topzone[data-drop] {
+  border-color: var(--kx-accent);
+  background: var(--kx-accent-soft);
+  color: var(--kx-text);
+}
+
+/* Applying: the card's button turns into a check, then the card folds away. */
+/* Clips while a group folds away; the padding keeps the cards' shadows. */
+.kx-tm-group-wrap {
+  margin: 0 -6px -6px;
+  padding: 0 6px 6px;
+  overflow: hidden;
+}
+.kx-tm-card {
+  overflow: hidden;
+  transform-origin: top center;
+}
+.kx-tm-apply {
+  justify-content: center;
+  min-width: 56px;
+  overflow: hidden;
+}
+.kx-tm-apply[data-pending] {
+  background: var(--kx-green);
+  opacity: 1 !important;
+}
+.kx-tm-apply-check {
+  display: inline-grid;
+  place-items: center;
+}
+.kx-tm-card-error {
+  margin: 0 12px 4px;
+}
+.kx-tm-card[data-stale] .kx-tm-card-head {
+  cursor: progress;
+}
+.kx-tm-spinner-small {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+  vertical-align: -1px;
+}
+.kx-tm-spinner-ink {
+  border-color: color-mix(in srgb, var(--kx-accent-ink) 35%, transparent);
+  border-top-color: var(--kx-accent-ink);
+}
+.kx-tm-tabs .kx-tm-spinner-small {
+  margin-left: 6px;
+}
+.kx-tm-done-check {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--kx-green);
+  color: var(--kx-bg);
+}
+.kx-tm-last.kx-tm-done svg {
+  color: inherit;
+}
+.kx-tm-preview[data-updating] {
+  opacity: 0.7;
+  transition: opacity 120ms;
+}
+
+/* Forms: the set of tags, as chips that can be taken out, and a field to add more. */
+.kx-tm-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-tm-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 3px 0 9px;
+  border-radius: 12px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+  font-size: 12.5px;
+}
+.kx-tm-member > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-tm-member > small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.kx-tm-member > button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+.kx-tm-member > button:hover {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+.kx-tm-adder {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.kx-tm-adder > svg {
+  position: absolute;
+  left: 8px;
+  color: var(--kx-text-3);
+  pointer-events: none;
+}
+.kx-tm-adder .kx-tm-input {
+  padding-left: 24px;
+  border-style: dashed;
+  background: transparent;
+}
+.kx-tm-parent {
+  display: flex;
+  gap: 6px;
+}
+.kx-tm-parent .kx-tm-input {
+  flex: 1;
+}
+.kx-tm-parent .kx-tm-button {
+  height: 26px;
+}
+.kx-tm-inline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-tm-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-tm-paths li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 0.8fr) auto minmax(0, 1.2fr);
+  align-items: center;
+  gap: 6px;
+  color: var(--kx-text-3);
+}
+.kx-tm-paths li[data-off] .kx-tm-chip {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.kx-tm-paths input[type="checkbox"],
+.kx-tm-choices input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--kx-accent);
+}
+.kx-tm-paths .kx-tm-chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-tm-values li {
+  flex-wrap: nowrap;
+}
+.kx-tm-values .kx-tm-chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-tm-order {
+  display: inline-flex;
+  flex: none;
+}
+.kx-tm-order .kx-tm-icon {
+  width: 18px;
+}
+.kx-tm-icon:disabled {
+  opacity: 0.35;
 }
