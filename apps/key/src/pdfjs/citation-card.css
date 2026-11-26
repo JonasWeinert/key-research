@@ -1,0 +1,259 @@
+/* Citation card: a compact popover over an in-text citation or a scholarly link.
+   Reader tokens (--key-*); the Electron adapter maps them onto the app's. */
+.pdfjs-cite-card {
+  position: fixed;
+  z-index: 36;
+  display: flex;
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(320px, calc(100vh - 24px));
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  color: var(--key-text);
+  background: rgb(var(--key-floating) / 94%);
+  box-shadow: var(--key-elevation-3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  font-size: 12px;
+  line-height: 1.4;
+  animation: pdfjs-cite-in 140ms cubic-bezier(.2, .8, .2, 1);
+}
+@keyframes pdfjs-cite-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(.985);
+  }
+}
+.pdfjs-cite-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 6px 0 12px;
+}
+.pdfjs-cite-kicker {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--key-text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdfjs-cite-close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--key-text-secondary);
+}
+.pdfjs-cite-close:hover {
+  background: var(--key-hover);
+  color: var(--key-text);
+}
+.pdfjs-cite-close svg {
+  width: 13px;
+  height: 13px;
+}
+/* Several works: chips in one row that scrolls inside the card, faded at a clipped edge. */
+.pdfjs-cite-chips {
+  --fade-start: 0px;
+  --fade-end: 0px;
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  margin-left: -6px;
+  padding: 2px 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent 100%);
+}
+.pdfjs-cite-chips[data-fade-start] {
+  --fade-start: 24px;
+}
+.pdfjs-cite-chips[data-fade-end] {
+  --fade-end: 24px;
+}
+.pdfjs-cite-chips::-webkit-scrollbar {
+  display: none;
+}
+.pdfjs-cite-chips button {
+  flex: none;
+  max-width: 150px;
+  height: 22px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--key-text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdfjs-cite-chips button:hover {
+  background: var(--key-hover);
+  color: var(--key-text);
+}
+.pdfjs-cite-chips button[aria-selected="true"] {
+  background: var(--key-press);
+  color: var(--key-text);
+  font-weight: 600;
+}
+.pdfjs-cite-chips button:focus-visible,
+.pdfjs-cite-action:focus-visible,
+.pdfjs-cite-close:focus-visible {
+  outline: 2px solid var(--key-accent);
+  outline-offset: -1px;
+}
+.pdfjs-cite-body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+.pdfjs-cite-copy {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px 9px;
+  overflow: auto;
+}
+.pdfjs-cite-copy h2 {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.32;
+  letter-spacing: -0.005em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.pdfjs-cite-byline {
+  margin: 0;
+  overflow: hidden;
+  color: var(--key-text-secondary);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdfjs-cite-summary {
+  display: -webkit-box;
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: var(--key-text-secondary);
+  font-size: 11.5px;
+  line-height: 1.42;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.pdfjs-cite-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pdfjs-cite-unavailable button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--key-hover);
+  color: var(--key-text);
+  font: inherit;
+  font-size: 11px;
+}
+.pdfjs-cite-unavailable button svg {
+  width: 11px;
+  height: 11px;
+}
+.pdfjs-cite-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 5px;
+  border-top: 1px solid var(--key-hairline);
+}
+.pdfjs-cite-spacer {
+  flex: 1;
+}
+.pdfjs-cite-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--key-text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: default;
+}
+.pdfjs-cite-action:hover {
+  background: var(--key-hover);
+  color: var(--key-text);
+}
+.pdfjs-cite-action svg {
+  width: 12px;
+  height: 12px;
+}
+.pdfjs-cite-action.pdfjs-cite-icon {
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+}
+/* The work is being looked up (or retried while a provider is rate limited). */
+.pdfjs-cite-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px 12px;
+}
+.pdfjs-cite-skeleton i {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--key-hover) 0%, var(--key-press) 45%, var(--key-hover) 90%) 0 0 / 300% 100%;
+  animation: pdfjs-cite-shimmer 1.4s ease-in-out infinite;
+}
+.pdfjs-cite-skeleton i.pdfjs-cite-skeleton-meta {
+  height: 8px;
+  margin-top: 3px;
+}
+@keyframes pdfjs-cite-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdfjs-cite-card,
+  .pdfjs-cite-skeleton i {
+    animation: none;
+  }
+}

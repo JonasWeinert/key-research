@@ -104,6 +104,10 @@ export class PdfJsTextOverlayManager {
   /** An annotation briefly lit up to draw the eye (after "Show in PDF"). */
   private flashId: string | null = null;
   private flashTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Where the pointer was when it last hovered a citation. */
+  private citationPoint: { x: number; y: number } | null = null;
+  /** A quoted passage (no highlight of its own) briefly lit up the same way. */
+  private flashPassage: { page: number; bounds: NativeBounds[] } | null = null;
   private links: Array<NativeLink & { synthetic?: boolean }> = [];
   private citations: ScientificCitation[] = [];
   private liveSelection: TextRange | null = null;
@@ -255,6 +259,16 @@ export class PdfJsTextOverlayManager {
     }, duration);
   }
 
+  flashBounds(page: number, bounds: NativeBounds[], duration = 1800) {
+    clearTimeout(this.flashTimer);
+    this.flashPassage = { page, bounds };
+    this.renderAll();
+    this.flashTimer = setTimeout(() => {
+      this.flashPassage = null;
+      this.renderAll();
+    }, duration);
+  }
+
   setResultTarget(target: ReaderSearchMatch | null) {
     this.resultTarget = target;
     this.renderAll();
@@ -386,6 +400,9 @@ export class PdfJsTextOverlayManager {
     if (this.resultTarget?.page === page) {
       this.paintBounds(layer, this.resultTarget.bounds, 'pdfjs-result-target', this.resultTarget.id);
     }
+    if (this.flashPassage?.page === page) {
+      this.paintBounds(layer, this.flashPassage.bounds, 'pdfjs-passage-flash');
+    }
     for (const annotation of this.annotations) {
       if (page < annotation.range.start.page || page > annotation.range.end.page) continue;
       const className = `pdfjs-highlight color-${annotation.color}${
@@ -426,7 +443,13 @@ export class PdfJsTextOverlayManager {
         const rect = viewportRectForBounds(this.hosts[page].element, [citation.bounds]);
         this.citationHoverListener?.(citation, rect);
       });
-      element.addEventListener('pointerleave', () => {
+      element.addEventListener('pointerleave', event => {
+        const host = this.hosts[page].element.getBoundingClientRect();
+        const x = (event.clientX - host.left) / host.width;
+        const y = (event.clientY - host.top) / host.height;
+        const { left, right, top, bottom } = citation.bounds;
+        // A re-render under a still pointer, not the pointer moving away.
+        if (x >= left && x <= right && y >= top && y <= bottom) return;
         this.citationHoverListener?.(null);
       });
       element.addEventListener('pointerup', event => {
@@ -662,6 +685,7 @@ export class PdfJsTextOverlayManager {
     if (this.selectionDrag) return;
     const citationHit = this.citationAt(event);
     if (citationHit?.citation) {
+      this.citationPoint = { x: event.clientX, y: event.clientY };
       this.linkHoverListener?.(null);
       this.citationHoverListener?.(
         citationHit.citation,
@@ -669,6 +693,14 @@ export class PdfJsTextOverlayManager {
       );
       return;
     }
+    // Chromium repeats the last pointer position after the layers re-render (while the
+    // citations are being replaced by a newer analysis): only real movement ends a hover.
+    const still =
+      this.citationPoint &&
+      Math.abs(event.clientX - this.citationPoint.x) < 0.5 &&
+      Math.abs(event.clientY - this.citationPoint.y) < 0.5;
+    if (still) return;
+    this.citationPoint = null;
     this.citationHoverListener?.(null);
     const link = this.linkAt(event);
     this.linkHoverListener?.(
@@ -682,8 +714,12 @@ export class PdfJsTextOverlayManager {
     );
   };
 
-  private readonly onPointerLeave = () => {
+  private readonly onPointerLeave = (event: PointerEvent) => {
     if (this.selectionDrag) return;
+    // Re-rendering the text or overlay layers under a still pointer makes Chromium report a
+    // leave although the pointer never left the page: not a hover ending.
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    if (under && (event.currentTarget as HTMLElement).contains(under)) return;
     this.linkHoverListener?.(null);
     this.citationHoverListener?.(null);
   };

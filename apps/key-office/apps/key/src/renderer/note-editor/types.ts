@@ -64,7 +64,8 @@ export interface NoteEditorProps {
   searchSources: (query: string) => Promise<SourceRef[]>;
   /** Used by source cards, source quotes and mention chips. */
   resolveSource: (id: string) => Promise<SourceRef | undefined>;
-  onOpenSource: (id: string, page?: number) => void;
+  /** `quote`: a quoted passage to find and centre on that page. */
+  onOpenSource: (id: string, page?: number, annotationId?: string, quote?: string) => void;
   /** Without it, images can only be linked by URL. */
   media?: NoteMediaHost;
   /** The @ picker in link mode: any item (notes, highlights, canvases …). Falls back to searchSources. */

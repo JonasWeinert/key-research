@@ -42,6 +42,8 @@ const paths = {
   grip: "M6 4h.1M10 4h.1M6 8h.1M10 8h.1M6 12h.1M10 12h.1",
   more: "M3.4 8h.1M8 8h.1M12.6 8h.1",
   chevronDown: "m4 6 4 4 4-4",
+  chevronUp: "m4 10 4-4 4 4",
+  arrowLeft: "M13 8H3M7 4 3 8l4 4",
   chevronRight: "m6 4 4 4-4 4",
   chevronUpDown: "m5 6 3-3 3 3M5 10l3 3 3-3",
   arrowRight: "M3 8h10M9 4l4 4-4 4",

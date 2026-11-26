@@ -61,14 +61,15 @@ import {
   type ScholarlyEntry,
 } from './scholarly-metadata';
 import {
-  citationAuthorsSnippet,
   citationBibliographyLine,
   citationLinks,
   citationSummary,
-  citationTabLabel,
   isScholarlyResourceUrl,
   isNumberedCitation,
 } from './citation-details';
+import { quoteZoom, zoomTransitionFrame } from './quote-zoom';
+import { locateQuote } from './quote-locate';
+import { CitationCardBody, ExternalWorkCardBody } from './CitationCard';
 import {
   HoverCardBridge,
   anchoredFloatingCardPosition,
@@ -280,6 +281,9 @@ export class PdfJsTileController {
   private wheelZoomAnchor: { clientX: number; clientY: number } | null = null;
   /** Width a floating panel currently covers on the trailing edge. */
   private panelInset = 0;
+  /** Height a floating toolbar covers at the top: the document starts below it. */
+  private topInset = 0;
+  private zoomAnimation = 0;
   private destroyed = false;
   private suspended = false;
   private activeRenders = 0;
@@ -429,6 +433,14 @@ export class PdfJsTileController {
     this.replaceDemand();
   }
 
+  setTopInset(inset: number) {
+    const normalized = Math.max(0, Math.ceil(inset));
+    if (normalized === this.topInset) return;
+    this.topInset = normalized;
+    this.updateLayout();
+    this.replaceDemand();
+  }
+
   fitWidth() {
     this.setZoom(1);
   }
@@ -534,6 +546,7 @@ export class PdfJsTileController {
   }
 
   setZoom(nextZoom: number, clientX?: number, clientY?: number) {
+    this.stopZoomAnimation();
     if (this.wheelZoomTimer) {
       window.clearTimeout(this.wheelZoomTimer);
       this.wheelZoomTimer = 0;
@@ -627,6 +640,70 @@ export class PdfJsTileController {
     this.viewStateListener?.(this.currentViewState());
   }
 
+  /**
+   * Brings a passage to the middle of the reading area at a zoom where it fits comfortably
+   * and reads well (see quoteZoom), moving there in one smooth motion: the final layout is
+   * applied at once and a transform eases from the old view into it.
+   */
+  zoomToBounds(pageIndex: number, bounds: NativeBounds, animate = true) {
+    const page = this.pages[pageIndex];
+    if (!page) return;
+    this.stopZoomAnimation();
+    const readingWidth = Math.max(1, this.scroll.clientWidth - this.panelInset);
+    const readingHeight = Math.max(1, this.scroll.clientHeight - this.topInset);
+    const fx = (bounds.left + bounds.right) / 2;
+    const fy = (bounds.top + bounds.bottom) / 2;
+    const fromZoom = this.zoom;
+    const start = {
+      x: page.left + fx * page.width - this.scroll.scrollLeft,
+      y: page.top + fy * page.height - this.scroll.scrollTop,
+    };
+    const target = quoteZoom({
+      viewport: { width: readingWidth, height: readingHeight },
+      rect: {
+        width: (bounds.right - bounds.left) * page.width,
+        height: (bounds.bottom - bounds.top) * page.height,
+      },
+      zoom: this.zoom,
+      pageScale: page.width / Math.max(1, page.baseWidth),
+    });
+    this.setZoom(target);
+    const content = { x: page.left + fx * page.width, y: page.top + fy * page.height };
+    this.scroll.scrollLeft = content.x - readingWidth / 2;
+    this.scroll.scrollTop = content.y - (this.topInset + readingHeight / 2);
+    const scroll = { x: this.scroll.scrollLeft, y: this.scroll.scrollTop };
+    const end = { x: content.x - scroll.x, y: content.y - scroll.y };
+    this.replaceDemand();
+    this.viewStateListener?.(this.currentViewState());
+    const still =
+      Math.abs(target - fromZoom) < 0.001 && Math.hypot(end.x - start.x, end.y - start.y) < 2;
+    if (!animate || still || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const duration = 380;
+    const began = performance.now();
+    this.content.style.transformOrigin = '0 0';
+    const step = (now: number) => {
+      const t = Math.min(1, (now - began) / duration);
+      const frame = zoomTransitionFrame(t, { content, start, end }, scroll, fromZoom, target);
+      this.content.style.transform =
+        t >= 1 ? '' : `translate(${frame.translateX}px, ${frame.translateY}px) scale(${frame.scale})`;
+      if (t >= 1) {
+        this.zoomAnimation = 0;
+        this.content.style.transformOrigin = '';
+        return;
+      }
+      this.zoomAnimation = requestAnimationFrame(step);
+    };
+    step(began);
+  }
+
+  private stopZoomAnimation() {
+    if (!this.zoomAnimation) return;
+    cancelAnimationFrame(this.zoomAnimation);
+    this.zoomAnimation = 0;
+    this.content.style.transform = '';
+    this.content.style.transformOrigin = '';
+  }
+
   async waitForExact(timeoutMs = 5000): Promise<SettleResult> {
     const start = performance.now();
     while (performance.now() - start < timeoutMs) {
@@ -701,6 +778,7 @@ export class PdfJsTileController {
     this.scroll.removeEventListener('pointercancel', this.onPointerEnd);
     this.resizeObserver?.disconnect();
     if (this.wheelZoomTimer) window.clearTimeout(this.wheelZoomTimer);
+    if (this.zoomAnimation) cancelAnimationFrame(this.zoomAnimation);
     if (this.scrollFrame) cancelAnimationFrame(this.scrollFrame);
     if (this.resizeFrame) cancelAnimationFrame(this.resizeFrame);
     this.cancelPending();
@@ -740,6 +818,7 @@ export class PdfJsTileController {
     this.reportInteraction();
     if (!event.ctrlKey && !event.metaKey) return;
     event.preventDefault();
+    this.stopZoomAnimation();
     const currentTarget = this.wheelZoomTarget ?? this.zoom;
     const target = Math.min(
       5,
@@ -858,7 +937,7 @@ export class PdfJsTileController {
       this.panelInset,
     );
     const baseContentWidth = geometry.baseContentWidth;
-    let top = PAGE_PADDING_CSS_PX;
+    let top = PAGE_PADDING_CSS_PX + this.topInset;
     for (const page of this.pages) {
       page.width = page.baseWidth * scale;
       page.height = page.baseHeight * scale;
@@ -1467,9 +1546,13 @@ interface PdfJsBenchmarkAppProps {
   onRequestControlMode?: (mode: 'search' | 'comments' | null) => void;
   /** When set, the selection toolbar sends the passage to the source's note instead of a comment. */
   onAddToNote?: (passage: { text: string; page: number; color?: string }) => void;
-  /** When set, the selection toolbar offers Send to…: the passage is highlighted (if it isn't
-   * yet) and the highlight handed to the host to place on a canvas or in a note. */
-  onSendTo?: (highlight: { annotationId: string; text: string; page: number; color?: string }) => void;
+  /** When set, the selection toolbar offers Cite: the host copies the passage as a quote that
+   * links back here. `rects` are on the passage's first page, [x, y, width, height] in 0–65535. */
+  onCite?: (passage: { text: string; page: number; rects: number[][]; color?: string }) => void;
+  /** Opens a cited work in the library when the host has it there (the citation card's action). */
+  referenceInLibrary?: (number: number) => (() => void) | null | undefined;
+  /** Height of a toolbar floating over the top of the document: pages start below it. */
+  topInset?: number;
   /** References kept by the host's library; when given they replace the reader's own analysis. */
   references?: Array<{ number: number; page: number; xFraction?: number; yFraction?: number; text: string }>;
   /** Shown at the top of the References panel (e.g. the library's analysis status). */
@@ -1555,8 +1638,9 @@ export interface PdfReaderHandle {
   nextSearchResult(): void;
   activateSearchResult(index: number): void;
   activateComment(id: string): void;
-  /** Brings an annotation into view and lights it up briefly; `page` when it is not known. */
-  focusAnnotation(id: string | undefined, page?: number): void;
+  /** Brings an annotation (or a quoted passage on `page`) to the middle of the view, zoomed
+   * to read, and lights it up briefly; `page` when the annotation is not known. */
+  focusAnnotation(id: string | undefined, page?: number, quote?: string): void;
   closeSearch(): void;
   togglePanel(panel: PdfReaderPanel): void;
   closePanel(): void;
@@ -1581,7 +1665,9 @@ function PdfJsBenchmarkApp({
   initialControlState,
   onRequestControlMode,
   onAddToNote,
-  onSendTo,
+  onCite,
+  referenceInLibrary,
+  topInset = 0,
   referencesHeader,
   referenceAside,
   references: libraryReferences,
@@ -1657,6 +1743,9 @@ function PdfJsBenchmarkApp({
     initialViewStateRef.current ?? null,
   );
   const visibilityModeRef = useRef(visibilityMode);
+  const topInsetRef = useRef(topInset);
+  topInsetRef.current = topInset;
+  useEffect(() => controllerRef.current?.setTopInset(topInset), [topInset]);
   if (initialViewState) initialViewStateRef.current = initialViewState;
   onViewStateChangeRef.current = onViewStateChange;
   onReadyRef.current = onReady;
@@ -1677,8 +1766,54 @@ function PdfJsBenchmarkApp({
     });
   }, []);
 
+  const citationHoverBridgeRef = useRef<HoverCardBridge | null>(null);
+  citationHoverBridgeRef.current ??= new HoverCardBridge();
   const showHoveredCitation = useCallback((focus: CitationFocus) => {
-    setHoveredCitation(focus);
+    citationHoverBridgeRef.current?.cancel();
+    setHoveredCitation(current => (current?.citation.id === focus.citation.id ? current : focus));
+  }, []);
+  /** Leaving a citation hides its card after a beat, unless the pointer moved onto the card. */
+  // Where the pointer last was: a hover ends only once it has left both the citation and its
+  // card (re-rendered layers under a still pointer report leaves that are not).
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const track = (event: PointerEvent) => {
+      pointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener('pointermove', track, { capture: true, passive: true });
+    return () => window.removeEventListener('pointermove', track, { capture: true });
+  }, []);
+  const citationAnchorRef = useRef<() => DOMRect | undefined>(() => undefined);
+  const scheduleCitationHoverExit = useCallback(() => {
+    citationHoverBridgeRef.current?.schedule(() => {
+      const pointer = pointerRef.current;
+      const over = (rect?: DOMRect | null) =>
+        !!rect &&
+        !!pointer &&
+        pointer.x >= rect.left - 2 &&
+        pointer.x <= rect.right + 2 &&
+        pointer.y >= rect.top - 2 &&
+        pointer.y <= rect.bottom + 2;
+      const card = document.querySelector('.pdfjs-cite-card')?.getBoundingClientRect();
+      if (over(citationAnchorRef.current()) || over(card)) return;
+      setHoveredCitation(null);
+    });
+  }, []);
+  const cancelCitationHoverExit = useCallback(() => citationHoverBridgeRef.current?.cancel(), []);
+  const resolveScholarly = useCallback((number: number, metadata: ScholarlyMetadata) => {
+    setScholarly(current => {
+      if (current.get(number)?.state === 'ready') return current;
+      const next = new Map(current);
+      next.set(number, { state: 'ready', metadata });
+      return next;
+    });
+  }, []);
+  const resolveExternal = useCallback((metadata: ScholarlyMetadata | null) => {
+    setExternalCitation(current =>
+      current && metadata && current.entry.state !== 'ready'
+        ? { ...current, entry: { state: 'ready', metadata } }
+        : current,
+    );
   }, []);
 
   useEffect(
@@ -1687,6 +1822,7 @@ function PdfJsBenchmarkApp({
       const pendingTask = loadingTaskRef.current;
       loadingTaskRef.current = null;
       linkHoverBridgeRef.current?.dispose();
+      citationHoverBridgeRef.current?.dispose();
       if (lastViewStateRef.current) {
         onViewStateChangeRef.current?.(lastViewStateRef.current);
       }
@@ -1778,6 +1914,7 @@ function PdfJsBenchmarkApp({
         embedded ? 16 * 1024 * 1024 : undefined,
       );
       controllerRef.current = controller;
+      controller.setTopInset(topInsetRef.current);
       controller.onZoomChange(setZoom);
       if (initialViewStateRef.current) {
         controller.restoreViewState(initialViewStateRef.current);
@@ -1863,40 +2000,15 @@ function PdfJsBenchmarkApp({
             bottom: link.target.yFraction ?? 0,
           });
         } else if (isScholarlyResourceUrl(link.target.url) && isTauri()) {
-          const request = ++externalCitationRequestRef.current;
+          ++externalCitationRequestRef.current;
           cancelLinkHoverExit();
           setHoveredLink(null);
           setHoveredCitation(null);
           setSelectedCitation(null);
           setExternalCitationExpanded(false);
+          // The card looks the work up (and retries while a provider is rate limited).
           setExternalCitation({ link, rect, entry: { state: 'loading' } });
           setActivePanel(null);
-          void invoke<ScholarlyMetadata>('scholarly_lookup_resource', {
-            resource: link.target.url,
-          })
-            .then(metadata => {
-              if (externalCitationRequestRef.current !== request) return;
-              setExternalCitation(current =>
-                current
-                  ? { ...current, entry: { state: 'ready', metadata } }
-                  : current,
-              );
-            })
-            .catch(error => {
-              if (externalCitationRequestRef.current !== request) return;
-              setExternalCitation(current =>
-                current
-                  ? {
-                      ...current,
-                      entry: {
-                        state: 'failed',
-                        error:
-                          error instanceof Error ? error.message : String(error),
-                      },
-                    }
-                  : current,
-              );
-            });
         } else {
           window.open(link.target.url, '_blank', 'noopener,noreferrer');
         }
@@ -1923,6 +2035,8 @@ function PdfJsBenchmarkApp({
           cancelLinkHoverExit();
           setHoveredLink(null);
           showHoveredCitation({ citation, rect });
+        } else {
+          scheduleCitationHoverExit();
         }
       });
       controller.onVisiblePages(pages => {
@@ -1977,6 +2091,7 @@ function PdfJsBenchmarkApp({
   }, [
     cancelLinkHoverExit,
     embedded,
+    scheduleCitationHoverExit,
     scheduleLinkHoverExit,
     showHoveredCitation,
     showHoveredLink,
@@ -2046,13 +2161,11 @@ function PdfJsBenchmarkApp({
     selectedActiveEntry?.state === 'ready'
       ? selectedActiveEntry.metadata
       : undefined;
-  const selectedActiveSummary = citationSummary(selectedActiveMetadata);
   const selectedActiveLinks = citationLinks(selectedActiveMetadata);
   const externalCitationMetadata =
     externalCitation?.entry.state === 'ready'
       ? externalCitation.entry.metadata
       : undefined;
-  const externalCitationSummary = citationSummary(externalCitationMetadata);
   const externalCitationLinks = citationLinks(externalCitationMetadata);
   const resolveHoveredLinkAnchor = useCallback(
     () =>
@@ -2073,6 +2186,7 @@ function PdfJsBenchmarkApp({
         : undefined,
     [citationFocus],
   );
+  citationAnchorRef.current = resolveCitationAnchor;
   const resolveExternalCitationAnchor = useCallback(
     () =>
       externalCitation
@@ -2344,6 +2458,32 @@ function PdfJsBenchmarkApp({
       setStatus('Could not copy selected text');
     }
   }, [activeAnnotation, selection]);
+
+  /** The passage under the selection toolbar, for Cite: its text, first page and boxes there. */
+  const citeContext = useCallback(() => {
+    if (!onCite) return;
+    const range = selection?.range ?? activeAnnotation?.range;
+    const text = (selection?.text ?? activeAnnotation?.text ?? '').trim();
+    if (!range || !text) return;
+    const page = range.start.page;
+    const pageText = overlayRef.current?.textPages.get(page);
+    const bounds =
+      activeAnnotation?.anchor?.pages.find(entry => entry.page === page)?.bounds ??
+      (pageText ? boundsForRange(pageText, range) : []);
+    const unit = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 65535);
+    onCite({
+      text,
+      page,
+      color: activeAnnotation?.color,
+      rects: bounds.map(bound => [
+        unit(bound.left),
+        unit(bound.top),
+        unit(bound.right - bound.left),
+        unit(bound.bottom - bound.top),
+      ]),
+    });
+    setStatus('Quote copied');
+  }, [activeAnnotation, onCite, selection]);
 
   const activateSearch = useCallback(
     (matches: ReaderSearchMatch[], index: number) => {
@@ -2662,7 +2802,9 @@ function PdfJsBenchmarkApp({
     const match: ReaderSearchMatch = { id: searchTarget.id, page: searchTarget.page, start: 0, end: 0, preview: searchTarget.targetText, bounds };
     void controller.preparePage(searchTarget.page).then(() => {
       if (cancelled) return;
-      controller.scrollToBounds(searchTarget.page, bounds[0]);
+      const box = unionBounds(bounds);
+      if (box) controller.zoomToBounds(searchTarget.page, box);
+      else controller.scrollToBounds(searchTarget.page, bounds[0]);
       overlay.setResultTarget(match);
       void overlay.ensurePage(searchTarget.page).catch(error => setStatus(String(error)));
     }).catch(error => { if (!cancelled) setStatus(`Could not open result: ${error}`); });
@@ -2693,7 +2835,7 @@ function PdfJsBenchmarkApp({
         if (!annotation) return;
         void openAnnotationEditor(annotation);
       },
-      focusAnnotation: (id, fallbackPage) => {
+      focusAnnotation: (id, fallbackPage, quote) => {
         const controller = controllerRef.current;
         const overlay = overlayRef.current;
         if (!controller) return;
@@ -2701,21 +2843,30 @@ function PdfJsBenchmarkApp({
         const anchor = annotation?.anchor?.pages[0];
         const page = anchor?.page ?? annotation?.range.start.page ?? fallbackPage;
         if (page === undefined) return;
-        const bounds = anchor?.bounds ?? [];
-        // The whole highlight, so it can be centred.
-        const box = bounds.length
-          ? {
-              left: Math.min(...bounds.map(b => b.left)),
-              top: Math.min(...bounds.map(b => b.top)),
-              right: Math.max(...bounds.map(b => b.right)),
-              bottom: Math.max(...bounds.map(b => b.bottom)),
+        void controller.preparePage(page).then(async () => {
+          let bounds = anchor?.bounds ?? [];
+          // A quote from a note: find its words on the page to centre on them.
+          let passage = false;
+          if (!bounds.length && quote?.trim() && overlay) {
+            await overlay.ensurePage(page).catch(() => undefined);
+            const text = overlay.textPages.get(page);
+            const range = text ? locateQuote(text, quote) : null;
+            if (text && range) {
+              bounds = boundsForRange(text, range);
+              passage = bounds.length > 0;
             }
-          : undefined;
-        void controller.preparePage(page).then(() => {
-          controller.centerOnBounds(page, box);
-          if (!overlay || !annotation) return;
-          void overlay.ensurePage(page).then(() => overlay.flashAnnotation(annotation.id)).catch(() => {});
-        }).catch(error => setStatus(`Could not show the highlight: ${error}`));
+          }
+          // The whole passage, so it can be centred and fitted.
+          const box = unionBounds(bounds);
+          if (box) controller.zoomToBounds(page, box);
+          else controller.centerOnBounds(page, undefined);
+          if (!overlay) return;
+          if (annotation) {
+            void overlay.ensurePage(page).then(() => overlay.flashAnnotation(annotation.id)).catch(() => {});
+          } else if (passage) {
+            overlay.flashBounds(page, bounds);
+          }
+        }).catch(error => setStatus(`Could not show the passage: ${error}`));
       },
       closeSearch: () => {
         setSearchQuery('');
@@ -2805,7 +2956,7 @@ function PdfJsBenchmarkApp({
         const target = event.target;
         if (
           target instanceof Element &&
-          target.closest('.pdfjs-citation-card, .pdfjs-citation-modal')
+          target.closest('.pdfjs-cite-card, .pdfjs-citation-modal')
         ) {
           return;
         }
@@ -3005,6 +3156,17 @@ function PdfJsBenchmarkApp({
           >
             <Icon name="copy" />
           </button>
+          {onCite && (
+            <button
+              type="button"
+              className="pdfjs-selection-action"
+              aria-label="Cite"
+              title="Copy as a quote with its source"
+              onClick={citeContext}
+            >
+              <Icon name="quote" />
+            </button>
+          )}
           {onAddToNote ? (
             <button
               type="button"
@@ -3032,23 +3194,6 @@ function PdfJsBenchmarkApp({
               onClick={openCommentEditor}
             >
               <Icon name="note" />
-            </button>
-          )}
-          {onSendTo && (
-            <button
-              type="button"
-              className="pdfjs-selection-action pdfjs-selection-to-note"
-              aria-label="Send to a canvas or note"
-              title="Highlight this passage and send it to a canvas or note"
-              onClick={() => {
-                const annotation = activeAnnotation ?? addHighlight(HIGHLIGHT_COLORS[0]);
-                if (!annotation) return;
-                onSendTo({ annotationId: annotation.id, text: annotation.text, page: annotation.range.start.page, color: annotation.color });
-                window.getSelection()?.removeAllRanges();
-              }}
-            >
-              <Icon name="next" />
-              <span>Send to…</span>
             </button>
           )}
           {activeAnnotation && (
@@ -3081,230 +3226,81 @@ function PdfJsBenchmarkApp({
       )}
       {citationFocus && !context && (
         <LiveAnchoredCard
-          className="pdfjs-citation-card"
+          className="pdfjs-cite-card"
+          role="dialog"
+          aria-label={
+            citationFocus.citation.numbers.length > 1
+              ? `${citationFocus.citation.numbers.length} cited works`
+              : 'Cited work'
+          }
           resolveAnchor={resolveCitationAnchor}
+          gap={8}
           onPointerDown={event => event.stopPropagation()}
+          onPointerEnter={cancelCitationHoverExit}
+          onPointerLeave={event => {
+            // The card can move under a still pointer as it grows; back over the citation it stays.
+            const anchor = resolveCitationAnchor();
+            const overCitation =
+              !!anchor &&
+              event.clientX >= anchor.left - 2 &&
+              event.clientX <= anchor.right + 2 &&
+              event.clientY >= anchor.top - 2 &&
+              event.clientY <= anchor.bottom + 2;
+            if (!selectedCitation && !overCitation) scheduleCitationHoverExit();
+          }}
         >
-          <header>
-            <span><Icon name="highlight" /></span>
-            <div>
-              <strong>
-                {citationFocus.citation.numbers.length > 1
-                  ? `${citationFocus.citation.numbers.length} cited works`
-                  : isNumberedCitation(citationFocus.citation.source)
-                    ? `Reference [${citationFocus.citation.numbers[0]}]`
-                    : 'Reference'}
-              </strong>
-              <small>{citationFocus.citation.source}</small>
-            </div>
-            {selectedCitation && (
-              <IconButton
-                icon="close"
-                label="Close citation"
-                onClick={() => {
-                  setSelectedCitation(null);
-                  setHoveredCitation(null);
-                }}
-              />
-            )}
-          </header>
-          <div className="pdfjs-citation-panel">
-            {citationFocus.citation.numbers.length > 1 && (
-              <div
-                className={`pdfjs-citation-tabs ${
-                  citationFocus.citation.numbers.length > 3 ? 'compact' : ''
-                }`}
-                role="tablist"
-                aria-label="Works in this citation"
-              >
-                {citationFocus.citation.numbers.map(number => {
-                  const entry = scholarly.get(number);
-                  const metadata =
-                    entry?.state === 'ready' ? entry.metadata : undefined;
-                  return (
-                    <button
-                      type="button"
-                      key={number}
-                      role="tab"
-                      aria-selected={selectedActiveCitationNumber === number}
-                      aria-controls={`${citationUiId}-citation-card-${number}`}
-                      onClick={() => setActiveCitationNumber(number)}
-                    >
-                      {citationFocus.citation.numbers.length > 3
-                        ? `[${number}]`
-                        : citationTabLabel(number, metadata)}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {selectedActiveReference && selectedActiveCitationNumber !== null ? (
-              <article
-                key={selectedActiveCitationNumber}
-                className="pdfjs-citation-preview"
-                id={`${citationUiId}-citation-card-${selectedActiveCitationNumber}`}
-                role="tabpanel"
-              >
-                <div className="pdfjs-citation-preview-copy">
-                  <h2>
-                    {compactReferenceTitle(
-                      selectedActiveReference,
-                      selectedActiveMetadata,
-                    )}
-                  </h2>
-                  <p className="pdfjs-citation-byline">
-                    {!selectedActiveEntry ||
-                    selectedActiveEntry.state === 'loading' ? (
-                      <span className="pdfjs-citation-lookup-state">
-                        <i aria-hidden="true" />
-                        Metadata lookup in progress
-                      </span>
-                    )
-                      : selectedActiveEntry?.state === 'failed'
-                        ? selectedActiveEntry.error
-                        : citationBibliographyLine(selectedActiveMetadata)}
-                  </p>
-                  {selectedActiveSummary ? (
-                    <section className="pdfjs-citation-summary">
-                      <span>{selectedActiveSummary.label}</span>
-                      <p>{selectedActiveSummary.text}</p>
-                    </section>
-                  ) : (
-                    <blockquote>{selectedActiveReference.text}</blockquote>
-                  )}
-                </div>
-                <footer>
-                  <button
-                    type="button"
-                    className="pdfjs-citation-show-more"
-                    onClick={() => {
-                      setSelectedCitation(citationFocus);
-                      setActiveCitationNumber(selectedActiveCitationNumber);
-                      setExpandedCitationNumber(selectedActiveCitationNumber);
-                    }}
-                  >
-                    Show more
-                    <Icon name="expand" />
-                  </button>
-                  <button
-                    type="button"
-                    className="pdfjs-citation-reference-action"
-                    onClick={() =>
-                      controllerRef.current?.scrollToBounds(
-                        selectedActiveReference.page,
-                        {
-                          left: selectedActiveReference.xFraction ?? 0,
-                          right: selectedActiveReference.xFraction ?? 0,
-                          top: selectedActiveReference.yFraction ?? 0,
-                          bottom: selectedActiveReference.yFraction ?? 0,
-                        },
-                      )
-                    }
-                  >
-                    Go to reference
-                    <span>Page {selectedActiveReference.page + 1}</span>
-                  </button>
-                </footer>
-              </article>
-            ) : (
-              <EmptyState
-                icon="book"
-                title="Reference unavailable"
-                detail="This citation could not be matched to the document reference list."
-              />
-            )}
-          </div>
+          <CitationCardBody
+            citation={citationFocus.citation}
+            active={selectedActiveCitationNumber}
+            onSelect={setActiveCitationNumber}
+            reference={number => referenceForNumber(analysis, number)}
+            entry={number => scholarly.get(number)}
+            onResolved={resolveScholarly}
+            uiId={citationUiId}
+            libraryAction={referenceInLibrary}
+            onGoToReference={reference =>
+              controllerRef.current?.scrollToBounds(reference.page, {
+                left: reference.xFraction ?? 0,
+                right: reference.xFraction ?? 0,
+                top: reference.yFraction ?? 0,
+                bottom: reference.yFraction ?? 0,
+              })
+            }
+            onShowMore={number => {
+              setSelectedCitation(citationFocus);
+              setActiveCitationNumber(number);
+              setExpandedCitationNumber(number);
+            }}
+            onClose={
+              selectedCitation
+                ? () => {
+                    setSelectedCitation(null);
+                    setHoveredCitation(null);
+                  }
+                : undefined
+            }
+          />
         </LiveAnchoredCard>
       )}
       {externalCitation && !context && (
         <LiveAnchoredCard
-          className="pdfjs-citation-card pdfjs-external-citation-card"
+          className="pdfjs-cite-card"
+          role="dialog"
+          aria-label="Linked research"
           resolveAnchor={resolveExternalCitationAnchor}
+          gap={8}
           onPointerDown={event => event.stopPropagation()}
         >
-          <header>
-            <span><Icon name="highlight" /></span>
-            <div>
-              <strong>Linked research</strong>
-              <small>
-                {externalCitation.entry.state === 'loading'
-                  ? 'Resolving scholarly metadata…'
-                  : externalCitation.entry.state === 'failed'
-                    ? 'Metadata unavailable'
-                    : externalCitationMetadata?.sources?.join(' + ') ??
-                      externalCitationMetadata?.source ??
-                      'Scholarly link'}
-              </small>
-            </div>
-            <IconButton
-              icon="close"
-              label="Close linked research"
-              onClick={() => {
-                externalCitationRequestRef.current += 1;
-                setExternalCitation(null);
-                setExternalCitationExpanded(false);
-              }}
-            />
-          </header>
-          <div className="pdfjs-citation-panel">
-            <article className="pdfjs-citation-preview">
-              <div className="pdfjs-citation-preview-copy">
-                <h2>
-                  {externalCitationMetadata?.title ??
-                    (externalCitation.entry.state === 'loading'
-                      ? 'Looking up this work…'
-                      : 'Scholarly resource')}
-                </h2>
-                <p className="pdfjs-citation-byline">
-                  {externalCitation.entry.state === 'loading' ? (
-                    <span className="pdfjs-citation-lookup-state">
-                      <i aria-hidden="true" />
-                      Metadata lookup in progress
-                    </span>
-                  )
-                    : externalCitation.entry.state === 'failed'
-                      ? externalCitation.entry.error
-                      : citationBibliographyLine(externalCitationMetadata)}
-                </p>
-                {externalCitationSummary ? (
-                  <section className="pdfjs-citation-summary">
-                    <span>{externalCitationSummary.label}</span>
-                    <p>{externalCitationSummary.text}</p>
-                  </section>
-                ) : (
-                  <blockquote>
-                    {externalCitation.link.target.kind === 'external'
-                      ? externalCitation.link.target.url
-                      : 'Linked research resource'}
-                  </blockquote>
-                )}
-              </div>
-              <footer>
-                <button
-                  type="button"
-                  className="pdfjs-citation-show-more"
-                  disabled={externalCitation.entry.state !== 'ready'}
-                  onClick={() => setExternalCitationExpanded(true)}
-                >
-                  Show more
-                  <Icon name="expand" />
-                </button>
-                {externalCitation.link.target.kind === 'external' && (
-                  <a
-                    className="pdfjs-citation-reference-action"
-                    href={externalCitation.link.target.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open original link
-                    <span>
-                      {new URL(externalCitation.link.target.url).hostname}
-                    </span>
-                  </a>
-                )}
-              </footer>
-            </article>
-          </div>
+          <ExternalWorkCardBody
+            url={externalCitation.link.target.kind === 'external' ? externalCitation.link.target.url : ''}
+            onResolved={resolveExternal}
+            onShowMore={() => setExternalCitationExpanded(true)}
+            onClose={() => {
+              externalCitationRequestRef.current += 1;
+              setExternalCitation(null);
+              setExternalCitationExpanded(false);
+            }}
+          />
         </LiveAnchoredCard>
       )}
       {activePanel === 'search' && (

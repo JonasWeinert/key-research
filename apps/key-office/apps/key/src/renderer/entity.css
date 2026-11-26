@@ -211,6 +211,23 @@
 .kx-work-muted {
   color: var(--kx-text-2);
 }
+/* An OpenAlex lookup on its way (or being retried while OpenAlex is rate limited). */
+.kx-work-abstract.kx-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 4px 0;
+}
+.kx-work-retry {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kx-accent);
+  font: inherit;
+}
+.kx-work-retry:hover {
+  text-decoration: underline;
+}
 .kx-work-actions {
   display: flex;
   flex-wrap: wrap;

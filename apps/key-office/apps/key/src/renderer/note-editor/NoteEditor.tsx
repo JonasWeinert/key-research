@@ -11,6 +11,7 @@ import { LibraryDrop, insertQuoteAt, insertReferenceAt } from "./insertions";
 import { NoteMenus } from "./menus";
 import type { MenuController, MenuState } from "./menus";
 import { NoteMedia } from "./mediaBehaviors";
+import { QuotePaste } from "./quotePaste";
 import { CalloutView, ImageView, ItemEmbedView, SourceEmbedView, SourceQuoteView, ToggleView, VideoEmbedView } from "./nodeViews";
 import { NoteRuntimeExtension } from "./runtime";
 import type { NoteRuntime, UrlPromptRequest } from "./runtime";
@@ -39,6 +40,7 @@ function buildEditorExtensions(runtime: NoteRuntime, controller: MenuController)
     }),
     NoteMedia,
     LibraryDrop,
+    QuotePaste,
     NoteRuntimeExtension.configure({ runtime }),
     Placeholder.configure({
       includeChildren: true,
@@ -175,7 +177,7 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
         setDropChoice({ items, from, to, rect: new DOMRect(c.left, c.top, 0, c.bottom - c.top) });
       },
       resolve: (id) => resolveSourceCached(id, (x) => propsRef.current.resolveSource(x)),
-      open: (id, page) => propsRef.current.onOpenSource(id, page),
+      open: (id, page, quote) => propsRef.current.onOpenSource(id, page, undefined, quote),
       openItem: (item) => {
         const page = item.anchor?.startsWith("page:") ? Number(item.anchor.slice(5)) : undefined;
         if (item.kind === "source" && (!item.anchor || page !== undefined)) propsRef.current.onOpenSource(item.id, page);

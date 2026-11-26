@@ -73,7 +73,7 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
       const source = await load(id);
       return source && sourceRef(source);
     },
-    onOpenSource: (id: string, page?: number, annotationId?: string) => {
+    onOpenSource: (id: string, page?: number, annotationId?: string, quote?: string) => {
       void (async () => {
         const source = await load(id);
         if (!source) return;
@@ -91,7 +91,7 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
             workspaceId,
           });
           // A place in the PDF (a highlight or a quoted page): scroll there and light it up.
-          if (page !== undefined || annotationId) await key.tabAction("reader-focus", { workspaceId, documentHash, page, annotationId });
+          if (page !== undefined || annotationId) await key.tabAction("reader-focus", { workspaceId, documentHash, page, annotationId, text: quote });
         } else if (source.filePath) await bridge().openPath(source.filePath);
         else if (source.url || source.doi) window.open(source.url || `https://doi.org/${source.doi}`, "_blank");
       })();
