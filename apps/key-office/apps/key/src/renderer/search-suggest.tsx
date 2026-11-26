@@ -387,7 +387,8 @@ export default function SearchField({
       e.preventDefault();
       return pick(strip[0]);
     }
-    if (inline && e.key === "Escape" && !text && !filters.length) return onFieldKey?.(e);
+    // Escape closes the search window at once, as Spotlight does.
+    if (inline && e.key === "Escape") return void onFieldKey?.(e);
     if (inline && e.key !== "Escape" && e.key !== "Backspace" && onFieldKey?.(e)) return;
     if (!inline && !showMenu && onFieldKey?.(e)) return;
     if (e.key === "ArrowDown") {
