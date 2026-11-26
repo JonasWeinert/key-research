@@ -156,6 +156,7 @@ impl Feeds {
         }
         let inner = self.inner.clone();
         let _ = std::thread::Builder::new().name("key-feeds".into()).spawn(move || {
+            key_store::priority::set_thread_class(key_store::priority::Class::Background);
             inner.wait(Duration::from_millis(env_ms("KEY_FEEDS_START_DELAY_MS", 20_000)));
             loop {
                 if !inner.paused() {
@@ -209,6 +210,7 @@ impl Inner {
             if i > 0 {
                 std::thread::sleep(Duration::from_millis(500));
             }
+            key_store::priority::yield_if_needed();
             let _ = self.refresh(subscription);
         }
     }

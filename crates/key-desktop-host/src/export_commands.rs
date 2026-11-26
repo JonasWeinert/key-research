@@ -144,6 +144,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json, root: &Path) -> O
 /// and then stayed still for a moment.
 pub fn start_watcher(store: Store) {
     let _ = std::thread::Builder::new().name("key-export-watch".into()).spawn(move || {
+        key_store::priority::set_thread_class(key_store::priority::Class::Background);
         let mut seen: (Option<u64>, Option<String>) = (None, None);
         let mut changed_at: [Option<Instant>; 2] = [None, None];
         loop {

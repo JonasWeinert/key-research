@@ -772,7 +772,11 @@ impl NativePdfService {
         let render_cancellations = Arc::new(Mutex::new(HashMap::new()));
         thread::Builder::new()
             .name("key-interactive-pdf-bridge".to_owned())
-            .spawn(move || native_process::run_bridge(receiver, worker_input))
+            .spawn(move || {
+                // It serves the reader's pages; the indexer's requests come one page at a time.
+                key_store::priority::set_thread_class(key_store::priority::Class::Interactive);
+                native_process::run_bridge(receiver, worker_input)
+            })
             .expect("failed to start the PDFium owner thread");
         Self {
             sender,

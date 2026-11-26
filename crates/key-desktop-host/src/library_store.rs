@@ -39,6 +39,7 @@ impl PdfText for HostPdfText {
         let mut result = Ok(());
         let total = document.pages.len();
         for page in 0..total {
+            key_index::checkpoint();
             progress(page, total);
             match self.0.request(|reply| Request::Text { id: id.clone(), page, reply }) {
                 Ok(Reply::Text(text)) => pages.push(page_text(page, text)),

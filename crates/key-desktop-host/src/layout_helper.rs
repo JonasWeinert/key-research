@@ -31,6 +31,8 @@ pub fn model_path() -> Option<PathBuf> {
 
 /// The helper writes "phase done total" here per page; the host polls it for progress.
 const PROGRESS_ENV: &str = "KEY_LAYOUT_PROGRESS";
+/// The priority class the helper runs at (key-store's priority.rs).
+const CLASS_ENV: &str = "KEY_LAYOUT_CLASS";
 static PROGRESS_FILE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
 fn write_progress(phase: &str, done: usize, total: usize) {
@@ -55,9 +57,16 @@ pub fn analyze_with_progress(path: &Path, model: bool, progress: &dyn Fn(&str, u
             command.arg("--model").arg(model);
         }
     }
-    // Half the cores at most: indexing runs in the background while the user works.
-    let threads = std::thread::available_parallelism().map(|n| (n.get() / 2).clamp(1, 4)).unwrap_or(2);
+    // Half the cores at most for the document the user opened; bulk indexing fewer still
+    // (one on small machines), and at a lower QoS, so the user's own work keeps the CPU.
+    let class = key_store::priority::current();
+    let threads = if class <= key_store::priority::Class::Foreground {
+        std::thread::available_parallelism().map(|n| (n.get() / 2).clamp(1, 4)).unwrap_or(2)
+    } else {
+        key_store::priority::background_threads()
+    };
     command.env("KEY_LAYOUT_THREADS", threads.to_string());
+    command.env(CLASS_ENV, class.name());
     command.env(PROGRESS_ENV, progress_file.path());
     let mut child = command.spawn().map_err(|e| format!("layout helper: {e}"))?;
     let started = Instant::now();
@@ -110,6 +119,10 @@ pub fn maybe_run_layout_helper() -> Option<i32> {
         eprintln!("usage: {FLAG} INPUT OUTPUT [--model PATH]");
         return Some(2);
     };
+    // The helper runs at the class of the indexing that asked (its threads inherit the QoS).
+    if let Some(class) = env::var(CLASS_ENV).ok().as_deref().and_then(key_store::priority::Class::parse) {
+        key_store::priority::set_thread_class(class);
+    }
     // PDFium gets a thread with a generous stack; deep structure trees recurse.
     let worker = std::thread::Builder::new().stack_size(64 << 20).spawn(move || run(&input, &output, model));
     match worker.map_err(|e| e.to_string()).and_then(|w| w.join().map_err(|_| "layout helper panicked".to_string())) {

@@ -49,8 +49,10 @@ impl Hygiene {
     }
 
     fn count_duplicates(self, store: Store, idle: impl Fn() -> bool) {
+        key_store::priority::set_thread_class(key_store::priority::Class::Idle);
         thread::sleep(Duration::from_secs(5));
         loop {
+            key_store::priority::yield_if_needed();
             if idle() {
                 if let Ok(report) = store.duplicate_groups(false) {
                     let summary = json!({ "count": report.count, "exactGroups": report.exact_groups, "exactRemovable": report.exact_removable, "versions": report.groups.len() - report.count });
@@ -148,9 +150,11 @@ fn check_retractions(store: &Store, options: &openalex::Options, due: &[(String,
 }
 
 fn recheck_retractions(store: Store, openalex: openalex::OpenAlex, idle: impl Fn() -> bool) {
+    key_store::priority::set_thread_class(key_store::priority::Class::Idle);
     // Let the app settle after opening.
     thread::sleep(Duration::from_secs(if openalex::fixtures().is_some() { 3 } else { 120 }));
     loop {
+        key_store::priority::yield_if_needed();
         let options = openalex.options();
         let mut pause = Duration::from_secs(5 * 60);
         if options.auto && idle() {

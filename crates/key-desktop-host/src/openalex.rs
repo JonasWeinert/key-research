@@ -140,7 +140,9 @@ impl OpenAlex {
 
     fn run(self, store: Store) {
         let mut last_backfill: Option<Instant> = None;
+        key_store::priority::set_thread_class(key_store::priority::Class::Background);
         loop {
+            key_store::priority::yield_if_needed();
             let options = self.options();
             let focus = self.focus.lock().map(|f| f.clone()).unwrap_or_default();
             let next = match store.next_enrichment(options.auto, &focus) {
@@ -808,6 +810,8 @@ fn refresh_later(store: Store, kind: String, id: String, path: String, query: Ve
         running.push(key.clone());
     }
     let spawned = thread::Builder::new().name("key-openalex-refresh".into()).spawn(move || {
+        // The page that asked is open: its counts are foreground work.
+        key_store::priority::set_thread_class(key_store::priority::Class::Foreground);
         let query: Vec<(&str, &str)> = query.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         if let Ok(record) = get(&path, &query, &options) {
             let _ = match kind.as_str() {

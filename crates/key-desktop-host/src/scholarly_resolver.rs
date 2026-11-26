@@ -407,6 +407,7 @@ pub(super) fn start_retry_worker(library: Library) {
     std::thread::Builder::new()
         .name("scholarly-retries".into())
         .spawn(move || {
+            key_store::priority::set_thread_class(key_store::priority::Class::Background);
             loop {
                 match library.scholarly_due(now(), 16) {
                     Ok(entries) => {
