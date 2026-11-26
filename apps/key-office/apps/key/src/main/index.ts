@@ -2204,6 +2204,7 @@ function baseMenu() {
           ...(launcher
             ? [
                 { label: "New Workspace…", click: () => launcher?.request("new") },
+                { label: "Open Workspace", submenu: launcher.openWorkspaceMenu() },
                 { label: "All Workspaces…", click: () => launcher?.show() },
               ]
             : []),
