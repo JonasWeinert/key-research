@@ -6,6 +6,7 @@ import SourcePage, { type DockedPanel } from "./SourcePage";
 import SearchPage from "./SearchPage";
 import HighlightsPage from "./HighlightsPage";
 import LinkedFileView from "./LinkedFileView";
+import { WebPageReader } from "./WebPageReader";
 import type { SearchPreviewState } from "./search-preview";
 import { EntryDetails } from "./EntryTools";
 import { RecordProperties } from "./RecordProperties";
@@ -215,7 +216,7 @@ function parseFilterValue(value: string): unknown {
 }
 
 export interface ContentSpec {
-  section: "home" | "sources" | "records" | "record" | "note" | "source" | "canvas" | "highlights" | "search" | "file" | "person" | "venue" | "topic";
+  section: "home" | "sources" | "records" | "record" | "note" | "source" | "webpage" | "canvas" | "highlights" | "search" | "file" | "person" | "venue" | "topic";
   workspaceId?: string;
   projectId?: string;
   record?: RecordItem;
@@ -731,6 +732,7 @@ export default function WorkspaceContent({
       {section === "source" && workspaceId && spec.sourceId && (
         <SourcePage invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} docked={docked} />
       )}
+      {section === "webpage" && workspaceId && spec.sourceId && <WebPageReader invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} />}
       {section === "canvas" && workspaceId && spec.canvasId && (
         <CanvasPage invoke={invoke} workspaceId={workspaceId} canvasId={spec.canvasId} viewId={viewId} />
       )}

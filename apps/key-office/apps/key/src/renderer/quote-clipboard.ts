@@ -14,7 +14,7 @@ export interface QuotePayload {
   workspaceId?: string;
   sourceId?: string;
   documentHash: string;
-  /** 0-based. */
+  /** 0-based; -1 for a source without pages (a saved web page). */
   page: number;
   /** On `page`, [x, y, width, height] in 0–65535 of the page. */
   rects: number[][];
@@ -46,7 +46,7 @@ export function quoteAttribution(quote: Pick<QuotePayload, "citation" | "page">)
   const year = quote.citation.year ? String(quote.citation.year) : "";
   const head = who && year ? `${who} (${year})` : who || (year ? `(${year})` : "");
   const title = quote.citation.title?.trim().replace(/\.$/, "");
-  return [head, title, Number.isFinite(quote.page) ? `p. ${quote.page + 1}` : ""].filter(Boolean).join(", ");
+  return [head, title, Number.isFinite(quote.page) && quote.page >= 0 ? `p. ${quote.page + 1}` : ""].filter(Boolean).join(", ");
 }
 
 export function quotePlainText(quote: QuotePayload) {

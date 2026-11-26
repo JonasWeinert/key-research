@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { Icon } from "./icons";
+import { WebSaveButton } from "./WebSaveButton";
 import { WEB_BAR_HEIGHT } from "../shared/browser-layout";
 import "./browser.css";
 
@@ -14,7 +15,7 @@ export interface WebBarState {
 
 /** The slim bar above a browser tab's page: back, forward, and which site it is. The page
  * itself is a native view below it; there is no address field by design. */
-export function BrowserBar({ state, style, onStep }: { state: WebBarState; style?: CSSProperties; onStep(step: -1 | 1): void }) {
+export function BrowserBar({ state, style, onStep, viewId }: { state: WebBarState; style?: CSSProperties; onStep(step: -1 | 1): void; viewId?: string }) {
   return (
     <nav className="key-web-bar" aria-label="Browser" style={{ ...style, height: WEB_BAR_HEIGHT }} data-loading={state.loading || undefined}>
       <button type="button" disabled={!state.canGoBack} aria-label="Back" title="Back (⌘[)" onClick={() => onStep(-1)}>
@@ -27,6 +28,7 @@ export function BrowserBar({ state, style, onStep }: { state: WebBarState; style
         {state.url.startsWith("https:") ? <Icon name="lock" size={11} aria-label="Secure connection" /> : null}
         <span>{state.host}</span>
       </span>
+      {viewId && <WebSaveButton viewId={viewId} url={state.url} loading={state.loading} />}
       {state.loading && <span className="key-web-progress" role="progressbar" aria-label="Loading" />}
     </nav>
   );

@@ -31,6 +31,7 @@ import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
+import { WebSources } from "./web-sources";
 import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browser/temp-pdfs";
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
 import { webPageRect } from "../shared/browser-layout";
@@ -409,6 +410,7 @@ function viewKind(v: OwnedView | undefined) {
   if (!v?.contentKey) return v?.kind;
   if (section === "sources") return "library";
   if (section === "note" || section === "canvas" || section === "search") return section;
+  if (section === "webpage") return "web";
   if (section === "source" || section === "file" || ENTITY_SECTIONS.includes(section ?? "")) return "page";
   return "records";
 }
@@ -646,6 +648,7 @@ const scratchWorkspace = () =>
     throw error;
   }));
 let tempPdfs: TempPdfs;
+let webSources: WebSources;
 let browserService: BrowserService;
 /** A reader for a PDF kept from the browser, analysed in the scratch library. */
 async function tempPdfView(entry: TempPdf): Promise<OwnedView> {
@@ -1543,7 +1546,7 @@ function savedView(id: string): SavedView | undefined {
   if (!c || c.section === "home") return { type: "home" };
   // A record that was never saved has nothing to reopen.
   if (c.section === "record" && !c.record?.id) return undefined;
-  if (!["sources", "records", "record", "note", "source", "canvas", "search", "file", ...ENTITY_SECTIONS].includes(c.section)) return undefined;
+  if (!["sources", "records", "record", "note", "source", "webpage", "canvas", "search", "file", ...ENTITY_SECTIONS].includes(c.section)) return undefined;
   return {
     type: "content",
     section: c.section as "sources",
@@ -1611,8 +1614,10 @@ const contentKey = (section: string, workspaceId?: string, projectId?: string, i
     : JSON.stringify([section, workspaceId || null, projectId || null, id ?? null]);
 /** Opens (or focuses) a library list, record, note or source page in `w`. */
 async function openContent(w: ShellWindow, p: any) {
-  if (!["sources", "records", "record", "note", "canvas", "highlights", "search", "file", ...ENTITY_SECTIONS].includes(p.section))
+  if (!["sources", "records", "record", "note", "canvas", "highlights", "search", "file", "webpage", ...ENTITY_SECTIONS].includes(p.section))
     throw Error("Invalid content view");
+  if (p.section === "webpage" && (typeof p.sourceId !== "string" || !p.sourceId))
+    throw Error("Choose a saved page");
   if (ENTITY_SECTIONS.includes(p.section) && (typeof p.entityId !== "string" || !p.entityId))
     throw Error("Choose a person, journal or topic");
   if (p.section === "note" && (typeof p.noteId !== "string" || !p.noteId))
@@ -1630,7 +1635,7 @@ async function openContent(w: ShellWindow, p: any) {
     p.section,
     p.workspaceId,
     p.projectId,
-    p.section === "record" ? p.record?.id || randomUUID() : p.section === "note" ? p.noteId : p.section === "canvas" ? p.canvasId : p.section === "file" ? p.fileId : ENTITY_SECTIONS.includes(p.section) ? p.entityId : null,
+    p.section === "record" ? p.record?.id || randomUUID() : p.section === "note" ? p.noteId : p.section === "canvas" ? p.canvasId : p.section === "file" ? p.fileId : p.section === "webpage" ? p.sourceId : ENTITY_SECTIONS.includes(p.section) ? p.entityId : null,
   );
   const existing = [...views.values()].find((v) => v.contentKey === recordKey);
   if (existing) {
@@ -1658,7 +1663,7 @@ async function openContent(w: ShellWindow, p: any) {
         ? p.record?.title || `Untitled ${p.record?.kind || "page"}`
         : p.section === "note"
           ? String(p.title || "Untitled note").slice(0, 200)
-          : p.section === "canvas" || p.section === "file" || ENTITY_SECTIONS.includes(p.section)
+          : p.section === "canvas" || p.section === "file" || p.section === "webpage" || ENTITY_SECTIONS.includes(p.section)
             ? String(p.title || (p.section === "file" ? "File" : p.section === "canvas" ? "Untitled canvas" : p.section === "person" ? "Person" : p.section === "venue" ? "Journal" : "Topic")).slice(0, 200)
             : p.section === "highlights"
               ? "Highlights"
@@ -1676,6 +1681,7 @@ async function openContent(w: ShellWindow, p: any) {
       noteId: p.section === "note" ? p.noteId : undefined,
       canvasId: p.section === "canvas" ? p.canvasId : undefined,
       fileId: p.section === "file" ? p.fileId : undefined,
+      sourceId: p.section === "webpage" ? p.sourceId : undefined,
       entityId: ENTITY_SECTIONS.includes(p.section) ? p.entityId : undefined,
     },
   }, w);
@@ -1725,13 +1731,13 @@ async function restoredView(saved: SavedView): Promise<OwnedView | undefined> {
     }
     if (section === "note" && !(await registry.invoke("store_note", { id: saved.noteId }, workspaceId))) return undefined;
     if (section === "canvas" && !(await registry.invoke("store_canvas", { id: saved.canvasId }, workspaceId))) return undefined;
-    if (section === "source" && !(await registry.invoke("store_source", { id: saved.sourceId }, workspaceId))) return undefined;
+    if ((section === "source" || section === "webpage") && !(await registry.invoke("store_source", { id: saved.sourceId }, workspaceId))) return undefined;
     if (section === "file" && !(await registry.invoke("store_linked_file", { id: saved.fileId }, workspaceId))) return undefined;
     if (ENTITY_SECTIONS.includes(section) && !(await registry.invoke(ENTITY_COMMAND[section], { id: saved.entityId }, workspaceId))) return undefined;
     const key =
       section === "source"
         ? JSON.stringify(["source", workspaceId, null, saved.sourceId])
-        : contentKey(section, workspaceId, projectId, section === "record" ? saved.recordId : section === "note" ? saved.noteId : section === "canvas" ? saved.canvasId : section === "file" ? saved.fileId : ENTITY_SECTIONS.includes(section) ? saved.entityId : null);
+        : contentKey(section, workspaceId, projectId, section === "record" ? saved.recordId : section === "note" ? saved.noteId : section === "canvas" ? saved.canvasId : section === "file" ? saved.fileId : section === "webpage" ? saved.sourceId : ENTITY_SECTIONS.includes(section) ? saved.entityId : null);
     if ([...views.values()].some((v) => v.contentKey === key)) return undefined;
     const view: OwnedView = {
       id: randomUUID(),
@@ -1798,6 +1804,18 @@ function moveTab(from: ShellWindow, tabId: string, to?: ShellWindow, at?: { x: n
   }
   if (!allTabs(from.state).length) from.window.close();
   else layout(from);
+}
+/** Saves the focused browser tab's page to the window's library, offline (see web-sources.ts). */
+async function savePageToLibrary() {
+  const w = focusedShell();
+  const v = w && views.get(activeViewId(w) ?? "");
+  if (v?.kind !== "web" || !v.view || !w.workspaceId) return;
+  try {
+    const saved = await webSources.save(v.view.webContents, w.workspaceId);
+    emitTo(w, "browser-notice", { message: saved.existing ? "Saved again to your library" : "Saved to your library" });
+  } catch (error) {
+    emitTo(w, "browser-notice", { message: `Could not save the page: ${String(error).replace(/^Error: /, "")}` });
+  }
 }
 /** Passages sent from a PDF selection to a source's note, until its page takes them. */
 const pendingAppends = new Map<string, { text: string; page: number; color?: string }[]>();
@@ -1931,6 +1949,7 @@ function baseMenu() {
               if (views.get(id ?? "")?.content?.section === "record") emitTo(w, "save-content", id);
             },
           },
+          { label: "Save Page to Library", accelerator: "CmdOrCtrl+D", click: () => void savePageToLibrary() },
           { type: "separator" },
           {
             label: "Move Tab to New Window",
@@ -2116,6 +2135,14 @@ else
       setTimeout(() => void cleanTempPdfs().catch(() => undefined), Math.min(15_000, cleanupEvery));
       setInterval(() => void cleanTempPdfs().catch(() => undefined), cleanupEvery).unref();
       const linkedFolders = new LinkedFolders((c, a, w) => registry.invoke(c, a, w), () => liveShells().map((w) => w.workspaceId), (v) => emit("linked-folders-changed", v));
+      webSources = new WebSources(
+        (c, a, w) => registry.invoke(c, a, w),
+        (id) => {
+          const v = views.get(id);
+          return v?.kind === "web" && v.view && !v.view.webContents.isDestroyed() ? v.view.webContents : undefined;
+        },
+        () => emit("library-changed"),
+      );
       const webSearch = new WebSearch({ settings: () => appSettings.get(), invoke: (c, a, w) => registry.invoke(c, a, w), emit });
       routeEmbeddedMedia();
       agentFill = new AgentFill(
@@ -2257,6 +2284,10 @@ else
           }
           if (linkedFolders.handles(command)) return linkedFolders.handle(command, args, targetWorkspace, (from ?? focusedShell()).window);
           if (webSearch.handles(command)) return webSearch.handle(command, args, targetWorkspace);
+          if (webSources.handles(command)) {
+            if (record) throw Error("Saved pages are read by the shell");
+            return webSources.handle(command, args, targetWorkspace);
+          }
           if (command === "agent_fill_propose")
             return agentFill.propose(targetWorkspace, args);
           if (command === "agent_fill_apply")
@@ -2757,7 +2788,7 @@ else
           // A note's tab follows its title as it is edited.
           case "content-title": {
             const view = views.get(p.viewId);
-            if (!["note", "source", "canvas", ...ENTITY_SECTIONS].includes(view?.content?.section ?? "")) throw Error("Not a note, source or canvas page");
+            if (!["note", "source", "webpage", "canvas", ...ENTITY_SECTIONS].includes(view?.content?.section ?? "")) throw Error("Not a note, source or canvas page");
             view!.title = String(p.title || (view!.content!.section === "note" ? "Untitled note" : view!.content!.section === "canvas" ? "Untitled canvas" : "Untitled")).slice(0, 200);
             tabsChanged(w);
             return snapshot(w);

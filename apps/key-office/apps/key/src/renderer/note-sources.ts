@@ -92,6 +92,10 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
           });
           // A place in the PDF (a highlight or a quoted page): scroll there and light it up.
           if (page !== undefined || annotationId) await key.tabAction("reader-focus", { workspaceId, documentHash, page, annotationId, text: quote });
+        } else if (source.filePath && source.kind === "web") {
+          // A saved web page opens in its reader, at the highlight or the quoted passage.
+          const { openWebPage } = await import("./web-page-open");
+          await openWebPage(workspaceId, source.id, { annotationId, text: quote }, source.title);
         } else if (source.filePath) await bridge().openPath(source.filePath);
         else if (source.url || source.doi) window.open(source.url || `https://doi.org/${source.doi}`, "_blank");
       })();

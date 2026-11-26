@@ -311,6 +311,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const hidden = all.length - shown.length;
   const names = new Map(collections.map((c) => [c.id, c.name]));
   const isPdf = !!source.filePath && source.kind === "pdf";
+  const isSavedPage = !!source.filePath && source.kind === "web";
+  const readPage = (annotationId?: string) => void import("./web-page-open").then(({ openWebPage }) => openWebPage(workspaceId, sourceId, annotationId ? { annotationId } : undefined, source.title, docked ? {} : { placement: "split", fromViewId: viewId }));
   const pageNote = page?.body ?? "";
   /** The PDF on its own: jumps to it when it is already open anywhere. */
   const openReaderTab = () =>
@@ -512,6 +514,11 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <Icon name="book" size={13} />
               Read
             </button>
+          ) : isSavedPage ? (
+            <button className="kx-page-action" onClick={() => readPage()} title="Read the saved page beside this one">
+              <Icon name="book" size={13} />
+              Read
+            </button>
           ) : source.filePath ? (
             <button className="kx-icon-button" title="Open file" aria-label="Open file" onClick={() => void libraryBridge().openPath(source.filePath!)}>
               <Icon name="external" size={14} />
@@ -616,6 +623,11 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                       {isPdf && (
                         <button onClick={() => sources.onOpenSource(sourceId, pageIndex, h.id)}>
                           <Icon name="book" size={11} /> Show in PDF
+                        </button>
+                      )}
+                      {isSavedPage && (
+                        <button onClick={() => readPage(h.id)}>
+                          <Icon name="globe" size={11} /> Show on page
                         </button>
                       )}
                     </footer>
