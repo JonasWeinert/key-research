@@ -11,7 +11,7 @@ describe("railStops", () => {
     );
     expect(stops.map((s) => s.title)).toEqual(["Intro", "Method", "Results"]);
     expect(stops.map((s) => s.until)).toEqual([3, 6, 9]);
-    expect(size).toBe(24);
+    expect(size).toBe(14);
     expect(thinned).toBe(false);
   });
 
@@ -27,7 +27,7 @@ describe("railStops", () => {
     const short = railStops({ pageCount: 12, sections: [] }, 400);
     expect(short.stops).toHaveLength(12);
     const long = railStops({ pageCount: 400, sections: [] }, 500);
-    expect(long.stops.length).toBeLessThanOrEqual(100);
+    expect(long.stops.length).toBeLessThanOrEqual(Math.ceil(500 / 3));
     expect(long.stops[1].page).toBe(long.stops[0].until + 1);
   });
 });

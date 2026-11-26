@@ -75,43 +75,85 @@
   height: 14px;
 }
 
-/* Beneath the rail: show chapters or page thumbnails. Quiet until pointed at. */
-.key-pdf-rail-mode {
+/* Right-click on the rail: chapters or page thumbnails, and the full table of contents. */
+.key-pdf-rail-menu {
   position: absolute;
-  bottom: 0;
-  left: 0;
+  z-index: 5;
   display: flex;
+  min-width: 196px;
   flex-direction: column;
-  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--key-ui-border);
+  border-radius: 9px;
+  background: var(--key-ui-surface);
+  box-shadow: var(--key-ui-shadow);
+  color: var(--key-ui-text);
+  font-family: var(--key-ui-font);
+  font-size: var(--key-ui-text-base, 13px);
   pointer-events: auto;
-  opacity: 0.55;
-  transition: opacity 160ms var(--key-ui-ease, ease);
+  animation: key-pdf-rail-menu-in 100ms var(--key-ui-ease, ease);
 }
-.key-pdf-rail-mode:hover,
-.key-pdf-rail-mode:focus-within {
-  opacity: 1;
+@keyframes key-pdf-rail-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 }
-.key-pdf-rail-mode button {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+.key-pdf-rail-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px 0 6px;
   border: 0;
   border-radius: 5px;
   background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+.key-pdf-rail-menu button:is(:hover, :focus-visible):not(:disabled) {
+  outline: none;
+  background: var(--key-ui-primary);
+  color: var(--key-ui-primary-ink);
+}
+.key-pdf-rail-menu button:disabled {
   color: var(--key-ui-muted);
-  cursor: pointer;
 }
-.key-pdf-rail-mode button[aria-checked="true"] {
-  background: var(--key-ui-hover);
-  color: var(--key-ui-text);
+.key-pdf-rail-menu button small {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--key-ui-muted);
+  font-size: var(--key-ui-text-xs, 11px);
 }
-.key-pdf-rail-mode button:focus-visible {
-  outline: 2px solid var(--key-ui-focus);
-  outline-offset: 1px;
+.key-pdf-rail-menu svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
 }
-.key-pdf-rail-mode svg {
+.key-pdf-rail-menu .key-pdf-rail-menu-check {
+  flex: none;
   width: 12px;
   height: 12px;
+  visibility: hidden;
+}
+.key-pdf-rail-menu [aria-checked="true"] .key-pdf-rail-menu-check {
+  visibility: visible;
+}
+.key-pdf-rail-menu-gap {
+  flex: none;
+  width: 13px;
+}
+.key-pdf-rail-menu hr {
+  height: 1px;
+  margin: 4px 6px;
+  border: 0;
+  background: var(--key-ui-border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-pdf-rail-menu {
+    animation: none;
+  }
 }
