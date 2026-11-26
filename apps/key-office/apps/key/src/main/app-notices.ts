@@ -112,6 +112,22 @@ function guardDialogs() {
   const reportOnly = (options?: BoxOptions) => options?.type === "error" && (options.buttons?.length ?? 0) <= 1;
   dialog.showMessageBox = ((...args: unknown[]) => {
     const options = boxOptions(args);
+    // A page's alert()/confirm() (Electron shows those through here, with an abort signal):
+    // a test driver (Playwright) answers it over the devtools protocol, which aborts this
+    // box. Give it a moment, then cancel, so nothing waits on a box nobody sees.
+    if (test && options?.signal) {
+      const signal = options.signal;
+      return new Promise<Electron.MessageBoxReturnValue>((resolve) => {
+        const timer = setTimeout(() => {
+          logLine("dialog", `auto-canceled the page dialog "${options.message}"`);
+          resolve(safeResponse(options));
+        }, 5000);
+        signal.addEventListener("abort", () => {
+          clearTimeout(timer);
+          resolve(safeResponse(options));
+        });
+      });
+    }
     if (test || reportOnly(options)) {
       if (reportOnly(options)) notify("error", options!.message, options!.detail);
       else logLine("dialog", `auto-answered "${options?.message}" with button ${safeResponse(options).response}`);

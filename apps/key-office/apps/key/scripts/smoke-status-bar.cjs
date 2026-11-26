@@ -155,6 +155,11 @@ const assert = require("node:assert/strict");
     await until(async () => /Smoke error box/.test((await notice.innerText().catch(() => "")) || ""), "the error box is a notice");
     assert.match(await readFile(path.join(profile, "logs", "key.log"), "utf8"), /auto-answered "Delete everything\?"/);
 
+    // A page's confirm() still reaches the test driver, which answers it.
+    page.once("dialog", (dialog) => dialog.accept());
+    assert.equal(await page.evaluate(() => window.confirm("Smoke confirm?")), true, "the driver accepts a confirm");
+    assert.equal(await page.evaluate(() => window.confirm("Smoke confirm again?")), false, "an unanswered confirm is dismissed");
+
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, temp, bar: box, reader: bounds }));
   } catch (error) {
