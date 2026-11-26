@@ -278,20 +278,22 @@ var KeySync = {
    *  with a stamp that changes when it or anything inside it changes: the latest
    *  modification time and the number of parts. */
   async topLevelRows(libraryID) {
+    // Zotero.DB returns rows only for statements that start with SELECT: no WITH.
     const rows = await Zotero.DB.queryAsync(
-      `WITH family(top, id) AS (
-         SELECT itemID, itemID FROM items WHERE libraryID = ?1
-         UNION ALL SELECT parentItemID, itemID FROM itemNotes WHERE parentItemID IS NOT NULL
-         UNION ALL SELECT parentItemID, itemID FROM itemAttachments WHERE parentItemID IS NOT NULL
-         UNION ALL SELECT A.parentItemID, N.itemID FROM itemAnnotations N JOIN itemAttachments A ON A.itemID = N.parentItemID WHERE A.parentItemID IS NOT NULL
-         UNION ALL SELECT N.parentItemID, N.itemID FROM itemAnnotations N
-       ),
-       stamps AS (
-         SELECT F.top, MAX(X.clientDateModified) || '#' || COUNT(*) AS stamp FROM family F JOIN items X ON X.itemID = F.id
-         WHERE F.id NOT IN (SELECT itemID FROM deletedItems) OR F.id = F.top GROUP BY F.top
-       )
-       SELECT I.itemID, I.key, I.version, S.stamp, (D.itemID IS NOT NULL) AS deleted
-       FROM items I LEFT JOIN deletedItems D USING (itemID) LEFT JOIN stamps S ON S.top = I.itemID
+      `SELECT I.itemID, I.key, I.version, S.stamp, (D.itemID IS NOT NULL) AS deleted
+       FROM items I LEFT JOIN deletedItems D USING (itemID)
+       LEFT JOIN (
+         SELECT F.top AS top, MAX(X.clientDateModified) || '#' || COUNT(*) AS stamp
+         FROM (
+           SELECT itemID AS top, itemID AS id FROM items WHERE libraryID = ?1
+           UNION ALL SELECT parentItemID, itemID FROM itemNotes WHERE parentItemID IS NOT NULL
+           UNION ALL SELECT parentItemID, itemID FROM itemAttachments WHERE parentItemID IS NOT NULL
+           UNION ALL SELECT A.parentItemID, N.itemID FROM itemAnnotations N JOIN itemAttachments A ON A.itemID = N.parentItemID WHERE A.parentItemID IS NOT NULL
+           UNION ALL SELECT N.parentItemID, N.itemID FROM itemAnnotations N
+         ) F JOIN items X ON X.itemID = F.id
+         WHERE F.id = F.top OR F.id NOT IN (SELECT itemID FROM deletedItems)
+         GROUP BY F.top
+       ) S ON S.top = I.itemID
        WHERE I.libraryID = ?1
          AND I.itemID NOT IN (SELECT itemID FROM itemNotes WHERE parentItemID IS NOT NULL)
          AND I.itemID NOT IN (SELECT itemID FROM itemAttachments WHERE parentItemID IS NOT NULL)
