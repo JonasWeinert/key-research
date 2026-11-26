@@ -21,6 +21,7 @@ import ReferenceLibrary from "./ReferenceLibrary";
 const NotePage = lazyComponent(() => import("./NotePage").then((m) => m.default));
 const CanvasPage = lazyComponent(() => import("./canvas/CanvasPage").then((m) => m.default));
 const HighlightsPage = lazyComponent(() => import("./HighlightsPage").then((m) => m.default));
+const InboxPage = lazyComponent(() => import("./InboxPage").then((m) => m.default));
 const LinkedFileView = lazyComponent(() => import("./LinkedFileView").then((m) => m.default));
 const EntityPage = lazyComponent(() => import("./EntityPage").then((m) => m.default));
 
@@ -221,7 +222,7 @@ function parseFilterValue(value: string): unknown {
 }
 
 export interface ContentSpec {
-  section: "home" | "sources" | "records" | "record" | "note" | "source" | "webpage" | "canvas" | "highlights" | "search" | "file" | "person" | "venue" | "topic" | "tag";
+  section: "home" | "sources" | "records" | "record" | "note" | "source" | "webpage" | "canvas" | "highlights" | "search" | "inbox" | "file" | "person" | "venue" | "topic" | "tag";
   workspaceId?: string;
   projectId?: string;
   record?: RecordItem;
@@ -742,6 +743,7 @@ export default function WorkspaceContent({
         <CanvasPage invoke={invoke} workspaceId={workspaceId} canvasId={spec.canvasId} viewId={viewId} />
       )}
       {section === "highlights" && workspaceId && <HighlightsPage invoke={invoke} workspaceId={workspaceId} />}
+      {section === "inbox" && workspaceId && <InboxPage invoke={invoke} workspaceId={workspaceId} viewId={viewId} active={visible && tabs.activeViewId === viewId} />}
       {section === "search" && workspaceId && <SearchPage invoke={invoke} workspaceId={workspaceId} active={visible && tabs.activeViewId === viewId} viewId={viewId} />}
       {section === "file" && workspaceId && spec.fileId && <LinkedFileView invoke={invoke} workspaceId={workspaceId} fileId={spec.fileId} />}
       {(section === "person" || section === "venue" || section === "topic" || section === "tag") && workspaceId && spec.entityId && (

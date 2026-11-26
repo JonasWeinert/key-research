@@ -930,6 +930,50 @@ fn known_name(text: &str, known: Option<&KnownNames>) -> Option<Detection> {
 }
 
 /// Every reading of `text`, best first. An identifier stands alone; the others can combine.
+/// `status:unread|reading|read` and `read:>2026-01-01` (when last read; also `<`, `>=`, `<=`).
+fn reading_token(text: &str) -> Option<Detection> {
+    if !text.contains(':') {
+        return None;
+    }
+    for at in char_starts(text).filter(|at| boundary_before(text, *at)) {
+        for (prefix, field) in [("status:", "status"), ("read:", "read")] {
+            if !starts_ci(text, at, prefix) {
+                continue;
+            }
+            let start = at + prefix.len();
+            let end = text[start..].find(char::is_whitespace).map_or(text.len(), |n| start + n);
+            let raw = &text[start..end];
+            if field == "status" {
+                let value = match raw.to_lowercase().as_str() {
+                    "unread" | "new" => "unread",
+                    "reading" | "in-progress" | "progress" | "started" => "reading",
+                    "read" | "finished" | "done" => "read",
+                    _ => continue,
+                };
+                let label = match value {
+                    "unread" => "Unread",
+                    "reading" => "In progress",
+                    _ => "Read",
+                };
+                return Some(detection("status", vec![filter("status", value, label, "is")], cut(text, at, end)));
+            }
+            let (op, date) = [(">=", "gte"), ("<=", "lte"), (">", "gt"), ("<", "lt")]
+                .iter()
+                .find_map(|(sign, op)| raw.strip_prefix(sign).map(|d| (*op, d)))
+                .unwrap_or(("gte", raw));
+            if crate::reading::date_ms(date).is_none() {
+                continue;
+            }
+            let label = match op {
+                "gt" | "gte" => format!("Read since {date}"),
+                _ => format!("Last read before {date}"),
+            };
+            return Some(detection("read", vec![filter("read", date, &label, op)], cut(text, at, end)));
+        }
+    }
+    None
+}
+
 pub fn detect_query(text: &str, kinds: bool, known: Option<&KnownNames>) -> Vec<Detection> {
     let query = text.trim();
     if query.encode_utf16().count() < 3 {
@@ -940,6 +984,16 @@ pub fn detect_query(text: &str, kinds: bool, known: Option<&KnownNames>) -> Vec<
             id.add = addable(&id);
         }
         return vec![id];
+    }
+    // A reading token is taken out first; the rest reads as usual, with it.
+    if let Some(token) = reading_token(query) {
+        let mut out = vec![token.clone()];
+        for mut found in detect_query(&token.rest, kinds, known) {
+            found.filters.splice(0..0, token.filters.clone());
+            found.add = None;
+            out.push(found);
+        }
+        return out;
     }
     let readers: [&dyn Fn(&str) -> Option<Detection>; 4] = [&quoted, &years, &|t| kind_word(t, kinds), &|t| known_name(t, known)];
     let mut out = Vec::new();
@@ -1083,6 +1137,10 @@ mod tests {
         assert_eq!(first("since 2020"), one("years", &["year gte 2020"], ""));
         assert_eq!(first("vaccines before 2010"), one("years", &["year lte 2009"], "vaccines"));
         assert_eq!(first("malaria 2019"), one("year", &["year=2019"], "malaria"));
+        let read = detect_query("status:reading malaria", false, None);
+        assert_eq!((read[0].id, read[0].filters[0].value.as_str(), read[0].rest.as_str()), ("status", "reading", "malaria"));
+        let since = detect_query("read:>2026-01-01", false, None);
+        assert_eq!((since[0].filters[0].op.as_str(), since[0].filters[0].value.as_str()), ("gt", "2026-01-01"));
         // A year alone is the store's suggestion already; other numbers are not years.
         assert!(detect_query("2019", false, None).is_empty());
         assert_eq!(first("cohort of 3000 patients"), None);

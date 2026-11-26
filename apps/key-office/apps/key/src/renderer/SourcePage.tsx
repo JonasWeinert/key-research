@@ -20,6 +20,8 @@ import { WorkReferences } from "./work-references";
 import NoteEditor from "./note-editor";
 import { noteSources } from "./note-sources";
 import LinkedFrom from "./LinkedFrom";
+import { ReadingStatusControl, RelatedSources, readingSummary, useReading } from "./reading-ui";
+import { follow } from "./feeds-ui";
 import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
@@ -86,6 +88,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const [abstractOpen, setAbstractOpen] = useState(false);
   /** People, journal, topics, citations: the metadata graph around the source. */
   const [graph, setGraph] = useState<SourceGraph>();
+  const reading = useReading(invoke, workspaceId, sourceId);
   const [sheet, setSheet] = useState<PropertySheetState>();
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
@@ -669,6 +672,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               </button>
             )
           )}
+          <ReadingStatusControl invoke={invoke} workspaceId={workspaceId} ids={[sourceId]} status={reading?.status} manual={reading?.manual} />
           <button className="kx-icon-button" data-active={source.starred} aria-pressed={source.starred} title={source.starred ? "Unstar" : "Star"} onClick={() => void save({ starred: !source.starred })}>
             <Icon name="star" size={14} filled={!!source.starred} />
           </button>
@@ -700,6 +704,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
+              {source.openalexId && (
+                <button onClick={() => void follow(invoke, workspaceId, "citing", `Citing “${(source.title || "Untitled").slice(0, 80)}”`, { sourceId }).catch((e) => setError(String(e)))}>Alert me to new citations</button>
+              )}
               <button onClick={() => setUpdating(true)}>Update metadata…</button>
               {source.doi && (
                 <button onClick={() => void invoke("store_retraction_check", { ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Check for retraction</button>
@@ -735,6 +742,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         <>
           <RetractionNotice invoke={invoke} workspaceId={workspaceId} source={source} onChanged={() => void loadSource()} />
           <VersionsLine invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} />
+          {readingSummary(reading) && <p className="kx-reading-summary">{`${reading ? (reading.status === "read" ? "Read" : reading.status === "reading" ? "In progress" : "Unread") : ""} · ${readingSummary(reading)}`}</p>}
           {updating && (
             <MetadataUpdateSheet
               invoke={invoke}
@@ -846,6 +854,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         </div>
 
         <LinkedFrom invoke={invoke} workspaceId={workspaceId} item={{ kind: "source", id: sourceId }} />
+        <RelatedSources invoke={invoke} workspaceId={workspaceId} source={source} />
         {graph && <WorkReferences invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} graph={graph} hasWork={!!source.openalexId} onChanged={() => void loadGraph()} />}
         {(!!graph?.topics.length || !!graph?.people.length || source.tags.length > 0) && <PaperRelations invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} title={source.title || "Untitled"} />}
 

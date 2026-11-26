@@ -24,6 +24,8 @@ pub mod tag_plan;
 pub mod smart_query;
 pub mod web_references;
 mod html_dom;
+pub mod feeds;
+pub mod reading;
 pub use analysis::{CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -318,6 +320,8 @@ fn sort_expression(field: &str) -> String {
         "kind" => "s.kind",
         "pages" => "s.page_count",
         "citationKey" => "s.citation_key COLLATE NOCASE",
+        "status" => "CASE coalesce(nullif(s.read_state, ''), 'unread') WHEN 'unread' THEN 0 WHEN 'reading' THEN 1 ELSE 2 END",
+        "lastRead" => reading::LAST_READ_SQL,
         _ => "s.added_at",
     }
     .into()
@@ -345,6 +349,11 @@ pub struct Counts {
     /// Flagged as retracted and not dismissed.
     #[serde(default)]
     pub retracted: i64,
+    /// Queued to read, and read at some point (reading.rs).
+    #[serde(default)]
+    pub to_read: i64,
+    #[serde(default)]
+    pub recent: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -491,6 +500,8 @@ impl Store {
             tx.commit().map_err(e)?;
         }
         citation_keys::ensure_schema(&conn)?;
+        feeds::ensure_schema(&conn)?;
+        reading::ensure_schema(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
         reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
         Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
@@ -1324,6 +1335,7 @@ fn select_sources() -> String {
         ]
         .map(String::from),
     );
+    columns.extend(Store::reading_columns().map(String::from));
     format!("SELECT {} FROM sources s", columns.join(", "))
 }
 
@@ -1380,7 +1392,11 @@ fn read_source(row: &Row) -> rusqlite::Result<Source> {
         note_count: row.get(index + 16)?,
         annotation_count: row.get(index + 17)?,
         appearance: serde_json::from_str(&text(index + 18)?).unwrap_or_default(),
-        fields,
+        fields: {
+            let mut fields = fields;
+            reading::decorate(&mut fields, row.get(index + 20)?, row.get(index + 21)?);
+            fields
+        },
     })
 }
 
@@ -1669,6 +1685,10 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
                 "ready" => conditions.push("s.index_status = 'ready'".into()),
                 "retracted" => conditions.push("s.retracted = 1 AND s.retraction_dismissed = 0".into()),
                 "flagged" => conditions.push("((s.retracted = 1 OR s.retraction_kind IS NOT NULL) AND s.retraction_dismissed = 0)".into()),
+                // Reading (reading.rs): what was read lately, and what is queued: in progress,
+                // or marked unread by hand.
+                "recent" => conditions.push(format!("{} IS NOT NULL", reading::LAST_READ_SQL)),
+                "toread" => conditions.push(TO_READ.into()),
                 _ => {}
             }
         }
@@ -1723,6 +1743,9 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
     (format!("WHERE {}", conditions.join(" AND ")), values)
 }
 
+/// Queued to read: in progress, or marked unread by hand (reading.rs).
+const TO_READ: &str = "(s.read_state = 'reading' OR (coalesce(nullif(s.read_state, ''), 'unread') = 'unread' AND EXISTS (SELECT 1 FROM source_reading r WHERE r.source_id = s.id AND r.manual = 1)))";
+
 fn counts(db: &Connection, query: &ListQuery) -> Result<Counts> {
     // Counts describe the current collection/tag/text filter, independent of scope.
     let mut base = query.clone();
@@ -1739,13 +1762,16 @@ fn counts(db: &Connection, query: &ListQuery) -> Result<Counts> {
                sum(s.trashed_at IS NULL AND s.index_status = 'ready'),
                sum(s.trashed_at IS NULL AND s.index_status IN ('pending','indexing')),
                sum(s.trashed_at IS NULL AND s.index_status IN ('failed','missing','no_text')),
-               sum(s.trashed_at IS NULL AND s.retracted = 1 AND s.retraction_dismissed = 0)
-             FROM sources s {clause}"
+               sum(s.trashed_at IS NULL AND s.retracted = 1 AND s.retraction_dismissed = 0),
+               sum(s.trashed_at IS NULL AND {TO_READ}),
+               sum(s.trashed_at IS NULL AND {} IS NOT NULL)
+             FROM sources s {clause}",
+            reading::LAST_READ_SQL
         ),
         params_from_iter(values.iter()),
         |r| {
             let n = |i: usize| r.get::<_, Option<i64>>(i).map(|v| v.unwrap_or(0));
-            Ok(Counts { all: n(0)?, trashed: n(1)?, starred: n(2)?, unfiled: n(3)?, ready: n(4)?, indexing: n(5)?, attention: n(6)?, retracted: n(7)? })
+            Ok(Counts { all: n(0)?, trashed: n(1)?, starred: n(2)?, unfiled: n(3)?, ready: n(4)?, indexing: n(5)?, attention: n(6)?, retracted: n(7)?, to_read: n(8)?, recent: n(9)? })
         },
     )
     .map_err(e)

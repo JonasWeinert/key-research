@@ -25,6 +25,8 @@ mod hygiene;
 mod reference_worker;
 #[path = "web_search/mod.rs"]
 mod web_search;
+#[path = "feeds/mod.rs"]
+mod feeds;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{
@@ -2913,7 +2915,9 @@ pub struct Host {
     search: SemanticSearchService,
     imports: key_library::Imports,
     sessions: Arc<key_semantic_search::SearchSessions>,
-    web: web_search::WebSearch,
+    web: Arc<web_search::WebSearch>,
+    /// Feeds and alerts behind the Inbox (feeds/).
+    feeds: feeds::Feeds,
 }
 impl Host {
     pub fn new(root: PathBuf) -> Result<Self, String> {
@@ -2922,6 +2926,9 @@ impl Host {
         // The workspace library lives in key-store; the legacy pipeline is kept but no
         // longer resumes processing on start.
         let library = library_store::Library::open(&root, native.clone(), search.library().clone())?;
+        let web: Arc<web_search::WebSearch> = Arc::default();
+        let feeds = feeds::Feeds::new(library.store.clone(), web.clone());
+        feeds.start();
         let host = Self {
             root,
             library,
@@ -2936,7 +2943,8 @@ impl Host {
             search,
             imports: Default::default(),
             sessions: Arc::default(),
-            web: Default::default(),
+            web,
+            feeds,
         };
         scholarly_resolver::start_retry_worker(host.search.library().clone());
         Ok(host)
@@ -2997,6 +3005,7 @@ impl Host {
     }
     pub fn can_suspend(&self) -> bool {
         !self.library.indexer.is_busy()
+            && !self.feeds.busy()
             && self.imports.is_empty()
             && self
                 .store
@@ -3061,6 +3070,10 @@ impl Host {
             let large = (!binary.is_empty()).then(|| serde_json::from_slice::<serde_json::Value>(binary)).transpose().map_err(|e| e.to_string())?;
             let args = large.as_ref().unwrap_or(args);
             return tokio::task::block_in_place(|| web_search::dispatch(&self.web, &library, command, args))
+                .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
+        }
+        if command.starts_with("feeds_") {
+            return tokio::task::block_in_place(|| feeds::dispatch(&self.feeds, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
         if let Some(result) = self.library_dispatch(command, args).await {

@@ -66,6 +66,8 @@ const SCOPES: [string, string][] = [
   ["unfiled", "Unfiled"],
   ["attention", "Needs attention"],
   ["retracted", "Retracted"],
+  ["toread", "To read"],
+  ["recent", "Recently read"],
   ["duplicates", "Duplicates"],
   ["trashed", "Trash"],
 ];
@@ -232,7 +234,8 @@ export default function ReferenceLibrary({
   }, [active, workspaceId]);
 
   const query = useMemo(
-    () => ({ collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), text: null, sort: sorts[0].field, descending: sorts[0].descending, sorts }),
+    // "Recently read" lists the latest read first, whatever the view sorts by.
+    () => ({ collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), text: null, sort: sorts[0].field, descending: sorts[0].descending, sorts: scope === "recent" ? [{ field: "lastRead", descending: true }] : sorts }),
     [collectionId, scope, kind, tag, filters, sorts],
   );
 
@@ -397,6 +400,7 @@ export default function ReferenceLibrary({
     definitions,
     collections,
     zotero,
+    reading: { invoke, workspaceId },
     onCommit: (source, name, value) =>
       void invoke<Source>("store_update", { id: source.id, patch: { properties: { [name]: value } }, byHand: true }, workspaceId).then(updateSource),
     onEditProperty: (definition) => setSheet({ mode: "edit", definition, targets: [] }),
@@ -651,7 +655,7 @@ export default function ReferenceLibrary({
         ? "Duplicates"
         : scope === "retracted"
           ? "Retracted"
-          : collectionName ?? (scope === "starred" ? "Starred" : scope === "unfiled" ? "Unfiled" : scope === "attention" ? "Needs attention" : "All sources");
+          : collectionName ?? (scope === "starred" ? "Starred" : scope === "unfiled" ? "Unfiled" : scope === "attention" ? "Needs attention" : scope === "toread" ? "To read" : scope === "recent" ? "Recently read" : "All sources");
 
   return (
     <FilterLinks.Provider value={addFilter}>
@@ -757,7 +761,7 @@ export default function ReferenceLibrary({
             onChange={setScope}
             tabs={SCOPES.flatMap(([value, label]) => {
               const count =
-                value === "all" ? counts?.all : value === "trashed" ? counts?.trashed : value === "starred" ? counts?.starred : value === "unfiled" ? counts?.unfiled : value === "retracted" ? counts?.retracted : value === "duplicates" ? duplicateCount : counts?.attention;
+                value === "all" ? counts?.all : value === "trashed" ? counts?.trashed : value === "starred" ? counts?.starred : value === "unfiled" ? counts?.unfiled : value === "retracted" ? counts?.retracted : value === "toread" ? counts?.toRead : value === "recent" ? counts?.recent : value === "duplicates" ? duplicateCount : counts?.attention;
               if (value !== "all" && value !== "trashed" && !count && scope !== value) return [];
               return [{ id: value, label, badge: count ? count.toLocaleString() : undefined }];
             })}

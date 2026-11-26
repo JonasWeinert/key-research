@@ -459,7 +459,7 @@ impl Store {
                     .map_err(e)?;
                     links::mend_links_to(&tx, FILE, &file_id)?;
                     if was_gone {
-                        report.removed -= 1;
+                        report.removed = report.removed.saturating_sub(1);
                     }
                     report.moved += 1;
                 }

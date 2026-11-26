@@ -84,6 +84,37 @@ const surname = (creator: Creator) => creator.family || creator.literal?.split(/
 /** Pages start this far further down, below the floating toolbar. */
 const CHROME_INSET = 30;
 
+/** "Mark as read" in the toolbar: read by hand, or back to following the reading (the host
+ * moves a source to read on its own at the last page; see key-store reading.rs). */
+function ReadButton({ hash }: { hash: string }) {
+  const [reading, setReading] = useState<{ status: string; manual: boolean }>();
+  const load = useCallback(() => void bridge().invoke?.<{ status: string; manual: boolean }>("store_reading", { id: hash }).then(setReading).catch(() => {}), [hash]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => clearInterval(timer);
+  }, [load]);
+  if (!reading || !bridge().invoke) return null;
+  const read = reading.status === "read";
+  return (
+    <button
+      className="key-pdf-tool key-pdf-read"
+      aria-pressed={read}
+      aria-label={read ? "Read" : "Mark as read"}
+      title={read ? (reading.manual ? "Marked as read. Click to follow your reading again." : "Read to the end. Click to mark it unread.") : reading.status === "reading" ? "In progress. Click to mark as read." : "Unread. Click to mark as read."}
+      onClick={() => {
+        const status = read ? (reading.manual ? null : "unread") : "read";
+        void bridge()
+          .invoke?.("store_set_reading_status", { ids: [hash], status })
+          .then(load)
+          .catch(() => {});
+      }}
+    >
+      <Icon name={read ? "check" : reading.status === "reading" ? "readHalf" : "circle"} />
+    </button>
+  );
+}
+
 export default function PdfReader() {
   const reader = useRef<PdfReaderHandle>(null);
   const [document, setDocument] = useState<{ file: File; initial: Ready }>();
@@ -284,10 +315,13 @@ export default function PdfReader() {
       if (latestState.current) bridge().readerState(latestState.current);
     };
   }, []);
+  // The page count goes with the state, so reaching the last page can mark the source read.
+  const pageCount = useRef(0);
+  pageCount.current = chrome?.pageCount ?? 0;
   const viewChanged = useCallback((state: PdfJsViewState) => {
     latestState.current = state;
     setPage(state.pageIndex + 1);
-    bridge().readerState(state);
+    bridge().readerState({ ...state, ...(pageCount.current ? { pageCount: pageCount.current } : {}) } as PdfJsViewState);
   }, []);
   // A library PDF's details and references share the panel beside it (the shell's); a PDF
   // from the web has only references, in the reader's own panel.
@@ -421,6 +455,7 @@ export default function PdfReader() {
                   <Icon name="panelRight" filled={panelTab === "details"} />
                 </button>
               )}
+              {docks && <ReadButton hash={document.initial.source.hash} />}
             </span>
           </header>
           {showSearch && (

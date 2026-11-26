@@ -113,6 +113,22 @@ pub(crate) fn condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
             };
             (format!("s.cited_by_count {operator} ?"), vec![Value::Integer(value.parse().ok()?)])
         }
+        // Reading status (reading.rs): unread | reading | read, and when it was last read.
+        ("status", _) => (format!("{} = ?", crate::reading::STATUS_SQL), vec![Value::Text(match value.to_lowercase().as_str() {
+            "in-progress" | "progress" | "started" => "reading".into(),
+            "finished" | "done" => "read".into(),
+            other => other.to_string(),
+        })]),
+        ("read", _) => {
+            let operator = match filter.op.as_deref() {
+                Some("gt") => ">",
+                Some("gte") => ">=",
+                Some("lt") => "<",
+                Some("lte") => "<=",
+                _ => ">=",
+            };
+            (format!("{} {operator} ?", crate::reading::LAST_READ_SQL), vec![Value::Integer(crate::reading::date_ms(value)?)])
+        }
         ("retracted", _) => (if value == "false" { "coalesce(s.retracted, 0) = 0" } else { "s.retracted = 1" }.into(), vec![]),
         ("oaStatus", _) => ("s.oa_status = ?".into(), vec![text()]),
         ("workType", _) => ("s.work_type = ?".into(), vec![text()]),

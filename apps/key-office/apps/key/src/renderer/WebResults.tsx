@@ -11,6 +11,7 @@ import { Highlight } from "./search-highlight";
 import { WebAddButton, type WebAdd } from "./WebAddButton";
 import { openWebLink, type WebSearchState } from "./web-search";
 import "./web-search.css";
+import { FollowButton } from "./feeds-ui";
 
 export function WebPill({ pressed, onClick }: { pressed: boolean; onClick: (e: React.MouseEvent) => void }) {
   return (
@@ -74,6 +75,26 @@ export const FILTER_NAME: Record<WebFilterKey, string> = {
   retracted: "retraction",
 };
 
+/** "Alert me to new results": this search, with its web filters, as an OpenAlex alert in the Inbox. */
+function WebAlertButton({ web }: { web: WebSearchState }) {
+  const { invoke, workspaceId } = shellContext();
+  const { query, filters } = web.asked;
+  if (!invoke || !workspaceId || (query.length < 2 && !Object.keys(filters).length) || !web.providers.some((p) => p.info.id === "openalex")) return null;
+  const title = [query && `“${query}”`, ...Object.entries(filters).map(([k, v]) => `${k} ${Array.isArray(v) ? v.join(", ") : v}`)].filter(Boolean).join(" · ").slice(0, 120);
+  return (
+    <FollowButton
+      invoke={invoke}
+      workspaceId={workspaceId}
+      kind="openalex"
+      title={title || "Web search"}
+      config={{ query: query || null, filters }}
+      label="Alert me to new results"
+      following="Alert on"
+      hint="New works matching this search (OpenAlex) land in your Inbox"
+    />
+  );
+}
+
 export default function WebResults({
   web,
   adder,
@@ -122,6 +143,7 @@ export default function WebResults({
             </span>
           ))}
         </span>
+        <WebAlertButton web={web} />
       </div>
       {!web.online ? (
         <p className="kx-web-note">You're offline. Web results come back when you reconnect.</p>

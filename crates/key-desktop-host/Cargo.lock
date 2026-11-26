@@ -2318,6 +2318,7 @@ dependencies = [
  "key-store",
  "key-zotero",
  "opendataloader-pdf",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha2 0.10.9",

@@ -356,6 +356,18 @@ impl WebSearch {
         Some(WebPage { results, cursor: None, ..page })
     }
 
+    /// A GET of OpenAlex with the polite pool and the user's key as fallback (feeds and alerts).
+    pub fn openalex_json(&self, path: &str, params: &[(&str, &str)], cancel: &CancellationToken) -> Result<Json, ProviderError> {
+        let p = self.provider("openalex").map_err(|m| ProviderError::new(m, None, false))?;
+        self.keyed(&*p, cancel, &|cx| {
+            http::with_retry(Retry::lookup(), cancel, &*self.sleep, || {
+                http::json_of(openalex::request(cx.transport, path, params, Some(cx.mailto), cx.api_key, cx.cancel), "OpenAlex")
+                    .map(|(value, _)| value)
+                    .map_err(|e| ProviderError { message: http::redact(&e.message, cx.api_key), ..e })
+            })
+        })
+    }
+
     /// One work by DOI or the provider's own id; none when the provider has no such work.
     pub fn lookup(&self, provider: &str, id: &str) -> Result<Option<WebResult>, String> {
         let p = self.provider(provider)?;

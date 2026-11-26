@@ -35,7 +35,10 @@ export interface Source extends CitableSource {
   language?: string;
   rights?: string;
   extra?: string;
+  /** unread | reading | read (none is unread); see reading-ui.tsx. */
   readState?: string;
+  lastOpenedAt?: number;
+  lastReadAt?: number;
   filePath?: string;
   fileHash?: string;
   fileSize?: number;
@@ -220,6 +223,9 @@ export interface Counts {
   attention: number;
   /** Flagged as retracted and not dismissed. */
   retracted?: number;
+  /** Queued to read (in progress, or marked unread by hand), and read at some point. */
+  toRead?: number;
+  recent?: number;
 }
 export interface SourcePage {
   items: Source[];
