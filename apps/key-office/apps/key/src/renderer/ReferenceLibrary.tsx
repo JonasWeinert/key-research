@@ -1,4 +1,4 @@
-import { apa } from "./citation";
+import { prepareReferences, preparedReferences } from "./cite";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { itemAttrs, selectItems } from "./item-ui";
@@ -106,6 +106,10 @@ export default function ReferenceLibrary({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // A drag out of the list carries the formatted references, rendered ahead (see cite.ts).
+  useEffect(() => {
+    if (selected.size) prepareReferences(invoke, workspaceId, [...selected]);
+  }, [invoke, workspaceId, selected]);
   const [focusId, setFocusId] = useState<string>();
   const [anchor, setAnchor] = useState<string>();
   const [inspector, setInspector] = useState<Source>();
@@ -539,9 +543,14 @@ export default function ReferenceLibrary({
     }
     e.dataTransfer.setData(SOURCE_DRAG_TYPE, JSON.stringify(ids));
     setItemDrag(e.dataTransfer, ids.map((id) => sourceItem(byId.get(id) ?? { id, title: "", kind: "" })));
-    // Dropped into another app's text, a source is its reference.
+    // Dropped into another app's text, a source is its reference in the chosen style (rendered
+    // when the row was pressed; a drag's data cannot wait for the host).
+    const refs = preparedReferences(workspaceId, ids);
     const cited = ids.map((id) => byId.get(id)).filter((x): x is Source => !!x);
-    if (cited.length) e.dataTransfer.setData("text/plain", cited.map((x) => apa(x)).join("\n\n"));
+    if (refs) {
+      e.dataTransfer.setData("text/plain", refs.text);
+      e.dataTransfer.setData("text/html", refs.html);
+    } else if (cited.length) e.dataTransfer.setData("text/plain", cited.map((x) => x.title || "Untitled").join("\n"));
     e.dataTransfer.effectAllowed = "copyMove";
   };
 
@@ -738,7 +747,10 @@ export default function ReferenceLibrary({
             empty={!loading && <EmptyState scope={scope} filtered={!!(kind || tag || filters.length)} onAdd={() => void bridge().addFiles(workspaceId, collectionId).then(() => void load(0))} />}
             isSelected={(source) => selected.has(source.id) || (!selected.size && focusId === source.id)}
             isFocused={(source) => focusId === source.id}
-            onPointer={(source, e) => select(source.id, e)}
+            onPointer={(source, e) => {
+              prepareReferences(invoke, workspaceId, [source.id]);
+              select(source.id, e);
+            }}
             onOpen={open}
             onDragStart={dragSources}
             onRange={(first, last) => setRange((r) => (r[0] === first && r[1] === last ? r : [first, last]))}
@@ -752,7 +764,10 @@ export default function ReferenceLibrary({
                 selected={row.selected}
                 focused={row.focused}
                 zotero={zotero}
-                onPointer={(e) => select(source.id, e)}
+                onPointer={(e) => {
+                  prepareReferences(invoke, workspaceId, [source.id]);
+                  select(source.id, e);
+                }}
                 onOpen={() => open(source)}
                 onStar={() =>
                   void invoke<Source>("store_update", { id: source.id, patch: { starred: !source.starred } }, workspaceId).then(updateSource)

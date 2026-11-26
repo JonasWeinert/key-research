@@ -456,6 +456,7 @@ const want = (name) => !only.length || only.includes(name);
       await toolbar.waitFor({ timeout: 5000 });
       if (await toolbar.getByRole("button", { name: /Send to/ }).count()) throw Error("The selection toolbar still offers Send to");
       await themes("selection-cite");
+      await app.evaluate(({ clipboard }) => clipboard.clear());
       await toolbar.getByRole("button", { name: "Cite" }).click();
       await pdf.getByRole("status").filter({ hasText: "Quote copied" }).waitFor({ timeout: 5000 });
       const clip = await app.evaluate(({ clipboard }) => ({
@@ -463,7 +464,8 @@ const want = (name) => !only.length || only.includes(name);
         html: clipboard.readHTML(),
         formats: clipboard.availableFormats(),
       }));
-      if (!/^“.*Each nurse scanned 30 patients.*” — .*p\. \d+$/.test(clip.text)) throw Error(`Unexpected plain text: ${clip.text}`);
+      // Attributed in the chosen citation style: APA's in-text citation with the page.
+      if (!/^“.*Each nurse scanned 30 patients.*” — [^()]+, (?:\d{4}[a-z]?|n\.d\.), p\. \d+$/.test(clip.text)) throw Error(`Unexpected plain text: ${clip.text}`);
       if (!clip.html.includes("data-key-quote")) throw Error("The HTML form lacks the quote marker");
       result.cite = { text: clip.text, formats: clip.formats };
 

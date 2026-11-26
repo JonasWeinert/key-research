@@ -2179,7 +2179,8 @@ function baseMenu() {
           { label: "Search Everything…", accelerator: "CmdOrCtrl+Shift+F", click: () => emitTo(focusedShell(), "command", "search") },
           { type: "separator" },
           { label: "Copy Link", accelerator: "CmdOrCtrl+L", click: () => emitTo(focusedShell(), "command", "copy-link") },
-          { label: "Copy Citation", accelerator: "CmdOrCtrl+Shift+C", click: () => emitTo(focusedShell(), "command", "copy-citation") },
+          { label: "Copy Reference", accelerator: "CmdOrCtrl+Shift+C", click: () => emitTo(focusedShell(), "command", "copy-citation") },
+          { label: "Copy In-Text Citation", accelerator: "CmdOrCtrl+Shift+A", click: () => emitTo(focusedShell(), "command", "copy-in-text") },
           { label: "Send To…", accelerator: "CmdOrCtrl+Shift+S", click: () => emitTo(focusedShell(), "command", "send-to") },
           { type: "separator" },
           { label: "Show Inspector", accelerator: "CmdOrCtrl+Shift+I", click: () => emitTo(focusedShell(), "toggle-inspector") },
@@ -2220,6 +2221,10 @@ else
       const root = resolve(app.getAppPath(), "../../../..");
       workspaceParent =
         process.env.KEY_WORKSPACE_PARENT ?? join(app.getPath("documents"), "Key");
+      // Library hosts read the chosen citation style from the settings file and keep
+      // installed styles in one app-wide folder.
+      process.env.KEY_APP_SETTINGS_FILE = join(app.getPath("userData"), "app-settings.json");
+      process.env.KEY_CITATION_STYLES_DIR = join(app.getPath("userData"), "citation-styles");
       registry = new Registry({
         registryDir: join(app.getPath("userData"), "workspaces"),
         defaultWorkspaceParent: workspaceParent,
@@ -2599,6 +2604,14 @@ else
         const edge = Math.max(32, Math.min(800, Number(size) || 320));
         const image = await nativeImage.createThumbnailFromPath(String(path), { width: edge, height: edge });
         return image.isEmpty() ? null : image.toDataURL();
+      });
+      // Citations go on the clipboard as plain text, HTML and RTF (word processors take RTF).
+      ipcMain.handle("key:write-clipboard", (event, data: { text?: unknown; html?: unknown; rtf?: unknown }) => {
+        shell(event.sender.id);
+        const text = typeof data?.text === "string" ? data.text : "";
+        const html = typeof data?.html === "string" ? data.html : undefined;
+        const rtf = typeof data?.rtf === "string" ? data.rtf : undefined;
+        clipboard.write({ text, ...(html ? { html } : {}), ...(rtf ? { rtf } : {}) });
       });
       ipcMain.handle("key:reveal-path", (event, path) => {
         shell(event.sender.id);

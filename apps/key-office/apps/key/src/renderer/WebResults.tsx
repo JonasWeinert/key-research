@@ -3,9 +3,10 @@
 // shows the work in the preview beside the results (WebPreview); its page opens only when asked.
 import type { WebFilterKey } from "../shared/web-filters";
 import { shortAuthors, snippetOf, type WebHit } from "../shared/web-search";
-import { apa, type CitableSource } from "./citation";
+import type { CitableSource } from "./citation";
+import { bibliography, rtfDocument, writeRichClipboard } from "./cite";
 import { Icon, type IconName } from "./icons";
-import { toast } from "./item-actions";
+import { shellContext, toast } from "./item-actions";
 import { Highlight } from "./search-highlight";
 import { WebAddButton, type WebAdd } from "./WebAddButton";
 import { openWebLink, type WebSearchState } from "./web-search";
@@ -38,16 +39,19 @@ const citable = (hit: WebHit): CitableSource => ({
   url: hit.doi ? undefined : hit.landingUrl,
 });
 
+/** The result's reference in the chosen style (formatted by the host's citation engine). */
 export async function copyCitation(hit: WebHit) {
   const source = citable(hit);
+  const { invoke, workspaceId } = shellContext();
+  if (!invoke || !workspaceId) return toast("Open a library to copy citations");
   try {
-    await navigator.clipboard.write([
-      new ClipboardItem({ "text/plain": new Blob([apa(source)], { type: "text/plain" }), "text/html": new Blob([`<p>${apa(source, true)}</p>`], { type: "text/html" }) }),
-    ]);
-  } catch {
-    await navigator.clipboard.writeText(apa(source));
+    const entry = (await bibliography(invoke, workspaceId, [source.id], { sources: [source] }))?.entries[0];
+    if (!entry) return toast("This style has no reference list");
+    await writeRichClipboard({ text: entry.text, html: `<div class="csl-entry">${entry.html}</div>`, rtf: rtfDocument([entry.rtf]) });
+    toast("Citation copied");
+  } catch (e) {
+    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
   }
-  toast("Citation copied");
 }
 
 /** The work's page: its DOI, else the provider's landing page. */

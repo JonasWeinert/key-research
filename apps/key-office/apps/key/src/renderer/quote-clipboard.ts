@@ -1,6 +1,7 @@
 // "Cite" in the PDF reader copies a passage as a quote. Inside Key it pastes as a source quote
-// that links back to the page; anywhere else as plain text:
-//   “quoted text” — Narang et al. (2021), Utility of a Deep-Learning Algorithm…, p. 4
+// that links back to the page; anywhere else as plain text, attributed in the citation style
+// chosen in Settings (the host's citation engine formats `attribution`):
+//   “quoted text” — Narang et al., 2021, p. 4
 // The clipboard carries three forms: a custom type with the whole quote (read by notes when
 // Chromium keeps it), HTML whose blockquote holds the same data in an attribute (survives
 // when custom types are dropped), and the plain text above.
@@ -20,6 +21,8 @@ export interface QuotePayload {
   rects: number[][];
   color?: string;
   citation: { authors: string[]; year?: number | string; title?: string };
+  /** Where the quote is from, formatted by the citation engine in the chosen style. */
+  attribution?: string;
 }
 
 /** "Narang", "Narang & Bae", "Narang et al." */
@@ -40,8 +43,10 @@ export function quoteBody(text: string) {
     .trim();
 }
 
-/** Where the quote is from: "Narang et al. (2021), Title, p. 4", leaving out what is unknown. */
-export function quoteAttribution(quote: Pick<QuotePayload, "citation" | "page">) {
+/** Where the quote is from: the engine's attribution, or for a passage from outside the
+ *  library "Narang et al. (2021), Title, p. 4", leaving out what is unknown. */
+export function quoteAttribution(quote: Pick<QuotePayload, "citation" | "page" | "attribution">) {
+  if (quote.attribution?.trim()) return quote.attribution.trim();
   const who = authorPhrase(quote.citation.authors);
   const year = quote.citation.year ? String(quote.citation.year) : "";
   const head = who && year ? `${who} (${year})` : who || (year ? `(${year})` : "");
@@ -89,6 +94,7 @@ export function parseQuotePayload(value: unknown): QuotePayload | null {
     page: q.page,
     rects: Array.isArray(q.rects) ? q.rects.filter((r): r is number[] => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite)) : [],
     color: typeof q.color === "string" ? q.color : undefined,
+    attribution: typeof q.attribution === "string" ? q.attribution : undefined,
     citation: {
       authors: Array.isArray(q.citation?.authors) ? q.citation!.authors.filter((a): a is string => typeof a === "string") : [],
       year: q.citation?.year,

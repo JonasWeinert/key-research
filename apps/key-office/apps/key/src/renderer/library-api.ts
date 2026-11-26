@@ -364,6 +364,9 @@ export interface AppSettings {
   webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
   /** A work added from another source's context: ask, use the origin's collections, or the library only. */
   addFromSource: "ask" | "origin" | "library";
+  /** The CSL style id and locale citations use (the host reads them from the settings file). */
+  citationStyle?: string;
+  citationLocale?: string;
 }
 export interface AppInfo {
   version: string;
@@ -401,6 +404,7 @@ export interface Bridge {
   zoteroPlugin(action?: "wake" | "status" | "install" | "restart" | "open"): Promise<{ file: string | null; install?: ZoteroInstall; error?: string } | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
+  writeClipboard?(data: { text: string; html?: string; rtf?: string }): Promise<void>;
   /** A Quick Look thumbnail as a data URL, or null when the file has none. */
   thumbnail(path: string, size?: number): Promise<string | null>;
   pathForFile(file: File): string;

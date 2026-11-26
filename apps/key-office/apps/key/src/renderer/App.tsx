@@ -306,7 +306,11 @@ export default function App() {
   const updatePrefs = (patch: Partial<AppSettings>) =>
     void bridge()
       .setAppSettings(patch)
-      .then((settings) => setPrefs((p) => p && { ...p, settings }))
+      .then((settings) => {
+        setPrefs((p) => p && { ...p, settings });
+        // Open notes render their citations and bibliographies again in the new style.
+        if ("citationStyle" in patch || "citationLocale" in patch) window.dispatchEvent(new Event("key:citation-style-changed"));
+      })
       .catch((e) => setError(String(e)));
   const refreshWorkspaces = () => void api().workspaces().then(setWorkspaces).catch(() => {});
   useEffect(() => {

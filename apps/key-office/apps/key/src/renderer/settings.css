@@ -109,6 +109,9 @@
 .kx-settings-glyph[data-section="zotero"] {
   --glyph: var(--kx-red);
 }
+.kx-settings-glyph[data-section="citations"] {
+  --glyph: var(--kx-amber);
+}
 .kx-settings-glyph[data-section="search"] {
   --glyph: var(--kx-indigo);
 }
