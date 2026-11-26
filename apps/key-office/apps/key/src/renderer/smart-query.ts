@@ -19,6 +19,8 @@ export interface Detection {
   rest: string;
   /** The query is only this identifier: the library can offer to add the work it names. */
   add?: { kind: "doi" | "arxiv" | "pmid" | "pmcid" | "isbn"; value: string };
+  /** What picking it does, in words (typed-out filters: "Only sources: Rating more than 3"). */
+  explain?: string;
 }
 
 /** Every reading of `text`, best first; the workspace's tag and collection names included. */

@@ -7,6 +7,7 @@ import { copyCitation, copyInTextCitation, copyItemLink, describeCount, openItem
 import { onSendTo, quickLook, selectedItems, showInInspector } from "./item-ui";
 import { bridge, type Invoke, type Note } from "./library-api";
 import Palette, { type Command } from "./Palette";
+import SearchPopup from "./SearchPopup";
 import { openSearchTab } from "./global-search";
 import type { DraggedItem } from "./note-editor";
 import { notesChanged } from "./note-events";
@@ -219,27 +220,27 @@ export default function CommandCenter({
   }
   if (open.mode === "search")
     return (
-      <Palette
+      <SearchPopup
         invoke={invoke}
         workspaceId={workspaceId}
         label="Search"
         placeholder={section === "sources" ? "Search sources… (or choose All)" : "Search notes, sources, highlights, canvases and pages…"}
-        find={{ kinds: section === "sources" ? ["source"] : [], filters: [] }}
+        start={{ kinds: section === "sources" ? ["source"] : [], filters: [] }}
+        commands={[...forSelection, ...commands]}
         onExpand={(state) => openSearchTab(workspaceId, state)}
-        onPick={(found, how) => openItemAt(found, how.alt ? "split" : "tab", found.title)}
         onClose={close}
       />
     );
   return (
-    <Palette
+    <SearchPopup
       invoke={invoke}
       workspaceId={workspaceId}
       label={open.mode === "open" ? "Open quickly" : "Commands"}
-      find={open.mode === "open" ? { kinds: [], filters: [] } : undefined}
-      onExpand={open.mode === "open" ? (state) => openSearchTab(workspaceId, state) : undefined}
+      start={{ kinds: [], filters: [] }}
+      onExpand={(state) => openSearchTab(workspaceId, state)}
       placeholder={open.mode === "open" ? "Open a note, source, highlight, canvas or page…" : "Type a command or search…"}
-      commands={open.mode === "commands" ? [...forSelection, ...commands] : []}
-      onPick={(found, how) => openItemAt(found, how.alt ? "split" : "tab", found.title)}
+      commands={[...forSelection, ...commands]}
+      commandsFirst={open.mode === "commands"}
       onClose={close}
     />
   );

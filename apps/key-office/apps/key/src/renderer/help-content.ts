@@ -469,6 +469,16 @@ export const HELP = {
     { example: "sleep memory 2018-2022\n10.1038/nature12373\n\"a quoted title\"" },
   ),
 
+  "search.filters": explain(
+    "Typing filters",
+    [
+      "Any field can be typed as a filter: the field's name, a colon and a value. Your own properties work by their name; put names with spaces in quotes.",
+      "Compare with > and <, give a range with two dots, leave out matches with a minus, and join choices with |. Empty and any find blank or filled fields.",
+      "Key shows what it read as a chip. Nothing applies until you pick it, and words it does not know stay text.",
+    ],
+    { example: "rating>3 added:last-week\n-tag:draft year:2015..2020\n\"reading status\":done has:pdf" },
+  ),
+
   // ── Empty states: library and reader ────────────────────────────────────────────────
   "empty.library": empty("No sources yet", "Sources are the papers, books, web pages, videos and files you collect, read and cite.", "Drop files here, or use the Add menu to import from Zotero or a reference file, or search the web."),
   "empty.results": empty("No matches", "Nothing in this view matches your search or filters.", "Try fewer words, clear a filter, or search the web for works you do not have."),

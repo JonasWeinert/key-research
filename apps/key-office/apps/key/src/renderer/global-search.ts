@@ -58,6 +58,7 @@ const asResult = (found: HostFind): FindResult => ({
 export function useFind(invoke: Invoke | undefined, workspaceId: string | undefined, state: FindState, limit = 10): FindResult {
   const [result, setResult] = useState<FindResult>(EMPTY_RESULT);
   const request = useRef(0);
+  const supersede = useRef(`find:${Math.random().toString(36).slice(2)}`);
   const searchKey = JSON.stringify([state.text.trim(), state.filters, state.kinds]);
   useEffect(() => {
     if (!invoke || !workspaceId) return;
@@ -65,11 +66,12 @@ export function useFind(invoke: Invoke | undefined, workspaceId: string | undefi
     const current = () => id === request.current;
     const args = findArgs(state, limit);
     const timer = setTimeout(async () => {
-      const first = await findOnHost(invoke, workspaceId, { ...args, phase: "titles" }).catch(() => undefined);
+      // A newer keystroke's search replaces this one on the host (each phase by its own key).
+      const first = await findOnHost(invoke, workspaceId, { ...args, phase: "titles", $supersede: `${supersede.current}:titles` }).catch(() => undefined);
       if (!current()) return;
       if (first) setResult(asResult(first));
       if (!first?.pending) return;
-      const all = await findOnHost(invoke, workspaceId, args).catch(() => undefined);
+      const all = await findOnHost(invoke, workspaceId, { ...args, $supersede: `${supersede.current}:full` }).catch(() => undefined);
       if (current() && all) setResult(asResult(all));
     }, args.text ? 120 : 0);
     return () => clearTimeout(timer);
