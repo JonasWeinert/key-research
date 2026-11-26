@@ -25,6 +25,27 @@ function rectStyle(element: HTMLElement, bounds: NativeBounds) {
   element.style.height = `${Math.max(0, bounds.bottom - bounds.top) * 100}%`;
 }
 
+/** Where the text column holding a passage starts on its lines, so a highlight that begins
+ *  mid-line gets its marker in the margin rather than over the words before it. */
+function columnStart(text: NativeTextPage | undefined, left: number, top: number, bottom: number) {
+  if (!text) return left;
+  const lefts: number[] = [];
+  for (const character of text.characters) {
+    const b = character.bounds;
+    if (!b || b.left >= left || !character.value.trim()) continue;
+    const middle = (b.top + b.bottom) / 2;
+    if (middle >= top && middle <= bottom) lefts.push(b.left, b.right);
+  }
+  lefts.sort((a, b) => b - a);
+  let start = left;
+  // Walk left along the lines until a gap wider than a column gutter.
+  for (const x of lefts) {
+    if (start - x > 0.03) break;
+    start = Math.min(start, x);
+  }
+  return start;
+}
+
 function viewportRectForBounds(host: HTMLElement, bounds: NativeBounds[]) {
   if (bounds.length === 0) return;
   const page = host.getBoundingClientRect();
@@ -213,6 +234,7 @@ export class PdfJsTextOverlayManager {
           this.textPages.delete(cachedPage);
           host.element.querySelector('.pdfjs-text-layer')?.remove();
           host.element.querySelector('.pdfjs-overlay-layer')?.replaceChildren();
+          host.element.querySelector(':scope > .pdfjs-marker-layer')?.replaceChildren();
         }
       }
       return text;
@@ -336,7 +358,7 @@ export class PdfJsTextOverlayManager {
       host.element.removeEventListener('pointermove', this.onPointerMove);
       host.element.removeEventListener('pointerleave', this.onPointerLeave);
       host.element
-        .querySelectorAll('.pdfjs-text-layer, .pdfjs-overlay-layer')
+        .querySelectorAll('.pdfjs-text-layer, .pdfjs-overlay-layer, .pdfjs-marker-layer')
         .forEach(element => element.remove());
     }
     this.pending.clear();
@@ -377,6 +399,19 @@ export class PdfJsTextOverlayManager {
     return layer;
   }
 
+  /** Above the text layer, so the margin markers take the pointer. */
+  private markerLayer(page: number) {
+    const host = this.hosts[page];
+    if (!host) return null;
+    let layer = host.element.querySelector<HTMLDivElement>(':scope > .pdfjs-marker-layer');
+    if (!layer) {
+      layer = document.createElement('div');
+      layer.className = 'pdfjs-marker-layer';
+      host.element.append(layer);
+    }
+    return layer;
+  }
+
   private paintBounds(
     layer: HTMLElement,
     bounds: NativeBounds[],
@@ -392,11 +427,38 @@ export class PdfJsTextOverlayManager {
     }
   }
 
+  /** A slim bar in the margin beside a highlight, in its colour; a click opens its card. */
+  private marginMarker(page: number, annotation: ReaderAnnotation, bounds: NativeBounds[]) {
+    const top = Math.min(...bounds.map(b => b.top));
+    const bottom = Math.max(...bounds.map(b => b.bottom));
+    const left = columnStart(this.textPages.get(page), Math.min(...bounds.map(b => b.left)), top, bottom);
+    const marker = document.createElement('div');
+    marker.className = `pdfjs-highlight-marker color-${annotation.color}${annotation.comment ? ' has-comment' : ''}`;
+    marker.dataset.id = annotation.id;
+    marker.title = annotation.comment ? 'Highlight with a comment' : 'Highlight';
+    marker.style.left = `max(2px, calc(${left * 100}% - 11px))`;
+    marker.style.top = `${top * 100}%`;
+    marker.style.height = `${Math.max(0.004, bottom - top) * 100}%`;
+    marker.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    marker.addEventListener('pointerup', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const host = this.hosts[page]?.element;
+      this.annotationListener?.(annotation, host ? viewportRectForBounds(host, bounds) : marker.getBoundingClientRect());
+    });
+    return marker;
+  }
+
   private renderPage(page: number) {
     const layer = this.overlayLayer(page);
     const text = this.textPages.get(page);
     if (!layer) return;
     layer.replaceChildren();
+    const markers = this.markerLayer(page);
+    markers?.replaceChildren();
     if (this.resultTarget?.page === page) {
       this.paintBounds(layer, this.resultTarget.bounds, 'pdfjs-result-target', this.resultTarget.id);
     }
@@ -408,12 +470,9 @@ export class PdfJsTextOverlayManager {
       const className = `pdfjs-highlight color-${annotation.color}${
         annotation.comment ? ' has-comment' : ''
       }${annotation.id === this.flashId ? ' flash' : ''}`;
-      this.paintBounds(
-        layer,
-        annotation.anchor?.pages.find(p => p.page === page)?.bounds ?? (text ? boundsForRange(text, annotation.range) : []),
-        className,
-        annotation.id,
-      );
+      const bounds = annotation.anchor?.pages.find(p => p.page === page)?.bounds ?? (text ? boundsForRange(text, annotation.range) : []);
+      this.paintBounds(layer, bounds, className, annotation.id);
+      if (bounds.length) (markers ?? layer).append(this.marginMarker(page, annotation, bounds));
     }
     if (!text) return;
     for (const match of this.searchMatches.filter(match => match.page === page)) {

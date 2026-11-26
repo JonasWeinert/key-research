@@ -11,7 +11,7 @@ describe("railStops", () => {
     );
     expect(stops.map((s) => s.title)).toEqual(["Intro", "Method", "Results"]);
     expect(stops.map((s) => s.until)).toEqual([3, 6, 9]);
-    expect(size).toBe(14);
+    expect(size).toBe(10);
     expect(thinned).toBe(false);
   });
 

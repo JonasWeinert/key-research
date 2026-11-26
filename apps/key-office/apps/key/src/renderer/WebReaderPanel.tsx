@@ -6,7 +6,8 @@ import { ReferenceList } from "@key-reader/pdfjs/ReferenceList";
 import { Icon } from "./icons";
 import { bridge, type Invoke } from "./library-api";
 import { AnalysisStatus } from "./reader-analysis";
-import type { WebAnnotation } from "./WebPageReader";
+import { PAGE_RGB, type WebAnnotation } from "./WebPageReader";
+import { AnnotationText } from "./annotation-text";
 import { focusWebPage, toggleWebPanel, webPageEvent, webPanelStatusItems, WEB_REANALYZE_EVENT, WEB_REFERENCE_EVENT } from "./web-page-open";
 import { useStatusItems } from "./status-bar";
 import { useWebAnalysis } from "./web-reader-references";
@@ -112,8 +113,7 @@ function WebHighlights({ invoke, workspaceId, sourceId, onCount }: { invoke: Inv
           {list.map((a) => (
             <li key={a.id} data-color={a.color}>
               <button type="button" onClick={() => focusWebPage(sourceId, { annotationId: a.id })} title="Show on the page">
-                <blockquote>{a.text.replace(/\s+/g, " ").trim()}</blockquote>
-                {a.comment && <p>{a.comment}</p>}
+                <AnnotationText text={a.text} comment={a.comment} color={`rgb(${PAGE_RGB[a.color]})`} />
                 <footer>{formatDate(a.updatedAt || a.createdAt)}</footer>
               </button>
             </li>

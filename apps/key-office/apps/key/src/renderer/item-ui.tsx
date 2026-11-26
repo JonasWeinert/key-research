@@ -1,6 +1,7 @@
 // The same affordances for an item wherever it appears: a preview on hover, a menu on
 // right-click, a larger preview on Space, and toasts that can undo. Any element marked
 // with `itemAttrs()` (or a key:// link in a note) takes part; App mounts `ItemLayer` once.
+import { AnnotationText } from "./annotation-text";
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { coverBackground, readAppearance } from "./page-appearance";
 import { GlobalDialog } from "./GlobalDrawer";
@@ -125,8 +126,7 @@ export function CanvasMinimap({ nodes }: { nodes: NonNullable<ItemInfo["canvas"]
 export function HighlightQuote({ text, color, comment }: { text?: string; color?: string; comment?: string }) {
   return (
     <figure className="kx-item-quote" style={{ "--kx-quote-color": highlightColor(color, currentTheme()) } as CSSProperties}>
-      <blockquote>{text || "Highlight"}</blockquote>
-      {comment && <figcaption>{comment}</figcaption>}
+      <AnnotationText text={text} comment={comment} color="var(--kx-quote-color)" />
     </figure>
   );
 }

@@ -286,12 +286,68 @@ const want = (name) => !only.length || only.includes(name);
       await pdf.waitForTimeout(300);
       const ticks = pdf.locator(".key-pdf-rail .key-preview-rail-ticks");
       await ticks.waitFor({ timeout: 10000 });
+      // The dock check wants many ticks: page ticks, not the few chapters analysis may find.
+      if ((await pdf.locator(".key-pdf-rail").getAttribute("data-mode")) !== "pages") {
+        const box = await ticks.boundingBox();
+        await pdf.mouse.click(box.x + 6, box.y + box.height / 2, { button: "right" });
+        await pdf.getByRole("menuitemradio", { name: "Page thumbnails" }).click();
+        await pdf.mouse.move(400, 400);
+        await pdf.waitForTimeout(400);
+      }
       const rest = await ticks.boundingBox();
       await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2);
       await pdf.waitForTimeout(450);
       const wide = await ticks.boundingBox();
       if (wide.width < rest.width * 2) throw Error(`The rail did not widen on hover: ${rest.width} → ${wide.width}`);
-      await shot(pdf, "rail-hover-light");
+      // Dock-style: the tick under the pointer is longest, its neighbours less, far ones least;
+      // the open rail sits on its own plate so it reads over any page.
+      const dock = () =>
+        pdf.evaluate((y) => {
+          const buttons = [...document.querySelectorAll(".key-pdf-rail .key-preview-rail-ticks > button")];
+          const scale = (b) => new DOMMatrix(getComputedStyle(b.querySelector(".key-preview-rail-tick")).transform).a;
+          const at = buttons.findIndex((b) => {
+            const r = b.getBoundingClientRect();
+            return y >= r.top && y < r.bottom;
+          });
+          const nav = document.querySelector(".key-pdf-rail .key-preview-rail-ticks");
+          const style = getComputedStyle(nav);
+          return {
+            at,
+            count: buttons.length,
+            pitch: buttons[0]?.getBoundingClientRect().height,
+            hovered: scale(buttons[at]),
+            near: Math.max(scale(buttons[at - 1] ?? buttons[at + 1]), scale(buttons[at + 1] ?? buttons[at - 1])),
+            next: scale(buttons[at + 2] ?? buttons[at - 2]),
+            far: Math.min(...buttons.filter((_, i) => Math.abs(i - at) >= 4).map(scale), 2),
+            plate: style.backgroundColor,
+            blur: style.backdropFilter,
+          };
+        }, rest.y + rest.height / 2);
+      const magnified = await dock();
+      if (magnified.at < 0 || magnified.count < 8) throw Error(`The rail has too few ticks to check: ${JSON.stringify(magnified)}`);
+      if (!(magnified.hovered > magnified.near && magnified.near > magnified.next && magnified.next > magnified.far))
+        throw Error(`The rail does not magnify around the pointer: ${JSON.stringify(magnified)}`);
+      if (/rgba\(0, 0, 0, 0\)|transparent/.test(magnified.plate) || !/blur/.test(magnified.blur))
+        throw Error(`The open rail has no backing: ${magnified.plate} ${magnified.blur}`);
+      result.railDock = magnified;
+      await themes("rail-hover", async () => {
+        await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2 + 1);
+        await pdf.waitForTimeout(450);
+      });
+      // Over a dark page: the plate keeps the ticks legible.
+      await pdf.addStyleTag({ content: ".pdfjs-scroll{background:#15161a!important}.pdfjs-page{filter:invert(1) hue-rotate(180deg)}" });
+      await pdf.mouse.move(600, 500);
+      await themes("rail-rest-darkpage", async () => {
+        await pdf.waitForTimeout(300);
+      });
+      await themes("rail-hover-darkpage", async () => {
+        await pdf.mouse.move(rest.x + 30, rest.y + rest.height / 2, { steps: 4 });
+        await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2 - 1, { steps: 4 });
+        await pdf.waitForTimeout(450);
+      });
+      await pdf.evaluate(() => document.head.lastElementChild?.remove());
+      await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2);
+      await pdf.waitForTimeout(300);
       await pdf.mouse.click(rest.x + 6, rest.y + rest.height / 2, { button: "right" });
       const menu = pdf.getByRole("menu", { name: "Rail shows" });
       await menu.waitFor({ timeout: 3000 });
@@ -446,6 +502,84 @@ const want = (name) => !only.length || only.includes(name);
       result.quoteFocus = { ...placed, zoomBefore, zoomAfter };
       if (Math.abs(placed.dx) > 40 || Math.abs(placed.dy) > 40) throw Error(`The quote is not centred: ${JSON.stringify(placed)}`);
       await shot(pdf, "quote-focused");
+    }
+
+    // 6. Highlights: the selection toolbar follows a small scroll and closes once the passage
+    //    is out of view; a highlight gets a margin marker whose card shows its comment first
+    //    and the notes that quote it (the note above, after Cite).
+    if (want("highlight")) {
+      const selectPassage = async () => {
+        await scrollTo(0);
+        await pdf.waitForTimeout(300);
+        await pdf.waitForFunction(() => document.querySelectorAll(".pdfjs-text-run").length > 100, undefined, { timeout: 15000 });
+        const span = await pdf.evaluate(() => {
+          const runs = [...document.querySelectorAll(".pdfjs-text-run")];
+          const words = runs.map((r) => r.textContent.trim());
+          const at = words.findIndex((w, i) => w === "Each" && words.slice(i, i + 5).join(" ") === "Each nurse scanned 30 patients");
+          if (at < 0) return null;
+          runs[at].scrollIntoView({ block: "center" });
+          return at;
+        });
+        if (span === null) throw Error("The passage to highlight is not on the page");
+        await pdf.waitForTimeout(400);
+        const box = (i) => pdf.locator(".pdfjs-text-run").nth(i).boundingBox();
+        const first = await box(span);
+        const last = await box(span + 4);
+        await pdf.mouse.move(first.x + 1, first.y + first.height / 2);
+        await pdf.mouse.down();
+        await pdf.mouse.move(last.x + last.width - 2, first.y + first.height / 2, { steps: 15 });
+        await pdf.mouse.up();
+      };
+      const toolbar = pdf.getByRole("toolbar", { name: "Text selection actions" });
+      const scrollBy = (dy) => pdf.evaluate((dy) => document.querySelector(".pdfjs-scroll").scrollBy({ top: dy, behavior: "instant" }), dy);
+      await selectPassage();
+      await toolbar.waitFor({ timeout: 5000 });
+      const y0 = (await toolbar.boundingBox()).y;
+      await scrollBy(40);
+      await pdf.waitForTimeout(250);
+      const y1 = (await toolbar.boundingBox())?.y;
+      if (y1 === undefined || Math.abs(y0 - y1 - 40) > 6) throw Error(`The toolbar does not follow its passage: ${y0} -> ${y1}`);
+      await scrollBy(1400);
+      await toolbar.waitFor({ state: "detached", timeout: 3000 });
+      result.toolbarScroll = { followed: Math.round(y0 - y1) };
+
+      await selectPassage();
+      await toolbar.waitFor({ timeout: 5000 });
+      await toolbar.getByRole("button", { name: "green highlight" }).click();
+      const marker = pdf.locator(".pdfjs-highlight-marker.color-green").first();
+      await marker.waitFor({ timeout: 5000 });
+      await pdf.keyboard.press("Escape");
+      await pdf.waitForTimeout(200);
+      await marker.click();
+      const info = pdf.locator(".key-highlight-info");
+      await info.waitFor({ timeout: 5000 });
+      await info.getByRole("button", { name: "Add comment" }).click();
+      const editor = pdf.getByRole("dialog", { name: "Comment editor" });
+      await editor.waitFor({ timeout: 5000 });
+      await pdf.keyboard.type("Thirty patients each: a small sample.");
+      await editor.getByRole("button", { name: "Save comment" }).click();
+      await editor.waitFor({ state: "detached", timeout: 5000 });
+      await pdf.waitForTimeout(300);
+      await marker.click();
+      await info.waitFor({ timeout: 5000 });
+      if (want("cite")) await info.locator(".key-highlight-info-uses li").first().waitFor({ timeout: 8000 });
+      const card = await info.evaluate((el) => {
+        const text = el.querySelector(".key-annotation-text");
+        const size = (q) => parseFloat(getComputedStyle(text.querySelector(q)).fontSize);
+        return {
+          lead: text.firstElementChild.className,
+          comment: size(".key-annotation-comment"),
+          quote: size(".key-annotation-quote"),
+          meta: el.querySelector(".key-highlight-info-meta")?.textContent,
+          uses: [...el.querySelectorAll(".key-highlight-info-uses li")].map((li) => li.textContent),
+        };
+      });
+      if (!/key-annotation-comment/.test(card.lead) || !(card.quote < card.comment)) throw Error(`The comment does not lead: ${JSON.stringify(card)}`);
+      result.highlightInfo = card;
+      await pdf.waitForTimeout(250);
+      await themes("highlight-info", async () => {
+        await pdf.waitForTimeout(150);
+      });
     }
 
     console.log(JSON.stringify({ ok: true, result, temp, shots }, null, 1));

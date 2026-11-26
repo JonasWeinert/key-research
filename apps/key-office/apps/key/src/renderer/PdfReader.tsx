@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PdfJsBenchmarkApp, {
   type PdfJsViewState,
   type PdfReaderChromeState,
@@ -18,6 +18,10 @@ import { AnalysisStatus, working, type AnalysisReport } from "./reader-analysis"
 import { writeQuoteClipboard } from "./quote-clipboard";
 import { useFloatingChrome } from "./reader-chrome";
 import { WebPdfControl, type WebPdfInfo } from "./WebPdfControl";
+import { readerLibraryWorks } from "./reader-library-works";
+import { ReferenceAside } from "./ReferenceAside";
+import { highlightUsage } from "./highlight-usage";
+import type { HighlightUsage } from "@key-reader/pdfjs/HighlightInfo";
 
 
 type Target = {
@@ -60,6 +64,7 @@ interface ReaderBridge {
   readerAnalysis?(): Promise<AnalysisReport | null>;
   readerReanalyze?(): Promise<void>;
   readerOpenSource?(sourceId: string): Promise<void>;
+  readerOpenItem?(item: { kind: string; id: string; title?: string; reveal?: string }): Promise<void>;
   readerResult?(direction: number): Promise<void>;
 }
 const bridge = () => (window as unknown as { key: ReaderBridge }).key;
@@ -125,7 +130,7 @@ export default function PdfReader() {
   // Poll while the library is still analysing this PDF.
   useEffect(() => {
     if (!working(report)) return;
-    const timer = setTimeout(refreshAnalysis, 2000);
+    const timer = setTimeout(refreshAnalysis, 1000);
     return () => clearTimeout(timer);
   }, [report, refreshAnalysis]);
   const rerun = () => {
@@ -183,6 +188,39 @@ export default function PdfReader() {
     },
     [document],
   );
+  // Add to library from a citation card or a reference: into this window's library, beside
+  // this PDF in its collections. A PDF from the web is not in the library, so it offers none.
+  const libraryWorks = useMemo(() => {
+    const initial = document?.initial;
+    const call = bridge().invoke;
+    if (!initial || (initial.web && "url" in initial.web) || !call || !bridge().readerOpenSource) return undefined;
+    return readerLibraryWorks({
+      invoke: <T,>(command: string, args?: Record<string, unknown>) => call<T>(command, args),
+      open: (sourceId) => void bridge().readerOpenSource?.(sourceId),
+      collections: () =>
+        call<{ items: { collections?: string[] }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then(
+          (found) => found.items[0]?.collections ?? [],
+        ),
+    });
+  }, [document]);
+  // A highlight's info card: the notes and canvases that use it, each opening there.
+  const usage = useMemo(() => {
+    const initial = document?.initial;
+    const call = bridge().invoke;
+    if (!initial || (initial.web && "url" in initial.web) || !call || !bridge().readerOpenItem) return undefined;
+    const invoke = <T,>(command: string, args?: Record<string, unknown>) => call<T>(command, args);
+    let sourceId: Promise<string | undefined> | undefined;
+    return async (annotation: { id: string; text: string }): Promise<HighlightUsage[]> => {
+      sourceId ??= invoke<{ items: { id: string }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then((found) => found.items[0]?.id);
+      const id = await sourceId;
+      if (!id) return [];
+      const uses = await highlightUsage(invoke, initial.workspaceId ?? "", id, annotation);
+      return uses.map((use) => ({
+        ...use,
+        open: () => void bridge().readerOpenItem?.({ kind: use.kind, id: use.id, title: use.title, reveal: use.kind === "note" ? annotation.text : undefined }),
+      }));
+    };
+  }, [document]);
   const latestState = useRef<PdfJsViewState | undefined>(undefined);
   const stateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
@@ -497,26 +535,15 @@ export default function PdfReader() {
               : undefined
           }
           referencesHeader={bridge().readerAnalysis ? <AnalysisStatus report={report} onRerun={rerun} /> : undefined}
-          referenceAside={(reference) => {
-            const known = report?.references.find((r) => r.number === reference.number);
-            const meta = known?.metadata;
-            if (!meta?.title && !known?.matchedSourceId) return null;
-            return (
-              <div className="key-pdf-reference-aside">
-                {meta?.title && (
-                  <span title={meta.doi ? `doi:${meta.doi}` : undefined}>
-                    {meta.title}
-                    {meta.year ? ` (${meta.year})` : ""}
-                  </span>
-                )}
-                {known?.matchedSourceId && (
-                  <button type="button" onClick={() => void bridge().readerOpenSource?.(known.matchedSourceId!)}>
-                    In your library →
-                  </button>
-                )}
-              </div>
-            );
-          }}
+          referenceAside={(reference) => (
+            <ReferenceAside
+              known={report?.references.find((r) => r.number === reference.number)}
+              works={libraryWorks}
+              onOpen={(id) => void bridge().readerOpenSource?.(id)}
+            />
+          )}
+          libraryWorks={libraryWorks}
+          highlightUsage={usage}
           referenceInLibrary={(number) => {
             const id = report?.references.find((r) => r.number === number)?.matchedSourceId;
             return id && bridge().readerOpenSource ? () => void bridge().readerOpenSource?.(id) : null;

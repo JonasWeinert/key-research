@@ -29,9 +29,25 @@ pub fn model_path() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
+/// The helper writes "phase done total" here per page; the host polls it for progress.
+const PROGRESS_ENV: &str = "KEY_LAYOUT_PROGRESS";
+static PROGRESS_FILE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+fn write_progress(phase: &str, done: usize, total: usize) {
+    if let Some(file) = PROGRESS_FILE.get() {
+        let _ = std::fs::write(file, format!("{phase} {done} {total}"));
+    }
+}
+
 /// Analyses one PDF in a helper process.
 pub fn analyze(path: &Path, model: bool) -> Result<Layout, String> {
+    analyze_with_progress(path, model, &|_, _, _| {})
+}
+
+/// `analyze`, calling `progress(phase, done, total)` as the helper reports pages.
+pub fn analyze_with_progress(path: &Path, model: bool, progress: &dyn Fn(&str, usize, usize)) -> Result<Layout, String> {
     let output = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let progress_file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
     let mut command = Command::new(env::current_exe().map_err(|e| e.to_string())?);
     command.arg(FLAG).arg(path).arg(output.path()).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
     if model {
@@ -42,11 +58,24 @@ pub fn analyze(path: &Path, model: bool) -> Result<Layout, String> {
     // Half the cores at most: indexing runs in the background while the user works.
     let threads = std::thread::available_parallelism().map(|n| (n.get() / 2).clamp(1, 4)).unwrap_or(2);
     command.env("KEY_LAYOUT_THREADS", threads.to_string());
+    command.env(PROGRESS_ENV, progress_file.path());
     let mut child = command.spawn().map_err(|e| format!("layout helper: {e}"))?;
     let started = Instant::now();
+    let mut last = String::new();
     let status = loop {
         if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
             break status;
+        }
+        if let Ok(line) = std::fs::read_to_string(progress_file.path()) {
+            if line != last {
+                let mut parts = line.split_whitespace();
+                if let (Some(phase), Some(Ok(done)), Some(Ok(total))) =
+                    (parts.next(), parts.next().map(str::parse::<usize>), parts.next().map(str::parse::<usize>))
+                {
+                    progress(phase, done, total);
+                }
+                last = line;
+            }
         }
         if started.elapsed() > TIMEOUT {
             let _ = child.kill();
@@ -93,6 +122,10 @@ pub fn maybe_run_layout_helper() -> Option<i32> {
 }
 
 fn run(input: &Path, output: &Path, model: Option<PathBuf>) -> Result<(), String> {
+    if let Some(file) = env::var_os(PROGRESS_ENV) {
+        let _ = PROGRESS_FILE.set(PathBuf::from(file));
+        opendataloader_pdf::set_progress_hook(write_progress);
+    }
     let mut options = ConvertOptions::default();
     let engine = if model.is_some() { "layout-onnx" } else { "layout" };
     options.onnx_model = model;

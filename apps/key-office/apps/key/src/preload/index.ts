@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld("key", {
   readerAnalysis: () => ipcRenderer.invoke("key:reader-analysis"),
   readerReanalyze: () => ipcRenderer.invoke("key:reader-reanalyze"),
   readerOpenSource: (sourceId: string) => ipcRenderer.invoke("key:reader-open-source", sourceId),
+  readerOpenItem: (item: unknown) => ipcRenderer.invoke("key:reader-open-item", item),
   readerResult: (direction: number) =>
     ipcRenderer.invoke("key:reader-result", direction),
   readerReady: () => ipcRenderer.invoke("key:reader-ready"),
@@ -76,6 +77,7 @@ contextBridge.exposeInMainWorld("key", {
         "links-changed",
         "linked-folders-changed",
         "note-append",
+        "note-reveal",
         "annotations-changed",
         "search-target",
         "reader-focus",

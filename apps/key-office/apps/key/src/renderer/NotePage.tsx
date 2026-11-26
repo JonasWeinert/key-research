@@ -8,6 +8,7 @@ import { ItemPage, ItemProperties, type AppearancePatch } from "./ItemPage";
 import { shortCreators, type Invoke, type Note, type Source } from "./library-api";
 import type { Creator } from "./citation";
 import NoteEditor, { type NoteEditorHandle } from "./note-editor";
+import { NOTE_REVEAL_EVENT, takeNoteReveal } from "./note-reveal";
 import { LibraryButton, NoteLibraryPanel, isLibraryShortcut, useFadingButton } from "./NoteLibrary";
 import { noteSources } from "./note-sources";
 import LinkedFrom from "./LinkedFrom";
@@ -58,6 +59,26 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
       current = false;
     };
   }, [invoke, workspaceId, noteId]);
+
+  // Opened at a passage (a highlight's "Used in"): scroll to it once the note is shown.
+  const loaded = !!note;
+  useEffect(() => {
+    if (!loaded) return;
+    const reveal = () => {
+      const text = takeNoteReveal(noteId);
+      if (!text) return;
+      let tries = 0;
+      const attempt = () => {
+        if (editorApi.current?.reveal(text) || ++tries > 10) return;
+        setTimeout(attempt, 120);
+      };
+      setTimeout(attempt, 80);
+    };
+    reveal();
+    const listener = (event: Event) => (event as CustomEvent).detail === noteId && reveal();
+    window.addEventListener(NOTE_REVEAL_EVENT, listener);
+    return () => window.removeEventListener(NOTE_REVEAL_EVENT, listener);
+  }, [loaded, noteId]);
 
   // Saves run one at a time and each sends the newest title and body, so a slower
   // earlier save can never land after a later one. Property and header edits share the

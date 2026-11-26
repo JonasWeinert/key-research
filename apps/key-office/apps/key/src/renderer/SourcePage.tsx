@@ -3,10 +3,12 @@
 // followed by the PDF's highlights (each quotable into the note) and any further notes.
 // Opened beside the PDF reader for sources that have one, and as the library's details
 // panel (`variant="side"`), so a source looks the same wherever it is shown.
+import { AnnotationText } from "./annotation-text";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apa, apaInText, bibtex } from "./citation";
 import { Icon } from "./icons";
 import { ProgressRing } from "./index-activity";
+import { useSourceProgress } from "./source-progress";
 import { ItemPage } from "./ItemPage";
 import { ITEM_TYPES, KIND_ICON, OA_LABEL, bridge as libraryBridge, fetchedAgo, formatBytes, itemTypeLabel, shortCreators, type Collection, type Facet, type Invoke, type Note, type Source, type SourceGraph } from "./library-api";
 import { libraryChanged } from "./library-nav";
@@ -68,6 +70,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const [source, setSource] = useState<Source>();
   const [notes, setNotes] = useState<Note[]>([]);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  // Indexing and reference analysis as they run (stage, pages, counts), for the file card.
+  const live = useSourceProgress(invoke, workspaceId, sourceId, source?.kind, source?.indexStatus);
   // In the library's side panel a clicked value filters the library; on its own page it opens the library filtered.
   const libraryFilter = useContext(FilterLinks);
   const filterBy = libraryFilter ?? ((filter: Parameters<typeof showInLibrary>[1]) => showInLibrary(workspaceId, filter));
@@ -111,6 +115,10 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         .catch((e) => setError(String(e))),
     [invoke, workspaceId, sourceId],
   );
+  // Indexing moved on since the source was loaded (the file card's line would go stale).
+  useEffect(() => {
+    if (live.indexStatus && source && live.indexStatus !== source.indexStatus) void loadSource();
+  }, [live.indexStatus, source?.indexStatus]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadNotes = useCallback(
     () =>
       invoke<Note[]>("store_notes", { sourceId }, workspaceId)
@@ -356,7 +364,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
     });
 
   const status = indexLabel(source);
-  const progress = side?.progress;
+  const progress = side?.progress ?? live.index;
   const reindex = () => void invoke("store_index_control", { action: "reindex", ids: [sourceId] }, workspaceId).then(() => void loadSource());
   /** The file card opens the file in its reader: the PDF (beside this page, or its tab when docked
    *  beside it already), the saved web page, or any other file in its own app. */
@@ -509,6 +517,25 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   <span style={{ width: `${progress.fraction * 100}%` }} />
                 </div>
               )}
+              {!progress && live.references ? (
+                <>
+                  <div className="kx-index-line kx-references-line" data-tone="busy">
+                    <ProgressRing fraction={live.references.fraction} size={14} />
+                    <span>{live.references.label}</span>
+                  </div>
+                  <div className="kx-meter" data-indeterminate={live.references.fraction === undefined}>
+                    <span style={{ width: live.references.fraction === undefined ? "28%" : `${live.references.fraction * 100}%` }} />
+                  </div>
+                </>
+              ) : (
+                !progress &&
+                live.summary && (
+                  <div className="kx-index-line kx-references-line" data-tone="idle">
+                    <Icon name="quote" size={12} />
+                    <span>{live.summary}</span>
+                  </div>
+                )
+              )}
               <span className="kx-file-card-actions">
                 {source.filePath && (
                   <button className="kx-icon-button" title="Show in Finder" aria-label="Show in Finder" onClick={() => void libraryBridge().revealPath(source.filePath!)}>
@@ -544,6 +571,19 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   ]
     .filter(Boolean)
     .join(" · ");
+  // Folded, the details still say what the analysis is doing.
+  const running = progress ?? live.references;
+  const foldedSummary = running ? (
+    <>
+      {detailsSummary && `${detailsSummary} · `}
+      <span className="kx-page-details-progress">
+        <ProgressRing fraction={running.fraction} size={11} />
+        {running.label}
+      </span>
+    </>
+  ) : (
+    detailsSummary
+  );
 
   return (
     <FilterLinks.Provider value={filterBy}>
@@ -649,7 +689,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         </header>
       }
       titleText={source.title || ""}
-      details={{ summary: detailsSummary, content: details }}
+      details={{ summary: foldedSummary, content: details }}
       notice={
         source.retracted === 1 && (
           <div className="kx-retracted" role="alert">
@@ -689,12 +729,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                     onDragStart={(e) => setItemDrag(e.dataTransfer, [{ kind: "source", id: sourceId, anchor: `highlight:${h.id}`, title: h.text || h.comment || "Highlight", detail: source.title, color: h.color }])}
                     title="Drag onto a canvas or into a note"
                   >
-                    {h.text && (
-                      <blockquote title={h.text}>
-                        <mark>{h.text.replace(/\s*\r?\n\s*/g, " ")}</mark>
-                      </blockquote>
-                    )}
-                    {h.comment && <p className="kx-page-highlight-comment">{h.comment}</p>}
+                    <AnnotationText text={h.text} comment={h.comment} color="var(--kx-hl)" marked />
                     <footer>
                       {pageIndex !== undefined && <span>p. {pageIndex + 1}</span>}
                       <span className="kx-spacer" />

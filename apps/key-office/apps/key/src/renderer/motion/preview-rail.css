@@ -12,31 +12,44 @@
 }
 /* Pointed at, the rail reaches well into the page and its ticks lengthen. */
 .key-preview-rail:is(:hover, :focus-within, .is-open) {
-  --key-rail-reach: 64px;
-  --key-rail-tick: 44px;
+  --key-rail-reach: 58px;
+  --key-rail-tick: 38px;
 }
 .key-preview-rail-ticks {
   position: relative;
   z-index: 1;
   display: grid;
   align-content: center;
+  flex: none;
   width: var(--key-rail-reach);
-  padding: 4px 0;
-  border-radius: 6px;
+  padding: 5px 0;
+  border-radius: 8px;
   pointer-events: auto;
-  opacity: 0.62;
+  opacity: 0.7;
+  /* At rest a thin halo in the window colour keeps the ticks legible over any page. */
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--key-ui-bg) 75%, transparent));
   transition:
     opacity 160ms var(--key-ui-ease, ease),
     width 200ms var(--key-ui-ease, ease),
-    background-color 160ms var(--key-ui-ease, ease);
+    background-color 160ms var(--key-ui-ease, ease),
+    box-shadow 160ms var(--key-ui-ease, ease);
 }
-/* No plate behind the ticks: they only brighten while pointed at. */
+/* Open, the ticks sit on a frosted plate of the window colour, so they read over light,
+   dark and busy pages alike. */
 .key-preview-rail-ticks:hover,
 .key-preview-rail-ticks:focus-within,
 .key-preview-rail.is-open .key-preview-rail-ticks {
   opacity: 1;
+  filter: none;
+  background: color-mix(in srgb, var(--key-ui-bg) 82%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--key-ui-border),
+    0 6px 18px -6px color-mix(in srgb, var(--key-ui-text) 28%, transparent);
+  backdrop-filter: blur(18px) saturate(1.6);
 }
 .key-preview-rail-ticks > button {
+  /* `--m` (0–1, set per frame by PreviewRail) is how close the pointer is; `--s` the length. */
+  --s: calc(var(--rest, 0.25) + (1 - var(--rest, 0.25)) * var(--m, 0));
   position: relative;
   display: flex;
   align-items: center;
@@ -50,10 +63,20 @@
   color: var(--key-ui-muted);
   cursor: pointer;
 }
+.key-preview-rail-ticks:hover > button,
+.key-preview-rail-ticks:focus-within > button,
+.key-preview-rail.is-open .key-preview-rail-ticks > button {
+  color: var(--key-ui-text);
+}
+.key-preview-rail-ticks:is(:hover, :focus-within) > button:not([aria-current]) .key-preview-rail-tick,
+.key-preview-rail.is-open .key-preview-rail-ticks > button:not([aria-current]) .key-preview-rail-tick {
+  opacity: calc(0.4 + var(--m, 0) * 0.6);
+}
 .key-preview-rail-ticks > button[data-highlighted] {
   color: var(--key-ui-text);
 }
-.key-preview-rail-ticks > button[aria-current] {
+.key-preview-rail-ticks > button[aria-current],
+.key-preview-rail-ticks:is(:hover, :focus-within) > button[aria-current] {
   color: var(--key-ui-primary);
 }
 .key-preview-rail-ticks > button[aria-current] .key-preview-rail-tick {
@@ -67,20 +90,25 @@
 .key-preview-rail-tick {
   display: block;
   width: var(--key-rail-tick);
-  transition: width 200ms var(--key-ui-ease, ease);
   height: 2px;
   border-radius: 1px;
   background: currentColor;
   transform-origin: left center;
+  /* Longest and thickest under the pointer, falling off over the ticks either side. */
+  transform: scaleX(var(--s)) scaleY(calc(1 + var(--m, 0) * 0.5));
+  transition:
+    width 200ms var(--key-ui-ease, ease),
+    transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .key-preview-rail-mark {
   position: absolute;
-  left: calc(var(--key-rail-tick) + 6px);
-  transition: left 200ms var(--key-ui-ease, ease);
+  left: 8px;
   width: 4px;
   height: 4px;
   border-radius: 50%;
   background: var(--key-rail-mark);
+  transform: translateX(calc(var(--key-rail-tick) * var(--s)));
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .key-preview-rail-footer {
   position: absolute;

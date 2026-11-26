@@ -1,6 +1,7 @@
 // The inspector: a panel at the window's right edge that follows whatever is selected
 // (a library row, a canvas card, the focused note) and shows it in place — its preview,
 // details, a source's notes and highlights, and what links to it — without opening it.
+import { AnnotationText } from "./annotation-text";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { Fragment, useEffect, useState } from "react";
 import { FilterLink, FilterLinks, showInLibrary, sourceFilter } from "./filter-links";
@@ -70,7 +71,7 @@ function SourceExtras({ invoke, workspaceId, sourceId, sourceTitle }: { invoke: 
                 onClick={() => openItemAt(item, "tab")}
                 title="Open at this highlight · drag onto a canvas or into a note"
               >
-                <span>{h.text || h.comment || "Highlight"}</span>
+                <AnnotationText text={h.text} comment={h.comment} color={highlightColor(h.color, theme)} />
                 {page !== undefined && <small>p. {page + 1}</small>}
               </button>
             );

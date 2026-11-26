@@ -6,7 +6,9 @@
 // card that leans away from the rail's ends so it stays on screen.
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
+  useCallback,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -23,6 +25,8 @@ const SPRING_LAYOUT = {
   mass: 0.6,
 } as const;
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+/** How many ticks either side of the pointer share its magnification (a triangular falloff). */
+const REACH = 4;
 
 export interface PreviewRailItem {
   id: string;
@@ -79,6 +83,29 @@ export function PreviewRail({
   const rows = items.length ? `repeat(${items.length}, ${itemSize}px)` : undefined;
   const open = displayedId !== "";
 
+  // Dock-style magnification: each tick's `--m` (0–1) falls off linearly with its distance
+  // from the pointer, or from the highlighted tick without one. Written straight onto the
+  // buttons in a frame callback, so moving along the rail re-renders nothing.
+  const pointerY = useRef<number | null>(null);
+  const frame = useRef(0);
+  const magnify = useCallback(() => {
+    frame.current = 0;
+    let center: number | null = null;
+    const first = buttons.current.get(items[0]?.id ?? "");
+    if (pointerY.current !== null && first) {
+      center = (pointerY.current - first.getBoundingClientRect().top) / itemSize;
+    } else if (displayedIndex >= 0) center = displayedIndex + 0.5;
+    items.forEach((item, index) => {
+      const m = center === null ? 0 : Math.max(0, 1 - Math.abs(index + 0.5 - center) / REACH);
+      buttons.current.get(item.id)?.style.setProperty("--m", m.toFixed(3));
+    });
+  }, [displayedIndex, itemSize, items]);
+  useLayoutEffect(magnify, [magnify]);
+  useLayoutEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const schedule = () => {
+    if (!frame.current) frame.current = requestAnimationFrame(magnify);
+  };
+
   const move = (event: KeyboardEvent, index: number) => {
     const next =
       event.key === "ArrowDown"
@@ -108,61 +135,51 @@ export function PreviewRail({
         aria-label={label}
         className="key-preview-rail-ticks"
         style={{ gridTemplateRows: rows }}
-        onPointerLeave={() => setHoveredId(null)}
+        onPointerMove={(event) => {
+          if (!hovering(event)) return;
+          pointerY.current = event.clientY;
+          schedule();
+        }}
+        onPointerLeave={() => {
+          pointerY.current = null;
+          setHoveredId(null);
+          schedule();
+        }}
       >
-        {items.map((item, index) => {
-          const highlighted = item.id === highlightedId;
-          const distance =
-            displayedIndex < 0 ? Number.POSITIVE_INFINITY : Math.abs(index - displayedIndex);
-          const rest = item.rest ?? 0.25;
-          const scale = highlighted
-            ? 1
-            : distance === 1
-              ? Math.max(rest, 0.68)
-              : distance === 2
-                ? Math.max(rest, 0.44)
-                : rest;
-          return (
-            <button
-              key={item.id}
-              ref={(element) => {
-                if (element) buttons.current.set(item.id, element);
-                else buttons.current.delete(item.id);
-              }}
-              type="button"
-              data-slot="preview-rail-item"
-              data-highlighted={highlighted || undefined}
-              aria-label={item.ariaLabel ?? item.label}
-              aria-current={item.id === activeId ? "location" : undefined}
-              tabIndex={item.id === tabId ? 0 : -1}
-              style={{ height: itemSize }}
-              onPointerEnter={(event) => {
-                if (hovering(event)) setHoveredId(item.id);
-              }}
-              onFocus={(event) => {
-                setRovingId(item.id);
-                if (event.currentTarget.matches(":focus-visible")) setFocusedId(item.id);
-              }}
-              onKeyDown={(event) => move(event, index)}
-              onClick={() => onItemSelect?.(item)}
-            >
-              <motion.span
+        {items.map((item, index) => (
+          <button
+            key={item.id}
+            ref={(element) => {
+              if (element) buttons.current.set(item.id, element);
+              else buttons.current.delete(item.id);
+            }}
+            type="button"
+            data-slot="preview-rail-item"
+            data-highlighted={item.id === highlightedId || undefined}
+            aria-label={item.ariaLabel ?? item.label}
+            aria-current={item.id === activeId ? "location" : undefined}
+            tabIndex={item.id === tabId ? 0 : -1}
+            style={{ height: itemSize, "--rest": item.rest ?? 0.25 } as CSSProperties}
+            onPointerEnter={(event) => {
+              if (hovering(event)) setHoveredId(item.id);
+            }}
+            onFocus={(event) => {
+              setRovingId(item.id);
+              if (event.currentTarget.matches(":focus-visible")) setFocusedId(item.id);
+            }}
+            onKeyDown={(event) => move(event, index)}
+            onClick={() => onItemSelect?.(item)}
+          >
+            <span aria-hidden="true" className="key-preview-rail-tick" />
+            {item.mark ? (
+              <span
                 aria-hidden="true"
-                className="key-preview-rail-tick"
-                initial={false}
-                animate={{ scaleX: scale }}
-                transition={reduce ? { duration: 0 } : SPRING_LAYOUT}
+                className="key-preview-rail-mark"
+                style={{ "--key-rail-mark": item.mark } as CSSProperties}
               />
-              {item.mark ? (
-                <span
-                  aria-hidden="true"
-                  className="key-preview-rail-mark"
-                  style={{ "--key-rail-mark": item.mark } as CSSProperties}
-                />
-              ) : null}
-            </button>
-          );
-        })}
+            ) : null}
+          </button>
+        ))}
         {footer ? <div className="key-preview-rail-footer">{footer}</div> : null}
       </nav>
 

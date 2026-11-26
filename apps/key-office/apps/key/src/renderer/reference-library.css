@@ -2183,6 +2183,14 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+.kx-page-details-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--kx-text-2);
+  font-variant-numeric: tabular-nums;
+  vertical-align: -1px;
+}
 .kx-page-details {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--kx-line);

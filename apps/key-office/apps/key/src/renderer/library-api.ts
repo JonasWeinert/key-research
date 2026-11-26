@@ -307,11 +307,24 @@ export interface IndexJob {
   id: string;
   title: string;
   kind: string;
-  /** opening | reading | chunking | embedding | queued */
+  /** opening | identifying | analysing | reading | chunking | embedding | queued */
   stage: string;
   done: number;
   total: number;
   priority?: "visible" | "selected" | "opened" | null;
+  /** Within `analysing`: "layout" (page geometry) or "layout-model"; `step` of `steps` passes. */
+  phase?: string;
+  step?: number;
+  steps?: number;
+}
+/** The source whose references are being found or looked up now (`store_status`). */
+export interface ReferencesActivity {
+  id: string;
+  title?: string | null;
+  /** detecting | resolving */
+  stage: string;
+  done: number;
+  total: number;
 }
 export interface IndexActivity {
   paused: boolean;
@@ -329,6 +342,7 @@ export interface LibraryStatus {
   vectors: number;
   counts: Counts;
   activity?: IndexActivity;
+  references?: ReferencesActivity | null;
   /** Sources waiting for an OpenAlex lookup. */
   enrichment?: number;
   /** Older PDFs identified and looked up in the background, behind everything else. */

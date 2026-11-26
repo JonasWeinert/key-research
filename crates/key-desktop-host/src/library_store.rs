@@ -53,6 +53,9 @@ impl PdfText for HostPdfText {
     fn layout(&self, path: &Path, _hash: &str, model: bool) -> Result<Option<key_index::Layout>, String> {
         crate::layout_helper::analyze(path, model).map(Some)
     }
+    fn layout_with_progress(&self, path: &Path, _hash: &str, model: bool, progress: &dyn Fn(&str, usize, usize)) -> Result<Option<key_index::Layout>, String> {
+        crate::layout_helper::analyze_with_progress(path, model, progress).map(Some)
+    }
     fn document_info(&self, path: &Path) -> Result<Option<key_index::DocumentInfo>, String> {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let id = format!("identify:{}", NEXT.fetch_add(1, Ordering::Relaxed));
@@ -239,6 +242,7 @@ impl Library {
             // Cross-references: what an item links to and what links to it, and the items a
             // link can point at (notes, sources, highlights, canvases).
             "store_links" => (|| json_output(self.store.item_links(&arg::<String>(args, "kind")?, &arg::<String>(args, "id")?)?))(),
+            "store_highlight_uses" => (|| json_output(self.store.highlight_uses(&arg::<String>(args, "sourceId")?, &arg::<String>(args, "highlightId")?)?))(),
             "store_link_targets" => (|| {
                 let text: Option<String> = arg(args, "text")?;
                 let kinds: Option<Vec<String>> = arg(args, "kinds")?;
@@ -391,6 +395,8 @@ impl Library {
                     "sections": self.store.sections(&id)?,
                     "layoutModel": self.indexer.layout_model(),
                     "indexStatus": self.store.source(&id)?.map(|s| s.index_status),
+                    // Where indexing has got with it, while it runs (stage, pages, passages).
+                    "job": self.indexer.job(&id),
                 }))
             }),
             // A saved web page's reference list, found in its HTML by the shell: stored as the

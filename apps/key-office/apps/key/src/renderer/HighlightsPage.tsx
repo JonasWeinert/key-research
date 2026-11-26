@@ -1,6 +1,7 @@
 // Every highlight in the library in one place: filter by colour (each colour can be given a
 // meaning, like "Method" or "Disagree"), by words, grouped by source or newest first.
 // Highlights drag onto canvases and into notes (where they arrive as quotes with citations).
+import { AnnotationText } from "./annotation-text";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Icon } from "./icons";
 import { highlightPage, openItemAt, type Highlight } from "./item-actions";
@@ -178,8 +179,7 @@ export default function HighlightsPage({ invoke, workspaceId }: { invoke: Invoke
                 onMouseDown={(e) => pick(r, e)}
                 onDoubleClick={(e) => openItemAt(item(r), e.altKey ? "split" : "tab")}
               >
-                <blockquote>{r.text || r.comment}</blockquote>
-                {r.text && r.comment && <p className="kx-highlights-comment">{r.comment}</p>}
+                <AnnotationText text={r.text} comment={r.comment} color="var(--kx-hl-chip)" />
                 <footer>
                   <span className="kx-highlights-tag">{label(r.color ?? "yellow")}</span>
                   {!grouped && <span>{r.source.title}</span>}

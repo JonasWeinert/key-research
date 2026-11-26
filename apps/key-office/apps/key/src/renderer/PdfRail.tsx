@@ -19,11 +19,11 @@ interface Stop {
   until: number;
 }
 
-// Dense: the rail packs its ticks close and spreads them out under the pointer.
+// Dense: the rail packs its ticks close and magnifies them under the pointer.
 const MIN_SECTION = 4;
 const MIN_PAGE = 3;
-const MAX_SECTION = 14;
-const MAX_PAGE = 10;
+const MAX_SECTION = 10;
+const MAX_PAGE = 7;
 type Mode = "contents" | "pages";
 const MODE_KEY = "key.pdf.rail";
 const after = (a: { page: number; top: number }, b: PdfReaderRailPosition) =>

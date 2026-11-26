@@ -2811,6 +2811,16 @@ else
         if (v.temp) throw Error("Add this PDF to your library first");
         await openSourcePage(shellOfView(v.id) ?? focusedShell(), { workspaceId: v.workspaceId, sourceId: String(sourceId) });
       });
+      // A highlight's "Used in" row: the note (at the quote) or canvas that uses it.
+      ipcMain.handle("key:reader-open-item", async (event, item: { kind?: string; id?: string; title?: string; reveal?: string }) => {
+        const v = bound(event.sender.id);
+        if (v?.kind !== "pdf" || !v.workspaceId) throw Error("Not a PDF reader");
+        const w = shellOfView(v.id) ?? focusedShell();
+        if (!w || typeof item?.id !== "string" || !["note", "canvas"].includes(String(item.kind))) throw Error("Choose a note or canvas");
+        const p = item.kind === "note" ? { section: "note", noteId: item.id } : { section: "canvas", canvasId: item.id };
+        await openContent(w, { ...p, workspaceId: v.workspaceId, title: item.title });
+        if (item.kind === "note" && typeof item.reveal === "string" && item.reveal) emitTo(w, "note-reveal", { noteId: item.id, text: item.reveal.slice(0, 600) });
+      });
       // × in the reader's result bar: end the search session but keep the document.
       ipcMain.handle("key:reader-dismiss", (event) => {
         const v = bound(event.sender.id);
@@ -2992,6 +3002,8 @@ else
           }
           case "open-content":
             await withPlacement(p, () => openContent(w, p));
+            // A note opened at a passage (renderer/note-reveal.ts).
+            if (p.section === "note" && typeof p.reveal === "string" && p.reveal) emitTo(w, "note-reveal", { noteId: p.noteId, text: p.reveal.slice(0, 600) });
             break;
           case "history":
             stepHistory(w, String(p.viewId ?? activeViewId(w) ?? ""), Number(p.step) < 0 ? -1 : 1);

@@ -31,6 +31,7 @@ import type {
 } from '../engines/types';
 import { Icon } from '../ui/Icon';
 import { MarkdownEditor, MarkdownContent } from '../ui/MarkdownEditor';
+import { AnnotationText, HighlightInfo, type HighlightUsage } from './HighlightInfo';
 import { EmptyState, IconButton, PanelShell } from '../ui/primitives';
 import { useReaderOverlay } from './reader-dismiss';
 import {
@@ -64,6 +65,7 @@ import { isScholarlyResourceUrl } from './citation-details';
 import { quoteZoom, zoomTransitionFrame } from './quote-zoom';
 import { locateQuote } from './quote-locate';
 import { CitationCardBody, ExternalWorkCardBody } from './CitationCard';
+import type { LibraryWorks } from './library-works';
 import { ReferenceList } from './ReferenceList';
 import { SidePanel } from '../ui/SidePanel';
 import {
@@ -1537,6 +1539,10 @@ interface PdfJsBenchmarkAppProps {
   onCite?: (passage: { text: string; page: number; rects: number[][]; color?: string }) => void;
   /** Opens a cited work in the library when the host has it there (the citation card's action). */
   referenceInLibrary?: (number: number) => (() => void) | null | undefined;
+  /** Lets the citation cards add a cited work to the library in one click. */
+  libraryWorks?: LibraryWorks;
+  /** Where a highlight is used (notes quoting it, canvases holding it), for its info card. */
+  highlightUsage?: (annotation: { id: string; text: string; page: number }) => Promise<HighlightUsage[]>;
   /** Height of a toolbar floating over the top of the document: pages start below it. */
   topInset?: number;
   /** References kept by the host's library; when given they replace the reader's own analysis. */
@@ -1655,6 +1661,8 @@ function PdfJsBenchmarkApp({
   onAddToNote,
   onCite,
   referenceInLibrary,
+  libraryWorks,
+  highlightUsage,
   topInset = 0,
   referencesHeader,
   referenceAside,
@@ -1685,6 +1693,8 @@ function PdfJsBenchmarkApp({
   const deletedAnnotationsRef = useRef(new Set<string>());
   const [selection, setSelection] = useState<SelectionSnapshot | null>(null);
   const [activeAnnotation, setActiveAnnotation] = useState<ReaderAnnotation | null>(null);
+  // A highlight that was clicked shows its info card; one just made keeps the small toolbar.
+  const [annotationInfo, setAnnotationInfo] = useState(false);
   const [contextRect, setContextRect] = useState<DOMRect | null>(null);
   const [commentDraft, setCommentDraft] = useState<CommentDraft | null>(null);
   const [commentEditorExpanded, setCommentEditorExpanded] = useState(false);
@@ -1976,6 +1986,7 @@ function PdfJsBenchmarkApp({
       overlay.onAnnotationActivation((annotation, rect) => {
         setSelection(null);
         setActiveAnnotation(annotation);
+        setAnnotationInfo(true);
         setContextRect(rect ?? null);
       });
       overlay.onLinkActivation((link, rect) => {
@@ -2184,13 +2195,21 @@ function PdfJsBenchmarkApp({
       commentDraft?.range ?? selection?.range ?? activeAnnotation?.range;
     if (!scroll || !overlay || !range) return;
     let frame = 0;
+    let gone = false;
     const update = () => {
-      if (frame) return;
+      if (frame || gone) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
         const rect = overlay.viewportRectForRange(range);
-        if (commentDraft) setCommentAnchorRect(rect ?? null);
-        else setContextRect(rect ?? null);
+        if (commentDraft) return setCommentAnchorRect(rect ?? null);
+        // Scrolled out of view: the toolbar goes, and stays gone until the next selection.
+        const view = scroll.getBoundingClientRect();
+        if (!rect || rect.bottom < view.top + topInset || rect.top > view.bottom || rect.right < view.left || rect.left > view.right) {
+          gone = true;
+          setContextRect(null);
+          return;
+        }
+        setContextRect(rect);
       });
     };
     scroll.addEventListener('scroll', update, { passive: true });
@@ -2200,7 +2219,7 @@ function PdfJsBenchmarkApp({
       window.removeEventListener('resize', update);
       if (frame) cancelAnimationFrame(frame);
     };
-  }, [activeAnnotation, commentDraft, selection]);
+  }, [activeAnnotation, commentDraft, selection, topInset]);
 
   useEffect(() => {
     if (isTauri() && ready && readerIdentity && visibilityMode === 'visible') {
@@ -2300,6 +2319,7 @@ function PdfJsBenchmarkApp({
         updated,
       ]);
       overlayRef.current?.clearBrowserSelection();
+      if (selection) setAnnotationInfo(false);
       setSelection(null);
       setActiveAnnotation(updated);
       requestAnimationFrame(() => {
@@ -2703,8 +2723,15 @@ function PdfJsBenchmarkApp({
     setZoom(controllerRef.current?.currentZoom() ?? next);
   }, []);
 
+  const activeAnnotationId = activeAnnotation?.id;
+  const annotationUsage = useMemo(() => {
+    const annotation = annotations.find(a => a.id === activeAnnotationId);
+    if (!highlightUsage || !annotation) return undefined;
+    return () => highlightUsage({ id: annotation.id, text: annotation.text, page: annotation.range.start.page });
+  }, [activeAnnotationId, highlightUsage]);
   const context = selection || activeAnnotation ? contextRect : null;
-  useReaderOverlay(!!context && !commentDraft, '.pdfjs-selection-toolbar', () => setContextRect(null));
+  // The toolbar follows its passage while it scrolls and closes once it leaves the view.
+  useReaderOverlay(!!context && !commentDraft, '.pdfjs-selection-toolbar, .key-highlight-info', () => setContextRect(null), { scroll: false });
   useReaderOverlay(!!hoveredLink && !context, '.pdfjs-link-card', () => setHoveredLink(null));
   // A card the user clicked (or expanded) stays while the page or the card scrolls; one that
   // only follows the pointer goes when the page scrolls away from it.
@@ -3091,7 +3118,33 @@ function PdfJsBenchmarkApp({
           {status}
         </span>
       </div>
-      {context && !commentDraft && (
+      {context && !commentDraft && activeAnnotation && !selection && annotationInfo && (
+        <HighlightInfo
+          text={activeAnnotation.text}
+          comment={activeAnnotation.comment}
+          color={activeAnnotation.color}
+          colors={Object.fromEntries(HIGHLIGHT_COLORS.map(color => [color, HIGHLIGHT_COLOR_RGB[color]]))}
+          createdAt={activeAnnotation.createdAt}
+          updatedAt={activeAnnotation.updatedAt}
+          place={`p. ${activeAnnotation.range.start.page + 1}`}
+          usage={annotationUsage}
+          renderComment={comment => <MarkdownContent markdown={comment} />}
+          style={{
+            left: Math.max(12, Math.min(window.innerWidth - 324, context.left + context.width / 2 - 156)),
+            ...(context.bottom + 300 < window.innerHeight
+              ? { top: context.bottom + 10 }
+              : context.top - 300 > 54
+                ? { bottom: window.innerHeight - context.top + 10 }
+                : { top: Math.max(54, Math.min(window.innerHeight - 320, context.bottom + 10)) }),
+          }}
+          onColor={color => addHighlight(color as HighlightColor)}
+          onComment={openCommentEditor}
+          onCopy={() => void copyContextText()}
+          onCite={onCite ? citeContext : undefined}
+          onDelete={removeActiveAnnotation}
+        />
+      )}
+      {context && !commentDraft && !(activeAnnotation && !selection && annotationInfo) && (
         <div
           className="pdfjs-selection-toolbar"
           role="toolbar"
@@ -3239,6 +3292,7 @@ function PdfJsBenchmarkApp({
             onResolved={resolveScholarly}
             uiId={citationUiId}
             libraryAction={referenceInLibrary}
+            libraryWorks={libraryWorks}
             onGoToReference={reference =>
               controllerRef.current?.scrollToBounds(reference.page, {
                 left: reference.xFraction ?? 0,
@@ -3276,6 +3330,7 @@ function PdfJsBenchmarkApp({
         >
           <ExternalWorkCardBody
             url={externalCitation.link.target.kind === 'external' ? externalCitation.link.target.url : ''}
+            libraryWorks={libraryWorks}
             onResolved={resolveExternal}
             onShowMore={() => setExternalCitationExpanded(true)}
             expanded={externalCitationExpanded}
@@ -3350,8 +3405,12 @@ function PdfJsBenchmarkApp({
                   />
                   <span>
                     <small>Page {comment.range.start.page + 1}</small>
-                    <MarkdownContent markdown={comment.comment ?? ''} />
-                    <small title={comment.text}>{comment.text}</small>
+                    <AnnotationText
+                      text={comment.text}
+                      comment={comment.comment}
+                      rgb={HIGHLIGHT_COLOR_RGB[comment.color]}
+                      renderComment={markdown => <MarkdownContent markdown={markdown} />}
+                    />
                   </span>
                 </button>
               ))}

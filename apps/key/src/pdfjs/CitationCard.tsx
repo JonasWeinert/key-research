@@ -15,6 +15,7 @@ import { citationAuthorsSnippet, citationLinks, citationSummary, isNumberedCitat
 import { isTauri } from './reader-model';
 import { classifyLookupError, lookupFaultPending } from './remote-retry';
 import type { ScholarlyEntry } from './scholarly-metadata';
+import { AddToLibraryButton, type CitedWork, type LibraryWorks } from './library-works';
 import { useRetryingLookup, type RetryingLookup } from './use-retrying-lookup';
 import './citation-card.css';
 
@@ -107,6 +108,12 @@ function ActionLink({ href, icon, children, primary }: { href: string; icon: 'ex
     </a>
   );
 }
+
+/** A looked-up work as the library takes it. */
+export const citedWork = (metadata: ScholarlyMetadata | undefined): CitedWork | undefined =>
+  metadata?.title
+    ? { title: metadata.title, doi: metadata.doi, authors: metadata.authors, year: metadata.year, venue: metadata.journal ?? metadata.journalShort, url: metadata.landingUrl }
+    : undefined;
 
 const sourcesOf = (metadata: ScholarlyMetadata) => (metadata.sources?.length ? metadata.sources : [metadata.source]).join(', ');
 
@@ -277,6 +284,8 @@ export interface CitationCardProps {
   onShowMore: (number: number) => void;
   /** Opens the work in the library when the host knows it is there. */
   libraryAction?: (number: number) => (() => void) | null | undefined;
+  /** Adds a work the library does not have yet (one click), when the host can. */
+  libraryWorks?: LibraryWorks;
   onClose?: () => void;
   /** Grown into the work's details (after Show details). */
   expanded?: boolean;
@@ -295,6 +304,7 @@ export function CitationCardBody({
   onGoToReference,
   onShowMore,
   libraryAction,
+  libraryWorks,
   onClose,
   expanded = false,
   onCollapse,
@@ -325,6 +335,14 @@ export function CitationCardBody({
   const link = links.find(candidate => candidate.url.includes('doi.org')) ?? links[0];
   const openInLibrary = number === null ? null : libraryAction?.(number);
   const id = (value: number) => `${uiId}-cite-${value}`;
+  const libraryButton = openInLibrary ? (
+    <button type="button" className="pdfjs-cite-action" data-state="present" onClick={openInLibrary}>
+      <Icon name="book" />
+      In library
+    </button>
+  ) : (
+    <AddToLibraryButton works={libraryWorks} work={citedWork(metadata)} />
+  );
   return (
     <>
       {(several || onClose || expanded) && (
@@ -364,12 +382,7 @@ export function CitationCardBody({
             />
           )}
           <footer className="pdfjs-cite-actions">
-            {openInLibrary && (
-              <button type="button" className="pdfjs-cite-action" onClick={openInLibrary}>
-                <Icon name="book" />
-                In library
-              </button>
-            )}
+            {libraryButton}
             <DetailLinks links={links} />
             <span className="pdfjs-cite-spacer" />
             <button type="button" className="pdfjs-cite-action" title="Go to the reference list" onClick={() => onGoToReference(reference)}>
@@ -388,12 +401,7 @@ export function CitationCardBody({
             onRetry={retry}
             actions={
               <>
-                {openInLibrary && (
-                  <button type="button" className="pdfjs-cite-action" onClick={openInLibrary}>
-                    <Icon name="book" />
-                    In library
-                  </button>
-                )}
+                {libraryButton}
                 {link && <ActionLink href={link.url} icon="external">{link.url.includes('doi.org') ? 'DOI' : 'Open'}</ActionLink>}
                 <span className="pdfjs-cite-spacer" />
                 <button
@@ -440,8 +448,10 @@ export function ExternalWorkCardBody({
   onClose,
   expanded = false,
   onCollapse,
+  libraryWorks,
 }: {
   url: string;
+  libraryWorks?: LibraryWorks;
   onResolved: (metadata: ScholarlyMetadata | null) => void;
   onShowMore: () => void;
   onClose: () => void;
@@ -482,6 +492,7 @@ export function ExternalWorkCardBody({
         <article className="pdfjs-cite-body">
           <WorkDetails metadata={metadata} title={metadata.title} />
           <footer className="pdfjs-cite-actions">
+            <AddToLibraryButton works={libraryWorks} work={citedWork(metadata)} />
             <DetailLinks links={citationLinks(metadata)} />
             <span className="pdfjs-cite-spacer" />
             <ActionLink href={url} icon="external">Open link</ActionLink>
@@ -497,6 +508,7 @@ export function ExternalWorkCardBody({
           onRetry={retry}
           actions={
             <>
+              {metadata && <AddToLibraryButton works={libraryWorks} work={citedWork(metadata)} />}
               <ActionLink href={url} icon="external">Open link</ActionLink>
               <span className="pdfjs-cite-spacer" />
               {metadata && (

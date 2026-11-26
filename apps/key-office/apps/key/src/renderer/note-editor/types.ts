@@ -54,6 +54,8 @@ export interface NoteEditorHandle {
   /** A quote block after the cursor's block (or in place of an empty line). */
   insertQuote(quote: QuoteInsert): void;
   focus(): void;
+  /** Scrolls to the first place the words `text` appear and selects them; false when absent. */
+  reveal(text: string): boolean;
 }
 
 export interface NoteEditorProps {

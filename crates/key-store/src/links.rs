@@ -72,6 +72,17 @@ pub struct Link {
     pub created_at: i64,
 }
 
+/// A note or canvas that uses a highlight, with the words it quotes there.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HighlightUse {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemLinks {
@@ -160,6 +171,53 @@ impl Store {
             !(link.from.kind == kind && link.from.id == id) && !(link.from.kind == NOTE && own_notes.contains(&link.from.id))
         });
         Ok(ItemLinks { outgoing, backlinks })
+    }
+
+    /// Where a highlight is used: notes that link to it or quote its words (the source's own
+    /// notes included) and canvases that hold it, one entry per note or canvas.
+    pub fn highlight_uses(&self, source_id: &str, highlight_id: &str) -> Result<Vec<HighlightUse>> {
+        let db = self.read()?;
+        let payload: Option<String> = db
+            .query_row("SELECT payload FROM annotations WHERE id = ?1 AND source_id = ?2", params![highlight_id, source_id], |r| r.get(0))
+            .optional()
+            .map_err(e)?;
+        let text = payload
+            .and_then(|p| serde_json::from_str::<Json>(&p).ok())
+            .and_then(|p| p.get("text").and_then(Json::as_str).map(String::from))
+            .unwrap_or_default();
+        let probe = quote_probe(&text);
+        let anchor = format!("highlight:{highlight_id}");
+        let encoded = anchor.replace(':', "%3A");
+        let mut titles = Titles::new(&db);
+        let links = query_links(&db, "to_kind = ?1 AND to_id = ?2 AND broken_at IS NULL", SOURCE, source_id, &mut titles)?;
+        let mut uses: Vec<HighlightUse> = Vec::new();
+        let push = |uses: &mut Vec<HighlightUse>, item: HighlightUse| {
+            if !uses.iter().any(|u| u.kind == item.kind && u.id == item.id) {
+                uses.push(item);
+            }
+        };
+        for link in links {
+            let quoted = !probe.is_empty() && link.context.as_deref().is_some_and(|c| fold_text(c).contains(&probe));
+            if link.to.anchor.as_deref() != Some(anchor.as_str()) && !quoted {
+                continue;
+            }
+            let owner = link.via.as_ref().unwrap_or(&link.from);
+            push(&mut uses, HighlightUse { kind: owner.kind.clone(), id: owner.id.clone(), title: owner.title.clone(), context: link.context.clone() });
+        }
+        let mut statement = db.prepare("SELECT id, title, body FROM notes WHERE source_id = ?1 ORDER BY updated_at DESC").map_err(e)?;
+        let rows = statement
+            .query_map([source_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+            .map_err(e)?;
+        for row in rows {
+            let (id, title, body) = row.map_err(e)?;
+            let quoted = !probe.is_empty() && fold_text(&body).contains(&probe);
+            if !quoted && !body.contains(&anchor) && !body.contains(&encoded) {
+                continue;
+            }
+            let context = quoted.then(|| text.split_whitespace().collect::<Vec<_>>().join(" "));
+            push(&mut uses, HighlightUse { kind: NOTE.into(), id, title: note_title(&title, &body), context });
+        }
+        Ok(uses)
     }
 
     /// Items whose title (or a highlight's text) matches, for the link picker. Empty text
@@ -647,6 +705,19 @@ pub fn note_title(title: &str, body: &str) -> String {
         .unwrap_or("");
     let line: String = line.chars().take(80).collect();
     if line.is_empty() { "Untitled note".into() } else { line }
+}
+
+/// Lower case, quotes and markup dropped, whitespace as single spaces: how a quote is compared.
+fn fold_text(text: &str) -> String {
+    let kept: String = text.chars().filter(|c| !matches!(c, '“' | '”' | '"' | '‘' | '’' | '*' | '_' | '`' | '\\')).collect();
+    kept.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase()
+}
+
+/// The opening words of a highlight: enough to recognise a quote of it, short enough to survive
+/// a trimmed or lightly edited quote. Empty for passages too short to tell apart.
+fn quote_probe(text: &str) -> String {
+    let folded = fold_text(text);
+    if folded.chars().count() < 12 { String::new() } else { folded.chars().take(48).collect::<String>().trim_end().to_string() }
 }
 
 fn highlight_text(payload: &Json) -> Option<String> {
