@@ -1,0 +1,325 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://key.app/schemas/connector-1.schema.json",
+  "title": "Key database connector, format 1",
+  "description": "See connectors/SPEC.md. Data only: no code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "id", "version", "name"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "format": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,63}$" },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "minEngine": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "homepage": { "type": "string", "pattern": "^(https://.*)?$" },
+    "category": { "enum": ["biomedical", "multidisciplinary", "economics", "social-science", "grey-literature", "preprints", "registries", "other"] },
+    "coverage": { "type": "string", "maxLength": 2000 },
+    "terms": { "type": "string", "maxLength": 4000 },
+    "kind": { "enum": ["api", "harvest", "manual"] },
+    "guide": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": { "type": "string", "maxLength": 4000 },
+        "coverage": { "type": "string", "maxLength": 4000 },
+        "fields": { "type": "string", "maxLength": 4000 },
+        "limits": { "type": "array", "items": { "type": "string", "maxLength": 1000 }, "maxItems": 30 },
+        "credentials": { "type": "string", "maxLength": 4000 },
+        "tips": { "type": "array", "items": { "type": "string", "maxLength": 1000 }, "maxItems": 30 }
+      }
+    },
+    "credentials": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "secret"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+          "label": { "type": "string" },
+          "required": { "type": "boolean" },
+          "secret": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+          "help": { "type": "string" },
+          "url": { "type": "string", "pattern": "^https://" }
+        }
+      }
+    },
+    "hosts": { "type": "array", "maxItems": 16, "items": { "type": "string", "pattern": "^[a-z0-9.-]+$" } },
+    "politeness": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "minIntervalMs": { "type": "integer", "minimum": 0, "maximum": 600000 },
+        "minIntervalMsWithKey": { "type": "integer", "minimum": 0, "maximum": 600000 },
+        "retries": { "type": "integer", "minimum": 0, "maximum": 8 },
+        "backoffMs": { "type": "integer", "minimum": 0, "maximum": 120000 },
+        "maxPages": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "mailtoParam": { "type": "string" },
+        "maxResponseBytes": { "type": "integer", "minimum": 1024, "maximum": 67108864 },
+        "quota": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remainingHeader": { "type": "string" },
+            "resetHeader": { "type": "string" },
+            "exhaustedBody": { "type": "string" }
+          }
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+        "phrase": { "type": "boolean" },
+        "truncation": { "type": "boolean" },
+        "proximity": { "type": "boolean" },
+        "dates": { "enum": ["none", "year", "day"] },
+        "filters": { "type": "array", "items": { "enum": ["types", "languages", "openAccess"] } },
+        "maxResults": { "type": "integer", "minimum": 1 },
+        "sort": { "type": "array", "items": { "type": "string" } },
+        "exportFields": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "options": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+          "label": { "type": "string" },
+          "default": { "type": "string" },
+          "help": { "type": "string" },
+          "free": { "type": "boolean" },
+          "pattern": { "type": "string" },
+          "choices": {
+            "type": "array",
+            "maxItems": 500,
+            "items": { "type": "object", "additionalProperties": false, "required": ["value", "label"], "properties": { "value": { "type": "string" }, "label": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "query": { "$ref": "#/$defs/query" },
+    "search": { "$ref": "#/$defs/plan" },
+    "count": { "$ref": "#/$defs/plan" },
+    "lookup": { "$ref": "#/$defs/plan" },
+    "manual": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^https://" },
+        "steps": { "type": "array", "items": { "type": "string" } },
+        "exportFormats": { "type": "array", "items": { "enum": ["ris", "bibtex", "csv", "nbib", "endnote", "txt", "xml", "json"] } },
+        "importHint": { "type": "string" }
+      }
+    },
+    "tests": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/test" } }
+  },
+  "$defs": {
+    "field": { "enum": ["all", "title", "title_abstract", "abstract", "keywords", "subject", "fulltext", "author", "journal", "affiliation", "identifier"] },
+    "template": { "type": "string", "maxLength": 4096 },
+    "param": {
+      "anyOf": [
+        { "$ref": "#/$defs/template" },
+        { "type": "object", "additionalProperties": false, "required": ["join", "parts"], "properties": { "join": { "type": "string" }, "parts": { "type": "array", "items": { "$ref": "#/$defs/template" } } } }
+      ]
+    },
+    "replace": { "type": "object", "additionalProperties": false, "required": ["find"], "properties": { "find": { "type": "string" }, "with": { "type": "string" }, "replace": { "type": "string" } } },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["native", "terms", "harvest"] },
+        "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/template" } },
+        "fallback": { "type": "object", "additionalProperties": { "$ref": "#/$defs/field" } },
+        "defaultField": { "$ref": "#/$defs/field" },
+        "phrase": { "$ref": "#/$defs/template" },
+        "words": { "$ref": "#/$defs/template" },
+        "wordJoin": { "type": "string" },
+        "perWordField": { "type": "boolean" },
+        "truncate": { "$ref": "#/$defs/template" },
+        "proximity": { "anyOf": [{ "$ref": "#/$defs/template" }, { "type": "object", "additionalProperties": false, "required": ["wordJoin"], "properties": { "wordJoin": { "type": "string" } } }] },
+        "and": { "type": "string" },
+        "or": { "type": "string" },
+        "not": { "type": "string" },
+        "group": { "$ref": "#/$defs/template" },
+        "notStyle": { "enum": ["binary", "andNot", "prefix"] },
+        "escape": { "type": "array", "items": { "$ref": "#/$defs/replace" } },
+        "lowercaseOperators": { "type": "boolean" },
+        "dates": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "template": { "$ref": "#/$defs/template" },
+            "from": { "$ref": "#/$defs/template" },
+            "to": { "$ref": "#/$defs/template" },
+            "openFrom": { "type": "string" },
+            "openTo": { "type": "string" }
+          }
+        },
+        "vars": {
+          "type": "object",
+          "additionalProperties": { "type": "object", "additionalProperties": false, "required": ["template"], "properties": { "template": { "$ref": "#/$defs/template" }, "else": { "type": "string" } } }
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "types": { "$ref": "#/$defs/filter" },
+            "languages": { "$ref": "#/$defs/filter" },
+            "openAccess": { "$ref": "#/$defs/filter" }
+          }
+        },
+        "maxLength": { "type": "integer", "minimum": 10 },
+        "maxTerms": { "type": "integer", "minimum": 1 },
+        "maxOperators": { "type": "integer", "minimum": 1 },
+        "chunk": { "enum": ["none", "or-split", "year-split"] },
+        "maxChunks": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "localFilter": { "type": "boolean" }
+      }
+    },
+    "filter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template"],
+      "properties": {
+        "join": { "type": "string" },
+        "template": { "$ref": "#/$defs/template" },
+        "var": { "type": "string", "pattern": "^[a-zA-Z][a-zA-Z0-9_]*$" },
+        "values": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url"],
+      "properties": {
+        "method": { "enum": ["GET", "POST"] },
+        "url": { "$ref": "#/$defs/template" },
+        "params": { "type": "object", "additionalProperties": { "$ref": "#/$defs/param" } },
+        "headers": { "type": "object", "additionalProperties": { "$ref": "#/$defs/template" } },
+        "form": { "type": "object", "additionalProperties": { "$ref": "#/$defs/param" } },
+        "body": {},
+        "format": { "enum": ["json", "xml", "html", "csv"] }
+      }
+    },
+    "paging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "style": { "enum": ["none", "offset", "page", "cursor", "token"] },
+        "start": { "type": "integer", "minimum": 0 },
+        "firstCursor": { "type": "string" },
+        "next": { "type": "string" },
+        "stopWhenFewer": { "type": "boolean" },
+        "stopWhenNoNew": { "type": "boolean" },
+        "stopWhenNoLocalMatch": { "type": "boolean" }
+      }
+    },
+    "record": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 64,
+      "properties": {
+        "sourceId": { "$ref": "#/$defs/extract" }, "title": { "$ref": "#/$defs/extract" }, "authors": { "$ref": "#/$defs/extract" },
+        "year": { "$ref": "#/$defs/extract" }, "date": { "$ref": "#/$defs/extract" }, "venue": { "$ref": "#/$defs/extract" },
+        "series": { "$ref": "#/$defs/extract" }, "number": { "$ref": "#/$defs/extract" }, "publisher": { "$ref": "#/$defs/extract" },
+        "abstract": { "$ref": "#/$defs/extract" }, "doi": { "$ref": "#/$defs/extract" }, "pmid": { "$ref": "#/$defs/extract" },
+        "pmcid": { "$ref": "#/$defs/extract" }, "arxiv": { "$ref": "#/$defs/extract" }, "openalex": { "$ref": "#/$defs/extract" },
+        "handle": { "$ref": "#/$defs/extract" }, "isbn": { "$ref": "#/$defs/extract" }, "issn": { "$ref": "#/$defs/extract" },
+        "url": { "$ref": "#/$defs/extract" }, "pdfUrl": { "$ref": "#/$defs/extract" }, "type": { "$ref": "#/$defs/extract" },
+        "language": { "$ref": "#/$defs/extract" }, "keywords": { "$ref": "#/$defs/extract" }, "extras": { "$ref": "#/$defs/extract" }
+      }
+    },
+    "extract": {
+      "anyOf": [
+        { "type": "string", "maxLength": 1024 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path": { "type": "string", "maxLength": 1024 },
+            "first": { "type": "array", "items": { "type": "string", "maxLength": 1024 }, "maxItems": 10 },
+            "all": { "type": "boolean" },
+            "join": { "type": "string" },
+            "drop": { "type": "array", "items": { "type": "string" } },
+            "split": { "type": "string" },
+            "regex": { "type": "string", "maxLength": 1024 },
+            "replace": { "type": "array", "items": { "$ref": "#/$defs/replace" }, "maxItems": 20 },
+            "template": { "type": "string", "maxLength": 1024 },
+            "map": { "type": "object", "additionalProperties": { "type": "string" } },
+            "default": { "type": "string" },
+            "name": { "type": "object", "additionalProperties": false, "properties": { "family": { "type": "string" }, "given": { "type": "string" }, "literal": { "type": "string" } } },
+            "type": { "enum": ["text", "year", "date", "doi", "int", "url", "language", "inverted-index"] },
+            "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/extract" }, "maxProperties": 40 }
+          }
+        }
+      ]
+    },
+    "detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request", "record"],
+      "properties": {
+        "ids": { "type": "string" },
+        "batch": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "request": { "$ref": "#/$defs/request" },
+        "items": { "type": "string" },
+        "itemsWhere": { "type": "string" },
+        "record": { "$ref": "#/$defs/record" },
+        "perRecord": { "type": "boolean" },
+        "when": { "type": "object", "additionalProperties": false, "required": ["field"], "properties": { "field": { "type": "string" }, "minLength": { "type": "integer", "minimum": 0 } } }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request"],
+      "properties": {
+        "adapter": { "enum": ["paged", "ncbi-history", "oai-pmh", "html-listing"] },
+        "request": { "$ref": "#/$defs/request" },
+        "pageSize": { "anyOf": [{ "type": "integer", "minimum": 1, "maximum": 10000 }, { "$ref": "#/$defs/template" }] },
+        "paging": { "$ref": "#/$defs/paging" },
+        "total": { "type": "string" },
+        "items": { "type": "string" },
+        "itemsWhere": { "type": "string" },
+        "record": { "$ref": "#/$defs/record" },
+        "links": { "type": "string" },
+        "detail": { "$ref": "#/$defs/detail" },
+        "sanity": { "type": "object", "additionalProperties": false, "required": ["maxTotal"], "properties": { "maxTotal": { "type": "integer", "minimum": 1 }, "error": { "type": "string" } } }
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "query"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "query": { "type": "object" },
+        "native": { "type": "string" },
+        "options": { "type": "object", "additionalProperties": { "type": "string" } },
+        "minTotal": { "type": "integer", "minimum": 0 },
+        "minResults": { "type": "integer", "minimum": 0 },
+        "pages": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "mustFind": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": false, "properties": { "doi": { "type": "string" }, "title": { "type": "string" }, "sourceId": { "type": "string" } } }
+        },
+        "fields": { "type": "array", "items": { "type": "string" } },
+        "fixture": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "offlineOnly": { "type": "boolean" },
+        "maxRecords": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
