@@ -255,7 +255,18 @@ impl Store {
     /// Stores what one reference resolved to, linking it to a library source with the
     /// same DOI (or, failing that, the same title) when there is one.
     pub fn resolve_reference(&self, source_id: &str, seq: i64, metadata: Option<&Json>, error: Option<&str>) -> Result<Option<String>> {
-        let matched = match metadata {
+        // Without a lookup result, what the document itself said (a web page's DOI) still links it.
+        let stored = match metadata {
+            Some(_) => None,
+            None => self
+                .read()?
+                .query_row("SELECT metadata FROM source_references WHERE source_id = ?1 AND seq = ?2", params![source_id, seq], |r| r.get::<_, Option<String>>(0))
+                .optional()
+                .map_err(e)?
+                .flatten()
+                .and_then(|m| serde_json::from_str::<Json>(&m).ok()),
+        };
+        let matched = match metadata.or(stored.as_ref()) {
             Some(metadata) => self.match_work(source_id, metadata)?,
             None => None,
         };

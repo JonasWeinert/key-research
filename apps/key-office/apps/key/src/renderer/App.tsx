@@ -1081,6 +1081,8 @@ export default function App() {
                       return (
                         <WebReaderPanel
                           invoke={api().invoke}
+                          viewId={v.id}
+                          readerId={docked}
                           workspaceId={host.workspaceId}
                           sourceId={host.sourceId}
                           tab={((v as { tab?: WebPanelTab }).tab as WebPanelTab) ?? "details"}

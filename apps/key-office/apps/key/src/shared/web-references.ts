@@ -126,7 +126,13 @@ export function detectWebReferences(doc: Document): WebReferenceScan {
     const titled = el.querySelector('[itemprop="name"], [itemprop="headline"], .citation-title, .ref-title, .article-title, span.title');
     const quoted = text.match(/["“]([^"”]{12,300})[”"]/);
     const italic = clean(el.querySelector("cite i, i, em")?.textContent);
-    const title = clean(titled?.textContent) || (quoted ? clean(quoted[1]).replace(/[.,]$/, "") : undefined) || (italic.length >= 12 ? italic : undefined);
+    // Author–date styles: "Okafor A. (2019). The title. Journal …"
+    const dated = text.match(/\((?:1[6-9]|20)\d\d[a-z]?\)\.?\s+([^.?!]{12,300}[?!]?)/);
+    const title =
+      clean(titled?.textContent) ||
+      (quoted ? clean(quoted[1]).replace(/[.,]$/, "") : undefined) ||
+      (italic.length >= 12 ? italic : undefined) ||
+      (dated ? clean(dated[1]) : undefined);
     const year = text.match(/\b(1[6-9]\d\d|20\d\d)[a-z]?\b/);
     const authors = [...el.querySelectorAll('[itemprop="author"], .citation-author, .ref-author, .author')].map((a) => clean(a.textContent)).filter(Boolean);
     const anchor = el.id || el.querySelector("[id]")?.id || undefined;

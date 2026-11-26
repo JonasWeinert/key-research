@@ -7,7 +7,8 @@ import { Icon } from "./icons";
 import { bridge, type Invoke } from "./library-api";
 import { AnalysisStatus } from "./reader-analysis";
 import type { WebAnnotation } from "./WebPageReader";
-import { focusWebPage, webPageEvent, WEB_REANALYZE_EVENT, WEB_REFERENCE_EVENT } from "./web-page-open";
+import { focusWebPage, toggleWebPanel, webPageEvent, webPanelStatusItems, WEB_REANALYZE_EVENT, WEB_REFERENCE_EVENT } from "./web-page-open";
+import { useStatusItems } from "./status-bar";
 import { useWebAnalysis } from "./web-reader-references";
 import "./reader-panel.css";
 import "./web-page.css";
@@ -17,6 +18,8 @@ export type WebPanelTab = "details" | "highlights" | "references";
 
 export function WebReaderPanel({
   invoke,
+  viewId,
+  readerId,
   workspaceId,
   sourceId,
   tab,
@@ -26,6 +29,9 @@ export function WebReaderPanel({
   onClose,
 }: {
   invoke: Invoke;
+  /** The panel's own view, and the reader it is docked beside. */
+  viewId: string;
+  readerId: string;
   workspaceId: string;
   sourceId: string;
   tab: WebPanelTab;
@@ -37,6 +43,8 @@ export function WebReaderPanel({
   const [highlights, setHighlights] = useState<number>();
   const [report] = useWebAnalysis(invoke, workspaceId, sourceId);
   const count = report?.references.length;
+  // With focus in the panel, the status bar keeps the reader's switch.
+  useStatusItems(viewId, webPanelStatusItems(tab), (id) => void toggleWebPanel(readerId, id));
   return (
     <SidePanel
       label="Details, highlights and references"

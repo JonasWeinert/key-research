@@ -3,6 +3,7 @@
 // each one up as it does a PDF's). Links in the page that point into the list show the same
 // citation card as the PDF reader on hover; a click pins it, Details grows it in place.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { CitationCardBody } from "@key-reader/pdfjs/CitationCard";
 import { anchoredFloatingCardPosition } from "@key-reader/pdfjs/floating-card";
 import type { ScholarlyMetadata, ScientificCitation, ScientificReference } from "@key-reader/engines/types";
@@ -219,11 +220,14 @@ export function useWebReferences({
       if (!latest.current?.pinned) close();
       else setCard((c) => (c ? { ...c } : c));
     };
+    const key = (event: KeyboardEvent) => event.key === "Escape" && latest.current && close();
+    doc.addEventListener("keydown", key);
     doc.addEventListener("pointerover", over);
     doc.addEventListener("pointerout", out);
     win?.addEventListener("click", click, true);
     doc.addEventListener("scroll", scrolled, { passive: true });
     return () => {
+      doc.removeEventListener("keydown", key);
       doc.removeEventListener("pointerover", over);
       doc.removeEventListener("pointerout", out);
       win?.removeEventListener("click", click, true);
@@ -258,7 +262,7 @@ export function useWebReferences({
     const id = match?.matchedSourceId;
     return id ? () => void bridge().tabAction("open-source-page", { workspaceId, sourceId: id }) : null;
   };
-  return (
+  return createPortal(
     <div
       ref={cardRef}
       className="pdfjs-cite-card kx-web-cite-card"
@@ -294,6 +298,8 @@ export function useWebReferences({
         onClose={card.pinned ? close : undefined}
         uiId={`web-${sourceId}`}
       />
-    </div>
+    </div>,
+    // Above the panes (a pane clips what it holds), placed in the window's coordinates.
+    document.body,
   );
 }

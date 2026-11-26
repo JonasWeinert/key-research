@@ -8,7 +8,7 @@ import { Icon } from "./icons";
 import { bridge, type Invoke, type Source } from "./library-api";
 import { toast } from "./item-actions";
 import { describeRange, locate, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
-import { takeWebFocus, WEB_FOCUS_EVENT } from "./web-page-open";
+import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT } from "./web-page-open";
 import { writeQuoteClipboard } from "./quote-clipboard";
 import { useStatusItems } from "./status-bar";
 import { useWebReferences } from "./web-reader-references";
@@ -384,15 +384,7 @@ export function WebPageReader({
   const showPanel = (tab: PanelTab) => {
     if (viewId) void bridge().tabAction("web-panel", { viewId, tab });
   };
-  useStatusItems(
-    viewId,
-    [
-      { id: "details", label: "Details", icon: "panelRight", active: panelTab === "details", title: "Show or hide this source’s details and note" },
-      { id: "highlights", label: "Highlights", icon: "pen", active: panelTab === "highlights", title: "Show or hide this page’s highlights" },
-      { id: "references", label: "References", icon: "book", active: panelTab === "references", title: "Show or hide the references cited on this page" },
-    ],
-    (id) => showPanel(id as PanelTab),
-  );
+  useStatusItems(viewId, webPanelStatusItems(panelTab), (id) => showPanel(id as PanelTab));
   const citationCard = useWebReferences({
     doc,
     frame,

@@ -32,6 +32,16 @@ export const WEB_REANALYZE_EVENT = "key:web-page-reanalyze";
 export const WEB_ANALYSIS_EVENT = "key:web-page-analysis";
 export const webPageEvent = (name: string, detail: { sourceId: string; number?: number }) => window.dispatchEvent(new CustomEvent(name, { detail }));
 
+/** The status bar's switch for a saved page's panel, from its reader or the panel itself. */
+export function webPanelStatusItems(panelTab: string | undefined) {
+  return [
+    { id: "details", label: "Details", icon: "panelRight", active: panelTab === "details", title: "Show or hide this source’s details and note" },
+    { id: "highlights", label: "Highlights", icon: "pen", active: panelTab === "highlights", title: "Show or hide this page’s highlights" },
+    { id: "references", label: "References", icon: "book", active: panelTab === "references", title: "Show or hide the references cited on this page" },
+  ];
+}
+export const toggleWebPanel = (readerViewId: string, tab: string) => bridge().tabAction("web-panel", { viewId: readerViewId, tab });
+
 export function openWebPage(workspaceId: string, sourceId: string, focus?: Omit<WebFocus, "sourceId">, title?: string, where: Record<string, unknown> = {}) {
   if (focus?.annotationId || focus?.text) {
     pending.set(sourceId, { sourceId, ...focus });
