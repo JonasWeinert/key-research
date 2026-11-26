@@ -1,0 +1,22 @@
+Citations:
+(1)
+(2)
+(3)
+(1)
+(4,5)
+(6,7)
+(see 8 for a review)
+
+Bibliography:
+1. Utility of a deep-learning algorithm to guide novices to acquire echocardiograms for limited diagnostic use. JAMA Cardiology. 2021 Feb 1;6(6):624–32. doi:10.1001/jamacardio.2021.0185 PubMed PMID: 33599681.
+2. Thinking, fast and slow. New York: Farrar, Straus and Giroux; 2011.
+3. Palma MA, Huseynov S. Consumer willingness to pay for food safety. In: The Oxford handbook of food economics. 2nd ed. Oxford: Oxford University Press; 2022. pp. 112–30.
+4. Measuring attention in reading. Cognition. 2020 ;201:104–18.
+5. Attention across scripts. Cognition. 2020 ;205:1–15.
+6. Soil carbon under grazing. Geoderma. 2019 ;340:50–60.
+7. Grazing and nitrogen. Geoderma. 2019 ;341:10–20.
+8. Attention is all you need [Preprint] [Internet]. arXiv; 2017. Available from: https://arxiv.org/abs/1706.03762
+9. WHO [Internet]. 2023 [cited 2024 Jan 15]. Malaria fact sheet. Available from: https://www.who.int/news-room/fact-sheets/detail/malaria
+10. Neural correlates of reading fluency [PhD thesis]. University of Toronto; 2018.
+11. Climate change 2021: The physical science basis. Cambridge: Cambridge University Press; 2021. doi:10.1017/9781009157896
+12. Deep residual learning for image recognition. In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition. Las Vegas, NV: IEEE; 2016. pp. 770–8.

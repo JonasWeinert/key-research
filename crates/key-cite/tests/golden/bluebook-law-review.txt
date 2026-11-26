@@ -1,0 +1,11 @@
+Citations:
+Akhil Narang et al., Utility of a Deep-Learning Algorithm to Guide Novices to Acquire Echocardiograms for Limited Diagnostic Use, 6 JAMA Cardiology 624 (2021).
+Daniel Kahneman, Thinking, Fast and Slow 12 (2011).
+Consumer Willingness to Pay for Food Safety, in The Oxford handbook of food economics 112 (, 2 ed. 2022).
+Narang et al., supra note 1 at 626.
+Jane Doe, Measuring Attention in Reading, 201 Cognition 104 (2020); Jane Doe, Attention across Scripts, 205 Cognition 1 (2020).
+Anna Smith, Soil Carbon under Grazing, 340 Geoderma 50 (2019); Bob Smith, Grazing and Nitrogen, 341 Geoderma 10 (2019).
+see Ashish Vaswani, Noam Shazeer & Niki Parmar, Attention Is All You Need (2017), https://arxiv.org/abs/1706.03762 for a review.
+
+Bibliography:
+(none)

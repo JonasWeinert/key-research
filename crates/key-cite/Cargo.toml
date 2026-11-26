@@ -1,0 +1,15 @@
+[package]
+name = "key-cite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Citation engine: Key sources as CSL-JSON, citations and bibliographies rendered with CSL styles"
+
+[dependencies]
+# hayagriva 0.10.1 vendored with one fix (bibliography entries no longer inherit a
+# citation's name disambiguation; see "Key patch" in vendor/hayagriva/src/csl/mod.rs).
+hayagriva = { path = "../../vendor/hayagriva", default-features = false, features = ["csl-json"] }
+citationberg = { version = "0.7", features = ["json"] }
+key-store = { path = "../key-store" }
+serde.workspace = true
+serde_json.workspace = true
