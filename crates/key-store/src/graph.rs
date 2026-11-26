@@ -1178,14 +1178,7 @@ pub(crate) fn byline(names: &[&str]) -> String {
 }
 
 pub(crate) fn bare_doi(doi: &str) -> String {
-    let doi = doi.trim();
-    let lower = doi.to_ascii_lowercase();
-    for prefix in ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"] {
-        if lower.starts_with(prefix) {
-            return lower[prefix.len()..].to_string();
-        }
-    }
-    lower
+    crate::normalize::doi_or_text(doi)
 }
 
 /// Re-links citations to a source that just arrived or gained an identifier, and the citing

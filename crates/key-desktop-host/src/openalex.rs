@@ -390,8 +390,7 @@ fn fixture(dir: &std::path::Path, path: &str, query: &[(&str, &str)]) -> Result<
 }
 
 fn bare_doi(doi: &str) -> String {
-    let doi = doi.trim().to_ascii_lowercase();
-    ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"].iter().find_map(|p| doi.strip_prefix(p).map(String::from)).unwrap_or(doi)
+    key_store::normalize::doi_or_text(doi)
 }
 
 /// The work for a source: by OpenAlex id, DOI (as read from an added PDF, then its other

@@ -14,6 +14,7 @@
 // its id keeps resolving (links in notes and canvases, Zotero sync) and the merge can be
 // undone (journal.rs).
 use crate::graph::name_key;
+use crate::normalize;
 use crate::journal::{self, Operation, Recorder};
 use crate::{Creator, DERIVED_FIELDS, Result, Source, Store, e, identify, normalize_tags, now_ms, patch_source_row, refresh_fts, sync_graph};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -94,65 +95,28 @@ pub struct DuplicateReport {
     pub exact_removable: usize,
 }
 
-// ── Normalising ─────────────────────────────────────────────
+// ── Normalising (normalize.rs; the names here stay for callers) ─────────────
 
 /// ISBN-13s in a field that may hold several ("978-0-262-03384-8, 0262033844").
 pub fn normalize_isbns(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for part in text.split([',', ';', ' ', '/']) {
-        let digits: String = part.chars().filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x').collect::<String>().to_uppercase();
-        let isbn = match digits.len() {
-            13 if digits.chars().all(|c| c.is_ascii_digit()) => Some(digits),
-            10 => {
-                let body = format!("978{}", &digits[..9]);
-                if body.chars().all(|c| c.is_ascii_digit()) {
-                    let sum: u32 = body.chars().enumerate().map(|(i, c)| c.to_digit(10).unwrap_or(0) * if i % 2 == 0 { 1 } else { 3 }).sum();
-                    Some(format!("{body}{}", (10 - sum % 10) % 10))
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        };
-        if let Some(isbn) = isbn.filter(|i| !out.contains(i)) {
-            out.push(isbn);
-        }
-    }
-    out
+    normalize::isbns(text)
 }
 
 pub fn normalize_pmid(text: &str) -> Option<String> {
-    let digits: String = text.trim().trim_start_matches(|c: char| !c.is_ascii_digit()).chars().take_while(char::is_ascii_digit).collect();
-    let digits = digits.trim_start_matches('0').to_string();
-    (!digits.is_empty()).then_some(digits)
+    normalize::pmid(text)
 }
 
 pub fn normalize_pmcid(text: &str) -> Option<String> {
-    let lower = text.trim().to_ascii_lowercase();
-    let rest = lower.rsplit('/').find(|s| !s.is_empty()).unwrap_or("");
-    let digits: String = rest.trim_start_matches("pmc").chars().take_while(char::is_ascii_digit).collect();
-    (!digits.is_empty()).then(|| format!("PMC{digits}"))
+    normalize::pmcid(text)
 }
 
 /// arXiv ids without prefix, URL or version: "2101.00001", "hep-th/9901001".
 pub fn normalize_arxiv(text: &str) -> Option<String> {
-    let mut id = text.trim().to_ascii_lowercase();
-    for prefix in ["https://arxiv.org/abs/", "http://arxiv.org/abs/", "https://arxiv.org/pdf/", "arxiv.org/abs/", "arxiv:", "10.48550/arxiv."] {
-        if let Some(rest) = id.strip_prefix(prefix) {
-            id = rest.to_string();
-        }
-    }
-    let id = id.trim_end_matches(".pdf");
-    let id = match id.rfind('v') {
-        Some(at) if at > 0 && id[at + 1..].chars().all(|c| c.is_ascii_digit()) && !id[at + 1..].is_empty() && id[..at].ends_with(|c: char| c.is_ascii_digit()) => &id[..at],
-        _ => id,
-    };
-    let valid = id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '/' | '-')) && id.chars().filter(char::is_ascii_digit).count() >= 7;
-    (valid && !id.is_empty()).then(|| id.to_string())
+    normalize::arxiv(text)
 }
 
 pub fn normalize_doi(text: &str) -> Option<String> {
-    identify::normalize_doi(text)
+    normalize::doi(text)
 }
 
 /// DOIs given by preprint servers (arXiv, bioRxiv and medRxiv, SSRN, OSF, Research Square …).
@@ -165,7 +129,7 @@ pub fn is_preprint_doi(doi: &str) -> bool {
 
 /// A normalised title: folded case and diacritics, punctuation as spaces.
 pub fn title_key(title: &str) -> String {
-    name_key(title)
+    normalize::title_key(title)
 }
 
 /// The title without its subtitle (after ":", " - ", " — " or "?"), when that leaves three words.
@@ -206,11 +170,7 @@ fn clean(value: &Option<String>) -> Option<&str> {
 
 fn prepare(work: &Work) -> Prepared {
     let doi = clean(&work.doi).and_then(|d| {
-        normalize_doi(d).or_else(|| {
-            let bare = d.to_ascii_lowercase();
-            let bare = ["https://doi.org/", "http://doi.org/", "doi:"].iter().find_map(|p| bare.strip_prefix(p).map(str::trim).map(String::from)).unwrap_or(bare);
-            bare.starts_with("10.").then_some(bare)
-        })
+        normalize_doi(d).or_else(|| Some(normalize::doi_or_text(d)).filter(|b| b.starts_with("10.")))
     });
     let arxiv = clean(&work.arxiv_id).and_then(normalize_arxiv).or_else(|| doi.as_deref().filter(|d| d.starts_with("10.48550/")).and_then(normalize_arxiv));
     let shape = clean(&work.item_type).map(|t| match t.to_ascii_lowercase().as_str() {
@@ -266,15 +226,17 @@ fn exact(reason: &str) -> Option<Verdict> {
 }
 
 fn compare_prepared(a: &Prepared, b: &Prepared) -> Option<Verdict> {
-    let sim = titles(a, b);
+    // Title similarity is the costly part: worked out only once identifiers leave it open.
+    let sim_cell = std::cell::OnceCell::new();
+    let sim = || *sim_cell.get_or_init(|| titles(a, b));
     let one_preprint = a.preprint != b.preprint;
-    let version = |score: f64, reason: &str| (sim >= 0.85).then(|| Verdict { kind: MatchKind::Version, score, reason: reason.into() });
+    let version = |score: f64, reason: &str| (sim() >= 0.85).then(|| Verdict { kind: MatchKind::Version, score, reason: reason.into() });
     if let (Some(x), Some(y)) = (&a.doi, &b.doi) {
         if x == y {
             return exact("Same DOI");
         }
         // Different DOIs are different works, unless one is the preprint of the other.
-        return if one_preprint { version(sim, "Preprint and published version") } else { None };
+        return if one_preprint { version(sim(), "Preprint and published version") } else { None };
     }
     if let (Some(x), Some(y)) = (&a.pmid, &b.pmid) {
         return if x == y { exact("Same PMID") } else { None };
@@ -284,7 +246,7 @@ fn compare_prepared(a: &Prepared, b: &Prepared) -> Option<Verdict> {
     }
     if let (Some(x), Some(y)) = (&a.arxiv, &b.arxiv) {
         if x == y {
-            return if one_preprint { version(sim.max(0.9), "Preprint and published version") } else { exact("Same arXiv ID") };
+            return if one_preprint { version(sim().max(0.9), "Preprint and published version") } else { exact("Same arXiv ID") };
         }
         return None;
     }
@@ -312,6 +274,7 @@ fn compare_prepared(a: &Prepared, b: &Prepared) -> Option<Verdict> {
             // Different ISBNs: other editions or formats; the title test below decides.
         }
     }
+    let sim = sim();
     if sim < 0.88 {
         return None;
     }
@@ -413,6 +376,37 @@ impl Index {
             }
         }
         seen.into_iter().collect()
+    }
+}
+
+/// Works gathered as they come (an import's own entries, for duplicates within one file),
+/// matched with the same rules as the library's duplicates.
+#[derive(Default)]
+pub struct WorkIndex {
+    index: Index,
+}
+
+impl WorkIndex {
+    pub fn add(&mut self, id: &str, work: &Work) {
+        let p = prepare(work);
+        let at = self.index.works.len();
+        for key in keys(&p) {
+            self.index.by.entry(key).or_default().push(at);
+        }
+        self.index.works.push((id.to_string(), p));
+    }
+
+    /// The works added so far that are the same as `work`, best first.
+    pub fn find(&self, work: &Work) -> Vec<DuplicateMatch> {
+        let p = prepare(work);
+        let mut found: Vec<DuplicateMatch> = self
+            .index
+            .candidates(&p)
+            .into_iter()
+            .filter_map(|i| compare_prepared(&p, &self.index.works[i].1).map(|v| DuplicateMatch { source_id: self.index.works[i].0.clone(), kind: v.kind, score: v.score, reason: v.reason }))
+            .collect();
+        found.sort_by(|a, b| a.kind.cmp(&b.kind).then(b.score.total_cmp(&a.score)));
+        found
     }
 }
 

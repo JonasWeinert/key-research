@@ -59,8 +59,7 @@ fn text(value: &Json, key: &str) -> Option<String> {
 }
 
 fn bare_doi(doi: &str) -> String {
-    let doi = doi.trim().to_ascii_lowercase();
-    ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"].iter().find_map(|p| doi.strip_prefix(p).map(String::from)).unwrap_or(doi)
+    crate::normalize::doi_or_text(doi)
 }
 
 fn item_type(openalex: &str) -> Option<&'static str> {

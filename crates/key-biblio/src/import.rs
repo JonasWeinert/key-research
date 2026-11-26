@@ -5,7 +5,7 @@
 use crate::fields::{self, text};
 use crate::{Format, Parsed, Record, Warning};
 use key_store::duplicates::{MatchKind as EngineKind, Work};
-use key_store::{ListQuery, Source, SourceInput, Store, citation_keys::fold_ascii, normalize_doi};
+use key_store::{ListQuery, Source, SourceInput, Store, citation_keys::fold_ascii};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
 use std::collections::{BTreeMap, HashMap};
@@ -141,21 +141,18 @@ struct Journal {
 
 // ── Duplicates ───────────────────────────────────────────────────────────────
 
-/// Title, folded to lower-case letters and digits.
+/// Title, folded to lower-case letters and digits (the shared normaliser, spaces dropped).
 pub fn title_key(title: &str) -> String {
-    fold_ascii(title).chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+    key_store::normalize::compact_title_key(&fold_ascii(title))
 }
 
-fn isbn_key(isbn: &str) -> String {
-    isbn.chars().filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x').collect::<String>().to_uppercase()
-}
-
-/// The library's identifiers and titles, for matching many records at once.
-/// One small seam: when the store's duplicate engine is available this is where it plugs in.
+/// Records matched against each other (entries earlier in the same file, or the library)
+/// with the store's duplicate engine: an identifier or identical file is exact; a likely
+/// match, or a preprint and its published version, is possible.
 #[derive(Default)]
 pub struct DuplicateIndex {
-    ids: HashMap<String, (String, String, String)>,
-    titles: HashMap<String, Vec<(String, Option<i64>, String)>>,
+    works: key_store::duplicates::WorkIndex,
+    titles: HashMap<String, String>,
 }
 
 impl DuplicateIndex {
@@ -175,69 +172,25 @@ impl DuplicateIndex {
         Ok(index)
     }
 
-    fn identifiers(fields: &Map<String, Json>) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some(doi) = text(fields, "doi").and_then(|d| normalize_doi(d).or_else(|| Some(fields::clean_doi(d).to_lowercase()))) {
-            out.push(format!("doi:{}", doi.to_lowercase()));
-        }
-        if let Some(isbn) = text(fields, "isbn") {
-            for part in isbn.split([',', ';', ' ']).map(isbn_key).filter(|k| k.len() >= 10) {
-                out.push(format!("isbn:{part}"));
-            }
-        }
-        if let Some(pmid) = text(fields, "pmid") {
-            out.push(format!("pmid:{}", pmid.trim()));
-        }
-        if let Some(arxiv) = text(fields, "arxivId") {
-            let id = arxiv.trim().trim_start_matches("arXiv:").to_lowercase();
-            let id = id.rsplit_once('v').filter(|(_, v)| v.chars().all(|c| c.is_ascii_digit()) && !v.is_empty()).map_or(id.clone(), |(base, _)| base.to_string());
-            out.push(format!("arxiv:{id}"));
-        }
-        out
-    }
-
-    fn add(&mut self, id: &str, title: &str, fields: &Map<String, Json>) {
-        for key in Self::identifiers(fields) {
-            self.ids.entry(key.clone()).or_insert_with(|| (id.to_string(), key.split(':').next().unwrap_or("").to_string(), title.to_string()));
-        }
-        let key = title_key(title);
-        if key.len() >= 12 {
-            self.titles.entry(key).or_default().push((id.to_string(), fields.get("year").and_then(Json::as_i64), title.to_string()));
-        }
-    }
-
     pub fn add_source(&mut self, source: &Source) {
-        self.add(&source.id, source.title(), &source.fields);
+        let input = SourceInput { creators: source.creators.clone(), fields: source.fields.clone(), ..Default::default() };
+        let mut work = work(&input);
+        work.title = Some(source.title().to_string());
+        self.titles.insert(source.id.clone(), source.title().to_string());
+        self.works.add(&source.id, &work);
     }
 
     pub fn add_input(&mut self, id: &str, input: &SourceInput) {
-        self.add(id, text(&input.fields, "title").unwrap_or(""), &input.fields);
+        self.titles.insert(id.to_string(), text(&input.fields, "title").unwrap_or("").to_string());
+        self.works.add(id, &work(input));
     }
 
-    /// The best match for a record: an identifier (exact), else the same title within a year (possible).
+    /// The best match for a record.
     pub fn find(&self, input: &SourceInput) -> Option<DuplicateMatch> {
-        for key in Self::identifiers(&input.fields) {
-            if let Some((id, kind, title)) = self.ids.get(&key) {
-                let title = title.clone();
-                let reason = match kind.as_str() {
-                    "doi" => "Same DOI",
-                    "isbn" => "Same ISBN",
-                    "pmid" => "Same PubMed ID",
-                    _ => "Same arXiv ID",
-                };
-                return Some(DuplicateMatch { source_id: id.clone(), kind: MatchKind::Exact, reason: reason.into(), title });
-            }
-        }
-        let title = text(&input.fields, "title").unwrap_or("");
-        let year = input.fields.get("year").and_then(Json::as_i64);
-        let candidates = self.titles.get(&title_key(title))?;
-        candidates
-            .iter()
-            .find(|(_, y, _)| match (y, year) {
-                (Some(a), Some(b)) => (a - b).abs() <= 1,
-                _ => true,
-            })
-            .map(|(id, _, t)| DuplicateMatch { source_id: id.clone(), kind: MatchKind::Possible, reason: "Same title".into(), title: t.clone() })
+        let best = self.works.find(&work(input)).into_iter().next()?;
+        let kind = if best.kind == EngineKind::Exact { MatchKind::Exact } else { MatchKind::Possible };
+        let title = self.titles.get(&best.source_id).cloned().unwrap_or_default();
+        Some(DuplicateMatch { source_id: best.source_id, kind, reason: best.reason, title })
     }
 }
 
