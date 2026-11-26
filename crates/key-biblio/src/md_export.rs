@@ -863,6 +863,31 @@ fn fence_attr(info: &str, name: &str) -> Option<String> {
     Some(info[at..at + end].to_string())
 }
 
+/// A relation map's legend as one line of text: what each mark is (as the map draws it)
+/// and how much it shows. `kinds` is the map's comma list (empty: everything).
+fn map_legend(kinds: Option<&str>, cap: Option<&str>, min: Option<&str>) -> String {
+    const MARKS: &[(&str, &str)] = &[
+        ("topic", "topics (filled diamonds)"),
+        ("field", "fields (outlined diamonds)"),
+        ("person", "people (circles)"),
+        ("venue", "journals (rounded squares)"),
+        ("tag", "tags (pills)"),
+        ("collection", "collections (outlined squares)"),
+        ("source", "related sources (cards)"),
+    ];
+    let wanted: Vec<&str> = kinds.unwrap_or("").split(',').map(str::trim).filter(|k| !k.is_empty()).collect();
+    let shown: Vec<&str> = MARKS.iter().filter(|(k, _)| wanted.is_empty() || wanted.contains(k)).map(|(_, label)| *label).collect();
+    let mut line = format!("*Legend:* the centre is the item; around it {}", shown.join(", "));
+    if let Some(cap) = cap.filter(|c| c.parse::<u32>().is_ok_and(|n| n > 0)) {
+        line.push_str(&format!("; up to {cap} of each"));
+    }
+    if let Some(min) = min.filter(|m| m.parse::<u32>().is_ok_and(|n| n > 1)) {
+        line.push_str(&format!("; only those shared by at least {min} sources"));
+    }
+    line.push_str(". Larger marks are shared by more sources.\n");
+    line
+}
+
 /// A note's Markdown for other apps: item links resolved, quotes and citations as Pandoc
 /// citations when `pandoc` is on, links to other notes as `[[wiki links]]`.
 fn note_markdown(body: &str, citer: &mut Citer, pandoc: bool) -> String {
@@ -911,6 +936,24 @@ fn note_markdown(body: &str, citer: &mut Citer, pandoc: bool) -> String {
                         }
                     }
                 }
+                continue;
+            }
+            // A relation map reads as what it is centred on and a legend line (other apps
+            // cannot draw it).
+            if kind == "embed" && fence_attr(info, "view").as_deref() == Some("map") {
+                let mut label = Vec::new();
+                for next in lines.by_ref() {
+                    if next.trim_start().starts_with("```") {
+                        break;
+                    }
+                    label.push(next.trim().to_string());
+                }
+                let label = label.join(" ");
+                let href = fence_attr(info, "href").unwrap_or_default();
+                let centre = if href.is_empty() { label.clone() } else { links(&format!("[{}]({href})", if label.is_empty() { "the item" } else { &label }), citer, pandoc) };
+                out.push_str(&format!("**Relation map** of {centre}\n\n"));
+                out.push_str(&map_legend(fence_attr(info, "kinds").as_deref(), fence_attr(info, "cap").as_deref(), fence_attr(info, "min").as_deref()));
+                out.push('\n');
                 continue;
             }
             // Other code blocks pass through untouched.
@@ -1131,12 +1174,19 @@ mod tests {
         config.notes_folder = Some(notes.clone());
         save_config(&store, &config).unwrap();
         let other = store.save_note(None, None, "Other", "x", None).unwrap();
-        let body = format!("As [Smith](key://source/{id}#page:4) and [the quote](key://source/{id}#highlight%3Ah1) say, see [other](key://note/{}).\n\n```quote source=\"{id}\" page=\"7\"\nQuoted.\n```\n", other.id);
+        let body = format!(
+            "As [Smith](key://source/{id}#page:4) and [the quote](key://source/{id}#highlight%3Ah1) say, see [other](key://note/{}).\n\n```quote source=\"{id}\" page=\"7\"\nQuoted.\n```\n\n```embed href=\"key://source/{id}\" view=\"map\" kinds=\"topic,person\" cap=\"8\" min=\"2\"\nGrowth\n```\n",
+            other.id
+        );
         store.save_note(None, None, "Reading notes", &body, None).unwrap();
         run(&store);
         let text = std::fs::read_to_string(notes.join("Reading notes.md")).unwrap();
         assert!(text.contains("As [@smith2021, p. 4] and [@smith2021, p. 3] say, see [[Other|other]]."), "{text}");
         assert!(text.contains("> Quoted. [@smith2021, p. 7]"));
+        // A relation map becomes its centre and a legend line.
+        assert!(text.contains("**Relation map** of "), "{text}");
+        assert!(text.contains("*Legend:* the centre is the item; around it topics (filled diamonds), people (circles); up to 8 of each; only those shared by at least 2 sources."), "{text}");
+        assert!(!text.contains("```embed"), "{text}");
     }
 
     #[test]
