@@ -84,8 +84,15 @@ const assert = require("node:assert/strict");
     await tab.waitFor();
     assert.equal(await tab.getByRole("combobox", { name: "Search everything" }).inputValue(), "Interaction");
     await tab.locator(".kx-found-hit", { hasText: "Alpha" }).first().waitFor();
-    // Results by item, like the library: the PDF once, with its matching passages under it.
+    // Matches in titles and bylines are marked like those in passages.
     const field = tab.getByRole("combobox", { name: "Search everything" });
+    await tab.locator(".kx-found-hit .kx-hit-title mark", { hasText: /^Interaction$/i }).first().waitFor();
+    await shot(page, "metadata-marks-light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(250);
+    await shot(page, "metadata-marks-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    // Results by item, like the library: the PDF once, with its matching passages under it.
     for (let i = 0; i < 120 && (await call("store_source", { id: source.id })).indexStatus !== "ready"; i++) await page.waitForTimeout(250);
     await field.fill("compare exactly");
     await field.press("Escape");

@@ -98,6 +98,7 @@ export default function SearchField({
   label = "Search the library",
   placeholder = "Search titles, authors, notes and full text",
   onKinds,
+  tokenNote,
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -115,6 +116,9 @@ export default function SearchField({
   placeholder?: string;
   /** Where kinds of items can be shown (the search tab): "notes" etc. are read as kinds. */
   onKinds?: (kinds: DetectedKind[]) => void;
+  /** Why a token is not applied right now (the search tab while only the web is searched);
+   *  it stays in the query, shown greyed. */
+  tokenNote?: (filter: SearchFilter) => string | undefined;
 }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [index, setIndex] = useState(-1);
@@ -283,8 +287,10 @@ export default function SearchField({
     >
       <Icon name="search" size={14} />
       <div className="kx-search-field" onMouseDown={(e) => e.target === e.currentTarget && (e.preventDefault(), inputRef.current?.focus())}>
-        {filters.map((f) => (
-          <span key={filterKey(f)} className="kx-token" data-field={f.field} data-value={f.value} title={`${tokenScope(f)} ${f.label}`}>
+        {filters.map((f) => {
+          const note = tokenNote?.(f);
+          return (
+          <span key={filterKey(f)} className="kx-token" data-field={f.field} data-value={f.value} data-inactive={note ? true : undefined} title={note ? `${tokenScope(f)} ${f.label}: ${note}` : `${tokenScope(f)} ${f.label}`}>
             <Icon name={(FIELD[f.field] ?? FIELD.property).icon} size={11} />
             <span className="kx-token-scope">{tokenScope(f)}</span>
             <span className="kx-token-value">{f.label}</span>
@@ -296,7 +302,8 @@ export default function SearchField({
               <Icon name="close" size={8} />
             </button>
           </span>
-        ))}
+          );
+        })}
         <input
           ref={inputRef}
           className="kx-search-input"

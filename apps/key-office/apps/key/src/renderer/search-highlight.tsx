@@ -1,5 +1,6 @@
 // Highlights query words in any text the way the store matches them: whole words,
-// ignoring case and accents, with the last word also matching as a prefix while typing.
+// ignoring case and accents (the store's unicode61 tokens, no stemming), a "quoted phrase"
+// as its words in a row, and the last word also as a prefix while typing.
 import type { ReactNode } from "react";
 import { snippetParts } from "./library-api";
 
@@ -19,15 +20,40 @@ function fold(text: string) {
   return out;
 }
 
-export function queryPattern(query: string): RegExp | undefined {
-  const words = fold(query)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((w) => w && !STOP.has(w.toLowerCase()));
-  if (!words.length) return undefined;
-  const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const last = words.length - 1;
-  const terms = words.map((w, i) => escape(w) + (i === last && w.length >= 2 ? "[\\p{L}\\p{N}]*" : ""));
-  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${terms.join("|")})(?![\\p{L}\\p{N}])`, "giu");
+const split = (text: string) => text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+const escape = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Several query texts (the typed words and filter values) as one pattern. */
+export function queryPattern(...queries: (string | undefined)[]): RegExp | undefined {
+  const terms: string[] = [];
+  queries.forEach((query, q) => {
+    if (!query) return;
+    let text = fold(query);
+    // A quoted phrase matches as its words in a row (with any spacing or punctuation between).
+    text = text.replace(/["“„«]([^"“”„«»]+)["”«»]/g, (_, phrase: string) => {
+      const words = split(phrase);
+      if (words.length) terms.push(words.map(escape).join("[^\\p{L}\\p{N}]+"));
+      return " ";
+    });
+    const words = split(text).filter((w) => !STOP.has(w.toLowerCase()));
+    // The typed text's last word is still being typed; filter values are whole.
+    const last = q === 0 && !/[\s"”»]$/.test(query) ? words.length - 1 : -1;
+    words.forEach((w, i) => terms.push(escape(w) + (i === last && w.length >= 2 ? "[\\p{L}\\p{N}]*" : "")));
+  });
+  if (!terms.length) return undefined;
+  // Longer terms first, so a phrase wins over its own words.
+  const unique = [...new Set(terms)].sort((a, b) => b.length - a.length);
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${unique.join("|")})(?![\\p{L}\\p{N}])`, "giu");
+}
+
+/** The words of the search tokens that name text in a result: authors, titles, journals … */
+export function filterTerms(filters: { field: string; op?: string; value: string; label: string }[]) {
+  const TEXT = new Set(["creator", "person", "title", "container", "venue", "publisher", "abstract", "tag", "topic", "keyword", "doi", "year"]);
+  return filters
+    .filter((f) => TEXT.has(f.field) && !(f.field === "year" && f.op && f.op !== "is"))
+    .map((f) => (f.field === "person" || f.field === "venue" || f.field === "topic" ? f.label : f.value).replace(/["“”]/g, ""))
+    .map((v) => (/[^\p{L}\p{N}]/u.test(v) ? `"${v}"` : v))
+    .join(" ");
 }
 
 /** Only the typed part at the start of each word ("Alex" in "Alexandru"), as Mail's suggestions show it. */

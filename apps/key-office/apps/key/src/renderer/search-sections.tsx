@@ -4,6 +4,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
 import { snippetParts } from "./library-api";
+import { Highlight } from "./search-highlight";
 import { GROUP_LABEL, GROUPS, type Found, type Found3, type SearchGroup } from "./unified-search";
 import "./search-sections.css";
 
@@ -81,6 +82,7 @@ export function FoundList({
   onPick,
   empty,
   rowExtra,
+  pattern,
 }: {
   found: Found3;
   active: number;
@@ -88,6 +90,8 @@ export function FoundList({
   onPick: (found: Found, event: React.MouseEvent) => void;
   empty?: ReactNode;
   rowExtra?: (found: Found) => ReactNode;
+  /** Query words to mark in titles (as the store marks them in snippets). */
+  pattern?: RegExp;
 }) {
   const { collapsed, toggle } = useCollapsedGroups();
   const visible = visibleFound(found, collapsed);
@@ -119,7 +123,9 @@ export function FoundList({
                   >
                     <Icon name={foundIcon(entry)} size={15} className="kx-found-icon" data-color={entry.color} />
                     <span className="kx-found-text">
-                      <span className="kx-found-title">{entry.title}</span>
+                      <span className="kx-found-title">
+                        <Highlight text={entry.title} pattern={pattern} />
+                      </span>
                       {(entry.where || entry.snippet) && (
                         <span className="kx-found-detail">
                           {entry.where && <span className="kx-found-where">{entry.where}</span>}
