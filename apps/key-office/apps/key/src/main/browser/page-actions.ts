@@ -10,7 +10,7 @@ import { wasPdfFrame } from "./profile";
 import type { PageScan, ScholarlyArticle } from "./scan";
 import type { WebTabState } from "./tab";
 import { webUrl } from "./urls";
-import { properUrlOf, proxiedUrlOf } from "./proxy-service";
+import { properUrlOf, withLibraryAccess } from "./proxy-service";
 
 /** The part of a browser tab's record these actions read and write. */
 export interface PageRecord {
@@ -113,8 +113,9 @@ export class PageActions {
     const service = this.deps.service();
     if (!url || !webUrl(url) || !service) return;
     try {
-      // Through the site's library proxy, when it has one (the page's own PDF link already is).
-      const file = await service.downloadPdf(proxiedUrlOf(url), { timeoutMs: 90_000 });
+      // Directly first, through the site's library proxy when this network needs it (a PDF
+      // link of a page that came through the proxy goes as it is).
+      const file = await withLibraryAccess(url, async (target) => ({ value: await service.downloadPdf(target, { timeoutMs: 90_000 }), access: { access: "granted", reason: "sent the PDF", telling: true } }));
       try {
         await this.deps.invoke("store_attach_file", { id: sourceId, path: file.path }, workspaceId);
         this.deps.emit("library-changed");

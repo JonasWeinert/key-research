@@ -8,6 +8,8 @@
 // pages look like once they come through it (for EZproxy `%h.ezproxy.uni.edu/%p`), which is how
 // the proper URL is found again.
 
+import { sanitizeNetworks, type LearnedNetwork, type ProxyMode } from "./access-state";
+
 export type ProxySource = "manual" | "detected" | "zotero" | "connector";
 export type ProxyKind = "ezproxy" | "openathens" | "redirect" | "custom";
 export interface LibraryProxy {
@@ -26,10 +28,20 @@ export interface LibraryProxy {
   dotsToHyphens: boolean;
   enabled: boolean;
   source: ProxySource;
+  /** When this proxy is used; unset follows the global mode. */
+  mode?: ProxyMode;
+  /** Not used when the network's domain (or the Mac's name) contains one of these, as in
+   * Zotero Connector's "disable when my computer's domain name contains…". */
+  campusDomains?: string[];
 }
 export interface ProxyPrefs {
-  /** Sites of a proxy go through it on their own. */
+  /** Sites of a proxy go through it on their own (false is the "never" mode of old). */
   transparent: boolean;
+  /** When proxies are used: only when this network needs them (auto), always, or never
+   * (a page that asks for a sign-in offers it). */
+  mode: ProxyMode;
+  /** In auto mode, a page that turns out to want a sign-in reloads through the proxy on its own. */
+  autoReload: boolean;
   /** Proxies are noticed while browsing, and offered to keep. */
   autoRecognize: boolean;
   /** Sites never sent through a proxy (and never added to one). */
@@ -40,8 +52,13 @@ export interface ProxyPrefs {
 export interface ProxyData {
   prefs: ProxyPrefs;
   proxies: LibraryProxy[];
+  /** What each network has shown about access (see access-state.ts). */
+  networks: LearnedNetwork[];
 }
-export const DEFAULT_PREFS: ProxyPrefs = { transparent: true, autoRecognize: true, excluded: [], followZotero: false };
+export const DEFAULT_PREFS: ProxyPrefs = { transparent: true, mode: "auto", autoReload: true, autoRecognize: true, excluded: [], followZotero: false };
+const MODES: ProxyMode[] = ["auto", "always", "never"];
+const cleanDomains = (list: unknown) =>
+  [...new Set((Array.isArray(list) ? list : []).map((d) => String(d).trim().toLowerCase().replace(/^\.+|\.+$/g, "")).filter((d) => /^[a-z0-9-]+(\.[a-z0-9-]+)*$/.test(d)))].slice(0, 20);
 
 const VARIABLES = ["%h", "%p", "%d", "%f", "%u", "%a"] as const;
 type Variable = (typeof VARIABLES)[number];
@@ -346,6 +363,8 @@ export function sanitizeProxy(input: Partial<LibraryProxy> & { id?: string }, fa
     dotsToHyphens: input.dotsToHyphens === true,
     enabled: input.enabled !== false,
     source: SOURCES.includes(input.source as ProxySource) ? (input.source as ProxySource) : "manual",
+    ...(MODES.includes(input.mode as ProxyMode) ? { mode: input.mode } : {}),
+    ...(cleanDomains(input.campusDomains).length ? { campusDomains: cleanDomains(input.campusDomains) } : {}),
   };
 }
 export function guessKind(scheme: string): ProxyKind {
@@ -362,14 +381,19 @@ export function sanitizeData(input: unknown, newId: () => string): ProxyData {
     const clean = sanitizeProxy(p, newId());
     if (clean && !proxies.some((q) => q.id === clean.id)) proxies.push(clean);
   }
+  // Files from before modes: "Use library proxies automatically" off was Never.
+  const mode = MODES.includes(prefs.mode as ProxyMode) ? (prefs.mode as ProxyMode) : prefs.transparent === false ? "never" : "auto";
   return {
     prefs: {
-      transparent: prefs.transparent !== false,
+      transparent: mode !== "never",
+      mode,
+      autoReload: prefs.autoReload !== false,
       autoRecognize: prefs.autoRecognize !== false,
       excluded: [...new Set((Array.isArray(prefs.excluded) ? prefs.excluded : []).map((h) => cleanHost(String(h))).filter(Boolean))].slice(0, 500),
       followZotero: prefs.followZotero === true,
     },
     proxies,
+    networks: sanitizeNetworks((raw as { networks?: unknown }).networks, new Set(proxies.map((p) => p.id))),
   };
 }
 
