@@ -34,7 +34,7 @@ const assert = require("node:assert/strict");
         .sort(),
     );
     // The sidebar's Library opens the workspace's library again.
-    await page.locator(".key-sidebar .kx-top-title", { hasText: "Library" }).click();
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     await page.getByRole("heading", { name: /^(All sources|Sources)$/ }).waitFor();
     const sourceState = await page.evaluate(() => window.key.tabs());
     const library = sourceState.activeViewId;
@@ -50,7 +50,7 @@ const assert = require("node:assert/strict");
       .getByRole("textbox", { name: "Page content", exact: true })
       .fill("Keep this unsaved text through splits and switches.");
     const note = (await page.evaluate(() => window.key.tabs())).activeViewId;
-    await page.locator(".key-sidebar .kx-top-title", { hasText: "Library" }).click();
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     assert.equal(
       (await page.evaluate(() => window.key.tabs())).activeViewId,
       library,

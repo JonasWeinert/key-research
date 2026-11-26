@@ -10,18 +10,16 @@ import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
 import type { SearchPreviewState } from "./search-preview";
 import { TabBar, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./TabBar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ROW_PX, share } from "./sidebar-budget";
 import { type LibrarySource, type LibraryHit } from "./LibraryHome";
 import "./shell.css";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import CollectionTree from "./CollectionTree";
 import { sidebarClick } from "./sidebar-intent";
-import ReferencesPanel from "./ReferencesPanel";
+import { ROW_PX } from "./sidebar-budget";
 import WorkspaceSection, { type WorkspaceEntry } from "./WorkspaceSection";
 import { hasExternalDrop, hasItemDrag, importDrop, inboxCollection, readItemDrag, setItemDrag } from "./item-links";
 import { describeCount, sendToCanvas, sendToNote, setShellContext, toast } from "./item-actions";
 import { ItemLayer, onShowInInspector, selectItems, useSelectedItems } from "./item-ui";
-import { selectLibrary } from "./library-nav";
 import Inspector from "./Inspector";
 import CommandCenter from "./CommandCenter";
 import type { DraggedItem } from "./note-editor";
@@ -664,19 +662,13 @@ export default function App() {
       : record?.id
         ? `record:${record.id}`
         : undefined;
-  const [libraryOpen, setLibraryOpen] = useState(() => localStorage.getItem("key.sidebar.library") !== "closed");
-  // Collections and References share at most half the sidebar's height (sidebar-budget.ts).
+  // Collections take at most half the sidebar's height before "Show more" (steady sidebar).
   const [sidebarHeight, setSidebarHeight] = useState(0);
   const sidebarScroll = useCallback((el: HTMLDivElement | null) => {
     if (!el) return;
     new ResizeObserver(([entry]) => setSidebarHeight(entry.contentRect.height)).observe(el);
   }, []);
-  const [collectionsNeed, setCollectionsNeed] = useState(0);
-  const [referencesNeed, setReferencesNeed] = useState(0);
-  const [collectionsBudget, referencesBudget] = share(Math.max(0, sidebarHeight / 2 - 2 * ROW_PX), collectionsNeed, referencesNeed);
-  useEffect(() => {
-    localStorage.setItem("key.sidebar.library", libraryOpen ? "open" : "closed");
-  }, [libraryOpen]);
+  const collectionsBudget = sidebarHeight ? Math.max(0, sidebarHeight / 2 - 2 * ROW_PX) : undefined;
   const sidebarToggle = (
     <button
       className="key-sidebar-toggle"
@@ -841,52 +833,16 @@ export default function App() {
                 Choose a workspace to see its library and pages.
               </p>
             )}
-            {/* Library: opens the library; the chevron folds its collections and references. */}
-            <div className="key-sidebar-section kx-top-section">
-              <button
-                className="kx-top-title"
-                aria-current={section === "sources" ? "page" : undefined}
-                disabled={!workspaceId}
-                title="Open the library"
-                onClick={() =>
-                  sidebarClick({ kind: "sources" }, () => {
-                    if (workspaceId) selectLibrary({ workspaceId });
-                    action("open-content", { section: "sources", workspaceId, projectId });
-                  })
-                }
-              >
-                Library
-              </button>
-              <button className="kx-top-chevron" aria-expanded={libraryOpen} aria-label={libraryOpen ? "Collapse library" : "Expand library"} onClick={() => setLibraryOpen(!libraryOpen)}>
-                <Icon name="chevronRight" size={10} />
-              </button>
-            </div>
-            {libraryOpen && workspaceId && (
-              <div className="kx-library-groups">
-                <CollectionTree
-                  invoke={invoke}
-                  workspaceId={workspaceId}
-                  sourcesCurrent={section === "sources"}
-                  budget={sidebarHeight ? collectionsBudget : undefined}
-                  onNeed={setCollectionsNeed}
-                  onShowSources={() =>
-                    action("open-content", { section: "sources", workspaceId, projectId })
-                  }
-                />
-                <ReferencesPanel
-                  invoke={invoke}
-                  workspaceId={workspaceId}
-                  context={{
-                    viewId: tabs.activeViewId,
-                    note: activeView?.content?.section === "note" && activeView.content.noteId ? { id: activeView.content.noteId, title: activeView.title.replace(/ •$/, "") } : undefined,
-                    canvas: activeView?.content?.section === "canvas" && activeView.content.canvasId ? { id: activeView.content.canvasId, title: activeView.title.replace(/ •$/, "") } : undefined,
-                  }}
-                  refreshKey={refreshKey}
-                  budget={sidebarHeight ? referencesBudget : undefined}
-                  onNeed={setReferencesNeed}
-                  onOpenLibrary={() => action("open-content", { section: "sources", workspaceId })}
-                />
-              </div>
+            {/* Library: the row opens the library; its disclosure folds the collections. */}
+            {workspaceId && (
+              <CollectionTree
+                invoke={invoke}
+                workspaceId={workspaceId}
+                sourcesCurrent={section === "sources"}
+                budget={collectionsBudget}
+                onOpenLibrary={() => action("open-content", { section: "sources", workspaceId, projectId })}
+                onShowSources={() => action("open-content", { section: "sources", workspaceId, projectId })}
+              />
             )}
             <WorkspaceSection
               invoke={invoke}
