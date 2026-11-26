@@ -20,6 +20,10 @@ const paths = [
   "out/renderer/pdf.html",
   ...config.build.extraResources.map((resource) => resource.from),
 ];
+// Models are downloaded on first need (crates/key-models), never packaged.
+const weights = config.build.extraResources.filter((resource) => /\.(onnx|gguf|safetensors)$|(^|\/)models(\/|$)/.test(`${resource.from} ${resource.to}`));
+if (weights.length)
+  throw new Error(`Model weights must not be packaged (they download on demand): ${weights.map((r) => r.from).join(", ")}`);
 for (const path of paths)
   if (!existsSync(resolve(appRoot, path)))
     throw new Error(

@@ -5,13 +5,16 @@ Markdown. It uses PDFium for text and page access, `lopdf` for raw tagged-PDF
 structure and vector evidence, and optionally PP-DocLayoutV3 through ONNX. No
 Java process, Java library, or server is required.
 
-The 63 MB ONNX model is included at `models/model_fp16.onnx`. ONNX and
+The 63 MB ONNX model is not in the repository: Key downloads it on demand from
+<https://huggingface.co/JonasWeinert/key-pp-doclayoutv3-onnx>. For this crate on its own,
+`node tools/models/fetch.mjs pp-doclayoutv3-fp16` fetches it (verified) into the dev
+cache; pass its path with `--model`, or copy it to `models/model_fp16.onnx`. ONNX and
 scientific-XML support are both compiled by default, but neither is used unless
 you explicitly enable it for a conversion.
 
 ## Copy into another project
 
-Copy this whole directory, including `models/`, then use it as a path dependency:
+Copy this whole directory (and the model, see above), then use it as a path dependency:
 
 ```toml
 [dependencies]

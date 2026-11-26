@@ -6,7 +6,7 @@ build = "build.rs"
 description = "Standalone PDFium-backed academic PDF extraction in Rust"
 license = "Apache-2.0"
 readme = "README.md"
-include = ["build.rs", "Cargo.toml", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "models/model_fp16.onnx", "src/**", "tests/**"]
+include = ["build.rs", "Cargo.toml", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md", "src/**", "tests/**"]
 
 [features]
 default = ["onnx", "xml"]
