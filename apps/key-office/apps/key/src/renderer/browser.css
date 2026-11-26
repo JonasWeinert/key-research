@@ -1,0 +1,97 @@
+/* The slim bar above a browser tab's page (BrowserBar.tsx): the same quiet strip as a
+   pane's history bar, with the site's host instead of crumbs. */
+.key-web-bar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-bottom: 0.5px solid var(--kx-line);
+  background: var(--kx-bg);
+  font: 12px/1 var(--kx-font, -apple-system, system-ui, sans-serif);
+  color: var(--kx-text-2);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.key-web-bar > button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text-2);
+}
+.key-web-bar > button:hover:not(:disabled) {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+.key-web-bar > button:disabled {
+  color: var(--kx-text-3);
+  opacity: 0.5;
+}
+.key-web-site {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  margin-left: 6px;
+  color: var(--kx-text-2);
+}
+.key-web-site > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.key-web-site > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Loading: a thin line sweeping along the bar's bottom edge. */
+.key-web-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.5px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.key-web-progress::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  border-radius: 1px;
+  background: var(--kx-accent);
+  opacity: 0.7;
+  animation: key-web-sweep 1.1s var(--kx-ease, ease-in-out) infinite;
+}
+@keyframes key-web-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-web-progress::after {
+    width: 100%;
+    animation: none;
+    opacity: 0.35;
+  }
+}
+/* A favicon in a tab, in place of the kind's icon. */
+.tab-icon > img.key-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: contain;
+}
