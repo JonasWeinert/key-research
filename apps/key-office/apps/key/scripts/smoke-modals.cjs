@@ -220,7 +220,7 @@ const MARGIN = 20;
     }
 
     // The main tab strip: the active tab carries an accent underline.
-    const active = await page.locator(".tab-bar[data-focused] .tab-item.active .tab-plate").evaluate((el) => {
+    const active = await page.locator('.kx-tabs[data-focused] .kx-tab[aria-selected="true"]').evaluate((el) => {
       const after = getComputedStyle(el, "::after");
       return { height: after.height, background: after.backgroundColor, plate: getComputedStyle(el).backgroundColor };
     });

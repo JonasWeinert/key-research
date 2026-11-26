@@ -3224,7 +3224,7 @@ else
             placeViews(w);
             return snapshot(w);
           // A tab dropped from a drag: into a group's strip at `index`, or into a new group
-          // on a group's `side` (see TabBar).
+          // on a group's `side` (see tab-strip.tsx).
           case "drop-tab": {
             const tabId = String(p.tabId),
               groupId = String(p.groupId);

@@ -188,10 +188,3 @@
     opacity: 0.35;
   }
 }
-/* A favicon in a tab, in place of the kind's icon. */
-.tab-icon > img.key-favicon {
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  object-fit: contain;
-}
