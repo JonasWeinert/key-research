@@ -134,6 +134,8 @@ export default function SearchField({
   const [index, setIndex] = useState(-1);
   const [open, setOpen] = useState(false);
   const request = useRef(0);
+  // A newer keystroke's lookup replaces this box's older one still waiting for the host.
+  const supersede = useRef(`suggest:${Math.random().toString(36).slice(2)}`);
   const typed = text.trim();
 
   // The host's reading of the query (identifiers, years, citations, kinds, the workspace's
@@ -163,7 +165,7 @@ export default function SearchField({
       return;
     }
     const t = setTimeout(() => {
-      void invoke<Suggestion[]>("store_suggest", { ...view, text: typed, perGroup: 4, filters: storeFilters(filters) }, workspaceId)
+      void invoke<Suggestion[]>("store_suggest", { ...view, text: typed, perGroup: 4, filters: storeFilters(filters), $supersede: supersede.current }, workspaceId)
         .then((found) => id === request.current && setSuggestions(found))
         .catch(() => id === request.current && setSuggestions([]));
     }, 110);
