@@ -11,7 +11,7 @@ body,
   overflow: hidden;
 }
 body {
-  font: 13px var(--gs-font-sans, Arial, sans-serif);
+  font: 13px var(--key-ui-font, var(--kx-font));
   color: var(--text-primary, #232425);
   background: var(--surface, #fff);
 }
