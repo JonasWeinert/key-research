@@ -30,6 +30,7 @@ citationberg = "0.7"
 # Already in the tree through citationberg: reads RSS, Atom and OPML (feeds/).
 quick-xml = "0.38"
 key-embed = { path = "../key-embed" }
+key-models = { path = "../key-models" }
 key-index = { path = "../key-index" }
 key-zotero = { path = "../key-zotero" }
 key-reference = { path = "../../extensions/key-reference" }

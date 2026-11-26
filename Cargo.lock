@@ -4430,6 +4430,7 @@ dependencies = [
 name = "key-embed"
 version = "0.1.0"
 dependencies = [
+ "key-models",
  "serde",
  "serde_json",
  "zed-reqwest",

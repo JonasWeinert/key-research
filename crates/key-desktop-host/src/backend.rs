@@ -27,6 +27,8 @@ mod reference_worker;
 mod web_search;
 #[path = "feeds/mod.rs"]
 mod feeds;
+#[path = "models_commands.rs"]
+mod models_commands;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{
