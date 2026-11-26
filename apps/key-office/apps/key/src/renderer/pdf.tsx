@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import PdfReader from "./PdfReader";
 import "@key/design-system/styles.css";
+import "./menu.css";
 // Shared reader detects the canonical native backend through this marker.
 Object.defineProperty(window, "__TAURI_INTERNALS__", {
   value: {},
