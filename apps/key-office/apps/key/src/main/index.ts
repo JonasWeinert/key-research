@@ -40,7 +40,8 @@ import { deliverDeepLinks, listenForDeepLinks } from "./deep-links";
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
-import { properUrlOf, proxiedUrlOf, ProxyService, type ProxyOp } from "./browser/proxy-service";
+import { properUrlOf, ProxyService, withLibraryAccess, type ProxyOp } from "./browser/proxy-service";
+import { simulateNetwork } from "./browser/network";
 import { importProxies } from "./browser/proxy-import";
 import { WebSources } from "./web-sources";
 import { PageActions } from "./browser/page-actions";
@@ -866,7 +867,9 @@ async function addTempToLibrary(temp: OwnedView) {
  * browser's profile tries: its cookies and logins apply, and an article page's PDF is followed. */
 async function libraryDownloadWithBrowser(workspaceId: string, url: string, sourceId: string | undefined, first: unknown) {
   if (!webUrl(url) || !browserService) throw first;
-  const file = await browserService.downloadPdf(url, { timeoutMs: 60_000 }).catch(() => Promise.reject(first));
+  const file = await withLibraryAccess(url, async (target) => ({ value: await browserService.downloadPdf(target, { timeoutMs: 60_000 }), access: { access: "granted", reason: "sent the PDF", telling: true } })).catch(() =>
+    Promise.reject(first),
+  );
   try {
     if (sourceId) return await registry.invoke("store_attach_file", { id: sourceId, path: file.path }, workspaceId);
     const result: any = await registry.invoke("library_import_file", { path: file.path }, workspaceId);
@@ -2417,7 +2420,10 @@ else
       proxyService = await new ProxyService(join(app.getPath("userData"), "library-proxies.json")).load();
       proxyService.onChange(() => emit("proxies-changed"));
       // Smokes drive the headless API directly.
-      if (process.env.KEY_BROWSER_SMOKE) Object.assign(globalThis, { keyBrowser: { service: browserService, temp: tempPdfs, clean: cleanTempPdfs } });
+      if (process.env.KEY_BROWSER_SMOKE)
+        Object.assign(globalThis, {
+          keyBrowser: { service: browserService, temp: tempPdfs, clean: cleanTempPdfs, network: (name: string | null) => (simulateNetwork(name), proxyService?.refreshNetwork()) },
+        });
       // Pages of the app itself (the shell, readers, editors) never become browsers: a link
       // they open, or follow away from the app, opens as a browser tab.
       app.on("web-contents-created", (_event, contents) => {
@@ -2922,6 +2928,7 @@ else
         if (action === "prefs") return proxyService.setPrefs(payload ?? {});
         if (action === "save") return proxyService.saveProxy(payload ?? {});
         if (action === "remove") return proxyService.removeProxy(String(payload));
+        if (action === "network") return proxyService.networkOp(payload ?? {});
         if (action === "import") return importLibraryProxies(payload ?? {});
         throw Error("Unknown proxy action");
       });
@@ -3386,10 +3393,10 @@ else
             if (/^zotero:\/\/select\/library\/items\/[A-Z0-9]{8}$/.test(String(p.url))) return void (await systemShell.openExternal(String(p.url)));
             if (!webUrl(p.url) && !systemUrl(p.url)) throw Error("Unsupported link");
             if (p.external) await systemShell.openExternal(String(webUrl(p.url) ?? systemUrl(p.url)));
-            // Find PDF's last step: the landing page (through the library's proxy when one
-            // covers the site), where a PDF captured is attached to the source.
+            // Find PDF's last step: the landing page (through the library's proxy when this
+            // network needs it, as any page), where a PDF captured is attached to the source.
             else if (p.pdfFor && typeof p.pdfFor.sourceId === "string" && webUrl(p.url))
-              openLink(proxiedUrlOf(String(webUrl(p.url))), w, {
+              openLink(String(webUrl(p.url)), w, {
                 pdfFor: { workspaceId: String(p.pdfFor.workspaceId || w.workspaceId), sourceId: p.pdfFor.sourceId, title: typeof p.pdfFor.title === "string" ? p.pdfFor.title.slice(0, 200) : undefined },
               });
             // Beside the view that asked (the Inbox's "o"), when it says so.

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { WebContents } from "electron";
 import { capturePage } from "./browser/snapshot";
 import { safeFileName } from "./browser/urls";
-import { proxiedUrlOf } from "./browser/proxy-service";
+import { ACCESS_DENIED, judgeLoadedPage, withLibraryAccess } from "./browser/proxy-service";
 
 /** The live page as the host reads its references (key-store `web_references.rs`): its DOM
  * as HTML, JSON-LD and all, and its address. */
@@ -114,7 +114,8 @@ export class WebSources {
   }
 
   /** Saves the web page of a source that has no file: its address (or its DOI's landing
-   * page), loaded with the browser's profile and through a library proxy when one serves it. */
+   * page), loaded with the browser's profile; directly first, and through the site's library
+   * proxy when this network needs it (known, or the direct page wanted a sign-in). */
   async fetchInto(id: string, workspaceId: string) {
     const source = await this.invoke<Source | null>("store_source", { id }, workspaceId);
     if (!source) throw Error("The source is no longer in the library");
@@ -122,7 +123,14 @@ export class WebSources {
     const url = source.url && /^https?:/i.test(source.url) ? source.url : source.doi ? `https://doi.org/${source.doi}` : "";
     if (!url) throw Error("This source has no web address to save");
     if (!this.load) throw Error("The browser is not ready yet");
-    await this.load(proxiedUrlOf(url), (contents) => this.save(contents, workspaceId, id));
+    const load = this.load;
+    await withLibraryAccess(url, (target) =>
+      load(target, async (contents) => {
+        const access = await judgeLoadedPage(contents, target);
+        if (access?.access === "denied") return ACCESS_DENIED;
+        return { value: await this.save(contents, workspaceId, id), access: access ?? { access: "unknown" as const, reason: "", telling: false } };
+      }),
+    );
     return this.invoke<Source>("store_source", { id }, workspaceId);
   }
 

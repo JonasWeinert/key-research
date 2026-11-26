@@ -160,7 +160,7 @@ export const HELP = {
     "What is library access?",
     [
       "Universities and many employers pay for journals. Off campus, you reach them through a library proxy: a sign-in page run by your library (often EZproxy or OpenAthens) that opens the article as if you were on campus.",
-      "Key remembers your library’s proxy. When you open an article on a site it covers, the page goes “via proxy” automatically, and you sign in once with your library account.",
+      "Key remembers your library’s proxy and uses it only where you need it. On your library’s network an article loads directly; elsewhere it opens “via proxy”, and you sign in once with your library account.",
       "Sources you save keep the publisher’s normal address, so links work for anyone.",
     ],
     { privacy: "Your sign-in goes only to your library. Key never sees or stores your password." },
@@ -187,6 +187,29 @@ export const HELP = {
       example: "https://ezproxy.uni.edu/login?url=",
     },
   ),
+
+  "settings.web.proxy-mode": explain(
+    "When Key uses your proxy",
+    [
+      "Automatic: on campus, or on your university’s VPN, journals already let you in, so pages load directly. Elsewhere they go through your proxy. Key finds out by trying: a page that loads with its full text marks the network as direct; a page that asks you to sign in reopens through the proxy, and the network is remembered as needing it.",
+      "Always sends every site of the proxy through it. Never loads pages directly and offers the proxy when a page asks you to sign in.",
+      "The bar above the page says what happened, with one click to do the other thing. That choice is kept for the site on that network.",
+    ],
+    { privacy: "Networks are told apart by a scrambled code made from the router and DNS settings, kept on this Mac only. No location, no Wi-Fi name, nothing sent." },
+  ),
+  "settings.web.networks": explain(
+    "Networks Key has learned",
+    [
+      "Each network where you opened a proxy’s sites, and whether they loaded directly there or needed the proxy. A network is named by its domain when it has one, otherwise by when Key first saw it.",
+      "Forget clears what was learned, so Key tries again there. Always proxy here and Never proxy here fix the choice for that network. A wrong guess also corrects itself the next time a page loads.",
+    ],
+  ),
+  "settings.web.auto-reload": hint("When a page that loaded directly asks you to sign in, it reopens through your proxy at once."),
+  "settings.web.campus-domains": hint("Pages load directly when your network’s domain or this Mac’s name contains one of these, as on campus."),
+  "browser.proxy.direct": hint("Loaded directly: this network seems to have your library’s access. Use proxy if the page asks you to sign in."),
+  "browser.proxy.signin": hint("Loaded directly, this page asked you to sign in, so Key opened it through your library’s proxy."),
+  "browser.proxy.network": hint("On this network, this site needs your library’s proxy, so Key opened it through the proxy."),
+  "browser.proxy.suggest": hint("This page asks you to sign in or buy access. Your library’s proxy may let you in."),
 
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
   "settings.services.intro": hint("Optional keys that give Key a higher allowance at some scholarly services. Key works without them."),
@@ -407,7 +430,7 @@ export const HELP = {
     "Where Find PDF looks",
     [
       "Key looks for a free, legal (open-access) copy: the link the source already has, then OpenAlex, Unpaywall, arXiv and PubMed Central. It checks that what it gets really is a PDF and attaches it.",
-      "If none is found, it opens the publisher’s page in Key’s browser, through your library proxy when one covers the site. A PDF you open there is attached to the same source.",
+      "If none is found, it opens the publisher’s page in Key’s browser, through your library proxy when your network needs it. A PDF you open there is attached to the same source.",
     ],
     { privacy: "Only the work’s DOI or title is sent." },
   ),
