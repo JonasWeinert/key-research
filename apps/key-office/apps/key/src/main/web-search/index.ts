@@ -6,6 +6,7 @@
 // AbortSignal, and Node's fetch does what they need. The polite `mailto` and the API keys
 // come from the app settings the Rust OpenAlex worker also uses. Nothing here runs unless
 // the user chose the Web pill.
+import { LOCAL_WEB_FILTERS, activeWebFilters, meetsWebFilters, type WebFilterKey, type WebFilters } from "../../shared/web-filters";
 import { bareDoi, titleKey, type WebPage, type WebProviderInfo, type WebResult } from "../../shared/web-search";
 import type { AppSettings } from "../app-settings";
 import { ProviderError, TtlCache, isAbort, withRetry, type Fetch } from "./http";
@@ -76,6 +77,21 @@ export function matchSource(work: Pick<WebResult, "doi" | "title" | "year"> & { 
   return sources.find((s) => !(doi && s.doi && bareDoi(s.doi) !== doi) && s.title && titleKey(s.title) === title && (!work.year || !s.year || Math.abs(work.year - s.year) <= 1));
 }
 
+/** The filters a provider can apply: in its request, or on the results it returns. */
+export const applicable = (provider: WebProvider): WebFilterKey[] => [...new Set([...provider.capabilities.filters, ...LOCAL_WEB_FILTERS])];
+
+/** How a provider handles these filters: what it asks for itself, what is checked on its
+ *  results, and what it cannot do at all (it is then left out of the search). */
+export function filterPlan(provider: WebProvider, filters: WebFilters | undefined) {
+  const active = activeWebFilters(filters);
+  const own = provider.capabilities.filters;
+  return {
+    active,
+    local: active.filter((k) => !own.includes(k) && LOCAL_WEB_FILTERS.includes(k)),
+    unsupported: active.filter((k) => !own.includes(k) && !LOCAL_WEB_FILTERS.includes(k)),
+  };
+}
+
 export class WebSearch {
   private cache = new TtlCache<WebPage>();
   private running = new Map<string, AbortController>();
@@ -123,6 +139,7 @@ export class WebSearch {
             keyHelp: p.capabilities.keyHelp,
             enabled: this.enabled(p),
             lookup: !!p.lookup,
+            filters: applicable(p),
           }),
         );
       case "web_search":
@@ -154,15 +171,20 @@ export class WebSearch {
     const provider = this.provider(id);
     if (!this.enabled(provider)) throw Error(`${provider.label} is turned off in Settings`);
     const q = query.trim().slice(0, 300);
-    if (q.length < 2) return { results: [] };
+    const plan = filterPlan(provider, request.filters);
+    if (q.length < 2 && !plan.active.length) return { results: [] };
+    if (plan.unsupported.length) return { results: [], skipped: plan.unsupported };
     const context = this.context(provider);
+    // Results checked here come in larger pages, so a page still has some left.
+    if (plan.local.length) request = { ...request, limit: Math.min(50, request.limit * 2) };
     const key = JSON.stringify([id, q.toLowerCase(), request.limit, request.cursor ?? "", request.filters ?? null, !!context.apiKey]);
     const cached = this.cache.get(key);
     if (cached) return cached;
     const controller = new AbortController();
     if (requestId) this.running.set(requestId, controller);
     try {
-      const page = await withRetry(() => provider.search(q, { ...request, signal: controller.signal }, context), { signal: controller.signal, maxWaitMs: Number(process.env.KEY_WEB_MAX_RETRY_WAIT_MS) || 10_000 });
+      let page = await withRetry(() => provider.search(q.length < 2 ? "" : q, { ...request, signal: controller.signal }, context), { signal: controller.signal, maxWaitMs: Number(process.env.KEY_WEB_MAX_RETRY_WAIT_MS) || 10_000 });
+      if (plan.local.length) page = { ...page, results: page.results.filter((r) => meetsWebFilters(r, request.filters!, plan.local)), total: undefined };
       this.cache.set(key, page);
       return page;
     } catch (error) {

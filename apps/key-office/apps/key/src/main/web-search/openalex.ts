@@ -1,5 +1,6 @@
 // OpenAlex (api.openalex.org/works?search=…): free, no key needed; requests carry the
 // polite pool's `mailto`, and an API key from Settings when there is one.
+import type { WebFilterKey, WebFilters, WebWorkType } from "../../shared/web-filters";
 import { bareDoi, snippetOf, type WebPage, type WebResult } from "../../shared/web-search";
 import { getJson } from "./http";
 import type { WebProvider } from "./provider";
@@ -83,19 +84,62 @@ export function parseOpenAlexPage(body: { meta?: { count?: number; next_cursor?:
   };
 }
 
+// Filters OpenAlex applies itself (api.openalex.org/works?filter=…). Venues have no search
+// filter there, so they are checked on the results.
+const FILTERS: WebFilterKey[] = ["year", "author", "title", "doi", "arxiv", "pmid", "pmcid", "openAccess", "type", "citations", "abstract", "language", "retracted"];
+const OA_TYPES: Record<WebWorkType, string> = {
+  article: "article",
+  review: "review",
+  preprint: "preprint",
+  book: "book",
+  chapter: "book-chapter",
+  "conference-paper": "article",
+  thesis: "dissertation",
+  report: "report",
+  dataset: "dataset",
+};
+// Commas and pipes separate filters and values in the filter parameter.
+const plain = (text: string) => text.replace(/[,|:]+/g, " ").replace(/\s+/g, " ").trim();
+
+/** The `filter` parameter for these filters (each part ANDed). */
+export function openAlexFilter(filters: WebFilters = {}): string[] {
+  const out: string[] = [];
+  if (filters.yearFrom !== undefined || filters.yearTo !== undefined) {
+    out.push(filters.yearFrom === filters.yearTo ? `publication_year:${filters.yearFrom}` : `publication_year:${filters.yearFrom ?? ""}-${filters.yearTo ?? ""}`);
+  }
+  for (const name of filters.authors ?? []) out.push(`raw_author_name.search:${plain(name)}`);
+  if (filters.title) out.push(`title.search:${plain(filters.title)}`);
+  if (filters.abstract) out.push(`abstract.search:${plain(filters.abstract)}`);
+  if (filters.doi) out.push(`doi:https://doi.org/${filters.doi}`);
+  // arXiv preprints carry DataCite DOIs in OpenAlex.
+  if (filters.arxiv) out.push(`doi:https://doi.org/10.48550/arxiv.${filters.arxiv}`);
+  if (filters.pmid) out.push(`pmid:${filters.pmid}`);
+  if (filters.pmcid) out.push(`pmcid:${filters.pmcid.replace(/^PMC/i, "")}`);
+  if (filters.openAccess === false) out.push("is_oa:false");
+  else if (filters.oaStatus) out.push(`oa_status:${plain(filters.oaStatus)}`);
+  else if (filters.openAccess) out.push("is_oa:true");
+  // Conference papers are articles in a conference's proceedings there.
+  if (filters.type === "conference-paper") out.push("primary_location.source.type:conference");
+  else if (filters.type) out.push(`type:${OA_TYPES[filters.type]}`);
+  if (filters.minCitations !== undefined) out.push(`cited_by_count:>${filters.minCitations - 1}`);
+  if (filters.maxCitations !== undefined) out.push(`cited_by_count:<${filters.maxCitations + 1}`);
+  if (filters.language) out.push(`language:${filters.language}`);
+  if (filters.retracted !== undefined) out.push(`is_retracted:${filters.retracted}`);
+  return out;
+}
+
 const auth = (mailto: string, apiKey?: string) => ({ mailto, ...(apiKey ? { api_key: apiKey } : {}) });
 
 export const openalex: WebProvider = {
   id: "openalex",
   label: "OpenAlex",
   icon: "globe",
-  capabilities: { apiKey: true, keyHelp: "Optional. Uses the key from OpenAlex above.", enabledByDefault: true },
+  capabilities: { apiKey: true, keyHelp: "Optional. Uses the key from OpenAlex above.", enabledByDefault: true, filters: FILTERS },
   async search(query, { limit, cursor, signal, filters }, { mailto, apiKey, fetch }) {
-    const filter = [
-      filters?.yearFrom || filters?.yearTo ? `publication_year:${filters.yearFrom ?? ""}-${filters.yearTo ?? ""}` : "",
-      filters?.openAccess ? "is_oa:true" : "",
-    ].filter(Boolean);
+    const filter = openAlexFilter(filters);
     const params = new URLSearchParams({ search: query, "per-page": String(limit), cursor: cursor ?? "*", select: FIELDS, ...auth(mailto, apiKey) });
+    // Filters alone (an author, a DOI …) need no words.
+    if (!query) params.delete("search");
     if (filter.length) params.set("filter", filter.join(","));
     return parseOpenAlexPage(await getJson(`${base()}/works?${params}`, { signal, fetch, label: "OpenAlex" }));
   },
