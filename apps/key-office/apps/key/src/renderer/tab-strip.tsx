@@ -23,12 +23,7 @@ export type TabKind =
   | "database"
   | "source"
   | "home"
-  | "docs"
-  | "sheets"
-  | "slides"
   | "pdf"
-  | "markdown"
-  | "html"
   | "web";
 
 export interface TabSummary {
@@ -72,12 +67,7 @@ const KIND_GLYPH: Record<TabKind, IconName> = {
   page: "doc",
   database: "database",
   source: "link",
-  docs: "fileDoc",
-  sheets: "fileSheet",
-  slides: "fileSlides",
   pdf: "filePdf",
-  markdown: "fileMarkdown",
-  html: "fileHtml",
   web: "globe",
 };
 

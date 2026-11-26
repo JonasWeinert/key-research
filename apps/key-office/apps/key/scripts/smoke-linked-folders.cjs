@@ -29,6 +29,7 @@ async function until(what, check, timeout = 15000) {
   await writeFile(path.join(outside, "plan.md"), "# Plan\n\nVisit the clinic on Tuesday.\n");
   await writeFile(path.join(outside, "data", "survey.csv"), "village,nets\nA,12\n");
   await writeFile(path.join(outside, ".hidden", "secret.md"), "never listed");
+  await writeFile(path.join(outside, "Interview guide.docx"), "not really a Word file");
   await writeFile(path.join(outside, "Interaction study.pdf"), await readFile(path.resolve(__dirname, "../../../../../tests/fixtures/interaction.pdf")));
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
@@ -60,7 +61,7 @@ async function until(what, check, timeout = 15000) {
     const [folder] = await call("store_linked_folders");
     assert.equal(folder.tracked, true);
     assert.equal(folder.indexed, false, "tracked but not indexed by default");
-    assert.equal(folder.files, 3, "hidden files are skipped");
+    assert.equal(folder.files, 4, "hidden files are skipped");
     // Expanded on linking: the subfolder and the files, no hidden ones.
     await tree.locator(".kx-tree-label", { hasText: "data" }).waitFor();
     await tree.locator(".kx-linked-file-row", { hasText: "plan.md" }).waitFor();
@@ -100,6 +101,12 @@ async function until(what, check, timeout = 15000) {
     // Other files: a preview and Open in default app; text files show read-only.
     await tree.locator(".kx-linked-file-row", { hasText: "survey.csv" }).click();
     await page.locator(".kx-linked-file:visible .kx-linked-file-text", { hasText: "village,nets" }).waitFor();
+    // Word, Excel and PowerPoint files: listed and previewed, opened in their default app.
+    await tree.locator(".kx-linked-file-row", { hasText: "Interview guide.docx" }).click();
+    const office = page.locator(".kx-linked-file:visible");
+    await office.locator(".kx-linked-file-note", { hasText: "Key can't edit this yet" }).waitFor();
+    await office.locator(".kx-linked-file-actions").getByRole("button", { name: "Open in default app", exact: true }).waitFor();
+    await shot(page, "2b-office-file");
 
     // A note links the file with [[ ; the file shows the backlink.
     const plan = (await call("store_linked_entries", { folderId: folder.id, dir: "" })).files.find((f) => f.name === "plan.md");

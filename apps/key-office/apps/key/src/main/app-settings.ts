@@ -108,7 +108,7 @@ function webProviders(input: unknown): Record<string, WebProviderSetting> {
   return out
 }
 
-// Every view (shell, readers, office editors) follows prefers-color-scheme, which this sets.
+// Every view (shell, readers, browser pages) follows prefers-color-scheme, which this sets.
 // Library hosts read the layout setting from the environment when they start.
 function apply(settings: AppSettings) {
   nativeTheme.themeSource = settings.theme

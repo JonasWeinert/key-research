@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "@key/ui/tokens.css";
+import "./chrome-tokens.css";
 import { openLayers, trackDetailsMenus } from "@key-reader/ui/dismiss";
 import App from "./App";
 import { preloadNoteEditorWhenIdle } from "./note-editor";
