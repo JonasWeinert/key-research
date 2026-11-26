@@ -115,6 +115,9 @@ struct DocumentDto {
     pages: Vec<PageDto>,
     toc: Vec<TocDto>,
     links: Vec<LinkDto>,
+    /// The document information values (title, author, subject, keywords …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    metadata: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -970,6 +973,7 @@ fn open_document_source(
             })
             .collect(),
         links: descriptor.links().iter().map(link_dto).collect(),
+        metadata: descriptor.metadata().iter().map(|value| value.to_string()).collect(),
     };
     Ok((
         id,
@@ -2813,6 +2817,7 @@ mod tests {
             pages: Vec::new(),
             toc: Vec::new(),
             links: Vec::new(),
+            metadata: Vec::new(),
         }
     }
 

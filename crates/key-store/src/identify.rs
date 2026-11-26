@@ -806,6 +806,17 @@ impl Store {
         Ok(())
     }
 
+    /// Replaces a DOI read from the PDF with the one it turned out to be, unless the user
+    /// changed it meanwhile. Not a new identifier for the lookup queue.
+    pub fn correct_doi(&self, id: &str, read: &str, actual: &str) -> Result<bool> {
+        let db = self.db()?;
+        let changed = db.execute("UPDATE sources SET doi = ?3 WHERE id = ?1 AND lower(doi) = ?2", params![id, read, actual]).map_err(e)?;
+        if changed > 0 {
+            crate::refresh_fts(&db, id)?;
+        }
+        Ok(changed > 0)
+    }
+
     /// Queues a lookup for a source without identifiers (by the titles of its record).
     pub fn queue_lookup(&self, id: &str) -> Result<()> {
         self.db()?

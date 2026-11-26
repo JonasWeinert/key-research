@@ -53,6 +53,24 @@ impl PdfText for HostPdfText {
     fn layout(&self, path: &Path, _hash: &str, model: bool) -> Result<Option<key_index::Layout>, String> {
         crate::layout_helper::analyze(path, model).map(Some)
     }
+    fn document_info(&self, path: &Path) -> Result<Option<key_index::DocumentInfo>, String> {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let id = format!("identify:{}", NEXT.fetch_add(1, Ordering::Relaxed));
+        let Reply::Document(document) = self.0.request(|reply| Request::OpenFile { id: id.clone(), path: path.to_path_buf(), reply })? else {
+            return Err("Unexpected PDF open reply".into());
+        };
+        let total = document.pages.len();
+        let mut wanted: Vec<usize> = [0, 1, total.saturating_sub(1)].into_iter().filter(|p| *p < total).collect();
+        wanted.dedup();
+        let mut pages = Vec::new();
+        for page in wanted {
+            if let Ok(Reply::Text(text)) = self.0.request(|reply| Request::Text { id: id.clone(), page, reply }) {
+                pages.push(page_text(page, text));
+            }
+        }
+        let _ = self.0.request(|reply| Request::Close { id, reply });
+        Ok(Some(key_index::DocumentInfo { title: document.title, metadata: document.metadata, pages, page_count: total }))
+    }
 }
 
 fn page_text(page: usize, text: TextPageDto) -> PageText {
@@ -392,6 +410,12 @@ impl Library {
             fields,
             ..Default::default()
         })?;
+        // A PDF is identified while it is indexed; the file-name title gives way to the
+        // work's own unless the user renames it first.
+        if kind == "pdf" {
+            let record = key_store::Identification { placeholder: Some(source.title().to_string()), ..Default::default() };
+            self.store.set_identification(&source.id, &record)?;
+        }
         Ok(json!({"hash": hash, "id": source.id, "title": source.title()}))
     }
 
