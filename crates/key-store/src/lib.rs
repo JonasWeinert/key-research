@@ -86,6 +86,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/009_linked_folders.sql"),
     include_str!("migrations/010_metadata_graph.sql"),
     include_str!("migrations/011_library_hygiene.sql"),
+    include_str!("migrations/012_match_keys.sql"),
 ];
 /// The migration after which existing sources are linked to the new people and venue tables.
 const GRAPH_MIGRATION: usize = 10;
@@ -498,6 +499,7 @@ impl Store {
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
         )
         .map_err(e)?;
+        duplicates::register(&conn)?;
         let version = conn
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .map_err(e)? as usize;
@@ -517,10 +519,13 @@ impl Store {
         reading::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
         formula::register(&conn)?;
+        // The change log only serves the duplicate index (duplicates.rs), which rebuilds when it lags further.
+        conn.execute("DELETE FROM source_key_changes WHERE seq <= (SELECT max(seq) FROM source_key_changes) - 20000", []).map_err(e)?;
         let readers = (0..READERS)
             .map(|_| {
                 let reader = Connection::open(root.join("key.db")).map_err(e)?;
                 formula::register(&reader)?;
+                duplicates::register(&reader)?;
                 reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
                 Ok(reader)
             })

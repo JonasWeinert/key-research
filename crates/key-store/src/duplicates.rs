@@ -20,7 +20,7 @@ use crate::{Creator, DERIVED_FIELDS, Result, Source, Store, e, identify, normali
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// A work to match: a library source or a record about to be imported.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -319,59 +319,150 @@ pub fn compare(a: &Work, b: &Work) -> Option<Verdict> {
 
 // ── The library index ───────────────────────────────────────
 
-/// Library works by each thing they can be matched on.
-#[derive(Default)]
+/// Library works by each thing they can be matched on. Changed and removed sources are
+/// marked dead and their new versions appended (`Store::index`), until a rebuild.
+#[derive(Clone, Default)]
 pub(crate) struct Index {
     works: Vec<(String, Prepared)>,
-    by: HashMap<String, Vec<usize>>,
+    by: HashMap<(&'static str, String), Vec<usize>>,
+    dead: HashSet<usize>,
+    slot: HashMap<String, usize>,
 }
 
 /// The largest block compared item by item (a very common surname or title start).
 const MAX_BLOCK: usize = 400;
 const STOP: &[&str] = &["a", "an", "the", "of", "on", "in", "and", "for", "to", "der", "die", "das", "le", "la", "les", "el", "los", "de"];
 
-fn keys(p: &Prepared) -> Vec<String> {
+/// The keys a work is found by: identifiers, file, first author and title start. `author`
+/// and `title` are blocks (many works share them), the others are exact.
+fn keys(p: &Prepared) -> Vec<(&'static str, String)> {
     let mut out = Vec::new();
-    out.extend(p.doi.iter().map(|d| format!("doi:{d}")));
-    out.extend(p.pmid.iter().map(|d| format!("pmid:{d}")));
-    out.extend(p.pmcid.iter().map(|d| format!("pmcid:{d}")));
-    out.extend(p.arxiv.iter().map(|d| format!("arxiv:{d}")));
-    out.extend(p.hash.iter().map(|d| format!("hash:{d}")));
-    out.extend(p.isbns.iter().map(|d| format!("isbn:{d}")));
+    out.extend(p.doi.iter().map(|d| ("doi", d.clone())));
+    out.extend(p.pmid.iter().map(|d| ("pmid", d.clone())));
+    out.extend(p.pmcid.iter().map(|d| ("pmcid", d.clone())));
+    out.extend(p.arxiv.iter().map(|d| ("arxiv", d.clone())));
+    out.extend(p.hash.iter().map(|d| ("hash", d.clone())));
+    out.extend(p.isbns.iter().map(|d| ("isbn", d.clone())));
     if let Some(family) = &p.family {
-        out.push(format!("author:{family}"));
+        out.push(("author", family.clone()));
     }
     let start: Vec<&str> = p.title.split_whitespace().filter(|w| !STOP.contains(w)).take(2).collect();
     if !start.is_empty() {
-        out.push(format!("title:{}", start.join(" ")));
+        out.push(("title", start.join(" ")));
     }
     out
 }
 
+fn is_block(kind: &str) -> bool {
+    matches!(kind, "author" | "title")
+}
+
+/// Everything a library source is looked up by, stored in `source_match_keys` (kept by
+/// triggers through `key_match_keys`): the duplicate keys above, plus what its link stands
+/// for (a DOI, arXiv or PubMed id, or the normalised address) and its OpenAlex id. One list
+/// for the "in library" matcher (matching.rs) and the duplicate candidates; whether two
+/// works are the same is still `compare_prepared`'s call.
+pub(crate) fn row_keys(work: &Work, url: Option<&str>, openalex: Option<&str>) -> Vec<(&'static str, String)> {
+    let mut out = keys(&prepare(work));
+    if let Some(link) = url.and_then(normalize::link_key) {
+        out.push(match link {
+            normalize::LinkKey::Doi(d) => ("doi", d),
+            normalize::LinkKey::Arxiv(a) => ("arxiv", a),
+            normalize::LinkKey::Pmid(p) => ("pmid", p),
+            normalize::LinkKey::Url(u) => ("url", u),
+        });
+    }
+    out.extend(openalex.and_then(normalize::openalex).map(|o| ("openalex", o)));
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// `key_match_keys(title, year, doi, isbn, pmid, pmcid, arxiv_id, file_hash, url, openalex_id,
+/// creators)`: `row_keys` as a JSON array of `[kind, value]`, for the triggers of migration 012.
+pub(crate) fn register(db: &Connection) -> Result<()> {
+    use rusqlite::functions::FunctionFlags;
+    use rusqlite::types::ValueRef;
+    db.create_scalar_function("key_match_keys", 11, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        let text = |i: usize| -> Option<String> {
+            match ctx.get_raw(i) {
+                ValueRef::Text(t) => std::str::from_utf8(t).ok().map(str::trim).filter(|t| !t.is_empty()).map(String::from),
+                ValueRef::Integer(n) => Some(n.to_string()),
+                _ => None,
+            }
+        };
+        let year = match ctx.get_raw(1) {
+            ValueRef::Integer(n) => Some(n),
+            ValueRef::Real(f) => Some(f as i64),
+            ValueRef::Text(t) => std::str::from_utf8(t).ok().and_then(|t| t.trim().get(..4)).and_then(|y| y.parse().ok()),
+            _ => None,
+        };
+        let work = Work {
+            title: text(0),
+            year,
+            doi: text(2),
+            isbn: text(3),
+            pmid: text(4),
+            pmcid: text(5),
+            arxiv_id: text(6),
+            file_hash: text(7),
+            creators: text(10).and_then(|c| serde_json::from_str(&c).ok()).unwrap_or_default(),
+            ..Default::default()
+        };
+        let keys = row_keys(&work, text(8).as_deref(), text(9).as_deref());
+        Ok(serde_json::to_string(&keys).unwrap_or_else(|_| "[]".into()))
+    })
+    .map_err(e)
+}
+
 impl Index {
     fn build(works: Vec<(String, Prepared)>) -> Self {
-        let mut by: HashMap<String, Vec<usize>> = HashMap::new();
-        for (i, (_, p)) in works.iter().enumerate() {
-            for key in keys(p) {
-                by.entry(key).or_default().push(i);
-            }
+        let mut index = Self::default();
+        for (id, p) in works {
+            index.push(id, p);
         }
-        Self { works, by }
+        index
+    }
+
+    fn push(&mut self, id: String, p: Prepared) {
+        let at = self.works.len();
+        for key in keys(&p) {
+            self.by.entry(key).or_default().push(at);
+        }
+        if let Some(old) = self.slot.insert(id.clone(), at) {
+            self.dead.insert(old);
+        }
+        self.works.push((id, p));
+    }
+
+    fn remove(&mut self, id: &str) {
+        if let Some(old) = self.slot.remove(id) {
+            self.dead.insert(old);
+        }
+    }
+
+    fn live(&self, i: usize) -> bool {
+        !self.dead.contains(&i)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn contains(&self, id: &str) -> bool {
+        self.slot.contains_key(id)
     }
 
     fn candidates(&self, p: &Prepared) -> Vec<usize> {
         let mut seen = BTreeSet::new();
         for key in keys(p) {
             if let Some(list) = self.by.get(&key) {
-                let block = key.starts_with("author:") || key.starts_with("title:");
-                if block && list.len() > MAX_BLOCK {
+                let list = list.iter().copied().filter(|i| self.live(*i));
+                if is_block(key.0) && self.by[&key].len() > MAX_BLOCK {
                     // Too common to compare with all: only the ones of about the same year.
-                    seen.extend(list.iter().copied().filter(|i| match (self.works[*i].1.year, p.year) {
+                    seen.extend(list.filter(|i| match (self.works[*i].1.year, p.year) {
                         (Some(x), Some(y)) => (x - y).abs() <= 1,
                         _ => false,
                     }).take(MAX_BLOCK));
                 } else {
-                    seen.extend(list.iter().copied());
+                    seen.extend(list);
                 }
             }
         }
@@ -393,6 +484,7 @@ impl WorkIndex {
         for key in keys(&p) {
             self.index.by.entry(key).or_default().push(at);
         }
+        // Not `push`: an import may add the same id twice, and both stay.
         self.index.works.push((id.to_string(), p));
     }
 
@@ -410,37 +502,66 @@ impl WorkIndex {
     }
 }
 
+const WORK_COLUMNS: &str = "SELECT id, title, year, item_type, doi, isbn, pmid, pmcid, arxiv_id, file_hash, container_title, work_type, edition, creators FROM sources";
+
+fn read_work(r: &rusqlite::Row) -> rusqlite::Result<Work> {
+    Ok(Work {
+        id: Some(r.get(0)?),
+        title: r.get(1)?,
+        year: r.get(2)?,
+        item_type: r.get(3)?,
+        doi: r.get(4)?,
+        isbn: r.get(5)?,
+        pmid: r.get(6)?,
+        pmcid: r.get(7)?,
+        arxiv_id: r.get(8)?,
+        file_hash: r.get(9)?,
+        container_title: r.get(10)?,
+        work_type: r.get(11)?,
+        edition: r.get(12)?,
+        creators: serde_json::from_str(&r.get::<_, String>(13)?).unwrap_or_default(),
+        ..Default::default()
+    })
+}
+
 fn library_works(db: &Connection) -> Result<Vec<(String, Prepared)>> {
-    let mut statement = db
-        .prepare("SELECT id, title, year, item_type, doi, isbn, pmid, pmcid, arxiv_id, file_hash, container_title, work_type, edition, creators FROM sources WHERE trashed_at IS NULL")
-        .map_err(e)?;
-    let rows = statement
-        .query_map([], |r| {
-            Ok(Work {
-                id: Some(r.get(0)?),
-                title: r.get(1)?,
-                year: r.get(2)?,
-                item_type: r.get(3)?,
-                doi: r.get(4)?,
-                isbn: r.get(5)?,
-                pmid: r.get(6)?,
-                pmcid: r.get(7)?,
-                arxiv_id: r.get(8)?,
-                file_hash: r.get(9)?,
-                container_title: r.get(10)?,
-                work_type: r.get(11)?,
-                edition: r.get(12)?,
-                creators: serde_json::from_str(&r.get::<_, String>(13)?).unwrap_or_default(),
-                ..Default::default()
-            })
-        })
-        .map_err(e)?;
+    let mut statement = db.prepare(&format!("{WORK_COLUMNS} WHERE trashed_at IS NULL")).map_err(e)?;
+    let rows = statement.query_map([], read_work).map_err(e)?;
     let mut out = Vec::new();
     for work in rows {
         let work = work.map_err(e)?;
         out.push((work.id.clone().unwrap_or_default(), prepare(&work)));
     }
     Ok(out)
+}
+
+/// One library source prepared, when it is in the library (not trashed or merged away).
+fn library_work(db: &Connection, id: &str) -> Result<Option<Prepared>> {
+    let mut statement = db.prepare_cached(&format!("{WORK_COLUMNS} WHERE id = ? AND trashed_at IS NULL")).map_err(e)?;
+    statement.query_row([id], read_work).optional().map_err(e).map(|w| w.as_ref().map(prepare))
+}
+
+/// The library sources that might be the same work as `p`, through `source_match_keys`
+/// (the same keys and block limits as `Index::candidates`), in library order.
+fn candidates_in(db: &Connection, p: &Prepared) -> Result<Vec<String>> {
+    let mut found: BTreeMap<i64, String> = BTreeMap::new();
+    let mut exact = db.prepare_cached("SELECT s.rowid, s.id FROM source_match_keys k JOIN sources s ON s.id = k.source_id WHERE k.kind = ?1 AND k.value = ?2 AND s.trashed_at IS NULL").map_err(e)?;
+    let mut count = db.prepare_cached("SELECT count(*) FROM (SELECT 1 FROM source_match_keys WHERE kind = ?1 AND value = ?2 LIMIT ?3)").map_err(e)?;
+    let mut near = db
+        .prepare_cached("SELECT s.rowid, s.id FROM source_match_keys k JOIN sources s ON s.id = k.source_id WHERE k.kind = ?1 AND k.value = ?2 AND k.year BETWEEN ?3 - 1 AND ?3 + 1 AND s.trashed_at IS NULL ORDER BY s.rowid LIMIT ?4")
+        .map_err(e)?;
+    for (kind, value) in keys(p) {
+        let large = is_block(kind) && count.query_row(params![kind, value, MAX_BLOCK as i64 + 1], |r| r.get::<_, i64>(0)).map_err(e)? > MAX_BLOCK as i64;
+        let rows: Vec<(i64, String)> = if large {
+            // Too common to compare with all: only the ones of about the same year.
+            let Some(year) = p.year else { continue };
+            near.query_map(params![kind, value, year, MAX_BLOCK as i64], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?.collect::<std::result::Result<_, _>>().map_err(e)?
+        } else {
+            exact.query_map(params![kind, value], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?.collect::<std::result::Result<_, _>>().map_err(e)?
+        };
+        found.extend(rows);
+    }
+    Ok(found.into_values().collect())
 }
 
 fn pair_key(a: &str, b: &str) -> (String, String) {
@@ -651,44 +772,68 @@ fn source_in(db: &Connection, id: &str) -> Result<Source> {
 }
 
 impl Store {
+    /// The library index, brought up to date: sources changed since it was built (the
+    /// `source_key_changes` log) are re-read, the rest stays; rebuilt only when much changed.
     fn index(&self) -> Result<std::sync::Arc<Index>> {
         let db = self.read()?;
-        let stamp: (i64, i64, i64, i64) = db
-            .query_row(
-                "SELECT count(*), coalesce(max(updated_at), 0), (SELECT count(*) FROM source_pairs), (SELECT coalesce(max(created_at), 0) FROM source_pairs) FROM sources",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-            )
-            .map_err(e)?;
+        let (first, last): (i64, i64) = db.query_row("SELECT coalesce(min(seq), 0), coalesce(max(seq), 0) FROM source_key_changes", [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?;
         let mut cache = self.duplicates.lock().map_err(|_| "Duplicate index lock poisoned")?;
-        if let Some((cached, index)) = cache.as_ref() {
-            if *cached == stamp {
+        if let Some((seq, index)) = cache.as_mut() {
+            if *seq == last {
                 return Ok(index.clone());
+            }
+            // Still in the log, and not so much that a rebuild is cheaper.
+            if *seq < last && (*seq >= first - 1 || first == 0) && last - *seq <= 2_000 {
+                let mut statement = db.prepare_cached("SELECT DISTINCT source_id FROM source_key_changes WHERE seq > ?").map_err(e)?;
+                let changed: Vec<String> = statement.query_map([*seq], |r| r.get(0)).map_err(e)?.collect::<std::result::Result<_, _>>().map_err(e)?;
+                let next = std::sync::Arc::make_mut(index);
+                for id in changed {
+                    match library_work(&db, &id)? {
+                        Some(p) => next.push(id, p),
+                        None => next.remove(&id),
+                    }
+                }
+                if next.dead.len() <= next.works.len() / 4 {
+                    *seq = last;
+                    return Ok(index.clone());
+                }
             }
         }
         let index = std::sync::Arc::new(Index::build(library_works(&db)?));
-        *cache = Some((stamp, index.clone()));
+        *cache = Some((last, index.clone()));
         Ok(index)
     }
 
+    #[cfg(test)]
+    pub(crate) fn duplicate_index(&self) -> Result<std::sync::Arc<Index>> {
+        self.index()
+    }
+
     /// Library sources that are the same as each of these works (for importers, the "in
-    /// library" badges and sync). Results are in input order, best first.
+    /// library" badges and sync). Results are in input order, best first. Candidates come
+    /// from the indexed `source_match_keys`, so this never reads the whole library.
     pub fn find_duplicates_for(&self, works: &[Work]) -> Result<Vec<Vec<DuplicateMatch>>> {
-        let index = self.index()?;
-        Ok(works
-            .iter()
-            .map(|work| {
-                let p = prepare(work);
-                let mut found: Vec<DuplicateMatch> = index
-                    .candidates(&p)
-                    .into_iter()
-                    .filter(|i| work.id.as_deref() != Some(index.works[*i].0.as_str()))
-                    .filter_map(|i| compare_prepared(&p, &index.works[i].1).map(|v| DuplicateMatch { source_id: index.works[i].0.clone(), kind: v.kind, score: v.score, reason: v.reason }))
-                    .collect();
-                found.sort_by(|a, b| a.kind.cmp(&b.kind).then(b.score.total_cmp(&a.score)));
-                found
-            })
-            .collect())
+        let db = self.read()?;
+        let mut prepared: HashMap<String, Option<Prepared>> = HashMap::new();
+        let mut out = Vec::with_capacity(works.len());
+        for work in works {
+            let p = prepare(work);
+            let mut found = Vec::new();
+            for id in candidates_in(&db, &p)? {
+                if work.id.as_deref() == Some(id.as_str()) {
+                    continue;
+                }
+                if !prepared.contains_key(&id) {
+                    prepared.insert(id.clone(), library_work(&db, &id)?);
+                }
+                if let Some(v) = prepared[&id].as_ref().and_then(|other| compare_prepared(&p, other)) {
+                    found.push(DuplicateMatch { source_id: id, kind: v.kind, score: v.score, reason: v.reason });
+                }
+            }
+            found.sort_by(|a, b| a.kind.cmp(&b.kind).then(b.score.total_cmp(&a.score)));
+            out.push(found);
+        }
+        Ok(out)
     }
 
     /// The library's duplicate groups (and preprint/published pairs not linked yet), the
@@ -700,7 +845,7 @@ impl Store {
         let (mut any, mut exact) = (Find::new(n), Find::new(n));
         let mut best: HashMap<usize, (f64, String)> = HashMap::new();
         let mut versions: Vec<(usize, usize, Verdict)> = Vec::new();
-        for i in 0..n {
+        for i in (0..n).filter(|i| index.live(*i)) {
             for j in index.candidates(&index.works[i].1) {
                 if j <= i {
                     continue;
@@ -883,8 +1028,8 @@ impl Store {
     }
 }
 
-/// The library index, with the state of the library it was built from.
-pub(crate) type Cache = Option<((i64, i64, i64, i64), std::sync::Arc<Index>)>;
+/// The library index, with the last change (`source_key_changes.seq`) it has applied.
+pub(crate) type Cache = Option<(i64, std::sync::Arc<Index>)>;
 
 #[cfg(test)]
 mod tests {
