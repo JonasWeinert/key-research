@@ -20,6 +20,8 @@ import { useFloatingChrome } from "./reader-chrome";
 import { WebPdfControl, type WebPdfInfo } from "./WebPdfControl";
 import { readerLibraryWorks } from "./reader-library-works";
 import { ReferenceAside } from "./ReferenceAside";
+import { highlightUsage } from "./highlight-usage";
+import type { HighlightUsage } from "@key-reader/pdfjs/HighlightInfo";
 
 
 type Target = {
@@ -62,6 +64,7 @@ interface ReaderBridge {
   readerAnalysis?(): Promise<AnalysisReport | null>;
   readerReanalyze?(): Promise<void>;
   readerOpenSource?(sourceId: string): Promise<void>;
+  readerOpenItem?(item: { kind: string; id: string; title?: string; reveal?: string }): Promise<void>;
   readerResult?(direction: number): Promise<void>;
 }
 const bridge = () => (window as unknown as { key: ReaderBridge }).key;
@@ -199,6 +202,24 @@ export default function PdfReader() {
           (found) => found.items[0]?.collections ?? [],
         ),
     });
+  }, [document]);
+  // A highlight's info card: the notes and canvases that use it, each opening there.
+  const usage = useMemo(() => {
+    const initial = document?.initial;
+    const call = bridge().invoke;
+    if (!initial || (initial.web && "url" in initial.web) || !call || !bridge().readerOpenItem) return undefined;
+    const invoke = <T,>(command: string, args?: Record<string, unknown>) => call<T>(command, args);
+    let sourceId: Promise<string | undefined> | undefined;
+    return async (annotation: { id: string; text: string }): Promise<HighlightUsage[]> => {
+      sourceId ??= invoke<{ items: { id: string }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then((found) => found.items[0]?.id);
+      const id = await sourceId;
+      if (!id) return [];
+      const uses = await highlightUsage(invoke, initial.workspaceId ?? "", id, annotation);
+      return uses.map((use) => ({
+        ...use,
+        open: () => void bridge().readerOpenItem?.({ kind: use.kind, id: use.id, title: use.title, reveal: use.kind === "note" ? annotation.text : undefined }),
+      }));
+    };
   }, [document]);
   const latestState = useRef<PdfJsViewState | undefined>(undefined);
   const stateTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -522,6 +543,7 @@ export default function PdfReader() {
             />
           )}
           libraryWorks={libraryWorks}
+          highlightUsage={usage}
           referenceInLibrary={(number) => {
             const id = report?.references.find((r) => r.number === number)?.matchedSourceId;
             return id && bridge().readerOpenSource ? () => void bridge().readerOpenSource?.(id) : null;

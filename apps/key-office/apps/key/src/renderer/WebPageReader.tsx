@@ -10,6 +10,11 @@ import { openItemAt, toast } from "./item-actions";
 import { describeRange, locate, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
 import { takeWebFocus, WEB_FOCUS_EVENT } from "./web-page-open";
 import { writeQuoteClipboard } from "./quote-clipboard";
+import { AnnotationText } from "./annotation-text";
+import { drawHighlightMarkers, inFrameView } from "./web-highlight-markers";
+import { highlightUsage } from "./highlight-usage";
+import { openNoteAt } from "./note-reveal";
+import { HighlightInfo } from "@key-reader/pdfjs/HighlightInfo";
 import "./web-page.css";
 
 export const HIGHLIGHT_COLORS = ["orange", "green", "blue", "pink", "purple"] as const;
@@ -175,7 +180,11 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
       });
     }
     setOrder(placed);
-  }, [doc, annotations]);
+    return drawHighlightMarkers(doc, MARK, PAGE_RGB, (id, rect) => {
+      setDraft(null);
+      setContext({ kind: "annotation", id, rect: toBody(rect) });
+    });
+  }, [doc, annotations, toBody]);
   useEffect(() => {
     if (!doc) return;
     doc.querySelectorAll(`mark.${MARK}[data-active]`).forEach((m) => m.removeAttribute("data-active"));
@@ -285,11 +294,43 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
       true,
     );
     d.addEventListener("submit", (e) => e.preventDefault(), true);
-    d.addEventListener("scroll", () => setContext(null), { passive: true });
+    let following = 0;
+    d.addEventListener(
+      "scroll",
+      () => {
+        if (following) return;
+        following = requestAnimationFrame(() => {
+          following = 0;
+          follow.current(d);
+        });
+      },
+      { passive: true },
+    );
     setDoc(d);
   };
 
   const byId = useMemo(() => new Map(annotations.map((a) => [a.id, a])), [annotations]);
+  // The toolbar or card follows its passage while it scrolls and closes once it is out of view.
+  const follow = useRef((_: Document) => {});
+  follow.current = (d: Document) => {
+    if (!context) return;
+    const range = context.kind === "selection" ? (d.getSelection()?.rangeCount ? d.getSelection()!.getRangeAt(0) : null) : null;
+    const rect = context.kind === "selection" ? range?.getBoundingClientRect() : marksOf(d, context.id)[0]?.getBoundingClientRect();
+    if (!rect || !inFrameView(d, rect)) return setContext(null);
+    setContext({ ...context, rect: toBody(rect) });
+  };
+  const usage = useMemo(() => {
+    const a = context?.kind === "annotation" ? annotations.find((x) => x.id === context.id) : undefined;
+    if (!a) return undefined;
+    return () =>
+      highlightUsage(invoke, workspaceId, sourceId, a).then((uses) =>
+        uses.map((use) => ({
+          ...use,
+          open: () => (use.kind === "note" ? void openNoteAt(workspaceId, use.id, a.text, use.title) : openItemAt({ kind: use.kind as "canvas", id: use.id }, "tab", use.title, workspaceId, invoke)),
+        })),
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [context?.kind === "annotation" ? context.id : "", invoke, workspaceId, sourceId]);
   const active = context?.kind === "annotation" ? byId.get(context.id) : undefined;
   const contextText = context?.kind === "selection" ? context.text : (active?.text ?? "");
   const clearSelection = () => doc?.getSelection()?.removeAllRanges();
@@ -425,8 +466,7 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
                 {sorted.map((a) => (
                   <li key={a.id} data-color={a.color} data-missing={!order.has(a.id) || undefined} data-active={(context?.kind === "annotation" && context.id === a.id) || undefined}>
                     <button type="button" onClick={() => showAnnotation(a)} title={order.has(a.id) ? "Show on the page" : "Not found on the page"}>
-                      <blockquote>{a.text.replace(/\s+/g, " ").trim()}</blockquote>
-                      {a.comment && <p>{a.comment}</p>}
+                      <AnnotationText text={a.text} comment={a.comment} color={`rgb(${PAGE_RGB[a.color]})`} />
                       <footer>
                         {formatDate(a.updatedAt || a.createdAt)}
                         {!order.has(a.id) && <> · Not found on the page</>}
@@ -438,10 +478,28 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
             )}
           </aside>
         )}
-        {context && !draft && (
+        {context && !draft && active && (
+          <HighlightInfo
+            className="kx-web-highlight-info"
+            text={active.text}
+            comment={active.comment}
+            color={active.color}
+            colors={PAGE_RGB}
+            createdAt={active.createdAt}
+            updatedAt={active.updatedAt}
+            usage={usage}
+            style={{ position: "absolute", ...place(context.rect, 312, 260) }}
+            onColor={(color) => highlight(color as Color)}
+            onComment={openComment}
+            onCopy={() => void copy()}
+            onCite={() => void cite()}
+            onDelete={() => remove(active.id)}
+          />
+        )}
+        {context && !draft && !active && (
           <div className="kx-web-toolbar" role="toolbar" aria-label={context.kind === "selection" ? "Text selection actions" : "Highlight actions"} style={place(context.rect, 300, 36)} onPointerDown={(e) => e.preventDefault()}>
             {HIGHLIGHT_COLORS.map((color) => (
-              <button key={color} type="button" className="kx-web-swatch" data-color={color} aria-label={`${color} highlight`} aria-pressed={active?.color === color} onClick={() => highlight(color)} />
+              <button key={color} type="button" className="kx-web-swatch" data-color={color} aria-label={`${color} highlight`} onClick={() => highlight(color)} />
             ))}
             <span className="kx-web-toolbar-divider" />
             <button type="button" className="kx-web-toolbar-action" aria-label="Copy" title="Copy" onClick={() => void copy()}>
@@ -450,14 +508,9 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
             <button type="button" className="kx-web-toolbar-action" aria-label="Cite" title="Copy as a quote with its source" onClick={() => void cite()}>
               <Icon name="quote" size={15} />
             </button>
-            <button type="button" className="kx-web-toolbar-action" aria-label={active?.comment ? "Edit comment" : "Add comment"} title={active?.comment ? "Edit comment" : "Add comment"} onClick={openComment}>
+            <button type="button" className="kx-web-toolbar-action" aria-label="Add comment" title="Add comment" onClick={openComment}>
               <Icon name="note" size={15} />
             </button>
-            {active && (
-              <button type="button" className="kx-web-toolbar-action" data-danger aria-label="Remove highlight" title="Remove highlight" onClick={() => remove(active.id)}>
-                <Icon name="trash" size={15} />
-              </button>
-            )}
           </div>
         )}
         {draft && (

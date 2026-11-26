@@ -3,6 +3,7 @@
 // followed by the PDF's highlights (each quotable into the note) and any further notes.
 // Opened beside the PDF reader for sources that have one, and as the library's details
 // panel (`variant="side"`), so a source looks the same wherever it is shown.
+import { AnnotationText } from "./annotation-text";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { apa, apaInText, bibtex } from "./citation";
 import { Icon } from "./icons";
@@ -649,12 +650,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                     onDragStart={(e) => setItemDrag(e.dataTransfer, [{ kind: "source", id: sourceId, anchor: `highlight:${h.id}`, title: h.text || h.comment || "Highlight", detail: source.title, color: h.color }])}
                     title="Drag onto a canvas or into a note"
                   >
-                    {h.text && (
-                      <blockquote title={h.text}>
-                        <mark>{h.text.replace(/\s*\r?\n\s*/g, " ")}</mark>
-                      </blockquote>
-                    )}
-                    {h.comment && <p className="kx-page-highlight-comment">{h.comment}</p>}
+                    <AnnotationText text={h.text} comment={h.comment} color="var(--kx-hl)" marked />
                     <footer>
                       {pageIndex !== undefined && <span>p. {pageIndex + 1}</span>}
                       <span className="kx-spacer" />

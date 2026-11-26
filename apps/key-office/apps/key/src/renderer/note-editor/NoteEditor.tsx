@@ -22,6 +22,7 @@ import type { SuggestionMenuHandle } from "./SuggestionMenu";
 import type { DraggedItem, NoteEditorHandle, NoteEditorProps } from "./types";
 import { insertDroppedItems, insertLinks, type DropMode } from "./mediaBehaviors";
 import { editorTargetFocused, registerEditorTarget, type EditorTarget } from "./targets";
+import { revealText } from "./reveal";
 import "./note-editor.css";
 import { useDismiss, within } from "@key-reader/ui/dismiss";
 import { exitSuggestion } from "@tiptap/suggestion";
@@ -327,6 +328,7 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
         focus: () => {
           if (editor && !editor.isDestroyed) editor.commands.focus(touched.current ? undefined : "end");
         },
+        reveal: (text) => (editor && !editor.isDestroyed ? revealText(editor, text) : false),
       };
     },
     [editor],

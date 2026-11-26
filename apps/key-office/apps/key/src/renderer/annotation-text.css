@@ -1,0 +1,34 @@
+/* Lists set the quote's own face and size; a comment takes the lead and the quote steps back. */
+.kx-annotation {
+  min-width: 0;
+}
+.kx-annotation-quote {
+  margin: 0;
+}
+.kx-annotation .kx-annotation-comment {
+  margin: 0;
+  color: var(--kx-text);
+  font-family: var(--kx-font);
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.kx-annotation.has-comment .kx-annotation-quote {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 4px;
+  padding-left: 7px;
+  border-left: 2px solid var(--kx-annotation-color, var(--kx-line-strong));
+  color: var(--kx-text-muted);
+  font-size: 11.5px;
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.kx-annotation.has-comment .kx-annotation-quote mark {
+  padding: 0;
+  background: none;
+  color: inherit;
+}

@@ -183,6 +183,40 @@ async function serve() {
     await wait(300);
     await shell.screenshot({ path: path.join(shots, "6-highlights-dark.png") });
     await shell.emulateMedia({ colorScheme: "light" });
+    // With a comment, the comment leads the row and the quote steps back.
+    const row = reader.locator(".kx-web-reader-panel li .kx-annotation.has-comment");
+    await row.waitFor();
+    const emphasis = await row.evaluate((el) => {
+      const size = (q) => parseFloat(getComputedStyle(el.querySelector(q)).fontSize);
+      return { first: el.firstElementChild.className, comment: size(".kx-annotation-comment"), quote: size(".kx-annotation-quote") };
+    });
+    assert(emphasis.first === "kx-annotation-comment" && emphasis.quote < emphasis.comment, `comment leads: ${JSON.stringify(emphasis)}`);
+    // A margin marker beside each highlight.
+    report.markers = await frame.evaluate(() => document.querySelectorAll(".key-hl-bar").length);
+    assert(report.markers === 2, `two margin markers, got ${report.markers}`);
+
+    // The selection toolbar follows a small scroll and closes once the passage leaves the view.
+    await frame.evaluate(() => {
+      const spacer = document.createElement("div");
+      spacer.id = "spacer";
+      spacer.style.height = "3000px";
+      document.body.append(spacer);
+    });
+    await select("three", "markets formed at the crossings");
+    await toolbar.waitFor();
+    const before = await toolbar.boundingBox();
+    await frame.evaluate(() => window.scrollBy(0, 20));
+    await wait(200);
+    const after = await toolbar.boundingBox();
+    assert(after && Math.abs(before.y - after.y - 20) < 4, `the toolbar follows the selection: ${before?.y} -> ${after?.y}`);
+    await frame.evaluate(() => window.scrollBy(0, 2000));
+    await until(async () => !(await toolbar.count()), "the toolbar to close once its passage is out of view");
+    await frame.evaluate(() => {
+      document.getSelection().removeAllRanges();
+      document.getElementById("spacer").remove();
+      window.scrollTo(0, 0);
+    });
+    report.toolbarScroll = true;
 
     // 4. Reopen the reader: the highlights find their places again.
     const tabs = await shell.evaluate(() => window.key.tabs());
@@ -199,7 +233,9 @@ async function serve() {
     // 5. The highlights on the source's page.
     // 6. Cite a highlight, paste it into a note, follow its link back.
     await reopened.evaluate(() => document.querySelector('mark.key-hl[data-color="green"]').click());
-    await toolbar.getByRole("button", { name: "Cite" }).click();
+    const info = shell.locator(".key-highlight-info");
+    await info.waitFor();
+    await info.getByRole("button", { name: "Cite" }).click();
     await until(async () => (await app.evaluate(({ clipboard }) => clipboard.readHTML())).includes("data-key-quote"), "the quote on the clipboard");
     const clip = await app.evaluate(({ clipboard }) => clipboard.readText());
     report.cite = clip;
@@ -223,6 +259,24 @@ async function serve() {
     }, "the reader to show the quoted passage", 15000);
     await wait(400);
     await shell.screenshot({ path: path.join(shots, "8-quote-followed.png") });
+
+    // The highlight's margin marker opens its card, which knows the note that quotes it;
+    // its row opens the note at the quote.
+    const followed = shell.frames().find((x) => x.url() === "about:srcdoc");
+    await followed.evaluate(() => document.querySelector('.key-hl-bar[data-color="green"]').click());
+    await info.waitFor();
+    await info.locator(".key-highlight-info-uses li", { hasText: "River notes" }).waitFor({ timeout: 8000 });
+    report.usedIn = await info.locator(".key-highlight-info-uses li").allInnerTexts();
+    report.infoStyle = await info.evaluate((el) => { const s = getComputedStyle(el); return { bg: s.backgroundColor, opacity: s.opacity, color: s.color }; });
+    await wait(300);
+    await shell.screenshot({ path: path.join(shots, "8b-highlight-info-light.png") });
+    await shell.emulateMedia({ colorScheme: "dark" });
+    await wait(300);
+    await shell.screenshot({ path: path.join(shots, "8b-highlight-info-dark.png") });
+    await shell.emulateMedia({ colorScheme: "light" });
+    await info.locator(".key-highlight-info-uses li button").first().click();
+    await until(async () => /Rivers supplied water/.test(await shell.evaluate(() => String(window.getSelection()))), "the note to open at the quote", 8000);
+    await shell.screenshot({ path: path.join(shots, "8c-note-at-quote.png") });
 
     // The source's page lists the highlights with "Show on page".
     await shell.evaluate(({ id, sourceId }) => window.key.tabAction("open-source-page", { workspaceId: id, sourceId, title: "Rivers", read: false }), { id: ws.id, sourceId: source.id });

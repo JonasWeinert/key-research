@@ -392,6 +392,31 @@ export class PdfJsTextOverlayManager {
     }
   }
 
+  /** A slim bar in the margin beside a highlight, in its colour; a click opens its card. */
+  private marginMarker(page: number, annotation: ReaderAnnotation, bounds: NativeBounds[]) {
+    const left = Math.min(...bounds.map(b => b.left));
+    const top = Math.min(...bounds.map(b => b.top));
+    const bottom = Math.max(...bounds.map(b => b.bottom));
+    const marker = document.createElement('div');
+    marker.className = `pdfjs-highlight-marker color-${annotation.color}${annotation.comment ? ' has-comment' : ''}`;
+    marker.dataset.id = annotation.id;
+    marker.title = annotation.comment ? 'Highlight with a comment' : 'Highlight';
+    marker.style.left = `max(2px, calc(${left * 100}% - 11px))`;
+    marker.style.top = `${top * 100}%`;
+    marker.style.height = `${Math.max(0.004, bottom - top) * 100}%`;
+    marker.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    marker.addEventListener('pointerup', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const host = this.hosts[page]?.element;
+      this.annotationListener?.(annotation, host ? viewportRectForBounds(host, bounds) : marker.getBoundingClientRect());
+    });
+    return marker;
+  }
+
   private renderPage(page: number) {
     const layer = this.overlayLayer(page);
     const text = this.textPages.get(page);
@@ -408,12 +433,9 @@ export class PdfJsTextOverlayManager {
       const className = `pdfjs-highlight color-${annotation.color}${
         annotation.comment ? ' has-comment' : ''
       }${annotation.id === this.flashId ? ' flash' : ''}`;
-      this.paintBounds(
-        layer,
-        annotation.anchor?.pages.find(p => p.page === page)?.bounds ?? (text ? boundsForRange(text, annotation.range) : []),
-        className,
-        annotation.id,
-      );
+      const bounds = annotation.anchor?.pages.find(p => p.page === page)?.bounds ?? (text ? boundsForRange(text, annotation.range) : []);
+      this.paintBounds(layer, bounds, className, annotation.id);
+      if (bounds.length) layer.append(this.marginMarker(page, annotation, bounds));
     }
     if (!text) return;
     for (const match of this.searchMatches.filter(match => match.page === page)) {
