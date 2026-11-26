@@ -16,6 +16,7 @@ mod search;
 mod tag_ops;
 pub mod duplicates;
 mod journal;
+mod stamps;
 pub mod refresh;
 mod retractions;
 pub mod tag_analysis;

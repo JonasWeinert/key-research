@@ -170,6 +170,14 @@
       "category": "public.app-category.productivity",
       "icon": "../../../key/src-tauri/icons/icon.png"
     },
+    "protocols": [
+      {
+        "name": "Key link",
+        "schemes": [
+          "key"
+        ]
+      }
+    ],
     "electronVersion": "43.3.0",
     "electronDist": "../../node_modules/electron/dist"
   }

@@ -10,8 +10,13 @@ pub mod csv;
 pub mod endnote;
 pub mod export;
 pub mod fields;
+pub mod file_mirror;
+pub mod filenames;
 pub mod import;
 pub mod latex;
+pub mod md_export;
+pub mod md_region;
+pub mod template;
 pub mod names;
 pub mod ris;
 

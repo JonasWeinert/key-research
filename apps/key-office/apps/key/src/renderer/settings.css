@@ -112,6 +112,12 @@
 .kx-settings-glyph[data-section="citations"] {
   --glyph: var(--kx-amber);
 }
+.kx-settings-glyph[data-section="markdown"] {
+  --glyph: var(--kx-map-tag);
+}
+.kx-settings-glyph[data-section="files"] {
+  --glyph: var(--kx-accent);
+}
 .kx-settings-glyph[data-section="search"] {
   --glyph: var(--kx-indigo);
 }

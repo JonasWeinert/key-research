@@ -101,6 +101,16 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
     Some(result)
 }
 
+/// A source's bibliography entry in the chosen style, as Markdown (the Markdown export).
+pub fn reference_markdown(source: &key_store::Source) -> Option<String> {
+    let (style_id, locale) = chosen(&Json::Null).ok()?;
+    let style = styles().style(&style_id).ok()?;
+    let request = RenderRequest { citations: Vec::new(), bibliography: true, uncited: vec![source.id.clone()] };
+    let out = key_cite::render(&style, locale.as_deref(), &[csl_json::from_source(source)], &request).ok()?;
+    let entry = out.bibliography?.entries.into_iter().next()?;
+    Some(key_biblio::md_export::html_to_markdown(&entry.formatted.html)).filter(|t| !t.is_empty())
+}
+
 fn csl_items(library: &Library, ids: &[String]) -> Result<Vec<Json>, String> {
     let mut items = Vec::with_capacity(ids.len());
     for id in ids {

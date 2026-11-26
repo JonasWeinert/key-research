@@ -62,6 +62,37 @@ struct Payload {
     moves: Vec<Move>,
     #[serde(default)]
     pairs: Vec<PairChange>,
+    /// Files renamed on disk (linked files renamed by the file naming rules).
+    #[serde(default)]
+    files: Vec<FileRename>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct FileRename {
+    id: String,
+    from: String,
+    to: String,
+}
+
+/// Renames files on disk; stops at the first failure and puts back what it already moved.
+fn move_files(renames: &[(String, String)]) -> Result<()> {
+    for (i, (from, to)) in renames.iter().enumerate() {
+        let (from, to) = (std::path::Path::new(from), std::path::Path::new(to));
+        let failed = if from == to {
+            None
+        } else if to.exists() {
+            Some(format!("{} already exists", to.display()))
+        } else {
+            std::fs::rename(from, to).err().map(|err| format!("Couldn't rename {}: {err}", from.display()))
+        };
+        if let Some(error) = failed {
+            for (f, t) in renames[..i].iter().rev() {
+                let _ = std::fs::rename(t, f);
+            }
+            return Err(error);
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -494,6 +525,39 @@ impl Store {
         Ok(Operation { affected, entry })
     }
 
+    /// Renames sources' files on disk and points the sources at the new paths, as one
+    /// journaled operation (undo renames them back). `renames`: (source id, from, to).
+    pub fn rename_source_files(&self, renames: &[(String, String, String)], label: &str) -> Result<Operation> {
+        let ids: Vec<String> = renames.iter().map(|(id, _, _)| id.clone()).collect();
+        let moves: Vec<(String, String)> = renames.iter().map(|(_, from, to)| (from.clone(), to.clone())).collect();
+        move_files(&moves)?;
+        let result = self.journaled("rename-files", label, &ids, |db, _| {
+            let now = now_ms();
+            for (id, _, to) in renames {
+                let mut patch = Map::new();
+                patch.insert("filePath".into(), Json::String(to.clone()));
+                patch_source_row(db, id, &patch, now)?;
+            }
+            Ok(renames.len())
+        });
+        let (affected, entry) = match result {
+            Ok(done) => done,
+            Err(error) => {
+                let back: Vec<(String, String)> = moves.iter().rev().map(|(f, t)| (t.clone(), f.clone())).collect();
+                let _ = move_files(&back);
+                return Err(error);
+            }
+        };
+        let Some(entry) = entry else { return Ok(Operation { affected, entry: None }) };
+        // The renames go with the entry, so undo and redo move the files too.
+        let db = self.db()?;
+        let payload: String = db.query_row("SELECT payload FROM journal WHERE seq = ?", [entry.seq], |r| r.get(0)).map_err(e)?;
+        let mut payload: Payload = serde_json::from_str(&payload).map_err(e)?;
+        payload.files = renames.iter().map(|(id, from, to)| FileRename { id: id.clone(), from: from.clone(), to: to.clone() }).collect();
+        db.execute("UPDATE journal SET payload = ?2 WHERE seq = ?1", params![entry.seq, serde_json::to_string(&payload).map_err(e)?]).map_err(e)?;
+        Ok(Operation { affected, entry: Some(entry) })
+    }
+
     /// Undoes the latest operation not undone yet.
     pub fn undo(&self) -> Result<Option<JournalEntry>> {
         self.step(true)
@@ -514,6 +578,9 @@ impl Store {
         };
         let Some((entry, payload)) = tx.query_row(&sql, [], read_entry).optional().map_err(e)? else { return Ok(None) };
         let payload: Payload = serde_json::from_str(&payload).map_err(e)?;
+        let files: Vec<(String, String)> =
+            if undo { payload.files.iter().rev().map(|f| (f.to.clone(), f.from.clone())).collect() } else { payload.files.iter().map(|f| (f.from.clone(), f.to.clone())).collect() };
+        move_files(&files)?;
         if undo {
             for change in payload.changes.iter().rev() {
                 restore(&tx, &change.id, &change.before)?;
@@ -545,7 +612,11 @@ impl Store {
             }
         }
         tx.execute("UPDATE journal SET undone = ?2 WHERE seq = ?1", params![entry.seq, undo]).map_err(e)?;
-        tx.commit().map_err(e)?;
+        if let Err(error) = tx.commit().map_err(e) {
+            let back: Vec<(String, String)> = files.iter().rev().map(|(f, t)| (t.clone(), f.clone())).collect();
+            let _ = move_files(&back);
+            return Err(error);
+        }
         Ok(Some(entry))
     }
 

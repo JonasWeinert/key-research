@@ -18,8 +18,10 @@ import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
 import CitationSettings from "./CitationSettings";
 import { CitationKeySettings } from "./citation-keys";
+import { MarkdownExportSettings } from "./markdown-export";
+import { FileSettings } from "./file-names";
 
-export type SettingsSection = "general" | "libraries" | "zotero" | "citations" | "export" | "search" | "web" | "services" | "ai" | "about";
+export type SettingsSection = "general" | "libraries" | "zotero" | "citations" | "export" | "markdown" | "files" | "search" | "web" | "services" | "ai" | "about";
 interface SectionInfo {
   id: SettingsSection;
   label: string;
@@ -35,6 +37,8 @@ const GROUPS: SectionInfo[][] = [
     { id: "zotero", label: "Zotero", icon: "zotero", keywords: "import sync plugin conflicts" },
     { id: "citations", label: "Citations", icon: "quote", keywords: "citation style csl apa chicago mla harvard ieee vancouver bibliography reference locale language install quick copy" },
     { id: "export", label: "Citation keys & export", icon: "upload", keywords: "bibtex biblatex ris csl json csv citekey pattern auto-export overleaf latex pandoc" },
+    { id: "markdown", label: "Markdown export", icon: "fileMarkdown", keywords: "obsidian logseq vault highlights annotations notes template front matter yaml sync pandoc" },
+    { id: "files", label: "Files", icon: "folder", keywords: "file names rename rules template mirror folder hard links finder devonthink ipad drag" },
   ],
   [
     { id: "search", label: "Search & indexing", icon: "search", keywords: "model embedding index pause retry layout analysis pdf openalex email duplicates people metadata" },
@@ -161,6 +165,8 @@ export default function Settings({
             {section === "zotero" && <Zotero invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onChanged={onWorkspacesChanged} />}
             {section === "citations" && <CitationSettings invoke={invoke} workspaceId={workspaces[0]?.id} settings={settings} onSettings={onSettings} />}
             {section === "export" && <CitationKeySettings invoke={invoke} workspaces={workspaces} />}
+            {section === "markdown" && <MarkdownExportSettings invoke={invoke} workspaces={workspaces} />}
+            {section === "files" && <FileSettings invoke={invoke} workspaces={workspaces} />}
             {section === "search" && <SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
             {section === "web" && (
               <>

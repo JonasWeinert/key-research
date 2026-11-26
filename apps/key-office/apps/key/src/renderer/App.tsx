@@ -30,6 +30,8 @@ import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { BiblioSheets } from "./BiblioSheets";
+import { MarkdownExportHost } from "./markdown-export";
+import { FileRenameHost } from "./file-names";
 import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
@@ -1278,6 +1280,8 @@ export default function App() {
         onOpenLibrary={() => action("open-content", { section: "sources", workspaceId })}
       />
       <BiblioSheets invoke={invoke} workspaceId={workspaceId} />
+      <MarkdownExportHost invoke={invoke} workspaceId={workspaceId} />
+      <FileRenameHost invoke={invoke} workspaceId={workspaceId} />
       {zoteroSheet && (
         <ZoteroImportSheet
           invoke={invoke}
