@@ -290,7 +290,7 @@ fn suggestions_become_filters_that_narrow_lists_and_search() {
 
     // Each filter narrows the list; several must all match; search respects them too.
     let count = |filters: Vec<Filter>| store.list_sources(&ListQuery { filters, ..Default::default() }).unwrap().total;
-    let f = |field: &str, op: &str, value: &str| Filter { field: field.into(), op: Some(op.into()), value: value.into(), key: None };
+    let f = |field: &str, op: &str, value: &str| Filter { field: field.into(), op: Some(op.into()), value: value.into(), key: None, ..Default::default() };
     assert_eq!(count(vec![f("creator", "is", "mohamed ali")]), 1);
     assert_eq!(count(vec![f("creator", "contains", "moham")]), 2);
     assert_eq!(count(vec![f("container", "contains", "lancet")]), 1);
@@ -298,7 +298,7 @@ fn suggestions_become_filters_that_narrow_lists_and_search() {
     assert_eq!(count(vec![f("collection", "is", &thesis.id)]), 1);
     assert_eq!(count(vec![f("year", "is", "2019")]), 1);
     assert_eq!(count(vec![f("fulltext", "contains", "transmission")]), 1);
-    assert_eq!(count(vec![Filter { field: "property".into(), op: Some("is".into()), value: "to read".into(), key: Some("Status".into()) }]), 1);
+    assert_eq!(count(vec![Filter { field: "property".into(), op: Some("is".into()), value: "to read".into(), key: Some("Status".into()), ..Default::default() }]), 1);
     assert_eq!(count(vec![f("creator", "contains", "moham"), f("year", "is", "2022")]), 1);
     let found = store
         .search(&SearchQuery { text: "nets".into(), filter: ListQuery { filters: vec![f("year", "is", "2022")], ..Default::default() }, ..Default::default() }, Some(&unit(0)))
