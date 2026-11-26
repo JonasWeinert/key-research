@@ -1,6 +1,7 @@
 // The paper's reference list, as the side panel's References section shows it: the number,
 // the reference as printed, its page, and what the host knows about it underneath.
 import type { ReactNode } from 'react';
+import { Icon } from '../ui/Icon';
 import './reference-list.css';
 
 export interface ReferenceListItem {
@@ -45,9 +46,26 @@ export function ReferenceList<T extends ReferenceListItem>({
           ))}
         </ol>
       ) : references ? (
-        empty ?? <p className="key-ref-empty">No reference list was found in this PDF.</p>
+        empty ?? (
+          <div className="key-ref-empty">
+            <Icon name="book" />
+            <strong>No reference list found</strong>
+            <p>Key looks for a numbered or author–year list near the end of the paper.</p>
+          </div>
+        )
       ) : (
-        <p className="key-ref-empty" role="status">Reading the reference list…</p>
+        <div className="key-ref-loading" role="status" aria-label="Reading the reference list">
+          {[86, 64, 92, 72, 58].map((width, index) => (
+            <div key={index} className="key-ref-skeleton">
+              <i />
+              <span>
+                <i style={{ width: `${width}%` }} />
+                <i style={{ width: `${width - 30}%` }} />
+              </span>
+            </div>
+          ))}
+          <p>Reading the reference list…</p>
+        </div>
       )}
     </div>
   );

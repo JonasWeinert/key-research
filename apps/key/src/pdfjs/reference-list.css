@@ -22,7 +22,7 @@
 .key-ref-list li + li {
   margin-top: 1px;
 }
-.key-ref-list button {
+.key-ref-list li > button {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto;
   align-items: baseline;
@@ -37,10 +37,10 @@
   text-align: left;
   cursor: default;
 }
-.key-ref-list button:hover {
+.key-ref-list li > button:hover {
   background: var(--key-ui-hover);
 }
-.key-ref-list button:focus-visible {
+.key-ref-list li > button:focus-visible {
   outline: 2px solid var(--key-ui-focus);
   outline-offset: -2px;
 }
@@ -66,12 +66,81 @@
   white-space: nowrap;
 }
 .key-ref-list li > :not(button) {
-  margin: -2px 8px 4px 36px;
+  margin: -3px 10px 6px 36px;
 }
 .key-ref-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   margin: 0;
-  padding: 20px 16px;
+  padding: 28px 24px;
   color: var(--key-ui-muted);
   font-size: var(--key-ui-text-sm, 12px);
   text-align: center;
+}
+.key-ref-empty svg {
+  width: 20px;
+  height: 20px;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+.key-ref-empty strong {
+  color: var(--key-ui-text);
+  font-size: var(--key-ui-text-sm, 12px);
+  font-weight: 600;
+}
+.key-ref-empty p {
+  max-width: 240px;
+  margin: 0;
+  font-size: var(--key-ui-text-xs, 11px);
+  line-height: 1.4;
+}
+/* While the reference list is read: a few quiet rows in its shape. */
+.key-ref-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px 14px 16px 10px;
+}
+.key-ref-skeleton {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 6px;
+}
+.key-ref-skeleton > i {
+  justify-self: end;
+  width: 12px;
+  height: 9px;
+}
+.key-ref-skeleton span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.key-ref-skeleton i {
+  display: block;
+  height: 9px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--key-ui-hover) 0%, color-mix(in srgb, var(--key-ui-text) 10%, transparent) 45%, var(--key-ui-hover) 90%) 0 0 / 300% 100%;
+  animation: key-ref-shimmer 1.4s ease-in-out infinite;
+}
+.key-ref-loading p {
+  margin: 2px 0 0;
+  color: var(--key-ui-muted);
+  font-size: var(--key-ui-text-xs, 11px);
+  text-align: center;
+}
+@keyframes key-ref-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-ref-skeleton i {
+    animation: none;
+  }
 }
