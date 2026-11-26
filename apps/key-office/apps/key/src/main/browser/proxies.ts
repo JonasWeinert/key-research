@@ -34,12 +34,14 @@ export interface ProxyPrefs {
   autoRecognize: boolean;
   /** Sites never sent through a proxy (and never added to one). */
   excluded: string[];
+  /** Zotero's proxies are brought in again as Zotero syncs. */
+  followZotero: boolean;
 }
 export interface ProxyData {
   prefs: ProxyPrefs;
   proxies: LibraryProxy[];
 }
-export const DEFAULT_PREFS: ProxyPrefs = { transparent: true, autoRecognize: true, excluded: [] };
+export const DEFAULT_PREFS: ProxyPrefs = { transparent: true, autoRecognize: true, excluded: [], followZotero: false };
 
 const VARIABLES = ["%h", "%p", "%d", "%f", "%u", "%a"] as const;
 type Variable = (typeof VARIABLES)[number];
@@ -365,6 +367,7 @@ export function sanitizeData(input: unknown, newId: () => string): ProxyData {
       transparent: prefs.transparent !== false,
       autoRecognize: prefs.autoRecognize !== false,
       excluded: [...new Set((Array.isArray(prefs.excluded) ? prefs.excluded : []).map((h) => cleanHost(String(h))).filter(Boolean))].slice(0, 500),
+      followZotero: prefs.followZotero === true,
     },
     proxies,
   };

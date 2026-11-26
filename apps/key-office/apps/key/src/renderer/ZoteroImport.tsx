@@ -65,6 +65,8 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
   const [probe, setProbe] = useState<ZoteroProbe>();
   const [token, setToken] = useState("");
   const [library, setLibrary] = useState<number>();
+  /** Zotero's library proxies go to Key's browser too (not part of the host's options). */
+  const [proxies, setProxies] = useState(true);
   const request = useMemo(() => optionsOf(choice), [choice]);
   const changing = !!current;
 
@@ -137,7 +139,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
       const workspace = await bridge().zoteroWorkspace();
       stop = pollProgress(workspace.id);
       if (mode === "import") {
-        const done = await bridge().importZotero(request);
+        const done = await bridge().importZotero({ ...request, ...(proxies ? { proxies: true } : {}) } as typeof request);
         setResult(done);
         onDone(done.workspace, done.report, mode);
         return;
@@ -155,6 +157,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
       const outcome = await invoke<ZoteroSyncOutcome>("store_zotero_plugin_sync", { force: true }, workspace.id);
       if (outcome.connection !== "ok" || !outcome.report) throw new Error(outcome.message || "Zotero did not answer. Key will try again on its own.");
       void bridge().zoteroPlugin?.("wake").catch(() => {});
+      if (proxies) void (window as unknown as { key: { proxies?(action: string, payload?: unknown): Promise<unknown> } }).key.proxies?.("import", { follow: true }).catch(() => {});
       setResult({ workspace, report: outcome.report });
       onDone(workspace, outcome.report, mode);
     } catch (e) {
@@ -246,6 +249,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
                 <Toggle label="Notes" detail="Converted to Markdown, with highlights as quotes." checked={choice.bring.notes} onChange={(notes) => setChoice({ ...choice, bring: { ...choice.bring, notes } })} />
                 <Toggle label="PDF annotations" detail="Each PDF’s highlights and comments, as a note of quotes." checked={choice.bring.annotations} onChange={(annotations) => setChoice({ ...choice, bring: { ...choice.bring, annotations } })} />
                 <Toggle label="Zotero collections" detail="Recreated as Key collections, with items filed in them." checked={choice.bring.mirrorCollections} onChange={(mirrorCollections) => setChoice({ ...choice, bring: { ...choice.bring, mirrorCollections } })} />
+                <Toggle label="Library proxies" detail="Your EZproxy or OpenAthens access from Zotero and its Connector, for Key’s browser." checked={proxies} onChange={setProxies} />
               </div>
             </section>
           </div>

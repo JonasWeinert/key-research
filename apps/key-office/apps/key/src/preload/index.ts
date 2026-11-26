@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("key", {
   readerOpenInLibrary: () => ipcRenderer.invoke("key:reader-open-in-library"),
   readerOpenPage: () => ipcRenderer.invoke("key:reader-open-page"),
   clearBrowsingData: () => ipcRenderer.invoke("key:clear-browsing-data"),
+  proxies: (action: string, payload?: unknown) => ipcRenderer.invoke("key:proxies", action, payload),
   readerState: (state: unknown) => ipcRenderer.send("key:reader-state", state),
   // The status bar (shared/status-items.ts): a native view's own items, and their clicks.
   setStatusItems: (items: unknown) => ipcRenderer.send("key:status-items", items),
@@ -85,6 +86,7 @@ contextBridge.exposeInMainWorld("key", {
         "dismiss-overlays",
         "status-items",
         "app-notice",
+        "proxies-changed",
       ].includes(event)
     )
       throw Error("Unknown event");

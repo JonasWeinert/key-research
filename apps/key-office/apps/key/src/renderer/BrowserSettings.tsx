@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Group, Row } from "./Settings";
+import LibraryAccess from "./LibraryAccess";
 
 const bridge = () => (window as unknown as { key: { clearBrowsingData?(): Promise<void> } }).key;
 
@@ -26,6 +27,7 @@ export default function BrowserSettings() {
       });
   };
   return (
+    <>
     <Group title="Browser" footer={error || "Links open in Key’s own browser, which stays signed in to sites between sessions."}>
       <Row label="Browsing data" detail="Cookies, sign-ins, site data and cached pages, and PDFs kept from the web that are not open.">
         <button className="kx-settings-button" disabled={state === "clearing"} onClick={press}>
@@ -33,5 +35,7 @@ export default function BrowserSettings() {
         </button>
       </Row>
     </Group>
+    <LibraryAccess />
+    </>
   );
 }

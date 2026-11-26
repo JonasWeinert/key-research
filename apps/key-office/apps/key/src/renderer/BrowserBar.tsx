@@ -15,8 +15,51 @@ export interface WebBarState {
   stalled?: boolean;
   /** The page is a scholarly article. */
   article?: { title?: string; doi?: string; inLibrary?: boolean; busy?: boolean };
+  /** Library proxies: the page came through one (just sent by Key: Undo is offered), or one was noticed. */
+  proxy?: { via?: { name: string; host: string; redirected?: boolean }; offer?: { name: string; host: string } };
 }
-export type WebPageOp = "reload" | "add-article" | "open-article";
+export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo" | "proxy-off" | "proxy-remember" | "proxy-not-now" | "proxy-dismiss";
+
+/** A quiet line in the bar about library proxies (never a dialog). */
+function ProxyNotice({ proxy, onPage }: { proxy: NonNullable<WebBarState["proxy"]>; onPage?(op: WebPageOp): void }) {
+  if (proxy.offer)
+    return (
+      <span className="key-web-proxy" role="status" data-offer>
+        <Icon name="institution" size={12} />
+        <span className="key-web-proxy-text">Use {proxy.offer.name} for library access?</span>
+        <button type="button" onClick={() => onPage?.("proxy-remember")} title={`Keep ${proxy.offer.name} and send ${proxy.offer.host || "sites"} through it`}>
+          Remember
+        </button>
+        <button type="button" onClick={() => onPage?.("proxy-not-now")}>
+          Not now
+        </button>
+      </span>
+    );
+  const via = proxy.via;
+  if (!via) return null;
+  if (!via.redirected)
+    return (
+      <span className="key-web-proxy" data-quiet title={`${via.host} through ${via.name}`}>
+        <Icon name="institution" size={12} />
+        <span className="key-web-proxy-text">Via {via.name}</span>
+      </span>
+    );
+  return (
+    <span className="key-web-proxy" role="status">
+      <Icon name="institution" size={12} />
+      <span className="key-web-proxy-text">Via {via.name}</span>
+      <button type="button" title={`Open ${via.host} without the proxy this time`} onClick={() => onPage?.("proxy-undo")}>
+        Undo
+      </button>
+      <button type="button" title={`Never send ${via.host} through a library proxy`} onClick={() => onPage?.("proxy-off")}>
+        Don’t proxy this site
+      </button>
+      <button type="button" className="key-web-proxy-close" aria-label="Dismiss" onClick={() => onPage?.("proxy-dismiss")}>
+        <Icon name="close" size={10} />
+      </button>
+    </span>
+  );
+}
 
 /** The slim bar above a browser tab's page: back, forward, reload, which site it is, and on
  * an article page Add to library (or In library). The page itself is a native view below
@@ -39,6 +82,7 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
         <span>{state.host}</span>
       </span>
       <span className="key-web-actions">
+        {state.proxy ? <ProxyNotice proxy={state.proxy} onPage={onPage} /> : null}
         {state.stalled ? (
           <button type="button" className="key-web-stalled" title="The site’s check has not finished. Reloading often helps." onClick={() => onPage?.("reload")}>
             Still checking? Reload

@@ -124,7 +124,7 @@ describe("library proxies", () => {
     expect(merged.proxies[0].scheme).toBe("https://lse.idm.oclc.org/login?qurl=%u");
     expect(merged.updated).toBe(1);
     const data = sanitizeData({ prefs: { transparent: false, excluded: ["WWW.X.org", "bad host"] }, proxies: [connector, { scheme: "nope" }] }, () => "n");
-    expect(data.prefs).toEqual({ transparent: false, autoRecognize: true, excluded: ["www.x.org"] });
+    expect(data.prefs).toEqual({ transparent: false, autoRecognize: true, excluded: ["www.x.org"], followZotero: false });
     expect(data.proxies).toHaveLength(1);
   });
 });

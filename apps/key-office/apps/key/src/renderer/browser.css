@@ -98,6 +98,58 @@
   background: var(--kx-fill-2);
   color: var(--kx-text);
 }
+/* Library proxies: "Via <proxy> · Undo · Don't proxy this site", or an offer to keep one. */
+.key-web-proxy {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  min-width: 0;
+  padding: 0 2px 0 8px;
+  border-radius: 6px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  white-space: nowrap;
+}
+.key-web-proxy[data-quiet] {
+  padding-right: 8px;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+.key-web-proxy > svg {
+  flex: none;
+  margin-right: 3px;
+  color: var(--kx-text-3);
+}
+.key-web-proxy[data-offer] > svg {
+  color: var(--kx-accent);
+}
+.key-web-proxy-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+  margin-right: 2px;
+}
+.key-web-proxy > button {
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--kx-accent);
+  font: inherit;
+  font-weight: 500;
+}
+.key-web-proxy > button:hover {
+  background: var(--kx-fill-2);
+}
+.key-web-proxy > .key-web-proxy-close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  padding: 0;
+  color: var(--kx-text-3);
+}
 /* Loading: a thin line sweeping along the bar's bottom edge. */
 .key-web-progress {
   position: absolute;
