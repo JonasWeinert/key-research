@@ -6,9 +6,9 @@ license.workspace = true
 description = "Citation engine: Key sources as CSL-JSON, citations and bibliographies rendered with CSL styles"
 
 [dependencies]
-# hayagriva 0.10.1 vendored with one fix (bibliography entries no longer inherit a
-# citation's name disambiguation; see "Key patch" in vendor/hayagriva/src/csl/mod.rs).
-hayagriva = { path = "../../vendor/hayagriva", default-features = false, features = ["csl-json"] }
+# Patched by the vendored copy ([patch.crates-io] in the workspace manifests; the
+# patches are vendor/patches/hayagriva). tools/vendor-update.mjs keeps this pin.
+hayagriva = { version = "=0.10.1", default-features = false, features = ["csl-json"] }
 citationberg = { version = "0.7", features = ["json"] }
 key-store = { path = "../key-store" }
 serde.workspace = true

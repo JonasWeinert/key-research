@@ -1,0 +1,23 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -53,20 +53,6 @@
+ name = "hayagriva"
+ path = "src/lib.rs"
+ 
+-[[bin]]
+-name = "hayagriva"
+-path = "src/main.rs"
+-required-features = ["cli"]
+-
+-[[test]]
+-name = "archiver"
+-path = "tests/archiver.rs"
+-
+-[[test]]
+-name = "citeproc"
+-path = "tests/citeproc.rs"
+-required-features = ["csl-json"]
+-
+ [dependencies.biblatex]
+ version = "0.12.0"
+ features = ["unic-langid"]

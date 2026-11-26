@@ -62,6 +62,8 @@ zip = { version = "8.0.0", default-features = false, features = ["deflate-flate2
 
 [patch.crates-io]
 pdfium-render = { path = "vendor/pdfium-render-tile" }
+# hayagriva with Key's patches (vendor/patches/hayagriva, see vendor/README.md).
+hayagriva = { path = "vendor/hayagriva" }
 # GPUI 0.2.2 predates zed-industries/zed#38269. Backport that upstream
 # Apache-2.0 fix so a macOS screen change also synchronizes the CAMetalLayer's
 # scale factor and drawable size instead of leaving stale display state.

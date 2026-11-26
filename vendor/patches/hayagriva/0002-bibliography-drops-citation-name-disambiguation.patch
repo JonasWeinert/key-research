@@ -1,0 +1,18 @@
+--- a/src/csl/mod.rs
++++ b/src/csl/mod.rs
+@@ -2608,7 +2608,14 @@
+             locator: None,
+             citation_number: self.citation_number,
+             ibid: self.ibid,
+-            disambiguation: self.disambiguation.clone(),
++            // Key patch: the names a citation added (or shortened) to disambiguate belong
++            // to the citation's `cs:names`; reusing them made bibliography entries print
++            // the citation's name forms ("Smith." for "Smith, A."). Year suffixes and
++            // `disambiguate="true"` choices still carry over.
++            disambiguation: match &self.disambiguation {
++                DisambiguateState::NameDisambiguation(_) => DisambiguateState::None,
++                other => other.clone(),
++            },
+             identifier_usage: self.identifier_usage,
+         }
+     }
