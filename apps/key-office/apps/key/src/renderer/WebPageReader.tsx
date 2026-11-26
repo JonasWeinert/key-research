@@ -104,7 +104,7 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
     setError("");
     void Promise.all([
       invoke<Source | null>("store_source", { id: sourceId }, workspaceId),
-      invoke<{ html: string }>("web_source_html", { id: sourceId }, workspaceId),
+      invoke<{ html: string }>("saved_page_html", { id: sourceId }, workspaceId),
     ])
       .then(([s, file]) => {
         if (!live) return;
@@ -196,6 +196,8 @@ export function WebPageReader({ invoke, workspaceId, sourceId, viewId }: { invok
   /** Goes to a highlight, or to a quoted passage and lights it up for a moment. */
   const goTo = useCallback(
     (d: Document, focus: { annotationId?: string; text?: string }) => {
+      setContext(null);
+      setDraft(null);
       if (focus.annotationId && flash(d, focus.annotationId)) return;
       if (!focus.text) return;
       const index = textIndex(d.body);

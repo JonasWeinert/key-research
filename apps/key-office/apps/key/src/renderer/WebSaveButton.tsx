@@ -17,7 +17,7 @@ export function WebSaveButton({ viewId, url, loading }: { viewId: string; url: s
     if (!workspaceId || !/^https?:/i.test(url)) return setFound(null);
     let live = true;
     void shellContext()
-      .invoke!("web_source_find", { url }, workspaceId)
+      .invoke!("saved_page_find", { url }, workspaceId)
       .then((value) => live && setFound((value as { id: string; saved: boolean } | null) ?? null))
       .catch(() => live && setFound(null));
     return () => {
@@ -28,7 +28,7 @@ export function WebSaveButton({ viewId, url, loading }: { viewId: string; url: s
   const save = async () => {
     setBusy(true);
     try {
-      const saved = (await shellContext().invoke!("web_source_save", { viewId }, workspaceId)) as { id: string };
+      const saved = (await shellContext().invoke!("saved_page_save", { viewId }, workspaceId)) as { id: string };
       setFound({ id: saved.id, saved: true });
       toast("Saved to your library");
     } catch (error) {

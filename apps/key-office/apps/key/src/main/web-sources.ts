@@ -12,7 +12,7 @@ import { safeFileName } from "./browser/urls";
 type Invoke = <T = unknown>(command: string, args: Record<string, unknown>, workspaceId: string) => Promise<T>;
 type Source = { id: string; kind: string; url?: string; filePath?: string; fileHash?: string; title?: string; trashedAt?: number | null };
 
-const COMMANDS = new Set(["web_source_save", "web_source_find", "web_source_html"]);
+const COMMANDS = new Set(["saved_page_save", "saved_page_find", "saved_page_html"]);
 
 /** A URL as pages are matched by: no fragment, no trailing slash, no tracking parameters. */
 export function pageKey(url: string | undefined) {
@@ -83,13 +83,13 @@ export class WebSources {
 
   handle(command: string, args: any, workspaceId: string) {
     if (!workspaceId) throw Error("Choose a workspace");
-    if (command === "web_source_save") {
+    if (command === "saved_page_save") {
       const contents = this.page(String(args?.viewId ?? ""));
       if (!contents) throw Error("Open the page in a browser tab first");
       return this.save(contents, workspaceId);
     }
-    if (command === "web_source_find") return this.find(String(args?.url ?? ""), workspaceId).then((s) => (s ? { id: s.id, saved: !!s.filePath } : null));
-    if (command === "web_source_html") return this.html(String(args?.id ?? ""), workspaceId);
+    if (command === "saved_page_find") return this.find(String(args?.url ?? ""), workspaceId).then((s) => (s ? { id: s.id, saved: !!s.filePath } : null));
+    if (command === "saved_page_html") return this.html(String(args?.id ?? ""), workspaceId);
     throw Error(`Unknown command ${command}`);
   }
 
