@@ -57,8 +57,8 @@ export function noteSources(invoke: Invoke, workspaceId: string) {
       return (await searchTitles(invoke, workspaceId, query, { limit: 6 })).map(foundRef);
     },
     searchItemsMore: async (query: string): Promise<SourceRef[]> => {
-      const { searchText, mergeFound } = await import("./unified-search");
-      const merged = mergeFound([], await searchText(invoke, workspaceId, query, { limit: 8 }));
+      const { searchAll } = await import("./unified-search");
+      const merged = await searchAll(invoke, workspaceId, query, { limit: 8 });
       return [...merged.titles, ...merged.text, ...merged.meaning].map(foundRef);
     },
     citeLabel: async (ref: SourceRef, page?: number) => {

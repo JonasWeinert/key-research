@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FIND, itemFilter, narrow, sidebarFilter, type FindState } from "./global-search";
-import type { Found } from "./unified-search";
+import { EMPTY_FIND, itemFilter, sidebarFilter, type FindState } from "./global-search";
 
 const tag = { field: "tag", op: "is" as const, value: "covid", label: "covid" };
 
@@ -33,29 +32,3 @@ describe("sidebar clicks in a search tab", () => {
   });
 });
 
-describe("narrowing results", () => {
-  const found = (kind: Found["kind"], id: string, group: Found["group"], anchor?: string): Found => ({ kind, id, title: id, group, anchor });
-  const all = {
-    titles: [found("source", "s1", "titles"), found("note", "n1", "titles"), found("source", "s1", "titles", "highlight:h1")],
-    text: [found("note", "n1", "text"), found("canvas", "c1", "text")],
-    meaning: [found("record", "r1", "meaning")],
-    semantic: true,
-  };
-
-  it("counts every kind and keeps only the chosen ones", () => {
-    const result = narrow(all, { ...EMPTY_FIND, kinds: ["note"] }, false);
-    expect(result.counts).toEqual({ source: 1, note: 2, record: 1, canvas: 1, highlight: 1 });
-    expect(result.all).toBe(6);
-    expect(result.found.titles.map((f) => f.id)).toEqual(["n1"]);
-    expect(result.found.text.map((f) => f.id)).toEqual(["n1"]);
-    expect(result.found.meaning).toEqual([]);
-  });
-
-  it("keeps one sidebar item, and lists it even when only its text matched", () => {
-    const result = narrow({ ...all, titles: [] }, { ...EMPTY_FIND, filters: [itemFilter("note", "n1", "Alpha")] }, false);
-    expect(result.found.titles.map((f) => [f.kind, f.id])).toEqual([["note", "n1"]]);
-    expect(result.found.text.map((f) => f.id)).toEqual(["n1"]);
-    expect(result.counts.note).toBe(2);
-    expect(result.counts.canvas).toBe(0);
-  });
-});

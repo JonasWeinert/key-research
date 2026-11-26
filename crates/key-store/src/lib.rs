@@ -11,6 +11,7 @@ mod links;
 pub mod matching;
 pub mod normalize;
 pub mod formula;
+pub mod find;
 mod openalex;
 mod properties;
 mod relations;
