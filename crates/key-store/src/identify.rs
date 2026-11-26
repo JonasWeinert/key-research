@@ -835,7 +835,12 @@ impl Store {
     /// changed it meanwhile. Not a new identifier for the lookup queue.
     pub fn correct_doi(&self, id: &str, read: &str, actual: &str) -> Result<bool> {
         let db = self.db()?;
-        let changed = db.execute("UPDATE sources SET doi = ?3 WHERE id = ?1 AND lower(doi) = ?2", params![id, read, actual]).map_err(e)?;
+        let changed = db
+            .execute(
+                "UPDATE sources SET doi = ?3 WHERE id = ?1 AND lower(doi) = ?2 AND NOT EXISTS (SELECT 1 FROM json_each(edited_fields) WHERE value = 'doi')",
+                params![id, read, actual],
+            )
+            .map_err(e)?;
         if changed > 0 {
             crate::refresh_fts(&db, id)?;
         }
@@ -925,7 +930,8 @@ impl Store {
         let db = self.db()?;
         let changed = db
             .execute(
-                "UPDATE sources SET title = ?2, updated_at = ?3 WHERE id = ?1 AND (trim(title) = '' OR title = ?4)",
+                "UPDATE sources SET title = ?2, updated_at = ?3 WHERE id = ?1 AND (trim(title) = '' OR title = ?4)
+                   AND NOT EXISTS (SELECT 1 FROM json_each(edited_fields) WHERE value = 'title')",
                 params![id, title, now_ms(), placeholder],
             )
             .map_err(e)?;

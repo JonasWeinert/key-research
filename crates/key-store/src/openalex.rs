@@ -324,6 +324,8 @@ impl Store {
             (Some(first), Some(last)) if first != last => Some(format!("{first}–{last}")),
             (first, last) => first.or(last),
         });
+        // Fields the user set by hand (even to nothing) stay as they are.
+        let kept = crate::journal::hand_edited_values(&tx, id)?;
         let oa_url = open_access.and_then(|o| text(o, "oa_url")).or_else(|| work.get("best_oa_location").and_then(|l| text(l, "pdf_url").or_else(|| text(l, "landing_page_url"))));
         tx.execute(
             "UPDATE sources SET openalex_id = ?2, work_type = ?3, oa_status = ?4, oa_url = ?5, retracted = ?6, cited_by_count = ?7, fwci = ?8, metrics_at = ?9,
@@ -362,12 +364,13 @@ impl Store {
             ],
         )
         .map_err(e)?;
+        crate::journal::put_back(&tx, id, &kept)?;
 
         // People: a source without creators takes OpenAlex's; otherwise each authorship is
         // matched to the creator it names, and that position gets the identified person.
         let authorships: Vec<Json> = work.get("authorships").and_then(Json::as_array).cloned().unwrap_or_default();
         let creators: String = tx.query_row("SELECT creators FROM sources WHERE id = ?", [id], |r| r.get(0)).map_err(e)?;
-        let empty = serde_json::from_str::<Vec<Creator>>(&creators).map(|c| c.is_empty()).unwrap_or(true);
+        let empty = serde_json::from_str::<Vec<Creator>>(&creators).map(|c| c.is_empty()).unwrap_or(true) && !kept.contains_key("creators");
         if empty && !authorships.is_empty() {
             let creators: Vec<Creator> = authorships
                 .iter()
