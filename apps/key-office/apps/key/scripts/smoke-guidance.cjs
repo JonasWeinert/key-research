@@ -75,8 +75,8 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
       await link.click();
       const pop = page.getByRole("dialog", { name: "What is an API key?" });
       await pop.waitFor();
-      await page.waitForTimeout(200);
-      assert.ok(await pop.getByText("What leaves this Mac", { exact: false }).isVisible(), "the explainer says what leaves this Mac");
+      await pop.getByText("What leaves this Mac", { exact: false }).waitFor();
+      await page.waitForTimeout(250);
       const box = await pop.boundingBox();
       const vp = await page.evaluate(() => [innerWidth, innerHeight]);
       assert.ok(inside(box, ...vp), `the explainer stays inside the window: ${JSON.stringify(box)}`);
@@ -88,7 +88,7 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
       const focused = await page.evaluate(() => document.activeElement?.textContent);
       assert.ok(focused?.includes("What is an API key?"), `focus goes back to the link: ${focused}`);
       // A service's own explainer: how to get a key, step by step.
-      await modal().getByRole("button", { name: "About: An OpenAlex key" }).click();
+      await modal().locator('[data-help="settings.services.openalex"]').click();
       const steps = page.getByRole("dialog", { name: "An OpenAlex key" });
       await steps.getByText("How to").waitFor();
       assert.ok((await steps.locator("ol li").count()) >= 3, "the steps to get a key are listed");
@@ -98,7 +98,10 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
 
       await section("Web & browser");
       await modal().getByRole("heading", { name: "Library access" }).scrollIntoViewIfNeeded();
-      await modal().getByRole("button", { name: "About: What is library access?" }).click();
+      const access = modal().locator('[data-help="settings.web.access"]');
+      assert.equal(await access.getAttribute("aria-label"), "Explain");
+      assert.equal(await access.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby"))?.textContent), "What is library access?", "the (i) is described by what it explains");
+      await access.click();
       await page.getByRole("dialog", { name: "What is library access?" }).waitFor();
       await page.waitForTimeout(350);
       await shot(`settings-library-access-${mode}`);

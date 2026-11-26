@@ -33,7 +33,9 @@ export function Hint({ help, id, className }: { help: HintId; id?: string; class
   );
 }
 
-/** An (i) button, or with `label` a "What is …?" link, that opens a compact explanation. */
+/** An (i) button, or with `label` a "What is …?" link, that opens a compact explanation.
+ *  The (i) is named "Explain" and described by the explainer's title ("Explain, button,
+ *  What is library access?"), so it never shares a name with the control it explains. */
 export function Explain({ help, label, className }: { help: ExplainId; label?: boolean | string; className?: string }) {
   const entry = HELP[help] as ExplainEntry;
   const [open, setOpen] = useState(false);
@@ -46,7 +48,8 @@ export function Explain({ help, label, className }: { help: ExplainId; label?: b
         ref={trigger}
         type="button"
         className={`${label ? "kx-explain-link" : "kx-explain-trigger"} ${className ?? ""}`}
-        aria-label={label ? undefined : `About: ${entry.title}`}
+        aria-label={label ? undefined : "Explain"}
+        aria-describedby={label ? undefined : `${popoverId}-what`}
         title={label ? undefined : entry.title}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -60,7 +63,7 @@ export function Explain({ help, label, className }: { help: ExplainId; label?: b
         }}
       >
         <Icon name="info" size={label ? 11 : 12} aria-hidden="true" />
-        {label && <span>{text}</span>}
+        {label ? <span>{text}</span> : <span id={`${popoverId}-what`} hidden>{entry.title}</span>}
       </button>
       {open && <ExplainPopover id={popoverId} entry={entry} help={help} anchor={trigger} onClose={() => setOpen(false)} />}
     </>
