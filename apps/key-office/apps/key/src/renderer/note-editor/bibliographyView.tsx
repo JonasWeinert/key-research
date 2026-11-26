@@ -61,10 +61,10 @@ export function BibliographyView({ node, editor, selected, updateAttributes }: R
                 scheduleRefresh(editor, 20);
               }}
             >
-              <option value="">Settings ({styles.styles.find((s) => s.id === styles.style)?.title ?? styles.style})</option>
+              <option value="">Default style</option>
               {styles.styles.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.title}
+                  {s.shortTitle || s.title}
                 </option>
               ))}
             </select>

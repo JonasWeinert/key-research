@@ -47,7 +47,7 @@ pub struct CheckInput {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase", tag = "action")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "action")]
 pub enum Fix {
     /// Cite `to` wherever `from` is cited.
     Replace { from: String, to: String, label: String },
@@ -275,7 +275,7 @@ pub fn check(input: &CheckInput) -> Vec<Issue> {
         issues.push(issue(
             "locator",
             "info",
-            format!("Locator “{original}” is written differently from the others; the style adds labels and dashes itself"),
+            format!("Locator “{original}” reads better as “{locator}”: the style adds labels and dashes itself"),
             Some(&input.citations[citation][item].id),
             vec![citation],
             Some(Fix::Locator { citation, item, locator: locator.clone(), locator_label: label, label: format!("Use “{locator}”") }),

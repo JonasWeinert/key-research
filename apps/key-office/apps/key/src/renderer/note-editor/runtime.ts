@@ -34,7 +34,7 @@ export interface NoteRuntime {
   citationStyle(): NoteCiteStyle;
   /** Saves the note's own style (absent where a note can't keep one). */
   setCitationStyle?(style: NoteCiteStyle): void;
-  listStyles?(): Promise<{ styles: { id: string; title: string }[]; locales: { code: string; name: string }[]; style: string; locale?: string }>;
+  listStyles?(): Promise<{ styles: { id: string; title: string; shortTitle?: string }[]; locales: { code: string; name: string }[]; style: string; locale?: string }>;
   restoreSource?(id: string): Promise<void>;
   /** Opens the citation picker: a new citation at `range` (a trigger to replace), or the citation there. */
   pickCitation(range: { from: number; to: number }): void;

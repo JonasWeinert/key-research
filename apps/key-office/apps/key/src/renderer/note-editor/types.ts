@@ -143,7 +143,7 @@ export interface NoteEditorProps {
   /** Saves the note's own style; omitted where the note has no page to keep it on. */
   onCitationStyle?: (style: NoteCiteStyle) => void;
   /** Styles and languages to choose from. */
-  listCitationStyles?: () => Promise<{ styles: { id: string; title: string }[]; locales: { code: string; name: string }[]; style: string; locale?: string }>;
+  listCitationStyles?: () => Promise<{ styles: { id: string; title: string; shortTitle?: string }[]; locales: { code: string; name: string }[]; style: string; locale?: string }>;
   /** Takes a source out of the trash (a checker fix). */
   restoreSource?: (id: string) => Promise<void>;
   placeholder?: string;

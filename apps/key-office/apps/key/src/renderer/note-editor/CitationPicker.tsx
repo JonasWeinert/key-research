@@ -37,7 +37,8 @@ export function CitationPicker({ rect, initial, search, resolve, onSubmit, onRem
   const [open, setOpen] = useState<string | null>(initial.length === 1 ? initial[0].id : null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { ref, style } = usePopoverPosition(rect, [picked.length, results.length, open]);
-  useDismiss(true, { refs: [ref], onDismiss: onClose });
+  // A form, not a menu: scrolling the note behind it leaves it open.
+  useDismiss(true, { refs: [ref], scroll: false, onDismiss: onClose });
   useEffect(() => inputRef.current?.focus(), []);
 
   // Titles of the works already cited.

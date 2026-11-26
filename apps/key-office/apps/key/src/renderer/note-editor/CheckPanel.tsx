@@ -49,7 +49,7 @@ export function CheckPanel({ editor, rect, onClose }: { editor: Editor; rect: DO
   }, [editor]);
   const issues: NoteCheckIssue[] = citeState(editor).issues ?? [];
   const { ref, style } = usePopoverPosition(rect, [issues.length, checking]);
-  useDismiss(true, { refs: [ref], onDismiss: onClose });
+  useDismiss(true, { refs: [ref], scroll: false, onDismiss: onClose });
   const canFix = (fix: NoteCheckFix) => fix.action !== "restore" || !!getRuntime(editor)?.restoreSource;
   return (
     <div ref={ref} className="ne-popover ne-check-panel" style={style} role="dialog" aria-label="Check references">
