@@ -53,6 +53,8 @@ import {
   closeOfficeView,
   canCloseOfficeView,
   activateOfficeView,
+  loadOffice,
+  officeLoaded,
   type OfficeKind,
 } from "./office-editors";
 import {
@@ -565,6 +567,8 @@ function focusShown(w: ShellWindow) {
  * are drawn by the shell's renderer. A new kind adds itself to `OwnedView["kind"]`, registers
  * here, and opens as a tab of the focused group with `add(record, w)`. */
 interface NativeKind {
+  /** False while the kind's code is still loading: the view is created on the next layout. */
+  ready?(): boolean;
   create(record: OwnedView): WebContentsView;
   /** Asked before the tab closes; false keeps it open. */
   canClose?(record: OwnedView): Promise<boolean>;
@@ -597,6 +601,15 @@ registerNativeKind("pdf", {
 });
 for (const kind of OFFICE_KINDS)
   registerNativeKind(kind, {
+    // The editors load with the first Office tab shown, then every window lays out again.
+    ready: () => {
+      if (officeLoaded()) return true;
+      void loadOffice().then(
+        () => liveShells().forEach((w) => layout(w)),
+        (error) => emit("operation-error", String(error)),
+      );
+      return false;
+    },
     create: (record) => createOfficeView(kind, record.path, { newBlank: !record.path }),
     canClose: (record) => (record.view ? canCloseOfficeView({ kind, view: record.view }) : Promise.resolve(true)),
     async dispose(record) {
@@ -849,6 +862,7 @@ function attach(record: OwnedView, w: ShellWindow) {
     }
     return;
   }
+  if (kind.ready && !kind.ready()) return;
   const view = kind.create(record);
   record.view = view;
   relayDismiss(view.webContents, () => record.host?.window);
