@@ -155,6 +155,9 @@ const SEED = [
     await page.locator(".kx-palette").getByText("Organise tags", { exact: false }).first().waitFor();
     await page.keyboard.press("Enter");
     await manager.waitFor();
+    // The palette takes Escape until it has gone.
+    await page.locator(".kx-palette").waitFor({ state: "detached" });
+    await page.waitForTimeout(200);
     await page.keyboard.press("Escape");
     await manager.waitFor({ state: "detached" });
     report.palette = true;
