@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld("key", {
   importZotero: (options?: unknown) => ipcRenderer.invoke("key:import-zotero", options),
   zoteroWorkspace: () => ipcRenderer.invoke("key:zotero-workspace"),
   syncZotero: () => ipcRenderer.invoke("key:sync-zotero"),
+  zoteroPlugin: (action?: "wake") => ipcRenderer.invoke("key:zotero-plugin", action),
   addFiles: (workspaceId: string, collectionId?: string) =>
     ipcRenderer.invoke("key:add-files", workspaceId, collectionId),
   importPaths: (workspaceId: string, paths: string[], collectionId?: string) =>

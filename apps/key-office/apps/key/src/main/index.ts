@@ -21,6 +21,7 @@ import { AgentFill } from "./agent-fill";
 import { AppSettingsStore, appInfo } from "./app-settings";
 import { downloadPdf } from "./download-pdf";
 import { LinkedFolders } from "./linked-folders";
+import { startZoteroPluginSync } from "./zotero-sync";
 import { Registry, type WorkspaceInfo } from "./workspaces";
 import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-media";
 import { WindowStateStore, type SavedLayout, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
@@ -2047,6 +2048,15 @@ else
         await syncZotero(true);
       });
       setInterval(() => void syncZotero(), 30_000);
+      startZoteroPluginSync({
+        invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
+        workspace: async () => {
+          const root = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
+          return root ? (await registry.list()).find((w) => w.root === root) : undefined;
+        },
+        changed: () => emit("library-changed"),
+        check: (sender) => void shell(sender),
+      });
       ipcMain.handle("key:open-sources", (event, id) => {
         return importSources(id, shell(event.sender.id));
       });

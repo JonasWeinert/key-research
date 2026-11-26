@@ -1,45 +1,253 @@
-/* Zotero import sheet: scope choice, collection tree, options, progress and summary. */
+/* Zotero sheet: mode, scope (collections or papers), plugin status, collection tree, options, progress and summary. */
 .kx-zotero-import {
   width: 100%;
 }
-.kx-zotero-scope {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.kx-zotero-scope button {
+/* Step one: import once or keep in sync. */
+.kx-zotero-modes {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
-  padding: 10px 12px;
+  margin-top: 6px;
+}
+.kx-zotero-mode {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--kx-bg);
   box-shadow: var(--kx-shadow-card);
-  color: var(--kx-text-2);
+  color: var(--kx-text);
   font: inherit;
   text-align: left;
+  cursor: default;
 }
-.kx-zotero-scope button[aria-checked="true"] {
-  color: var(--kx-text);
+.kx-zotero-mode[aria-checked="true"] {
   box-shadow: 0 0 0 2px var(--kx-accent), var(--kx-shadow-card);
 }
-.kx-zotero-scope button:disabled {
-  opacity: 0.5;
+.kx-zotero-mode-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
 }
-.kx-zotero-scope span,
+.kx-zotero-mode-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.kx-zotero-mode-text strong {
+  font-weight: 600;
+}
+.kx-zotero-mode-text > span {
+  color: var(--kx-text-2);
+  line-height: 1.4;
+}
+.kx-zotero-mode-text small {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-zotero-mode-check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--kx-line-strong);
+  color: var(--kx-on-accent);
+}
+.kx-zotero-mode[aria-checked="true"] .kx-zotero-mode-check {
+  background: var(--kx-accent);
+  box-shadow: none;
+}
+/* Step two: what to bring. */
+.kx-zotero-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.kx-zotero-library {
+  margin-bottom: 6px;
+  font: inherit;
+  font-size: 12px;
+}
+.kx-segmented.kx-zotero-segmented {
+  display: flex;
+}
+.kx-segmented.kx-zotero-segmented button {
+  flex: 1;
+  width: auto;
+  height: 24px;
+  font: inherit;
+  font-size: 12.5px;
+}
+.kx-segmented.kx-zotero-segmented button[aria-checked="true"] {
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  box-shadow: var(--kx-shadow-card);
+}
+.kx-segmented.kx-zotero-segmented button:disabled {
+  opacity: 0.45;
+}
+.kx-zotero-scope-detail {
+  margin: 7px 2px 0;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
 .kx-zotero-toggle > span {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
-.kx-zotero-scope strong {
-  font-weight: 500;
-}
-.kx-zotero-scope small,
 .kx-zotero-toggle small {
   color: var(--kx-text-3);
   font-size: 11.5px;
+}
+/* The plugin: what Zotero still needs, or a quiet confirmation. */
+.kx-zotero-plugin {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+}
+.kx-zotero-plugin-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+}
+.kx-zotero-plugin-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.kx-zotero-plugin-text strong {
+  font-weight: 600;
+}
+.kx-zotero-plugin-text > span {
+  color: var(--kx-text-2);
+  line-height: 1.4;
+}
+.kx-zotero-plugin-text ol {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  color: var(--kx-text-2);
+  line-height: 1.55;
+}
+.kx-zotero-plugin-actions,
+.kx-zotero-token {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.kx-zotero-token input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--kx-bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--kx-line);
+  color: var(--kx-text);
+  font: 12px ui-monospace, Menlo, monospace;
+  outline: none;
+}
+.kx-zotero-token input:focus {
+  box-shadow: inset 0 0 0 1px var(--kx-accent), 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-zotero-plugin-ok {
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-zotero-plugin-ok svg {
+  color: var(--kx-green);
+}
+/* Papers, one by one. */
+.kx-zotero-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  box-shadow: inset 0 -1px 0 var(--kx-line);
+  color: var(--kx-text-3);
+}
+.kx-zotero-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--kx-text);
+  font: inherit;
+  outline: none;
+}
+.kx-zotero-search button {
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--kx-accent);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kx-zotero-papers [role="listbox"] {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.kx-zotero-paper {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 36px;
+  padding: 3px 12px;
+  color: var(--kx-text-3);
+}
+.kx-zotero-paper:hover {
+  background: var(--kx-fill);
+}
+.kx-zotero-paper-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--kx-text);
+}
+.kx-zotero-paper-text small {
+  overflow: hidden;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-zotero-empty {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--kx-text-3);
+  font-size: 12px;
 }
 .kx-zotero-toggle {
   padding-top: 7px;

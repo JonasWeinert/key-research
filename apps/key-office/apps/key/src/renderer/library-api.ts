@@ -349,6 +349,8 @@ export interface Bridge {
   zoteroWorkspace(): Promise<WorkspaceSummary>;
   /** Syncs the Zotero workspace now, when sync is on. */
   syncZotero(): Promise<void>;
+  /** The bundled Key Sync plugin file, or "wake" to check Zotero now. */
+  zoteroPlugin(action?: "wake"): Promise<{ file: string | null } | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
   /** A Quick Look thumbnail as a data URL, or null when the file has none. */
@@ -363,6 +365,8 @@ export interface ZoteroOptions {
   dataDir?: string;
   /** Zotero collection keys; absent for the whole library. */
   collectionKeys?: string[];
+  /** Zotero item keys, chosen one by one. */
+  itemKeys?: string[];
   attachments: boolean;
   notes: boolean;
   annotations: boolean;
@@ -403,6 +407,7 @@ export interface ZoteroReport {
   linkedFiles: number;
   missingFiles: number;
   skipped: number;
+  unlinked?: number;
   conflictCount: number;
   conflicts: ZoteroConflict[];
 }
@@ -410,6 +415,48 @@ export interface ZoteroProgress {
   stage: "reading" | "items" | "notes" | "saving" | string;
   done: number;
   total: number;
+}
+/** One Zotero item, for choosing papers. */
+export interface ZoteroItem {
+  key: string;
+  title: string;
+  creators: string;
+  year?: number | null;
+  itemType: string;
+  hasFile: boolean;
+  collections: string[];
+}
+/** How Key reaches Zotero through the Key Sync plugin. */
+export type ZoteroConnection = "ok" | "not-running" | "plugin-missing" | "unpaired" | "error" | "off" | "paused";
+export interface ZoteroProbe {
+  connection?: ZoteroConnection | null;
+  message?: string | null;
+  pluginVersion?: string | null;
+  zoteroVersion?: string | null;
+  libraries: { libraryID: number; name: string; type: string }[];
+  defaultLibraryID?: number | null;
+  tokenSource?: "given" | "saved" | "found" | null;
+}
+export interface ZoteroSyncStatus {
+  configured: boolean;
+  paused: boolean;
+  connection?: ZoteroConnection | null;
+  message?: string | null;
+  checkedAt?: number | null;
+  syncedAt?: number | null;
+  pluginVersion?: string | null;
+  zoteroVersion?: string | null;
+  libraryID?: number | null;
+  libraryName?: string | null;
+  options?: ZoteroOptions | null;
+  items: number;
+  report?: ZoteroReport | null;
+}
+export interface ZoteroSyncOutcome {
+  ran: boolean;
+  connection?: ZoteroConnection | null;
+  message?: string | null;
+  report?: ZoteroReport | null;
 }
 export interface ZoteroStatus {
   options?: ZoteroOptions | null;

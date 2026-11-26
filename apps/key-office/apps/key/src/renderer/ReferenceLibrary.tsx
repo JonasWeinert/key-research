@@ -863,8 +863,8 @@ export default function ReferenceLibrary({
           invoke={invoke}
           workspaceId={workspaceId}
           onClose={() => setZotero(false)}
-          onDone={(workspace, report) => {
-            setToast({ text: `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”` });
+          onDone={(workspace, report, mode) => {
+            setToast({ text: mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”` });
             selectLibrary({ workspaceId: workspace.id });
             libraryChanged();
           }}

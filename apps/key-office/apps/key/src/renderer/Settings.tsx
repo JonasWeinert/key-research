@@ -4,10 +4,12 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
 import { ActivityPanel, useLibraryStatus } from "./index-activity";
-import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type Theme, type WorkspaceSummary, type ZoteroStatus } from "./library-api";
+import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type Theme, type WorkspaceSummary, type ZoteroOptions } from "./library-api";
 import "./entity.css";
 import MergeReview from "./MergeReview";
-import { Conflicts, ZoteroImport } from "./ZoteroImport";
+import { ZoteroImport } from "./ZoteroImport";
+import { ZoteroSettings } from "./ZoteroSyncSettings";
+import type { Mode as ZoteroMode } from "./zotero-sheet-model";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 
 export type SettingsSection = "general" | "libraries" | "search" | "ai" | "about";
@@ -91,7 +93,7 @@ export function Group({ title, footer, children }: { title?: string; footer?: Re
 }
 /** A setting: its label and a quiet line beneath. A `path` line stays on one line, cut at
  *  the end, with the whole path on hover. */
-function Row({ label, detail, children, path }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean }) {
+export function Row({ label, detail, children, path }: { label: ReactNode; detail?: ReactNode; children?: ReactNode; path?: boolean }) {
   return (
     <div className="kx-settings-row">
       <div>
@@ -171,7 +173,7 @@ function Libraries({
   onChanged: () => void;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [importing, setImporting] = useState(false);
+  const [importing, setImporting] = useState<{ mode?: ZoteroMode; current?: ZoteroOptions | null } | null>(null);
   useEffect(() => {
     for (const w of workspaces)
       void invoke<{ counts: { all: number } }>("store_status", {}, w.id)
@@ -182,7 +184,7 @@ function Libraries({
   if (importing)
     return (
       <div className="kx-settings-group kx-settings-zotero-import">
-        <ZoteroImport invoke={invoke} workspaceId={workspaces[0]?.id} onClose={() => setImporting(false)} onDone={() => onChanged()} />
+        <ZoteroImport invoke={invoke} workspaceId={workspaces[0]?.id} initialMode={importing.mode} current={importing.current} onClose={() => setImporting(null)} onDone={() => onChanged()} />
       </div>
     );
   return (
@@ -216,124 +218,8 @@ function Libraries({
           </button>
         </Row>
       </Group>
-      <ZoteroSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onImport={() => setImporting(true)} />
+      <ZoteroSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />
     </>
-  );
-}
-
-/** The Zotero library Key imported into: the workspace in a folder named Zotero. */
-const zoteroWorkspaceOf = (workspaces: WorkspaceSummary[]) => workspaces.find((w) => /\/Zotero$/.test(w.root));
-
-function ZoteroSettings({
-  invoke,
-  workspaces,
-  info,
-  settings,
-  onSettings,
-  onImport,
-}: {
-  invoke: Invoke;
-  workspaces: WorkspaceSummary[];
-  info: AppInfo;
-  settings: AppSettings;
-  onSettings: (patch: Partial<AppSettings>) => void;
-  onImport: () => void;
-}) {
-  const workspace = zoteroWorkspaceOf(workspaces);
-  const [status, setStatus] = useState<ZoteroStatus>();
-  const [syncing, setSyncing] = useState(false);
-  useEffect(() => {
-    if (!workspace) return;
-    let stopped = false;
-    const load = () =>
-      void invoke<ZoteroStatus>("store_zotero_status", {}, workspace.id)
-        .then((s) => !stopped && setStatus(s))
-        .catch(() => {});
-    load();
-    const timer = setInterval(load, 10_000);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [invoke, workspace?.id]);
-  const imported = !!status?.at;
-  const report = status?.report;
-  const when = status?.at ? new Date(status.at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "";
-  return (
-    <Group
-      title="Zotero"
-      footer="Key reads a copy of Zotero’s database and never writes to Zotero. Changes made in Zotero come to Key; edits you make in Key are kept, and where both changed, Key’s version stays and is listed here."
-    >
-      <Row
-        label="Import from Zotero"
-        detail={
-          info.zoteroFound
-            ? `Library found at ${info.zoteroDir.replace(/^\/Users\/[^/]+/, "~")}. Choose collections and what comes along; importing again updates what came before.`
-            : "No Zotero library found in your home folder."
-        }
-      >
-        <button className="kx-settings-button" disabled={!info.zoteroFound} onClick={onImport}>
-          {imported ? "Import again…" : "Import…"}
-        </button>
-      </Row>
-      <Row
-        label="Keep in sync with Zotero"
-        detail={
-          imported
-            ? settings.zoteroSync
-              ? `Checks for changes every half minute while Key is open. Last ${report && status?.options ? "synced" : "imported"} ${when}.`
-              : `Imported once, ${when}. Turn on to bring over later changes, deletions and moves.`
-            : "Import your library first."
-        }
-      >
-        <input
-          type="checkbox"
-          className="kx-switch"
-          aria-label="Keep in sync with Zotero"
-          disabled={!imported}
-          checked={settings.zoteroSync}
-          onChange={(e) => onSettings({ zoteroSync: e.target.checked })}
-        />
-      </Row>
-      {imported && settings.zoteroSync && (
-        <Row
-          label="Sync now"
-          detail={
-            report
-              ? [
-                  report.added && `${report.added.toLocaleString()} added`,
-                  report.updated && `${report.updated.toLocaleString()} updated`,
-                  report.trashed && `${report.trashed.toLocaleString()} moved to the trash`,
-                  report.notesUpdated && `${report.notesUpdated.toLocaleString()} notes updated`,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "Up to date."
-              : undefined
-          }
-        >
-          <button
-            className="kx-settings-button"
-            disabled={syncing}
-            onClick={async () => {
-              setSyncing(true);
-              try {
-                await bridge().syncZotero();
-                if (workspace) setStatus(await invoke<ZoteroStatus>("store_zotero_status", {}, workspace.id));
-              } finally {
-                setSyncing(false);
-              }
-            }}
-          >
-            {syncing ? "Syncing…" : "Sync now"}
-          </button>
-        </Row>
-      )}
-      {!!report?.conflictCount && (
-        <div className="kx-settings-row kx-settings-row-wide">
-          <Conflicts report={report} />
-        </div>
-      )}
-    </Group>
   );
 }
 

@@ -11,6 +11,8 @@ execFileSync(process.execPath, ["tools/gen-third-party-notices.mjs"], {
   cwd: officeRoot,
   stdio: "inherit",
 });
+// The Key Sync plugin for Zotero, carried in the app for the Zotero sheet.
+execFileSync(process.execPath, [resolve(appRoot, "../../../../integrations/zotero-key-sync/build.mjs")], { stdio: "inherit" });
 const paths = [
   "out/main/index.js",
   "out/preload/index.js",
