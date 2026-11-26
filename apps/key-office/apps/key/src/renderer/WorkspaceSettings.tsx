@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { ActivityPanel, olderSources, useLibraryStatus } from "./index-activity";
-import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type WorkspaceSummary, type ZoteroOptions } from "./library-api";
+import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type WorkspaceSummary, type ZoteroOptions, type ZoteroStatus, type ZoteroSyncStatus } from "./library-api";
 import { Group, Overridable, Row, SettingsFrame } from "./Settings";
 import { APP_SECTIONS, WORKSPACE_GROUPS, WORKSPACE_SECTIONS, openKeySettings, type WorkspaceSettingsSection } from "./settings-catalog";
 import { workspaceSettings, type WorkspaceSettingsPatch, type WorkspaceSettingsState } from "./workspace-settings-api";
@@ -291,7 +291,8 @@ function General({ invoke, workspace, ws, onClose, onChanged, onRemoved }: { inv
   );
 }
 
-/** Zotero imports into, and syncs, its own workspace (the folder named Zotero). */
+/** Zotero imports into, and syncs with, any workspace: the dedicated one (the folder named
+ * Zotero, as before) or this one. */
 function Zotero({
   invoke,
   workspace,
@@ -311,32 +312,76 @@ function Zotero({
   onWorkspace: (id: string) => void;
   onChanged: () => void;
 }) {
-  const [importing, setImporting] = useState<{ mode?: ZoteroMode; current?: ZoteroOptions | null } | null>(null);
+  const [importing, setImporting] = useState<{ mode?: ZoteroMode; current?: ZoteroOptions | null; target?: string } | null>(null);
   const zotero = zoteroWorkspaceOf(workspaces);
+  // Whether this workspace has Zotero's items of its own (imported or kept in sync).
+  const [own, setOwn] = useState<boolean>();
+  useEffect(() => {
+    let live = true;
+    void Promise.all([
+      invoke<ZoteroSyncStatus>("store_zotero_plugin_status", {}, workspace.id).catch(() => undefined),
+      invoke<ZoteroStatus>("store_zotero_status", {}, workspace.id).catch(() => undefined),
+    ]).then(([sync, imported]) => live && setOwn(!!sync?.configured || !!imported?.at));
+    return () => {
+      live = false;
+    };
+  }, [invoke, workspace.id, importing]);
   // One sheet at a time: the import dialogue takes the place of this page.
   if (importing)
     return (
       <div className="kx-settings-group kx-settings-zotero-import">
-        <ZoteroImport invoke={invoke} workspaceId={zotero?.id ?? workspace.id} initialMode={importing.mode} current={importing.current} onClose={() => setImporting(null)} onDone={() => onChanged()} />
+        <ZoteroImport
+          invoke={invoke}
+          workspaceId={importing.target ?? zotero?.id ?? workspace.id}
+          target={importing.target}
+          initialMode={importing.mode}
+          current={importing.current}
+          onClose={() => setImporting(null)}
+          onDone={() => onChanged()}
+        />
       </div>
     );
   if (zotero?.id === workspace.id)
     return <ZoteroSettings invoke={invoke} workspaces={[workspace]} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />;
+  if (own)
+    return (
+      <ZoteroSettings
+        invoke={invoke}
+        workspaces={[workspace]}
+        target={workspace}
+        info={info}
+        settings={settings}
+        onSettings={onSettings}
+        onOpen={(mode, current) => setImporting({ mode, current, target: workspace.id })}
+      />
+    );
+  const found = info.zoteroFound;
   return (
-    <Group title="Zotero" help="zotero.import-vs-sync" intro="settings.zotero.intro" footer="Key keeps what comes from Zotero in a workspace of its own, in a folder named Zotero.">
-      {zotero ? (
+    <Group title="Zotero" help="zotero.import-vs-sync" intro="settings.zotero.intro" footer="Key only reads from Zotero. A workspace of its own keeps Zotero’s items apart; this workspace can take them too.">
+      {zotero && (
         <Row label={`Zotero syncs into “${zotero.name}”`} detail={home(zotero.root)} path>
           <button className="kx-settings-button" onClick={() => onWorkspace(zotero.id)}>
             Edit its settings
           </button>
         </Row>
-      ) : (
-        <Row label="Import from Zotero" detail={info.zoteroFound ? "Creates the Zotero workspace" : "No Zotero library found on this Mac"}>
-          <button className="kx-settings-button" disabled={!info.zoteroFound} onClick={() => setImporting({ mode: "import" })}>
+      )}
+      {!zotero && (
+        <Row label="Import into a Zotero workspace" detail={found ? "Creates a workspace named Zotero for what comes from Zotero" : "No Zotero library found on this Mac"}>
+          <button className="kx-settings-button" disabled={!found} onClick={() => setImporting({ mode: "import" })}>
             Import…
           </button>
         </Row>
       )}
+      <Row label={`Import into “${workspace.name}”`} help="zotero.this-workspace" detail={found ? "Adds Zotero’s items to this workspace; what is here already stays" : "No Zotero library found on this Mac"}>
+        <button className="kx-settings-button" disabled={!found} onClick={() => setImporting({ mode: "import", target: workspace.id })}>
+          Import…
+        </button>
+      </Row>
+      <Row label={`Keep “${workspace.name}” in sync`} detail={found ? "Follows what you change in Zotero, through the Key Sync plugin" : "No Zotero library found on this Mac"}>
+        <button className="kx-settings-button" disabled={!found} onClick={() => setImporting({ mode: "sync", target: workspace.id })}>
+          Set up…
+        </button>
+      </Row>
     </Group>
   );
 }

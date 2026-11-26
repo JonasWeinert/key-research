@@ -52,6 +52,7 @@ pub(crate) fn run_snapshot(store: &Store, options: &ImportOptions, mode: Mode, s
         collection_ids: HashMap::new(),
         collection_keys: HashMap::new(),
         source_of: HashMap::new(),
+        fill_only: false,
         item_changes: HashMap::new(),
         note_changes: HashMap::new(),
         collection_changes: HashMap::new(),
@@ -136,6 +137,8 @@ struct Run<'a> {
     collection_keys: HashMap<String, String>,
     /// Zotero item id → Key source id, for every item that is in Key after this run.
     source_of: HashMap<i64, String>,
+    /// While merging an item into a source the workspace had before: fill gaps only.
+    fill_only: bool,
     item_changes: HashMap<String, Option<Tracked>>,
     note_changes: HashMap<String, Option<Tracked>>,
     collection_changes: HashMap<String, Option<Tracked>>,
@@ -361,7 +364,14 @@ impl Run<'_> {
                 Some(id) => Some(self.store.resolve_source_id(&id)?),
                 None => None,
             };
-            let Some(id) = id else {
+            // Not from Zotero yet, but the workspace has the work already (an identifier or
+            // the file says so): the item joins that source and only fills what it lacks.
+            let adopted = if id.is_none() && known.is_none() { self.same_work(&input)? } else { None };
+            let fill_only = adopted.is_some();
+            if let Some(id) = &adopted {
+                self.store.adopt_origin(id, ORIGIN, &item.key)?;
+            }
+            let Some(id) = id.or(adopted) else {
                 new.push((input, item, z));
                 continue;
             };
@@ -378,7 +388,10 @@ impl Run<'_> {
                 continue;
             };
             let legacy_edited = base.is_none() && legacy_time.is_some_and(|t| current.updated_at != t);
-            let updated = self.merge(&current, &z, base, legacy_edited)?;
+            self.fill_only = fill_only;
+            let updated = self.merge(&current, &z, base, legacy_edited);
+            self.fill_only = false;
+            let updated = updated?;
             if restore && updated.trashed_at.is_some() {
                 self.store.trash(std::slice::from_ref(&id), false)?;
                 self.report.restored += 1;
@@ -488,6 +501,41 @@ impl Run<'_> {
         keys
     }
 
+    /// The workspace's own source (not one from Zotero) that is surely this item: the same
+    /// DOI, PMID, PMCID, arXiv id, ISBN or file (key_store's duplicate engine decides).
+    fn same_work(&self, input: &SourceInput) -> Result<Option<String>> {
+        let text = |name: &str| input.fields.get(name).and_then(Json::as_str).map(String::from).filter(|v| !v.trim().is_empty());
+        let work = key_store::duplicates::Work {
+            title: text("title"),
+            year: input.fields.get("year").and_then(|y| y.as_i64().or_else(|| y.as_str().and_then(|s| s.get(..4)?.parse().ok()))),
+            item_type: text("itemType"),
+            doi: text("doi"),
+            isbn: text("isbn"),
+            pmid: text("pmid"),
+            pmcid: text("pmcid"),
+            arxiv_id: text("arxivId"),
+            file_hash: text("fileHash"),
+            edition: text("edition"),
+            creators: input.creators.clone(),
+            ..Default::default()
+        };
+        if work.doi.is_none() && work.isbn.is_none() && work.pmid.is_none() && work.pmcid.is_none() && work.arxiv_id.is_none() && work.file_hash.is_none() {
+            return Ok(None);
+        }
+        let found = self.store.find_duplicates_for(std::slice::from_ref(&work))?.into_iter().next().unwrap_or_default();
+        for candidate in found.into_iter().filter(|m| m.kind == key_store::duplicates::MatchKind::Exact) {
+            if self.source_of.values().any(|id| *id == candidate.source_id) {
+                continue;
+            }
+            if let Some(source) = self.store.source(&candidate.source_id)? {
+                if source.origin.as_deref() != Some("zotero") && source.trashed_at.is_none() {
+                    return Ok(Some(source.id));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     /// Applies Zotero's changes to a source, keeping Key's own edits.
     fn merge(&mut self, current: &Source, z: &Map<String, Json>, base: Option<&Json>, legacy_edited: bool) -> Result<Source> {
         let k = view_of_source(current, z, base, &self.collection_keys);
@@ -524,6 +572,10 @@ impl Run<'_> {
                     }
                 }
                 _ if same(zv, kv) => Decision::Keep,
+                // A source the workspace had before Zotero's item joined it: Key's values stay.
+                _ if self.fill_only => {
+                    if kv.is_null() || kv.as_str().is_some_and(|s| s.trim().is_empty()) || kv.as_array().is_some_and(Vec::is_empty) { Decision::Take } else { Decision::Keep }
+                }
                 _ if legacy_edited => Decision::Conflict,
                 _ => Decision::Take,
             };

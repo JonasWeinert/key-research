@@ -428,7 +428,8 @@ export interface Bridge {
   importPaths(workspaceId: string, paths: string[], collectionId?: string): Promise<unknown[]>;
   importZotero(options?: ZoteroOptions): Promise<{ workspace: WorkspaceSummary; report: ZoteroReport }>;
   /** The workspace Zotero imports into, created on first use. */
-  zoteroWorkspace(): Promise<WorkspaceSummary>;
+  /** The workspace Zotero imports into or syncs with: `workspaceId`, else the dedicated "Zotero" one. */
+  zoteroWorkspace(workspaceId?: string): Promise<WorkspaceSummary>;
   /** Syncs the Zotero workspace now, when sync is on. */
   syncZotero(): Promise<void>;
   /** The bundled Key Sync plugin file; "wake" checks Zotero now; "status", "install", "restart"

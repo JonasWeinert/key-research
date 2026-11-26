@@ -279,6 +279,14 @@ export const HELP = {
       "Either way, Key only reads from Zotero. Where both apps changed the same item, Key keeps its own version and lists the conflict.",
     ],
   ),
+  "zotero.this-workspace": explain(
+    "A Zotero workspace or this one?",
+    [
+      "A workspace named Zotero keeps what comes from Zotero apart from your other work. That is how Key did it at first, and it stays like that if you set it up so.",
+      "You can also bring Zotero’s items into this workspace, beside what is already here, and keep it in sync. Sources Key already has are matched, not added twice.",
+      "Each workspace keeps its own Zotero set-up: what it covers, when it last synced and its conflicts.",
+    ],
+  ),
   "zotero.plugin": explain(
     "The Key Sync plugin",
     [

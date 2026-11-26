@@ -256,7 +256,7 @@ export function StatusBar({
   invoke: Invoke;
   workspaceId?: string;
   workspaceName?: string;
-  /** The workspace Zotero syncs into, if any. */
+  /** The dedicated Zotero workspace, if any (the window's own workspace shows first when it syncs too). */
   zoteroWorkspaceId?: string;
   activeViewId?: string | null;
   onOpenZotero: () => void;
@@ -264,7 +264,10 @@ export function StatusBar({
   onOpenLibrary: () => void;
 }) {
   const status = useLibraryStatus(invoke, workspaceId);
-  const { sync, syncing } = useZoteroSync(invoke, zoteroWorkspaceId);
+  // The window's own workspace when it syncs with Zotero, else the Zotero workspace.
+  const own = useZoteroSync(invoke, workspaceId !== zoteroWorkspaceId ? workspaceId : undefined);
+  const dedicated = useZoteroSync(invoke, zoteroWorkspaceId);
+  const { sync, syncing } = own.sync?.configured ? own : dedicated;
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000);

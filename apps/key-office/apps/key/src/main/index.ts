@@ -1340,11 +1340,26 @@ async function importSources(workspaceId?: string, w: ShellWindow = focusedShell
 }
 let workspaceParent = "";
 /** The "Zotero" workspace beside the default one, created on first use. */
-const zoteroWorkspace = () => registry.add(join(workspaceParent, "Zotero"), "Zotero");
-/** Imports the Zotero library into its own "Zotero" workspace beside the default one. */
+const dedicatedZoteroWorkspace = () => registry.add(join(workspaceParent, "Zotero"), "Zotero");
+/** The workspace Zotero imports into or syncs with: the one asked for (any workspace can),
+ * else the dedicated "Zotero" workspace as before. */
+async function zoteroWorkspace(workspaceId?: unknown) {
+  if (typeof workspaceId === "string" && workspaceId) {
+    const found = (await registry.list()).find((w) => w.id === workspaceId);
+    if (found) return found;
+  }
+  return dedicatedZoteroWorkspace();
+}
+/** Every workspace that syncs with Zotero: the dedicated "Zotero" workspace (when it exists)
+ * and any other whose host keeps a sync state. */
+async function zoteroLinkedWorkspaces() {
+  const dedicated = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
+  return (await registry.list()).filter((w) => w.root === dedicated || existsSync(join(w.root, ".key", "zotero-sync.sqlite")));
+}
+/** Imports the Zotero library into the chosen workspace (by default its own "Zotero" one). */
 async function importZotero(options?: Record<string, unknown>) {
-  const { proxies, ...rest } = options ?? {};
-  const workspace = await zoteroWorkspace();
+  const { proxies, workspaceId, ...rest } = options ?? {};
+  const workspace = await zoteroWorkspace(workspaceId);
   const report = await registry.invoke("store_import_zotero", rest, workspace.id);
   emit("library-changed");
   if (proxies) await importLibraryProxies({ dataDir: typeof rest.dataDir === "string" ? rest.dataDir : undefined, follow: true }).catch(() => undefined);
@@ -1367,11 +1382,10 @@ async function syncZotero(force = false) {
   if (zoteroSyncing || !appSettings?.get().zoteroSync) return;
   zoteroSyncing = true;
   try {
-    const root = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
-    const workspace = root && (await registry.list()).find((w) => w.root === root);
-    if (!workspace) return;
-    const result: any = await registry.invoke("store_zotero_sync", { force }, workspace.id);
-    if (result?.ran) emit("library-changed");
+    for (const workspace of await zoteroLinkedWorkspaces()) {
+      const result: any = await registry.invoke("store_zotero_sync", { force }, workspace.id).catch((e) => console.warn("Zotero sync:", e));
+      if (result?.ran) emit("library-changed");
+    }
     // Proxies added in Zotero (or its Connector) follow, now and then.
     if (proxyService?.data.prefs.followZotero && Date.now() - proxiesImportedAt > 60 * 60_000) void importLibraryProxies().catch(() => undefined);
   } catch (e) {
@@ -2771,9 +2785,9 @@ else
         if (action === "import") return importLibraryProxies(payload ?? {});
         throw Error("Unknown proxy action");
       });
-      ipcMain.handle("key:zotero-workspace", (event) => {
+      ipcMain.handle("key:zotero-workspace", (event, workspaceId?: unknown) => {
         shell(event.sender.id);
-        return zoteroWorkspace();
+        return zoteroWorkspace(workspaceId);
       });
       ipcMain.handle("key:sync-zotero", async (event) => {
         shell(event.sender.id);
@@ -2782,10 +2796,7 @@ else
       setInterval(() => void syncZotero(), 30_000);
       startZoteroPluginSync({
         invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
-        workspace: async () => {
-          const root = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
-          return root ? (await registry.list()).find((w) => w.root === root) : undefined;
-        },
+        workspaces: zoteroLinkedWorkspaces,
         changed: () => emit("library-changed"),
         syncing: (running) => emit("zotero-syncing", running),
         check: (sender) => void shell(sender),

@@ -1107,6 +1107,15 @@ impl Store {
         Ok(())
     }
 
+    /// Marks a source the workspace had already as the one an importer's record is (Zotero's
+    /// item joining it), unless it came from somewhere already.
+    pub fn adopt_origin(&self, id: &str, origin: &str, key: &str) -> Result<bool> {
+        self.db()?
+            .execute("UPDATE sources SET origin = ?2, origin_key = ?3 WHERE id = ?1 AND origin IS NULL", params![id, origin, key])
+            .map(|n| n > 0)
+            .map_err(e)
+    }
+
     /// Every source an importer brought in from `origin`: its origin key, id and last change.
     pub fn origin_index(&self, origin: &str) -> Result<HashMap<String, (String, i64)>> {
         let db = self.read()?;

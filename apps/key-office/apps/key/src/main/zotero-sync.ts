@@ -1,4 +1,5 @@
-// Zotero sync through the Key Sync plugin: asks the Zotero workspace's host to sync while Key
+// Zotero sync through the Key Sync plugin: asks each workspace set up to sync (the "Zotero"
+// workspace or any other) to sync while Key
 // runs and when a window gets focus. The host plans, merges and paces the sync (key-zotero
 // `plugin::sync` and `next_delay`: steady while Zotero answers, backing off while it is not
 // running or the plugin is missing); this only keeps the timer. Also finds and installs the
@@ -17,8 +18,8 @@ const IDLE = 5 * 60_000;
 type Workspace = { id: string; root: string };
 export interface ZoteroSyncDeps {
   invoke: (command: string, args: Record<string, unknown>, workspaceId: string) => Promise<unknown>;
-  /** The Zotero workspace, if it exists (never created here). */
-  workspace: () => Promise<Workspace | undefined>;
+  /** The workspaces that may sync with Zotero (never created here). */
+  workspaces: () => Promise<Workspace[]>;
   changed: () => void;
   /** A sync with Zotero starts (true) or ends (false). */
   syncing?: (running: boolean) => void;
@@ -59,19 +60,28 @@ export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
     running = true;
     lastRun = Date.now();
     try {
-      const workspace = await deps.workspace();
-      // No Zotero workspace, or one that never synced: nothing to ask.
-      if (!workspace || !existsSync(join(workspace.root, ".key", "zotero-sync.sqlite"))) {
+      // Only workspaces that synced once (their host keeps zotero-sync.sqlite) are asked.
+      const workspaces = (await deps.workspaces()).filter((w) => existsSync(join(w.root, ".key", "zotero-sync.sqlite")));
+      if (!workspaces.length) {
         delay = IDLE;
         return;
       }
+      let next = IDLE;
       deps.syncing?.(true);
-      const result = (await deps.invoke("store_zotero_plugin_sync", { force, schedule: true, $background: !force }, workspace.id).finally(() => deps.syncing?.(false))) as {
-        ran?: boolean;
-        nextMs?: number;
-      } | null;
-      if (result?.ran) deps.changed();
-      if (typeof result?.nextMs === "number" && result.nextMs > 0) delay = result.nextMs;
+      try {
+        for (const workspace of workspaces) {
+          const result = (await deps.invoke("store_zotero_plugin_sync", { force, schedule: true, $background: !force }, workspace.id).catch((e) => {
+            console.warn(`Zotero sync (${workspace.root}):`, e);
+            return { nextMs: FIRST };
+          })) as { ran?: boolean; nextMs?: number } | null;
+          if (result?.ran) deps.changed();
+          // The soonest any workspace wants to be asked again.
+          if (typeof result?.nextMs === "number" && result.nextMs > 0) next = Math.min(next, result.nextMs);
+        }
+      } finally {
+        deps.syncing?.(false);
+      }
+      delay = next;
     } catch (e) {
       // The host itself did not answer (it is restarting): try again at the usual pace.
       console.warn("Zotero sync:", e);
