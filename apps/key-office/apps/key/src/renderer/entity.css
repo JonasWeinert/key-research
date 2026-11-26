@@ -561,3 +561,29 @@
   margin-right: 6px;
   color: var(--kx-text-3);
 }
+
+/* The shared source row (source-list.tsx): a library source's kind, and its people, journal
+   and tags once opened. */
+.kx-source-item-kind {
+  display: grid;
+  flex: none;
+  place-items: center;
+  margin-top: 2px;
+  color: var(--kx-text-2);
+}
+.kx-work-head > .kx-source-item-kind > svg {
+  margin: 0;
+}
+.kx-source-item-entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+.kx-source-item-entities small {
+  color: var(--kx-text-3);
+}
+.kx-source-item[draggable="true"] > .kx-work-head {
+  cursor: default;
+}

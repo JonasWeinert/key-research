@@ -26,6 +26,7 @@ import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
 import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { startZoteroPluginSync } from "./zotero-sync";
+import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
 import { fatal, installErrorHandlers, serveNotices } from "./app-notices";
 import { serveStatusItems } from "./status-items";
@@ -2574,6 +2575,13 @@ else
         },
         changed: () => emit("library-changed"),
         syncing: (running) => emit("zotero-syncing", running),
+        check: (sender) => void shell(sender),
+      });
+      registerAddFromSource({
+        shellFor: (sender) => {
+          const record = bound(sender);
+          return (record ? shellOfView(record.id) : shellBySender(sender))?.window.webContents;
+        },
         check: (sender) => void shell(sender),
       });
       ipcMain.handle("key:open-sources", (event, id) => {

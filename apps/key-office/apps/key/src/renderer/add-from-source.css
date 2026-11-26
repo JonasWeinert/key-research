@@ -1,0 +1,138 @@
+/* The "Add to library" chooser (add-from-source.tsx): a popover beside the button that asked,
+   or a small sheet near the top when a reader or web page asked. */
+.kx-add-chooser-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  background: color-mix(in srgb, var(--kx-bg-sunken) 30%, transparent);
+}
+.kx-add-chooser {
+  position: fixed;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: min(460px, calc(100vh - 32px));
+  border: 0.5px solid var(--kx-line-strong);
+  border-radius: 12px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  animation: kx-pop 140ms var(--kx-ease);
+}
+.kx-add-chooser > header {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px 8px;
+}
+.kx-add-chooser > header > strong {
+  font-weight: 600;
+}
+.kx-add-chooser > header > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.kx-add-chooser > header > small {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-add-chooser-filter {
+  margin: 0 12px 6px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0.5px solid var(--kx-line-strong);
+  border-radius: 6px;
+  background: var(--kx-bg);
+  color: var(--kx-text);
+  font: 12.5px var(--kx-font);
+  outline: none;
+}
+.kx-add-chooser-filter:focus {
+  box-shadow: 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-add-chooser-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 6px;
+  padding: 2px 0;
+  border-top: 1px solid var(--kx-line);
+  border-bottom: 1px solid var(--kx-line);
+}
+.kx-add-chooser-list > label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding-right: 8px;
+  border-radius: 6px;
+}
+.kx-add-chooser-list > label:hover {
+  background: var(--kx-fill);
+}
+.kx-add-chooser-list > label > input {
+  flex: none;
+  margin: 0;
+  accent-color: var(--kx-accent);
+}
+.kx-add-chooser-list > label > svg {
+  flex: none;
+  color: var(--kx-accent);
+}
+.kx-add-chooser-list > label > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-add-chooser-list > label > small {
+  flex: none;
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-add-chooser-empty {
+  margin: 8px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-add-chooser-hint {
+  margin: 6px 14px 0;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-add-chooser > footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 10px 14px;
+}
+.kx-add-chooser-dontask {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-add-chooser-dontask > input {
+  margin: 0;
+  accent-color: var(--kx-accent);
+}
+.kx-add-chooser-cancel {
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 500 13px var(--kx-font);
+}
+.kx-add-chooser-cancel:hover {
+  background: var(--kx-fill-2);
+}
