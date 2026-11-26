@@ -1,7 +1,8 @@
 import { Button, Input } from "@key/design-system";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./icons";
-import { useDismiss } from "@key-reader/ui/dismiss";
+import { useDismiss, within } from "@key-reader/ui/dismiss";
 export interface WorkspaceAppearance {
   id: string;
   name: string;
@@ -68,7 +69,7 @@ export default function WorkspaceSwitcher({
     [color, setColor] = useState(colors[0]),
     // A workspace picked (or just added): open it here or in a new window?
     [choosing, setChoosing] = useState<WorkspaceAppearance>();
-  const container = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const selected = workspaces.find((w) => w.id === selectedId);
   useEffect(() => {
     setEditing(false);
@@ -81,7 +82,7 @@ export default function WorkspaceSwitcher({
     setQuery("");
     setEditing(false);
     setChoosing(undefined);
-    setOpen(true);
+    setOpen((v) => !v);
   }, [openRequest]);
   useEffect(() => {
     if (!open) setChoosing(undefined);
@@ -96,7 +97,9 @@ export default function WorkspaceSwitcher({
   // Outside presses (anywhere in the window), scrolling away and Escape close it; Escape
   // gives focus back to the trigger (ui/dismiss).
   useDismiss(open, {
-    refs: [container],
+    refs: [menu],
+    // The status bar's workspace item opens and closes it.
+    inside: (target) => within(target, '[data-status-item="workspace"]'),
     onDismiss: () => {
       setOpen(false);
       setEditing(false);
@@ -128,7 +131,7 @@ export default function WorkspaceSwitcher({
     }
   }
   return (
-    <div className="key-workspace-switcher" ref={container}>
+    <div className="key-workspace-switcher">
       <button
         type="button"
         className="key-workspace-home"
@@ -147,22 +150,10 @@ export default function WorkspaceSwitcher({
         </span>
         <strong>{selected?.name || "Key"}</strong>
       </button>
-      <button
-        type="button"
-        className="key-workspace-trigger"
-        aria-label="Workspace"
-        title="Switch, add or customise workspaces"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => {
-          setQuery("");
-          setOpen((v) => !v);
-        }}
-      >
-        <Icon name="chevronUpDown" size={13} />
-      </button>
-      {open && (
+      {open && createPortal(
+        <div className="key-ui-root key-workspace-layer">
         <div
+          ref={menu}
           className="key-workspace-dropdown"
           onKeyDown={(e) => {
             if (
@@ -390,6 +381,8 @@ export default function WorkspaceSwitcher({
           )}
           {error && <p role="alert">{error}</p>}
         </div>
+        </div>,
+        document.querySelector(".key-shell") ?? document.body,
       )}
     </div>
   );

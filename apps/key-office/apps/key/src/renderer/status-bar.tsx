@@ -279,10 +279,11 @@ export function StatusBar({
   };
 
   // Short of room, the lowest-priority items go first (the shell's own included); nothing wraps.
+  // Fixed items first, so they do not move when work comes and goes.
   const left: StatusItem[] = [
+    ...(workspaceName ? [{ id: "workspace", label: workspaceName, icon: "folder", title: "Switch workspace", priority: 70 }] : []),
     { ...zoteroItem(sync, now), priority: 40 },
     ...(work ? [work] : []),
-    ...(workspaceName ? [{ id: "workspace", label: workspaceName, icon: "folder", title: "Switch workspace", priority: 20 }] : []),
   ];
   const bar = useRef<HTMLElement>(null);
   const widths = useRef(new Map<string, number>());

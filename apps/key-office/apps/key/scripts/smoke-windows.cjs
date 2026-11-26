@@ -161,7 +161,7 @@ const assert = require("node:assert/strict");
     await app.evaluate(({ dialog }, folder) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
     }, fieldwork);
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.getByRole("menuitem", { name: "Add workspace…", exact: true }).click();
     // Picking a workspace asks whether it replaces this window's.
     await page.getByRole("menu", { name: "Open Fieldwork" }).getByRole("menuitem", { name: /^Replace/ }).click();
@@ -178,7 +178,7 @@ const assert = require("node:assert/strict");
     await page.locator(".key-workspace-home strong").filter({ hasText: "Fieldwork" }).waitFor();
 
     // Back again: the arrangement returns, ratios included, reader and all.
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${ws.id}"]`).click();
     await page.getByRole("menuitem", { name: /^Replace/ }).click();
     await until(async () => (await tabs()).workspaceId === ws.id && (await tabs()).tabs.length > 1, "switched back");
@@ -189,7 +189,7 @@ const assert = require("node:assert/strict");
 
     // Cmd-click opens the other workspace beside this one.
     const besideOpened = app.waitForEvent("window", (p) => !p.url().endsWith("/pdf.html"));
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${added.id}"]`).click({ modifiers: ["Meta"] });
     const beside = await besideOpened;
     beside.setDefaultTimeout(20000);
@@ -205,7 +205,7 @@ const assert = require("node:assert/strict");
     const focused = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.getTitle());
     assert.equal(focused, "Fieldwork");
     // The switcher marks a workspace another window shows.
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${added.id}"] .key-workspace-open-dot`).waitFor();
     await page.keyboard.press("Escape");
 
