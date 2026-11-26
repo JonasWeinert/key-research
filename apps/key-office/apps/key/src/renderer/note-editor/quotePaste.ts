@@ -11,7 +11,7 @@ export function sourceQuoteNode(schema: Schema, quote: QuotePayload): PMNode | n
   const type = schema.nodes.sourceQuote;
   const text = quoteBody(quote.text);
   if (!type || !quote.sourceId || !text) return null;
-  return type.create({ source: quote.sourceId, page: quote.page, color: quote.color ?? null }, schema.text(text));
+  return type.create({ source: quote.sourceId, page: quote.page >= 0 ? quote.page : null, color: quote.color ?? null }, schema.text(text));
 }
 
 /** Puts the quote where the cursor is: in place of an empty paragraph, else after the block. */
