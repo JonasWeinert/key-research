@@ -438,6 +438,24 @@ impl Library {
             }),
             // A saved web page's reference list, found in its HTML by the shell: stored as the
             // PDF analysis' are, then looked up by the reference worker the same way.
+            // Saved web pages: which source a page is, and the fields its metadata fills.
+            "store_web_page_find" => (|| {
+                let url: String = arg(args, "url")?;
+                let doi: Option<String> = arg(args, "doi")?;
+                json_output(self.store.find_web_page(&url, doi.as_deref())?)
+            })(),
+            "store_web_page_apply" => (|| {
+                let id: String = arg(args, "id")?;
+                let meta: key_store::web_pages::PageMeta = arg(args, "meta")?;
+                let captured_at: String = arg(args, "capturedAt")?;
+                let existing = match arg::<Option<String>>(args, "existingId")? {
+                    Some(existing) => self.store.source(&existing)?,
+                    None => None,
+                };
+                let had_file = arg::<Option<bool>>(args, "existingHadFile")?.unwrap_or(false);
+                json_output(self.store.apply_web_page(&id, &meta, &captured_at, existing.as_ref(), had_file)?)
+            })(),
+            "store_web_page_key" => arg::<String>(args, "url").and_then(|url| json_output(key_store::normalize::page_key(&url))),
             "store_web_references" => (|| {
                 let id: String = arg(args, "id")?;
                 let references: Vec<key_store::ReferenceInput> = arg(args, "references")?;
