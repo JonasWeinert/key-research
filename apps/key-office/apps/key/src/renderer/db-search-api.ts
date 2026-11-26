@@ -8,6 +8,7 @@
 // db-search-mock.ts when the build's host has no database engine yet or KEY_DB_SEARCH_MOCK=1
 // (smokes). `isMock` tells the page to say it shows sample data.
 import type { Invoke } from "./library-api";
+import { inboxCollection } from "./item-links";
 
 // ── The neutral query ────────────────────────────────────────────────────────────────
 
@@ -371,15 +372,44 @@ export async function saveToInbox(invoke: Invoke, workspaceId: string, records: 
   let saved = 0;
   let existed = 0;
   const states: LibraryState[] = [];
+  let viaCollection: string | undefined;
   for (const work of records) {
-    const out = await invoke<{ state: "inbox" | "library"; itemId?: string; sourceId?: string; existed: boolean }>(
-      "inbox_save",
-      { work, origin: { kind: "database", label, query, url: work.landingUrl } },
-      workspaceId,
-    );
+    const out = viaCollection
+      ? await toInboxCollection(invoke, workspaceId, work, viaCollection)
+      : await invoke<{ state: "inbox" | "library"; itemId?: string; sourceId?: string; existed: boolean }>("inbox_save", { work, origin: { kind: "database", label, query, url: work.landingUrl } }, workspaceId).catch(async (error) => {
+          // A library without the Inbox module (older host): the Inbox collection instead.
+          if (!/inbox_save|unknown|not found|unsupported/i.test(String(error))) throw error;
+          viaCollection = await inboxCollection(invoke, workspaceId);
+          return toInboxCollection(invoke, workspaceId, work, viaCollection);
+        });
     states.push({ state: out.state, itemId: out.itemId, sourceId: out.sourceId });
     if (out.existed) existed++;
     else saved++;
   }
   return { saved, existed, states };
+}
+
+async function toInboxCollection(invoke: Invoke, workspaceId: string, work: DbRecord, collectionId: string) {
+  const known = await invoke<{ sourceId: string; certain: boolean }[]>("store_match_identifiers", { works: [{ key: work.key, doi: work.doi, title: work.title, year: work.year }] }, workspaceId).catch(() => []);
+  const existing = known.find((m) => m.certain);
+  if (existing) return { state: "library" as const, sourceId: existing.sourceId, existed: true };
+  const source = await invoke<{ id: string }>(
+    "store_create",
+    {
+      source: {
+        kind: "reference",
+        itemType: "article",
+        title: work.title,
+        ...(work.doi ? { doi: work.doi } : {}),
+        ...(work.year ? { year: work.year } : {}),
+        ...(work.venue ? { containerTitle: work.venue } : {}),
+        ...(work.landingUrl ? { url: work.landingUrl } : {}),
+        creators: work.authors.map((name) => ({ literal: name, role: "author" })),
+        collections: [collectionId],
+        indexStatus: "skipped",
+      },
+    },
+    workspaceId,
+  );
+  return { state: "inbox" as const, sourceId: source.id, existed: false };
 }
