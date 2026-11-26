@@ -204,6 +204,9 @@ impl Indexer {
     pub fn layout_model(&self) -> bool {
         self.layout_model.load(Ordering::SeqCst)
     }
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
     pub fn is_busy(&self) -> bool {
         self.busy.load(Ordering::SeqCst)
     }
@@ -425,6 +428,12 @@ impl Indexer {
                     self.busy.store(false, Ordering::SeqCst);
                     if let Ok(mut live) = self.live.lock() {
                         *live = Live::default();
+                    }
+                    // Idle: older PDFs are identified in the background, one at a time with
+                    // a pause between, so anything new or wanted goes first.
+                    if self.backfill_identify(pdf.as_ref()) {
+                        self.wait(BACKFILL_PAUSE);
+                        continue;
                     }
                 }
                 self.wait(Duration::from_secs(if in_flight.is_empty() { 60 } else { 2 }));
@@ -668,6 +677,46 @@ impl Indexer {
         Ok(false)
     }
 
+    /// The background pass over PDFs in the library from before they were identified on
+    /// arrival (or never matched): identifies one (as `identify` does for an added PDF) and
+    /// queues a background lookup by its DOI or titles, behind every other lookup. Answers
+    /// whether one was taken.
+    fn backfill_identify(&self, pdf: &dyn PdfText) -> bool {
+        let Ok(Some(id)) = self.store.next_backfill_identification() else { return false };
+        if let Err(error) = self.backfill_one(&id, pdf) {
+            eprintln!("Key identification backfill of {id}: {error}");
+        }
+        self.set_reading(None);
+        // Marked whatever happened, so a file that cannot be read is not taken again.
+        if self.store.source(&id).ok().flatten().is_some() {
+            let _ = self.store.mark_backfilled(&id);
+        }
+        true
+    }
+
+    fn backfill_one(&self, id: &str, pdf: &dyn PdfText) -> Result<()> {
+        let Some(source) = self.store.source(id)? else { return Ok(()) };
+        let Some(path) = source.file_path().filter(|p| p.is_file()) else { return Ok(()) };
+        let hash = file_hash(&path)?;
+        // Identified before and its identifier since removed: the user's edit stands.
+        if self.store.identification(id)?.is_some_and(|r| r.hash.as_deref() == Some(hash.as_str()) && (r.doi.is_some() || r.via.is_some())) {
+            return Ok(());
+        }
+        let job = Job { id: id.to_string(), title: source.title().to_string(), kind: source.kind.clone(), stage: "identifying".into(), ..Default::default() };
+        // Joined a reference: that one is indexed again and gets its own lookup.
+        if self.identify(&source, &path, &hash, pdf, &job)? {
+            return Ok(());
+        }
+        let Some(source) = self.store.source(id)? else { return Ok(()) };
+        let record = self.store.identification(id)?.unwrap_or_default();
+        let has_doi = source.field("doi").is_some_and(|d| !d.trim().is_empty());
+        let own_title = plausible_title(source.title(), record.placeholder.as_deref()).is_some();
+        if has_doi || !record.titles.is_empty() || own_title {
+            self.store.queue_backfill_lookup(id)?;
+        }
+        Ok(())
+    }
+
     /// The first heading layout analysis found on the first page is the best title to
     /// search for, when the PDF carried no DOI.
     fn identify_by_heading(&self, source: &Source, hash: &str, layout: &Layout) -> Result<()> {
@@ -783,6 +832,8 @@ fn abstract_chunk(source: &Source) -> Option<ChunkInput> {
 
 const FILE_PREFIX: &str = "file:";
 const LINKED_FILES_PER_ROUND: usize = 8;
+/// Between two older PDFs identified in the background (cut short by new work).
+const BACKFILL_PAUSE: Duration = Duration::from_secs(2);
 
 /// A linked file's passages: Markdown by blocks like a note, text as paragraphs, PDFs by page.
 fn linked_chunks(file: &LinkedFile, pdf: &dyn PdfText) -> Result<Vec<ChunkInput>> {
@@ -1012,5 +1063,56 @@ mod tests {
         store.update_source(&other.id, &patch).unwrap();
         indexer.prepare(&other.id, &paper).unwrap();
         assert_eq!(store.source(&other.id).unwrap().unwrap().field("enrichStatus"), None);
+    }
+
+    /// A PDF already in the library, indexed before identification existed.
+    fn older_pdf(store: &Store, dir: &Path, name: &str, fields: serde_json::Value) -> Source {
+        let path = dir.join(format!("{name}.pdf"));
+        std::fs::write(&path, format!("%PDF-1.7 {name}")).unwrap();
+        let mut input = serde_json::json!({"kind": "pdf", "title": name, "filePath": path, "indexStatus": "ready"});
+        input.as_object_mut().unwrap().extend(fields.as_object().unwrap().clone());
+        store.insert_source(serde_json::from_value(input).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn older_pdfs_are_identified_in_the_background_once_and_looked_up_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join(".key")).unwrap();
+        let indexer = idle(&store, dir.path());
+        let carries = Paper("Utility of a Deep-Learning Algorithm\nJAMA Cardiol. 2021;6(6):624-632. doi:10.1001/jamacardio.2021.0185", "End");
+        let jama = older_pdf(&store, dir.path(), "jama", serde_json::json!({}));
+        assert_eq!(store.backfill_status().unwrap(), key_store::BackfillStatus { identify: 1, lookup: 0 });
+        assert!(indexer.backfill_identify(&carries));
+        let s = store.source(&jama.id).unwrap().unwrap();
+        assert_eq!(s.field("doi"), Some("10.1001/jamacardio.2021.0185"));
+        assert_eq!(s.field("enrichStatus"), Some("backfill"), "behind every other lookup");
+        assert!(store.next_enrichment(true, &[]).unwrap().is_none());
+        assert_eq!(store.next_backfill_enrichment().unwrap().unwrap().id, jama.id);
+        assert_eq!(store.backfill_status().unwrap(), key_store::BackfillStatus { identify: 0, lookup: 1 });
+        assert!(!indexer.backfill_identify(&carries), "nothing else to do");
+
+        // Without a DOI: looked up by its title, even with authors of its own; tried once.
+        let paper = Paper("Synthetic Scientific Paper About Things\nPrior work established the first result", "References\n1. doi:10.1000/one");
+        let curated = older_pdf(&store, dir.path(), "curated", serde_json::json!({"title": "A curated title", "creators": [{"family": "Doe"}]}));
+        assert!(indexer.backfill_identify(&paper));
+        assert_eq!(store.source(&curated.id).unwrap().unwrap().field("enrichStatus"), Some("backfill"));
+        assert_eq!(store.source(&curated.id).unwrap().unwrap().title(), "A curated title");
+        store.enrichment_failed(&curated.id, "not_found", "none", None).unwrap();
+        assert!(!indexer.backfill_identify(&paper), "the version stamp stops a retry");
+
+        // A DOI the user removed from an identified PDF is not looked for again.
+        let mut patch = serde_json::Map::new();
+        patch.insert("doi".into(), serde_json::json!(""));
+        store.update_source(&jama.id, &patch).unwrap();
+        let mut record = store.identification(&jama.id).unwrap().unwrap();
+        record.backfill = None;
+        store.set_identification(&jama.id, &record).unwrap();
+        assert!(indexer.backfill_identify(&carries));
+        let s = store.source(&jama.id).unwrap().unwrap();
+        assert_eq!((s.field("doi"), s.field("enrichStatus")), (None, None));
+
+        // Paused, the indexer's loop takes none (the loop checks before it gets here).
+        indexer.set_paused(true);
+        assert!(indexer.is_paused());
     }
 }
