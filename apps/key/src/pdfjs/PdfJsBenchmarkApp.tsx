@@ -71,6 +71,8 @@ import {
 import { quoteZoom, zoomTransitionFrame } from './quote-zoom';
 import { locateQuote } from './quote-locate';
 import { CitationCardBody, ExternalWorkCardBody } from './CitationCard';
+import { ReferenceList } from './ReferenceList';
+import { SidePanel } from '../ui/SidePanel';
 import {
   HoverCardBridge,
   anchoredFloatingCardPosition,
@@ -1645,6 +1647,8 @@ export interface PdfReaderHandle {
   closeSearch(): void;
   togglePanel(panel: PdfReaderPanel): void;
   closePanel(): void;
+  /** Scrolls `page` into view with `top` (a fraction down it) at the top. */
+  goTo(page: number, top?: number): void;
 }
 
 const PdfJsBenchmarkApp = forwardRef<PdfReaderHandle, PdfJsBenchmarkAppProps>(
@@ -2124,7 +2128,7 @@ function PdfJsBenchmarkApp({
       return;
     }
     const panel = scrollRef.current?.parentElement?.querySelector<HTMLElement>(
-      '.key-panel-shell',
+      '.key-panel-shell, .key-side-panel',
     );
     if (!panel) {
       controller?.setPanelInset(0);
@@ -2880,6 +2884,8 @@ function PdfJsBenchmarkApp({
       togglePanel: panel =>
         setActivePanel(current => (current === panel ? null : panel)),
       closePanel: () => setActivePanel(null),
+      goTo: (page, top = 0) =>
+        controllerRef.current?.scrollToBounds(page, { left: 0, right: 0, top, bottom: top }),
     }),
     [
       activateSearch,
@@ -3424,53 +3430,39 @@ function PdfJsBenchmarkApp({
         </PanelShell>
       )}
       {activePanel === 'references' && (
-        <PanelShell
-          title="Paper references"
-          detail={
-            libraryReferences?.length
-              ? `${libraryReferences.length} references`
-              : analysis
-                ? `${analysis.references.length} references · processed in ${Math.round(analysis.processingMs)} ms`
-                : libraryReferences
-                  ? 'From your library'
-                  : 'Analysing paper structure…'
+        <SidePanel
+          label="References"
+          className="pdfjs-side-panel"
+          storageKey="key.reader.side-panel"
+          resizable={{ min: 260, max: 560, initial: 340 }}
+          sections={[
+            {
+              id: 'references',
+              title: 'References',
+              badge: (libraryReferences?.length || analysis?.references.length) || undefined,
+              render: () => (
+                <ReferenceList
+                  header={referencesHeader}
+                  references={libraryReferences?.length ? libraryReferences : analysis?.references ?? libraryReferences}
+                  aside={referenceAside}
+                  onSelect={reference =>
+                    controllerRef.current?.scrollToBounds(reference.page, {
+                      left: reference.xFraction ?? 0,
+                      right: reference.xFraction ?? 0,
+                      top: reference.yFraction ?? 0,
+                      bottom: reference.yFraction ?? 0,
+                    })
+                  }
+                />
+              ),
+            },
+          ]}
+          actions={
+            <button type="button" aria-label="Close references" title="Close" onClick={() => setActivePanel(null)}>
+              <Icon name="close" />
+            </button>
           }
-          icon="highlight"
-          onClose={() => setActivePanel(null)}
-          className="pdfjs-reader-panel references"
-        >
-          {referencesHeader}
-          {(libraryReferences?.length ? libraryReferences : analysis?.references)?.length ? (
-            <div className="pdfjs-reference-list">
-              {(libraryReferences?.length ? libraryReferences : analysis!.references).map(reference => (
-                <div className="pdfjs-reference-item" key={`${reference.number}-${reference.page}`}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      controllerRef.current?.scrollToBounds(reference.page, {
-                        left: reference.xFraction ?? 0,
-                        right: reference.xFraction ?? 0,
-                        top: reference.yFraction ?? 0,
-                        bottom: reference.yFraction ?? 0,
-                      })
-                    }
-                  >
-                    <strong>[{reference.number}]</strong>
-                    <p>{reference.text}</p>
-                    <small>Page {reference.page + 1}</small>
-                  </button>
-                  {referenceAside?.(reference)}
-                </div>
-              ))}
-            </div>
-          ) : (analysis || libraryReferences) && (
-            <EmptyState
-              icon="highlight"
-              title="No references detected"
-              detail="No reliable reference list was found in this PDF."
-            />
-          )}
-        </PanelShell>
+        />
       )}
       {externalCitationExpanded &&
         externalCitation &&

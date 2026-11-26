@@ -94,11 +94,11 @@ type OwnedView = {
   /** The title of the page a browser tab was opened from. */
   referrer?: string;
   /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library. */
-  temp?: { url: string; hash: string };
+  temp?: { url: string; hash: string; referrer?: string };
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
   libraryNotice?: "added" | "exists";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
-  panel?: { viewId: string; ratio: number; focused?: boolean };
+  panel?: { viewId: string; ratio: number; focused?: boolean; tab?: PanelTab };
   /** The panel's share when it was last open, so it comes back the same size. */
   panelRatio?: number;
   /** A Home tab opened by Split Right: what it opens takes its place. */
@@ -172,6 +172,9 @@ function liveShells() {
 function shellBySender(sender: number) {
   return liveShells().find((w) => w.window.webContents.id === sender);
 }
+/** What a reader's panel shows: the source's details and note, or the PDF's references. */
+type PanelTab = "details" | "references";
+const panelTab = (value: unknown): PanelTab | undefined => (value === "details" || value === "references" ? value : undefined);
 /** The reader whose panel shows `viewId`, if it is a docked panel. */
 function panelHost(viewId: string) {
   for (const v of views.values()) if (v.panel?.viewId === viewId) return v;
@@ -451,7 +454,7 @@ function snapshot(w: ShellWindow) {
           pinned: Boolean(t.pinned),
           title: view.title,
           views: [view],
-          ...(panel && views.has(panel.viewId) ? { panel: { ...viewSummary(panel.viewId), ratio: panel.ratio } } : {}),
+          ...(panel && views.has(panel.viewId) ? { panel: { ...viewSummary(panel.viewId), ratio: panel.ratio, tab: panel.tab ?? "details" } } : {}),
         };
       }),
     ),
@@ -657,7 +660,7 @@ async function tempPdfView(entry: TempPdf): Promise<OwnedView> {
     title: entry.title || info.title,
     workspaceId,
     source: info,
-    temp: { url: entry.url, hash: entry.hash },
+    temp: { url: entry.url, hash: entry.hash, referrer: (entry as { referrer?: string }).referrer },
     lastUsed: Date.now(),
   };
 }
@@ -1027,7 +1030,8 @@ function dockPanel(pdf: OwnedView, page: OwnedView) {
     }
     pdf.panel = { viewId: page.id, ratio: pdf.panelRatio ?? PANEL_RATIO };
   }
-  pdf.view?.webContents.send("reader-notes", true);
+  pdf.panel.tab = "details";
+  pdf.view?.webContents.send("reader-notes", "details");
   focus(pdf.id);
 }
 /** Hides a reader's panel; its page is let go (the note saves as it is written). */
@@ -2465,11 +2469,20 @@ else
       });
       // The reader's "Details & notes" button: show or hide the source's page as the panel
       // beside the PDF, in the same tab. A page open as a tab of its own comes back into it.
-      ipcMain.handle("key:reader-notes", async (event) => {
+      // With a tab ("details", "references") it shows that one, and hides the panel when it
+      // shows that already. Resolves to what the panel shows then, or false.
+      ipcMain.handle("key:reader-notes", async (event, wanted?: unknown) => {
         const v = bound(event.sender.id);
         if (v?.kind !== "pdf" || !v.workspaceId) throw Error("Not a PDF reader");
         if (v.temp) throw Error("Add this PDF to your library first");
         const w = shellOfView(v.id) ?? focusedShell();
+        const tab = panelTab(wanted);
+        if (v.panel && tab && (v.panel.tab ?? "details") !== tab) {
+          v.panel.tab = tab;
+          v.view?.webContents.send("reader-notes", tab);
+          tabsChanged(w);
+          return tab;
+        }
         if (v.panel) {
           closePanel(v);
           layout(w);
@@ -2486,7 +2499,14 @@ else
           read: true,
           pdf: { documentHash: hash, documentId: hash, title: v.title, workspaceId: v.workspaceId },
         });
-        return true;
+        // Docking the page (just now) set it on the details.
+        const docked = (v as OwnedView).panel;
+        if (docked && tab && tab !== "details") {
+          docked.tab = tab;
+          v.view?.webContents.send("reader-notes", tab);
+          tabsChanged(w);
+        }
+        return docked?.tab ?? false;
       });
       // "Add to note" on a PDF selection: the passage waits here until the source's page
       // (opened beside the PDF when needed) takes it, appends it and scrolls to it.
@@ -2609,9 +2629,10 @@ else
               .catch(() => false)
           : false;
         return {
-          web: v.temp ? { url: v.temp.url, host: hostLabel(v.temp.url), inLibrary } : notice ? { notice } : undefined,
+          web: v.temp ? { url: v.temp.url, host: hostLabel(v.temp.url), referrer: v.temp.referrer, inLibrary } : notice ? { notice } : undefined,
           focus,
           notesOpen: !!v.panel,
+          panelTab: v.panel ? (v.panel.tab ?? "details") : undefined,
           source: v.source,
           workspaceId: v.workspaceId,
           viewState: v.viewState,
@@ -2639,7 +2660,20 @@ else
       });
       ipcMain.handle("key:reader-open-page", (event) => {
         const v = bound(event.sender.id);
-        if (v?.temp) openLink(v.temp.url, shellOfView(v.id));
+        if (!v?.temp) return;
+        // The page that led to the PDF (the browser records it), else the site it is on; not
+        // the PDF again, which would only download it once more.
+        let page = v.temp.referrer;
+        if (!page)
+          try {
+            page = new URL(v.temp.url).origin + "/";
+          } catch {
+            page = v.temp.url;
+          }
+        const w = shellOfView(v.id);
+        const open = [...views.values()].find((x) => x.kind === "web" && x.web?.url === page && w && shellOfView(x.id) === w);
+        if (open) focus(open.id);
+        else openLink(page, w);
       });
       ipcMain.handle("key:clear-browsing-data", async (event) => {
         shell(event.sender.id);
@@ -2860,6 +2894,16 @@ else
             if (pdf) popOutPanel(w, pdf);
             return snapshot(w);
           }
+          case "panel-tab": {
+            const pdf = views.get(tabViewId(String(p.viewId)));
+            const tab = panelTab(p.tab);
+            if (pdf?.panel && tab) {
+              pdf.panel.tab = tab;
+              pdf.view?.webContents.send("reader-notes", tab);
+            }
+            tabsChanged(w);
+            return snapshot(w);
+          }
           case "panel-close": {
             const pdf = views.get(tabViewId(String(p.viewId)));
             if (pdf) closePanel(pdf);
@@ -2900,6 +2944,7 @@ else
             if (v?.kind !== "pdf") throw Error("The PDF is not open");
             const target = {
               page: typeof p.page === "number" ? p.page : undefined,
+              top: typeof p.top === "number" && Number.isFinite(p.top) ? p.top : undefined,
               annotationId: p.annotationId ? String(p.annotationId) : undefined,
               text: typeof p.text === "string" && p.text.trim() ? p.text.slice(0, 4000) : undefined,
             };

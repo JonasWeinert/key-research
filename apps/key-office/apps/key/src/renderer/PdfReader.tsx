@@ -3,7 +3,6 @@ import PdfJsBenchmarkApp, {
   type PdfJsViewState,
   type PdfReaderChromeState,
   type PdfReaderHandle,
-  type PdfReaderPanel,
   type PdfReaderRail,
 } from "@key-reader/pdfjs/PdfJsBenchmarkApp";
 import {
@@ -15,7 +14,7 @@ import "./pdf-reader.css";
 import "./pdf-ui-adapter.css";
 import { Icon } from "./icons";
 import { PdfRail } from "./PdfRail";
-import { classifyLookupError } from "@key-reader/pdfjs/remote-retry";
+import { AnalysisStatus, working, type AnalysisReport } from "./reader-analysis";
 import { writeQuoteClipboard } from "./quote-clipboard";
 import { useFloatingChrome } from "./reader-chrome";
 import { WebPdfControl, type WebPdfInfo } from "./WebPdfControl";
@@ -28,12 +27,17 @@ type Target = {
   rects: number[][];
   targetText: string;
 };
-type Focus = { page?: number; annotationId?: string; text?: string };
+type Focus = { page?: number; top?: number; annotationId?: string; text?: string };
+/** What the panel beside the PDF shows, or false while it is closed. */
+type PanelTab = false | "details" | "references";
+const asPanelTab = (value: unknown): PanelTab => (value === "references" ? "references" : value ? "details" : false);
+type StatusItem = { id: string; label: string; icon?: string; active?: boolean; title?: string };
 interface Ready {
   source: ManagedSource;
   workspaceId?: string;
   focus?: Focus;
   notesOpen?: boolean;
+  panelTab?: "details" | "references";
   viewState?: PdfJsViewState;
   searchTarget?: Target;
   searchNavigation?: Navigation;
@@ -47,7 +51,10 @@ interface ReaderBridge {
   on(event: string, listener: (payload: unknown) => void): () => void;
   readerBack?(): void;
   readerDismiss?(): Promise<void>;
-  readerNotes?(): Promise<boolean>;
+  readerNotes?(tab?: "details" | "references"): Promise<string | boolean>;
+  /** The window's status bar (when the shell has one): items this view contributes, and presses on them. */
+  setStatusItems?(items: StatusItem[]): void;
+  onStatusItem?(listener: (id: string) => void): () => void;
   readerAddToNote?(passage: { text: string; page: number; color?: string }): Promise<void>;
   invoke?<T>(command: string, args?: unknown): Promise<T>;
   readerAnalysis?(): Promise<AnalysisReport | null>;
@@ -56,82 +63,6 @@ interface ReaderBridge {
   readerResult?(direction: number): Promise<void>;
 }
 const bridge = () => (window as unknown as { key: ReaderBridge }).key;
-
-/** What the library knows about this PDF's analysis (key-store). */
-interface AnalysisReport {
-  analysis: {
-    engine: string;
-    analyzedAt: number;
-    referencesStatus: string;
-    referencesError?: string | null;
-    referencesTotal: number;
-    referencesDone: number;
-    referencesMatched: number;
-  } | null;
-  references: {
-    number?: number | null;
-    page?: number | null;
-    rects?: number[][];
-    text: string;
-    metadata?: { title?: string; year?: number | string; authors?: string[]; doi?: string } | null;
-    matchedSourceId?: string | null;
-  }[];
-  layoutModel: boolean;
-  indexStatus?: string | null;
-  /** Headings layout analysis found: the rail's chapters when the PDF has no outline. */
-  sections?: { title: string; page: number; top: number }[];
-}
-const ENGINES: Record<string, string> = {
-  "layout-onnx": "Layout analysis with the layout model",
-  layout: "Layout analysis",
-  pdfium: "Plain PDF text",
-};
-const working = (report: AnalysisReport | null | undefined) =>
-  !!report &&
-  (["pending", "indexing"].includes(report.indexStatus ?? "") ||
-    ["pending", "detecting", "resolving"].includes(report.analysis?.referencesStatus ?? ""));
-
-/** How far analysis has got, and a way to run it again. */
-function AnalysisStatus({ report, onRerun }: { report: AnalysisReport | null | undefined; onRerun: () => void }) {
-  if (report === undefined) return null;
-  const a = report?.analysis;
-  const indexing = ["pending", "indexing"].includes(report?.indexStatus ?? "");
-  let line: string;
-  let progress: number | undefined;
-  if (!report) line = "This PDF is not in a library, so it is analysed only while open.";
-  else if (indexing) line = report.layoutModel ? "Analysing the layout of this PDF…" : "Reading this PDF…";
-  else if (!a) line = "Not analysed with the current method yet.";
-  else if (a.referencesStatus === "detecting" || a.referencesStatus === "pending") line = "Finding references…";
-  else if (a.referencesStatus === "resolving") {
-    line = `Looking up references · ${a.referencesDone} of ${a.referencesTotal}`;
-    progress = a.referencesTotal ? a.referencesDone / a.referencesTotal : 0;
-  } else if (a.referencesStatus === "none") line = "No reference list found.";
-  else if (a.referencesStatus === "failed")
-    // Rate limits and outages pass: say so quietly rather than show the provider's error.
-    line =
-      classifyLookupError(a.referencesError ?? "") === "transient"
-        ? "Reference lookup paused: the scholarly indexes are busy. Re-run to try again."
-        : `Reference lookup failed: ${a.referencesError ?? "unknown error"}`;
-  else line = `${a.referencesTotal} references looked up${a.referencesMatched ? ` · ${a.referencesMatched} in your library` : ""}`;
-  return (
-    <div className="key-pdf-analysis" role="status" data-working={working(report) || undefined}>
-      <div>
-        <span>{line}</span>
-        {a && !indexing && <small>{ENGINES[a.engine] ?? a.engine} · {new Date(a.analyzedAt).toLocaleDateString()}</small>}
-      </div>
-      {report && !indexing && (
-        <button type="button" onClick={onRerun} title="Read this PDF again and look up its references">
-          {a ? "Re-run" : "Analyse"}
-        </button>
-      )}
-      {progress !== undefined && (
-        <span className="key-pdf-analysis-bar" aria-hidden="true">
-          <i style={{ width: `${Math.round(progress * 100)}%` }} />
-        </span>
-      )}
-    </div>
-  );
-}
 
 /** Where a quote copied with Cite is from: the library's record of this PDF. */
 interface CiteSource {
@@ -158,7 +89,7 @@ export default function PdfReader() {
   const [page, setPage] = useState(1);
   const [showSearch, setShowSearch] = useState(false);
   const [query, setQuery] = useState("");
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [panelTab, setPanelTab] = useState<PanelTab>(false);
   const [notice, setNotice] = useState("");
   const [report, setReport] = useState<AnalysisReport | null>();
   // The outline lives on the rail (or, without one, the headings analysis found); its full
@@ -170,10 +101,13 @@ export default function PdfReader() {
   const [focus, setFocus] = useState<Focus>();
   useEffect(() => bridge().on("reader-focus", (payload) => setFocus({ ...(payload as Focus) })), []);
   // The panel also opens and closes from the shell (its own buttons, Add to note).
-  useEffect(() => bridge().on("reader-notes", (open) => setNotesOpen(Boolean(open))), []);
+  useEffect(() => bridge().on("reader-notes", (open) => setPanelTab(asPanelTab(open))), []);
   useEffect(() => {
     if (!focus || !chrome?.ready) return;
-    const go = () => reader.current?.focusAnnotation(focus.annotationId, focus.page, focus.text);
+    const go = () =>
+      focus.top !== undefined && focus.page !== undefined && !focus.annotationId && !focus.text
+        ? reader.current?.goTo(focus.page, focus.top)
+        : reader.current?.focusAnnotation(focus.annotationId, focus.page, focus.text);
     go();
     setTimeout(go, 700);
     setFocus(undefined);
@@ -277,7 +211,7 @@ export default function PdfReader() {
         );
         registerManagedSource(file, initial.source);
         setDocument({ file, initial });
-        setNotesOpen(!!initial.notesOpen);
+        setPanelTab(initial.panelTab ?? (initial.notesOpen ? "details" : false));
         if (initial.focus) setFocus(initial.focus);
         setTarget((current) => current ?? initial.searchTarget);
         if (initial.searchNavigation) setNavigation(initial.searchNavigation);
@@ -299,7 +233,43 @@ export default function PdfReader() {
     setPage(state.pageIndex + 1);
     bridge().readerState(state);
   }, []);
-  const panel = (name: PdfReaderPanel) => reader.current?.togglePanel(name);
+  // A library PDF's details and references share the panel beside it (the shell's); a PDF
+  // from the web has only references, in the reader's own panel.
+  const docks = !!bridge().readerNotes && !!document && !(document.initial.web && "url" in document.initial.web);
+  const showPanel = useCallback(
+    (tab: "details" | "references") => {
+      if (!docks) {
+        if (tab === "references") reader.current?.togglePanel("references");
+        return;
+      }
+      void bridge()
+        .readerNotes?.(tab)
+        .then((open) => setPanelTab(asPanelTab(open)))
+        .catch((e) => {
+          setNotice(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ""));
+          setTimeout(() => setNotice(""), 4000);
+        });
+    },
+    [docks],
+  );
+  // The status bar's switch between the two (when the shell has a status bar).
+  const showPanelRef = useRef(showPanel);
+  showPanelRef.current = showPanel;
+  const referencesShown = docks ? panelTab === "references" : chrome?.activePanel === "references";
+  useEffect(() => {
+    if (!document) return;
+    bridge().setStatusItems?.([
+      ...(docks ? [{ id: "details", label: "Details", icon: "panelRight", active: panelTab === "details", title: "Show or hide this source’s details and note" }] : []),
+      { id: "references", label: "References", icon: "book", active: referencesShown, title: "Show or hide the references cited in this PDF" },
+    ]);
+  }, [document, docks, panelTab, referencesShown]);
+  useEffect(
+    () =>
+      bridge().onStatusItem?.((id) => {
+        if (id === "details" || id === "references") showPanelRef.current(id);
+      }),
+    [],
+  );
   const navigate = async (direction: number) => {
     setNavigating(true);
     setNavigationError("");
@@ -378,19 +348,19 @@ export default function PdfReader() {
                 className="key-pdf-tool key-pdf-tool-label"
                 aria-label="References"
                 title="References cited in this PDF"
-                aria-pressed={chrome?.activePanel === "references"}
-                onClick={() => panel("references")}
+                aria-pressed={referencesShown}
+                onClick={() => showPanel("references")}
               >
                 <Icon name="book" />
                 {chrome?.referenceCount ? <span className="key-pdf-count">{chrome.referenceCount}</span> : null}
               </button>
-              {bridge().readerNotes && !(document.initial.web && "url" in document.initial.web) && (
+              {docks && (
                 <button
                   className="key-pdf-tool"
                   aria-label="Details & notes"
-                  aria-pressed={notesOpen}
+                  aria-pressed={panelTab === "details"}
                   title="Show or hide this source’s details and note beside the PDF"
-                  onClick={() => void bridge().readerNotes?.().then((open) => setNotesOpen(open))}
+                  onClick={() => showPanel("details")}
                 >
                   <Icon name="panelRight" />
                 </button>
@@ -557,7 +527,7 @@ export default function PdfReader() {
               ? (passage) =>
                   void bridge()
                     .readerAddToNote?.(passage)
-                    .then(() => setNotesOpen(true))
+                    .then(() => setPanelTab("details"))
                     .catch((e) => {
                       setNotice(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ""));
                       setTimeout(() => setNotice(""), 4000);
