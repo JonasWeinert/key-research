@@ -14,6 +14,7 @@ import { bridge, type Invoke, type MapKind, type MapNode, type RelationMapData }
 import { RelationMapLegend, Shape } from "./relation-map-legend";
 import { MAP_LABEL, MAP_ORDER, arc, labelAnchor, layoutMap, nodeKey, truncate, type PlacedNode } from "./relation-map-layout";
 import "./relation-map.css";
+import { Explain, FirstUseTip } from "./explain";
 
 export interface MapCenter {
   kind: MapKind;
@@ -272,6 +273,8 @@ export default function RelationMap({
       {variant !== "paper" && data && (
         <div className="kx-map-bar">
           <RelationMapLegend kinds={legendKinds} counts={counts} more={data.more} selected={active} onSelect={select} onHover={setHoverKind} />
+          <Explain help="relations.map" />
+          <FirstUseTip help="tip.map-legend" anchor=".kx-map-bar" when={legendKinds.length > 1} />
           {maxCount > 1 && (
             <label className="kx-map-strength" title="Only what shares at least this many sources">
               <span>At least</span>
@@ -314,7 +317,7 @@ export default function RelationMap({
             </button>
           )}
         {data === null && <p className="kx-map-empty">This is no longer in the library.</p>}
-        {data && !data.nodes.length && <p className="kx-map-empty">Nothing in the library relates to it yet. Topics, people and journals appear as sources are looked up.</p>}
+        {data && !data.nodes.length && <p className="kx-map-empty">Nothing in the library relates to it yet. Topics, people and journals appear as sources are looked up in OpenAlex; tags and collections as you add them.</p>}
         {layout && data && !!data.nodes.length && (
           <svg className="kx-map-svg" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} role="group" aria-label={`How ${data.center.name} relates to the rest of the library`} data-hovering={hover || hoverKind ? "" : undefined}>
             <g className="kx-map-spokes">

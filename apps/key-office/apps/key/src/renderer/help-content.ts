@@ -81,7 +81,7 @@ export const HELP = {
     "Finding PDFs automatically",
     [
       "When you add a reference that has no PDF, Key looks for a free, legal copy (open access) and attaches it if one exists.",
-      "It looks in Unpaywall, OpenAlex, arXiv, PubMed Central and the publisher’s page. Nothing is downloaded from paid sites unless your library gives you access.",
+      "It looks in OpenAlex, Unpaywall, arXiv and PubMed Central, quietly in the background. When none is found, the source says so and Find PDF on its page can open the publisher’s site for you.",
     ],
     { privacy: "Only the work’s DOI or title is sent to these services." },
   ),
@@ -371,21 +371,22 @@ export const HELP = {
   "import.formats": explain(
     "Import formats",
     [
-      "BibTeX (.bib): the LaTeX format, from Google Scholar, Overleaf or JabRef. RIS (.ris): from EndNote, Mendeley, Web of Science and most publishers. CSL JSON: from Zotero and Pandoc. Also EndNote XML, PubMed (.nbib) and plain lists of DOIs.",
-      "Key reads the references and adds them as sources. Linked PDFs come along when the file names them.",
+      "BibTeX or BibLaTeX (.bib): the LaTeX format, from Google Scholar, Overleaf or JabRef. RIS (.ris): from EndNote, Mendeley, Web of Science and most publishers. CSL-JSON: from Zotero and Pandoc. EndNote XML from EndNote. CSV or TSV: a spreadsheet with a column per field.",
+      "Key reads the references and adds them as sources. Attached files come along when the file names them and they are on this Mac. Fields Key has no place for are kept as properties.",
     ],
   ),
   "import.duplicates": explain(
     "Duplicates",
     [
       "A reference that is already in your library (the same DOI, or the same title, year and first author) is a duplicate.",
-      "Skip leaves your copy as it is. Update fills in what your copy is missing from the file. Add anyway keeps both, and you can merge them later.",
+      "Skip leaves your copy as it is. Merge fills your copy’s empty fields from the file and adds its tags and notes. Import anyway keeps both, and you can merge them later.",
     ],
   ),
   "export.formats": explain(
     "Export formats",
     [
-      "BibTeX and BibLaTeX for LaTeX and Overleaf. RIS for EndNote, Mendeley and most reference managers. CSL JSON for Zotero and Pandoc. CSV for a spreadsheet. A formatted bibliography in your citation style for a document.",
+      "BibTeX and BibLaTeX for LaTeX and Overleaf. RIS for EndNote, Mendeley and most reference managers. CSL-JSON for Zotero and Pandoc. CSV for a spreadsheet.",
+      "Keep exported rewrites the file whenever your library changes, so a LaTeX or Pandoc project always has the latest references. For a formatted reference list, use Copy bibliography instead.",
     ],
   ),
   "duplicates.what": explain(
@@ -412,7 +413,8 @@ export const HELP = {
   "findpdf.where": explain(
     "Where Find PDF looks",
     [
-      "Key looks for a free, legal copy of the PDF in Unpaywall, OpenAlex, arXiv, PubMed Central and repositories. If none is found, it opens the publisher’s page, through your library proxy if you have one, and attaches the PDF you open there.",
+      "Key looks for a free, legal (open-access) copy: the link the source already has, then OpenAlex, Unpaywall, arXiv and PubMed Central. It checks that what it gets really is a PDF and attaches it.",
+      "If none is found, it opens the publisher’s page in Key’s browser, through your library proxy when one covers the site. A PDF you open there is attached to the same source.",
     ],
     { privacy: "Only the work’s DOI or title is sent." },
   ),
@@ -430,8 +432,8 @@ export const HELP = {
   "relations.map": explain(
     "Reading the relation map",
     [
-      "Each dot is a work; the larger it is, the more often it is cited. Lines show how works connect: one cites another, they share authors, or they are often cited together.",
-      "Works in your library are filled; others are outlined. Click a kind in the legend to show only those connections, and click a dot to open the work.",
+      "The map puts one thing in the middle, such as a source, a person or a topic, and around it what it shares sources with in your library: topics, fields, people, journals, tags and collections. Each kind has its own colour, shape and sector.",
+      "The nearer and larger a node, the more sources they share. Click a kind in the legend to show only that kind, hover a node to see what goes with it, and click it to search, open it or centre the map there.",
     ],
   ),
   "library.organise": explain(
@@ -451,9 +453,10 @@ export const HELP = {
   ),
 
   // ── Empty states: library and reader ────────────────────────────────────────────────
-  "empty.library": empty("No sources yet", "Sources are the papers, books, web pages and files you collect and read.", "Drop PDFs here, import from Zotero or a reference file, or search the web for works."),
+  "empty.library": empty("No sources yet", "Sources are the papers, books, web pages, videos and files you collect, read and cite.", "Drop files here, or use the Add menu to import from Zotero or a reference file, or search the web."),
   "empty.results": empty("No matches", "Nothing in this view matches your search or filters.", "Try fewer words, clear a filter, or search the web for works you do not have."),
-  "empty.collection": empty("This collection is empty", "A collection groups sources, for example for one project or chapter.", "Drag sources here from the library, or choose Add to collection on a source."),
+  "empty.scope": empty("Nothing here yet", "This view gathers sources by how you marked them, such as starred, to read or recently read.", "Sources appear here as you mark or read them."),
+  "empty.collection": empty("This collection is empty", "A collection groups sources, for example for one project or chapter. A source can be in several.", "Drag sources onto the collection in the sidebar, or add files straight into it."),
   "empty.notes": empty("No notes yet", "Notes are your own writing: summaries, ideas and drafts, linked to the sources they cite.", "Create a note, or take one from a highlight in a PDF."),
   "empty.highlights": empty("No highlights yet", "Highlights and comments you make in PDFs and web pages collect here.", "Open a PDF, select text and choose a colour."),
   "empty.trash": empty("Trash is empty", "Sources, notes and collections you delete wait here before they are gone for good.", "Nothing to do. Items in the Trash can be put back."),
@@ -479,7 +482,7 @@ export const HELP = {
   "tip.citation-hover": tip("Look up a citation", "Hover over a citation like [12] or (Smith, 2020) in a PDF to see the work it points to, and add it with one click."),
   "tip.note-cite": tip("Cite in notes", "Type @ in a note and start typing a title or author to cite a source from your library."),
   "tip.split-tabs": tip("Read side by side", "Drag a tab to the left or right edge of the window to show two things side by side."),
-  "tip.map-legend": tip("Filter the map", "Click a kind in the legend to show only those connections. Click again to show all."),
+  "tip.map-legend": tip("Filter the map", "Click a kind in the legend, such as People or Topics, to show only that kind. Click it again to show all."),
   "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss."),
   "tip.tag-suggestions": tip("Tidy your tags", "Key suggests merging duplicates and nesting related tags. Nothing changes until you apply one."),
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),

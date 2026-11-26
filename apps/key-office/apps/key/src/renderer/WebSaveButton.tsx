@@ -60,7 +60,7 @@ export function WebSaveButton({ viewId, url, loading, doi }: { viewId: string; u
       </button>
     );
   return (
-    <button type="button" className="key-web-save" title="Save this page to your library, readable offline (⌘D)" disabled={busy || loading} aria-busy={busy || undefined} onClick={() => void save()}>
+    <button type="button" className="key-web-save" title="Save a copy of this page itself to your library, to read, highlight and cite even if it changes or goes away (⌘D)" disabled={busy || loading} aria-busy={busy || undefined} onClick={() => void save()}>
       <Icon name="bookmark" size={12} />
       <span>{busy ? "Saving…" : "Save to library"}</span>
     </button>

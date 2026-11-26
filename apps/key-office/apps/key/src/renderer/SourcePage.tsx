@@ -32,6 +32,7 @@ import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZo
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
 import MetadataUpdateSheet from "./MetadataUpdateSheet";
 import { RetractionNotice, VersionsLine } from "./source-notices";
+import { Explain, FirstUseTip } from "./explain";
 
 interface Highlight {
   id: string;
@@ -769,10 +770,12 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         {!source.filePath && canFindPdf && (
           <div className="kx-find-pdf" role="group" aria-label="PDF" data-busy={finding === "busy" || undefined}>
             {finding === "busy" ? <span className="kx-search-spinner" aria-hidden="true" /> : <Icon name="filePdf" size={14} />}
-            <span role="status">{finding === "busy" ? "Looking for an open-access PDF…" : finding || "No PDF yet."}</span>
-            <button className="kx-page-action" disabled={finding === "busy"} onClick={() => void findPdf()}>
+            <span role="status">{finding === "busy" ? "Looking for a free, legal (open-access) PDF…" : finding || "No PDF yet."}</span>
+            <Explain help="findpdf.where" />
+            <button className="kx-page-action kx-find-pdf-button" disabled={finding === "busy"} onClick={() => void findPdf()}>
               <Icon name="search" size={12} /> Find PDF
             </button>
+            <FirstUseTip help="tip.find-pdf" anchor=".kx-find-pdf-button" />
           </div>
         )}
         {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (

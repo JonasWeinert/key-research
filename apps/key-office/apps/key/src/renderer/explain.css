@@ -349,3 +349,20 @@
 .kx-feeds-opml {
   align-items: center;
 }
+
+.kx-form-section > h3,
+.kx-zotero-scope-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kx-tm-title h1 {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kx-onboarding-explain {
+  margin: -4px 0 12px;
+}

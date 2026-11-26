@@ -16,6 +16,8 @@ import type { Invoke } from "./library-api";
 import { fold, plural, type PropertyInfo, type Suggestion, type SuggestionKind, type TagIndex } from "./tag-analysis";
 import { ancestors, applyLocally, buildTree, planChange, sortTree, visibleRows, type ApplyResult, type ManagerPlan, type PlannedChange, type TagNode, type TagSort, type TagTree } from "./tag-plan";
 import "./tag-manager.css";
+import { Explain, FirstUseTip } from "./explain";
+
 
 /** A tag operation's entry in the library's operations journal (the History tab shows those). */
 interface HistoryEntry {
@@ -355,7 +357,9 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
       <div className="kx-tag-manager" role="dialog" aria-label="Manage tags" onKeyDown={onKey}>
         <header className="kx-tm-head">
           <div className="kx-tm-title">
-            <h1>Tags</h1>
+            <h1>
+              Tags <Explain help="tags.suggestions" />
+            </h1>
             <small>{index ? `${plural(total, "tag")} on ${plural(index.items.length, "item")}` : "Reading tags…"}</small>
           </div>
           <label className="kx-tm-search">
@@ -532,6 +536,7 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
                     History {history.length > 0 && <span className="kx-tm-badge">{history.length}</span>}
                   </button>
                 </div>
+                <FirstUseTip help="tip.tag-suggestions" anchor='.kx-tm-tabs [role="tab"]' when={!!suggestions && groups.length > 0} />
                 <div className="kx-tm-side-scroll">
                   {panel.mode === "history" ? (
                     <History history={history} undoable={undoable} busy={busy} onUndo={() => void undo()} />
