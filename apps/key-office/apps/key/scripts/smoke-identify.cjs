@@ -188,6 +188,17 @@ const fixtures = path.resolve(__dirname, "../../../../../tests/fixtures");
     await page.locator(".kx-row", { hasText: "Big data, medicines safety and pharmacovigilance" }).first().waitFor({ timeout: 12000 });
     await page.locator(".kx-row", { hasText: "Deep learning of HIV field-based rapid tests" }).first().waitFor({ timeout: 12000 });
 
+    // Fields edited by hand survive a new lookup; "Update metadata…" lists them unticked.
+    await call("store_update", { id: jama.id, patch: { title: "My own JAMA title", volume: "" }, byHand: true });
+    await call("store_enrich", { ids: [jama.id] });
+    s = await until(jama.id, (x) => x.enrichStatus === "done", "the second lookup");
+    assert.equal(s.title, "My own JAMA title");
+    assert.equal(s.volume, undefined);
+    assert.ok(s.editedFields.includes("title"));
+    const proposal = (await call("store_refresh_metadata", { ids: [jama.id] }))[0];
+    const titleChange = proposal.changes.find((c) => c.field === "title");
+    assert.ok(titleChange && titleChange.edited && !titleChange.selected, "a hand-edited title is proposed, not ticked");
+
     // The source page says how it was identified.
     await page.evaluate(({ workspaceId, sourceId }) => window.key.tabAction("open-source-page", { workspaceId, sourceId, title: "JAMA", read: false }), { workspaceId: ws.id, sourceId: jama.id });
     const sourcePage = page.locator(".kx-source-page[data-side=false]");

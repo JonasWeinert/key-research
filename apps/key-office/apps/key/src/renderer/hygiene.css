@@ -48,10 +48,14 @@
   background: var(--kx-fill);
   outline: none;
 }
-.kx-tri-chip .kx-tri-chip-label {
+.kx-chip.kx-tri-chip > button.kx-tri-chip-label {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  border-radius: 0;
   padding: 0;
   border: 0;
   background: transparent;
@@ -62,8 +66,11 @@
   border-style: dashed;
   color: var(--kx-text-2);
 }
-.kx-tri-chip[data-partial] .kx-tri-chip-label {
+.kx-chip.kx-tri-chip[data-partial] > button.kx-tri-chip-label {
   cursor: pointer;
+}
+.kx-chip.kx-tri-chip > button.kx-tri-chip-label:hover {
+  background: transparent;
 }
 .kx-tri-chip small {
   color: var(--kx-text-3);
@@ -408,4 +415,7 @@
 }
 .kx-versions button:hover {
   text-decoration: underline;
+}
+.kx-row[aria-selected="true"] .kx-row-retracted {
+  background: var(--kx-bg);
 }

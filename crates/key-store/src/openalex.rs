@@ -328,7 +328,7 @@ impl Store {
         let kept = crate::journal::hand_edited_values(&tx, id)?;
         let oa_url = open_access.and_then(|o| text(o, "oa_url")).or_else(|| work.get("best_oa_location").and_then(|l| text(l, "pdf_url").or_else(|| text(l, "landing_page_url"))));
         tx.execute(
-            "UPDATE sources SET openalex_id = ?2, work_type = ?3, oa_status = ?4, oa_url = ?5, retracted = ?6, cited_by_count = ?7, fwci = ?8, metrics_at = ?9,
+            "UPDATE sources SET openalex_id = ?2, work_type = ?3, oa_status = ?4, oa_url = ?5, retracted = ?6, retraction_flagged_at = CASE WHEN ?6 = 1 AND coalesce(retracted, 0) = 0 THEN ?9 ELSE retraction_flagged_at END, cited_by_count = ?7, fwci = ?8, metrics_at = ?9,
                enriched_at = ?9, enrich_status = 'done', enrich_error = NULL, enrich_attempts = 0, enrich_after = NULL,
                doi = coalesce(nullif(doi, ''), ?10), pmid = coalesce(nullif(pmid, ''), ?11), pmcid = coalesce(nullif(pmcid, ''), ?12),
                language = coalesce(nullif(language, ''), ?13), volume = coalesce(nullif(volume, ''), ?14), issue = coalesce(nullif(issue, ''), ?15),
@@ -597,7 +597,7 @@ impl Store {
     pub fn apply_openalex_metrics(&self, id: &str, work: &Json) -> Result<()> {
         self.db()?
             .execute(
-                "UPDATE sources SET cited_by_count = coalesce(?2, cited_by_count), fwci = coalesce(?3, fwci), retracted = coalesce(?4, retracted), metrics_at = ?5 WHERE id = ?1",
+                "UPDATE sources SET cited_by_count = coalesce(?2, cited_by_count), fwci = coalesce(?3, fwci), retracted = coalesce(?4, retracted), retraction_flagged_at = CASE WHEN ?4 = 1 AND coalesce(retracted, 0) = 0 THEN ?5 ELSE retraction_flagged_at END, metrics_at = ?5 WHERE id = ?1",
                 params![
                     id,
                     work.get("cited_by_count").and_then(Json::as_i64),

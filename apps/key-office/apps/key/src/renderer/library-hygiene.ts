@@ -135,8 +135,16 @@ export function useHygiene(invoke: Invoke, workspaceId: string, active: boolean,
   useEffect(() => {
     if (!active) return;
     let live = true;
+    let soon: ReturnType<typeof setTimeout> | undefined;
     const load = () => {
-      void invoke<{ count: number }>("store_duplicates_summary", {}, workspaceId).then((d) => live && setDuplicates(d)).catch(() => {});
+      void invoke<{ count: number; pending?: boolean }>("store_duplicates_summary", {}, workspaceId)
+        .then((d) => {
+          if (!live) return;
+          setDuplicates(d);
+          // The first count is being worked out in the background: ask again shortly.
+          if (d.pending) soon = setTimeout(load, 3000);
+        })
+        .catch(() => {});
       void invoke<RetractionSummary>("store_retractions", {}, workspaceId).then((r) => live && setRetractions(r)).catch(() => {});
     };
     load();
@@ -144,6 +152,7 @@ export function useHygiene(invoke: Invoke, workspaceId: string, active: boolean,
     return () => {
       live = false;
       clearInterval(timer);
+      clearTimeout(soon);
     };
   }, [invoke, workspaceId, active, refreshKey]);
   return { duplicates, retractions, reload: () => void invoke<RetractionSummary>("store_retractions", {}, workspaceId).then(setRetractions).catch(() => {}) };
