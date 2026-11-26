@@ -4,7 +4,7 @@
 // a hand edit inside Key's section giving a .conflict.md copy, the one-shot Export
 // highlights sheet, the status bar item and a key:// link opened from another app.
 const { _electron: electron } = require("playwright-core");
-const { mkdtemp, mkdir, readFile, writeFile, copyFile, readdir, rename } = require("node:fs/promises");
+const { mkdtemp, mkdir, readFile, writeFile, copyFile, readdir, rename, rm } = require("node:fs/promises");
 const { existsSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
@@ -135,6 +135,21 @@ const assert = require("node:assert/strict");
     const resolved = await readFile(moved, "utf8");
     assert.match(resolved, /A fourth passage\./);
     assert.ok(resolved.includes("Compare with Piketty.") && resolved.includes("Keep this paragraph."));
+
+    // ── Deleted by the user: not written again (even exporting everything) until restored ──
+    await call("store_md_export_config", { config: { ...(await call("store_md_export_config")).config, mode: "demand" } });
+    await rm(moved);
+    await call("store_md_export_run", { notes: true, force: true });
+    assert.ok(!existsSync(moved) && !existsSync(file), "a deleted file stays deleted");
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:md-export-changed")));
+    await page.getByRole("button", { name: "Export now" }).click();
+    const restore = page.getByRole("button", { name: "Restore", exact: true });
+    await restore.waitFor();
+    await both(page, "settings-deleted");
+    await restore.click();
+    await restore.waitFor({ state: "detached" });
+    await call("store_md_export_run", { notes: true });
+    await waitFor(async () => existsSync(file) || existsSync(moved), "restored file written again");
     await page.getByRole("button", { name: "Close Workspace Settings" }).click();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:md-export-changed")));
     await page.locator(".kx-status-bar [data-status-item=md-export]", { hasText: /Markdown/ }).waitFor();

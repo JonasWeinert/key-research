@@ -279,6 +279,14 @@ export const HELP = {
       "Either way, Key only reads from Zotero. Where both apps changed the same item, Key keeps its own version and lists the conflict.",
     ],
   ),
+  "markdown.removed": explain(
+    "Files you deleted",
+    [
+      "When you delete one of Key’s Markdown files from the export folder, Key takes that as your choice and does not write it again, even when you export everything.",
+      "Moving or renaming a file inside the folder is not deleting it: Key finds it and keeps writing there.",
+      "Restore brings a file back with the next export, with your notes from Key in it.",
+    ],
+  ),
   "zotero.this-workspace": explain(
     "A Zotero workspace or this one?",
     [

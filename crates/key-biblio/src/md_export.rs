@@ -162,6 +162,8 @@ pub struct FileState {
     pub conflict: Option<PathBuf>,
     /// "source" or "note".
     pub kind: String,
+    /// The user deleted the file from the folder: it is not written again until restored.
+    pub removed: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -182,6 +184,9 @@ pub struct Summary {
     pub unchanged: usize,
     pub conflicts: Vec<Problem>,
     pub errors: Vec<Problem>,
+    /// Items left out because the user deleted their file from the folder.
+    #[serde(default)]
+    pub removed: usize,
     /// Files written this run (at most 50).
     pub files: Vec<PathBuf>,
 }
@@ -229,6 +234,28 @@ fn save_state(store: &Store, state: &HashMap<String, FileState>) -> Result<(), S
 
 pub fn last_summary(store: &Store) -> Result<Option<Summary>, String> {
     Ok(store.meta(LAST)?.and_then(|t| serde_json::from_str(&t).ok()))
+}
+
+/// Files the user deleted from the export folder, which Key leaves out: id and the path it had.
+pub fn removed(store: &Store) -> Result<Vec<Problem>, String> {
+    let mut out: Vec<Problem> = state(store)?
+        .into_iter()
+        .filter(|(_, s)| s.removed)
+        .map(|(id, s)| Problem { id, title: s.path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), path: Some(s.path), conflict: None, message: String::new() })
+        .collect();
+    out.sort_by(|a, b| a.title.cmp(&b.title));
+    Ok(out)
+}
+
+/// Exports these removed files again from the next run on (all of them without `ids`).
+pub fn restore_removed(store: &Store, ids: Option<&[String]>) -> Result<usize, String> {
+    let mut all = state(store)?;
+    let chosen: Vec<String> = all.iter().filter(|(id, s)| s.removed && ids.is_none_or(|ids| ids.contains(id))).map(|(id, _)| id.clone()).collect();
+    for id in &chosen {
+        all.remove(id);
+    }
+    save_state(store, &all)?;
+    Ok(chosen.len())
 }
 
 /// The open conflicts (files Key did not overwrite).
@@ -508,6 +535,8 @@ pub enum Outcome {
     Written(PathBuf),
     Unchanged(PathBuf),
     Conflict { path: PathBuf, copy: PathBuf, reason: String },
+    /// Its file was deleted by the user; left out.
+    Removed,
 }
 
 fn stamp(path: &Path) -> Option<(u64, std::time::SystemTime)> {
@@ -559,6 +588,21 @@ fn locate(doc: &Doc, known: Option<&FileState>, vault: &mut Vault) -> PathBuf {
 
 fn sync_doc(doc: &Doc, render: &dyn Fn(&HashMap<String, String>) -> String, live: &HashSet<String>, config: &Config, state: &mut HashMap<String, FileState>, vault: &mut Vault, force: bool) -> Result<Outcome, String> {
     let known = state.get(doc.id).cloned();
+    if let Some(k) = &known {
+        // A file Key wrote that is gone from the folder (not moved or renamed in it, and the
+        // folder itself still there): the user removed it, and Key leaves it out from now on.
+        let deleted = !k.path.as_os_str().is_empty()
+            && k.path.starts_with(doc.folder)
+            && k.path.parent().is_some_and(Path::exists)
+            && !k.path.exists()
+            && vault.find(doc.id).is_none();
+        if k.removed || deleted {
+            if !k.removed {
+                state.insert(doc.id.to_string(), FileState { removed: true, ..k.clone() });
+            }
+            return Ok(Outcome::Removed);
+        }
+    }
     let path = locate(doc, known.as_ref(), vault);
     let seen = stamp(&path);
     let mut existing = match std::fs::read(&path) {
@@ -596,6 +640,7 @@ fn sync_doc(doc: &Doc, render: &dyn Fn(&HashMap<String, String>) -> String, live
         written_at: key_store::now_ms(),
         conflict,
         kind: doc.kind.into(),
+        removed: false,
     };
     match region::merge(existing.as_deref(), &export, expected.as_deref()) {
         Merge::Write(text) => {
@@ -778,6 +823,7 @@ fn record(summary: &mut Summary, id: &str, title: &str, outcome: Result<Outcome,
             }
         }
         Ok(Outcome::Unchanged(_)) => summary.unchanged += 1,
+        Ok(Outcome::Removed) => summary.removed += 1,
         Ok(Outcome::Conflict { path, copy, reason }) => summary.conflicts.push(problem(id, title, Some(path), Some(copy), reason)),
         Err(message) => summary.errors.push(problem(id, title, None, None, message)),
     }
@@ -1132,6 +1178,22 @@ mod tests {
         assert_eq!(summary.files, vec![moved.clone()]);
         assert!(!vault.join("smith2021.md").exists());
         assert!(std::fs::read_to_string(&moved).unwrap().contains("Third"));
+    }
+
+    #[test]
+    fn a_file_the_user_deleted_stays_deleted_until_restored() {
+        let (_dir, store, id, vault) = setup();
+        run(&store);
+        std::fs::remove_file(vault.join("smith2021.md")).unwrap();
+        store.apply_annotations(&id, &[json!({ "id": "h3", "text": "Third" })], &[]).unwrap();
+        let summary = sync(&store, &Request { notes: true, force: true, ..Default::default() }, &cite).unwrap();
+        assert_eq!((summary.written, summary.removed), (0, 1), "{summary:?}");
+        assert!(!vault.join("smith2021.md").exists(), "a deleted file is not written again");
+        assert_eq!(removed(&store).unwrap().iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), [id.as_str()]);
+        assert_eq!(restore_removed(&store, None).unwrap(), 1);
+        assert!(removed(&store).unwrap().is_empty());
+        assert_eq!(run(&store).written, 1);
+        assert!(std::fs::read_to_string(vault.join("smith2021.md")).unwrap().contains("Third"));
     }
 
     #[test]

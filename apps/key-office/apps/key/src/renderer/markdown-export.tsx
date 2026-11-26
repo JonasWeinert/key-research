@@ -51,6 +51,8 @@ interface Status {
   folder?: string | null;
   last?: Summary | null;
   conflicts: Problem[];
+  /** Files the user deleted from the folder; exports leave them out until restored. */
+  removed?: Problem[];
 }
 interface Preview {
   empty?: boolean;
@@ -258,6 +260,24 @@ export function MarkdownExportSettings({ invoke, workspaceId }: { invoke: Invoke
               </button>
             </Row>
           ))}
+        </Group>
+      )}
+      {!!status?.removed?.length && (
+        <Group title="Deleted from the folder" help="markdown.removed" footer="You deleted these files from the export folder, so Key no longer writes them. Restore one to export it again.">
+          {status.removed.slice(0, 20).map((r) => (
+            <Row key={r.id} label={r.title} detail={home(r.path)} path>
+              <button className="kx-settings-button" onClick={() => void invoke("store_md_export_restore", { ids: [r.id] }, workspaceId).then(() => loadStatus())}>
+                Restore
+              </button>
+            </Row>
+          ))}
+          {status.removed.length > 1 && (
+            <Row label={`All ${status.removed.length.toLocaleString()} deleted files`} detail="Written again with the next export">
+              <button className="kx-settings-button" onClick={() => void invoke("store_md_export_restore", {}, workspaceId).then(() => loadStatus())}>
+                Restore all
+              </button>
+            </Row>
+          )}
         </Group>
       )}
       <Group title="Files">
