@@ -22,6 +22,10 @@ export interface NoteRuntime {
   /** Matches in the text and by meaning, which take longer; empty when not offered. */
   searchMore(query: string, mode: PickMode): Promise<SourceRef[]>;
   cite(ref: SourceRef, page?: number): Promise<string | undefined>;
+  /** The note's in-text citations rendered together (numbering, disambiguation), in order. */
+  citeMany?(cites: { id: string; page?: number }[]): Promise<string[]>;
+  /** The reference list of these sources in the chosen style (HTML of its entries). */
+  bibliography?(ids: string[]): Promise<{ entries: { id: string; html: string; text: string }[]; hangingIndent: boolean } | undefined>;
   /** Items dropped in at [from, to): offers to turn the links into embeds or citations. */
   dropped(items: DraggedItem[], from: number, to: number): void;
   resolve(id: string): Promise<SourceRef | null>;

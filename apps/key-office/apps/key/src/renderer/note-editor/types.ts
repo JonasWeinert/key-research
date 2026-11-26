@@ -80,6 +80,10 @@ export interface NoteEditorProps {
   searchMapCenters?: (query: string) => Promise<SourceRef[]>;
   /** An in-text citation for a picked source or highlight, e.g. "(Palma et al., 2022, p. 4)". */
   citeLabel?: (ref: SourceRef, page?: number) => Promise<string | undefined>;
+  /** All of a note's citations at once, so numbering and disambiguation hold (`page` 0-based). */
+  formatCitations?: (cites: { id: string; page?: number }[]) => Promise<string[]>;
+  /** The Bibliography block's entries for these sources. */
+  formatBibliography?: (ids: string[]) => Promise<{ entries: { id: string; html: string; text: string }[]; hangingIndent: boolean } | undefined>;
   placeholder?: string;
   autoFocus?: boolean;
   /** Shows the note without editing it (a canvas card); links and media still work. */

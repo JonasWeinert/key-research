@@ -12,10 +12,12 @@ import { NoteMenus, embedPluginKey, linkPluginKey, slashPluginKey, sourcePluginK
 import type { MenuController, MenuState } from "./menus";
 import { NoteMedia } from "./mediaBehaviors";
 import { QuotePaste } from "./quotePaste";
+import { BibliographyView } from "./bibliographyView";
 import { CalloutView, ImageView, ItemEmbedView, SourceEmbedView, SourceQuoteView, ToggleView, VideoEmbedView, defaultMapCenterSearch } from "./nodeViews";
 import { NoteRuntimeExtension } from "./runtime";
+import { CitationRefresh } from "./citations";
 import type { NoteRuntime, UrlPromptRequest } from "./runtime";
-import { Callout, ItemEmbed, NoteImage, SourceEmbed, SourceQuote, Toggle, VideoEmbed, buildSchemaExtensions, serializeNote } from "./schema";
+import { Callout, ItemEmbed, NoteBibliography, NoteImage, SourceEmbed, SourceQuote, Toggle, VideoEmbed, buildSchemaExtensions, serializeNote } from "./schema";
 import { resolveSourceCached } from "./sourceCache";
 import { SuggestionMenu, usePopoverPosition } from "./SuggestionMenu";
 import type { SuggestionMenuHandle } from "./SuggestionMenu";
@@ -39,12 +41,14 @@ function buildEditorExtensions(runtime: NoteRuntime, controller: MenuController)
       sourceQuote: SourceQuote.extend({ addNodeView: () => ReactNodeViewRenderer(SourceQuoteView) }),
       videoEmbed: VideoEmbed.extend({ addNodeView: () => ReactNodeViewRenderer(VideoEmbedView) }),
       itemEmbed: ItemEmbed.extend({ addNodeView: () => ReactNodeViewRenderer(ItemEmbedView) }),
+      bibliography: NoteBibliography.extend({ addNodeView: () => ReactNodeViewRenderer(BibliographyView) }),
       image: NoteImage.extend({ addNodeView: () => ReactNodeViewRenderer(ImageView) }).configure({ inline: false }),
     }),
     NoteMedia,
     LibraryDrop,
     QuotePaste,
     NoteRuntimeExtension.configure({ runtime }),
+    CitationRefresh,
     Placeholder.configure({
       includeChildren: true,
       showOnlyCurrent: true,
@@ -182,6 +186,8 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
             : propsRef.current.searchSources(query),
       searchMore: async (query, mode) => (mode !== "quote" && mode !== "map" && propsRef.current.searchItemsMore ? propsRef.current.searchItemsMore(query) : []),
       cite: async (ref, page) => propsRef.current.citeLabel?.(ref, page),
+      citeMany: async (cites) => (propsRef.current.formatCitations ? propsRef.current.formatCitations(cites) : []),
+      bibliography: async (ids) => propsRef.current.formatBibliography?.(ids),
       dropped: (items, from, to) => {
         const editor = editorRef.current;
         if (!editor || editor.isDestroyed) return;
