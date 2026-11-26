@@ -27,8 +27,59 @@ export interface WebBarState {
     suggest?: { name: string; host: string; reason: string };
     offer?: { name: string; host: string };
   };
+  /** Passkey sign-ins (main/browser/sign-in.ts): a page waiting for one, a sign-in handed to
+   * the person's browser, or one just brought back from it. */
+  signin?: {
+    waiting?: { site: string; kind: "get" | "create"; browser?: string };
+    handoff?: { browser: string; site: string };
+    imported?: { browser: string; sites: number };
+  };
 }
-export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo" | "proxy-off" | "proxy-remember" | "proxy-not-now" | "proxy-dismiss" | "proxy-use";
+type SignInOp = "signin-stop" | "signin-browser" | "signin-import" | "signin-cancel" | "signin-dismiss";
+export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo" | "proxy-off" | "proxy-remember" | "proxy-not-now" | "proxy-dismiss" | "proxy-use" | SignInOp;
+
+/** A sign-in that needs a passkey Key's browser cannot offer: what is happening and the way on. */
+function SignInNotice({ signin, onPage }: { signin: NonNullable<WebBarState["signin"]>; onPage?(op: WebPageOp): void }) {
+  const close = (op: SignInOp) => (
+    <button type="button" className="key-web-proxy-close" aria-label="Dismiss" onClick={() => onPage?.(op)}>
+      <Icon name="close" size={10} />
+    </button>
+  );
+  if (signin.handoff)
+    return (
+      <span className="key-web-proxy key-web-signin" role="status" data-handoff title={hintText("browser.signin.handoff")}>
+        <Icon name="key" size={12} />
+        <span className="key-web-proxy-text">Finish in {signin.handoff.browser}, then</span>
+        <button type="button" data-primary onClick={() => onPage?.("signin-import")} title={`Copy this sign-in from ${signin.handoff.browser} into Key’s browser (you see which sites first)`}>
+          Bring sign-in over
+        </button>
+        {close("signin-cancel")}
+      </span>
+    );
+  if (signin.imported)
+    return (
+      <span className="key-web-proxy key-web-signin" role="status" data-imported>
+        <Icon name="check" size={12} />
+        <span className="key-web-proxy-text">Signed in with your {signin.imported.browser} sign-in</span>
+        {close("signin-dismiss")}
+      </span>
+    );
+  const waiting = signin.waiting;
+  if (!waiting) return null;
+  return (
+    <span className="key-web-proxy key-web-signin" role="status" data-waiting title={hintText("browser.signin.waiting")}>
+      <Icon name="key" size={12} />
+      <span className="key-web-proxy-text">{waiting.kind === "create" ? "This site wants to save a passkey" : `${waiting.site || "This site"} is waiting for a passkey`}</span>
+      <FirstUseTip help="tip.passkey" anchor=".key-web-signin[data-waiting]" />
+      <button type="button" data-primary onClick={() => onPage?.("signin-browser")} title={`Open this sign-in in ${waiting.browser ?? "your browser"}, where your phone and saved passkeys work`}>
+        Continue in {waiting.browser ?? "browser"}
+      </button>
+      <button type="button" onClick={() => onPage?.("signin-stop")} title="Stop waiting: the site then offers its other ways to sign in">
+        Stop waiting
+      </button>
+    </span>
+  );
+}
 
 const DIRECT_TEXT: Record<NonNullable<NonNullable<WebBarState["proxy"]>["direct"]>["why"], (name: string) => string> = {
   network: () => "Loaded directly — you seem to be on your library’s network",
@@ -127,7 +178,7 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
         <span>{state.host}</span>
       </span>
       <span className="key-web-actions">
-        {state.proxy ? <ProxyNotice proxy={state.proxy} onPage={onPage} /> : null}
+        {state.signin ? <SignInNotice signin={state.signin} onPage={onPage} /> : state.proxy ? <ProxyNotice proxy={state.proxy} onPage={onPage} /> : null}
         {state.stalled ? (
           <button type="button" className="key-web-stalled" title="The site’s check has not finished. Reloading often helps." onClick={() => onPage?.("reload")}>
             Still checking? Reload

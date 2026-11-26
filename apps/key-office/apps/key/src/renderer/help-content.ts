@@ -210,6 +210,18 @@ export const HELP = {
   "browser.proxy.signin": hint("Loaded directly, this page asked you to sign in, so Key opened it through your library’s proxy."),
   "browser.proxy.network": hint("On this network, this site needs your library’s proxy, so Key opened it through the proxy."),
   "browser.proxy.suggest": hint("This page asks you to sign in or buy access. Your library’s proxy may let you in."),
+  "settings.web.signin": explain(
+    "Passkeys and sign-ins",
+    [
+      "A passkey replaces a password: your phone, your Mac or a security key proves it is you, with your fingerprint, face or PIN. Many universities now ask for one when you sign in.",
+      "Key’s browser can use a USB or NFC security key. It can’t show the QR code for signing in with your phone, or reach passkeys saved in iCloud Keychain or a password manager: macOS offers those only to web browsers Apple has approved. A signed copy of Key can also keep passkeys on this Mac, with Touch ID.",
+      "When a sign-in waits for a passkey, the bar says so. Continue in your browser opens the page there; once you are signed in, Bring sign-in over copies the cookies of just the sites that sign-in went through. Key lists them and asks first.",
+    ],
+    { privacy: "Only the cookies of the listed sites are read, from a copy of your browser’s cookie file. Nothing is sent anywhere, and nothing in your browser changes." },
+  ),
+  "settings.web.signin-browser": hint("Where Continue in your browser opens the sign-in, and whose cookies Bring sign-in over reads."),
+  "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or continue in your browser."),
+  "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
 
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
   "settings.services.intro": hint("Optional keys that give Key a higher allowance at some scholarly services. Key works without them."),
@@ -518,6 +530,7 @@ export const HELP = {
   "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss. x selects several."),
   "tip.tag-suggestions": tip("Tidy your tags", "Key suggests merging duplicates and nesting related tags. Nothing changes until you apply one."),
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),
+  "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Continue in your browser to use those."),
   "tip.proxies": tip("Library access", "This site can open through your library’s proxy, so you see articles your library pays for."),
 
   // ── Glossary ────────────────────────────────────────────────────────────────────────
@@ -530,6 +543,7 @@ export const HELP = {
   "term.csl": term("Citation style (CSL)", "Rules for how citations and bibliographies look, such as APA or Chicago, written in the Citation Style Language."),
   "term.citekey": term("Citation key", "A short unique name for a reference, such as smith2020sleep, typed in LaTeX or Markdown to cite it."),
   "term.bibtex": term("BibTeX and RIS", "Plain-text files for moving references between apps. BibTeX is used with LaTeX; RIS by EndNote, Mendeley and publishers."),
+  "term.passkey": term("Passkey", "A sign-in without a password: your phone, Mac or security key proves it is you with your fingerprint, face or PIN."),
   "term.proxy": term("Library proxy", "A sign-in service run by your library (EZproxy, OpenAthens) that gives you its journal access off campus."),
   "term.feed": term("Feed (RSS)", "A list a website publishes of its newest articles. Key checks the feeds you follow and fills your Inbox."),
   "term.alert": term("Alert", "Key watching for new works by an author, in a journal or topic, for a search, or citing a source."),

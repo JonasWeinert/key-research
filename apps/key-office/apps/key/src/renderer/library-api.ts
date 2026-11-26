@@ -393,6 +393,10 @@ export interface AppSettings {
   citationLocale?: string;
   /** What Key shows when it opens (app-level): the workspaces window, last time's windows, or the last workspace. */
   openAtLaunch?: "workspaces" | "restore" | "last";
+  /** Say in the browser bar when a page waits for a passkey (on by default). */
+  signInNotice?: boolean;
+  /** The browser passkey sign-ins are finished in. */
+  signInBrowser?: "default" | "chrome" | "edge" | "brave" | "arc" | "vivaldi" | "chromium" | "firefox" | "safari";
 }
 export interface AppInfo {
   version: string;
