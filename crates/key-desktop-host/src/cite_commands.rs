@@ -212,6 +212,20 @@ fn install_from_repository(input: &str) -> Result<key_cite::StyleSummary, String
 mod tests {
     use super::repository_id;
 
+    /// Downloads from the CSL repository: `cargo test -- --ignored repository_install`.
+    #[test]
+    #[ignore]
+    fn repository_install() {
+        let dir = std::env::temp_dir().join(format!("key-cite-repo-{}", std::process::id()));
+        unsafe { std::env::set_var("KEY_CITATION_STYLES_DIR", &dir) };
+        let style = super::install_from_repository("https://www.zotero.org/styles/apa-no-ampersand").unwrap();
+        assert_eq!(style.id, "apa-no-ampersand");
+        // A dependent style brings its parent along.
+        let dependent = super::install_from_repository("journal-of-the-american-chemical-society").unwrap();
+        assert!(dependent.parent.is_some());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn style_addresses() {
         assert_eq!(repository_id("apa-no-ampersand").unwrap(), "apa-no-ampersand");
