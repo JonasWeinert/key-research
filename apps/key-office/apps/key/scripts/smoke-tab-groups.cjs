@@ -33,7 +33,12 @@ const assert = require("node:assert/strict");
       const out = [];
       for (const v of w.contentView.children) {
         if (!v.getVisible?.() || !v.webContents || v.webContents === w.webContents) continue;
-        const image = await v.webContents.capturePage();
+        // Capturing fails now and then (UnknownVizError) while other windows are busy: try again.
+        let image;
+        for (let i = 0; !image; i++) {
+          try { image = await v.webContents.capturePage(); }
+          catch (e) { if (i >= 5) throw e; await new Promise((r) => setTimeout(r, 300)); }
+        }
         out.push({ ...v.getBounds(), image: image.toDataURL() });
       }
       return out;
