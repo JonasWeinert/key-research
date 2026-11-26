@@ -4,7 +4,7 @@ import { itemAttrs, selectItems } from "./item-ui";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { GROUPS, type SearchGroup } from "./unified-search";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityBanner, ProgressRing, isActive, jobProgress, useLibraryStatus } from "./index-activity";
+import { ActivityBanner, ProgressRing, isActive, jobProgress, referencesProgress, useLibraryStatus } from "./index-activity";
 import { useStatusItems } from "./status-bar";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import { Icon } from "./icons";
@@ -732,7 +732,7 @@ export default function ReferenceLibrary({
               <SourceRow
                 key={source.id}
                 source={source}
-                progress={jobProgress(activity, source.id)}
+                progress={jobProgress(activity, source.id) ?? referencesProgress(status?.references, source.id)}
                 top={top}
                 selected={row.selected}
                 focused={row.focused}
@@ -904,7 +904,7 @@ function SourceRow({
   onDragStart,
 }: {
   source: Source;
-  progress?: { fraction: number; label: string };
+  progress?: { fraction?: number; label: string };
   top: number;
   selected: boolean;
   focused: boolean;

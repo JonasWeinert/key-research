@@ -122,6 +122,7 @@ pub(crate) fn extract_document_streamed(
     }
     let count = document.pages().len() as usize;
     for index in document.pages().as_range() {
+        crate::report_progress("layout", index as usize, count);
         if let Some(cache) = cache.as_deref_mut() {
             if let Some(raw_page) = cache.load(index as usize)? {
                 consume(index as usize, raw_page, profiler)?;

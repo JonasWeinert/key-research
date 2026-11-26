@@ -3,6 +3,7 @@
 // the inspector and Home.
 import { useEffect, useState } from "react";
 import { Icon } from "./icons";
+import { jobProgress, referencesProgress, stageLabel } from "./analysis-progress";
 import { KIND_ICON, type IndexActivity, type IndexJob, type Invoke, type LibraryStatus } from "./library-api";
 
 /** Polls the host's library status: quickly while indexing, gently otherwise. */
@@ -19,7 +20,7 @@ export function useLibraryStatus(invoke: Invoke, workspaceId: string | undefined
       } catch {}
       if (stopped) return;
       if (next) setStatus(next);
-      const working = !!next && (next.busy || next.counts.indexing > 0);
+      const working = !!next && (next.busy || next.counts.indexing > 0 || !!next.references);
       timer = setTimeout(poll, working ? 900 : 4000);
     };
     void poll();
@@ -31,35 +32,8 @@ export function useLibraryStatus(invoke: Invoke, workspaceId: string | undefined
   return status;
 }
 
-/** 0–1 progress of one source: reading pages is the first half, embedding the second. */
-export function jobProgress(activity: IndexActivity | undefined, id: string): { fraction: number; label: string } | undefined {
-  if (!activity) return undefined;
-  const reading = activity.reading?.id === id ? activity.reading : undefined;
-  const embedding = activity.embedding?.id === id ? activity.embedding : undefined;
-  if (embedding) return { fraction: 0.5 + 0.5 * ratio(embedding), label: stageLabel(embedding) };
-  if (reading) return { fraction: 0.5 * ratio(reading), label: stageLabel(reading) };
-  return undefined;
-}
-const ratio = (job: IndexJob) => (job.total ? Math.min(1, job.done / job.total) : 0);
+export { jobProgress, referencesProgress, stageLabel } from "./analysis-progress";
 
-export function stageLabel(job: IndexJob) {
-  switch (job.stage) {
-    case "opening":
-      return "Opening…";
-    case "identifying":
-      return "Identifying…";
-    case "analysing":
-      return "Analysing layout…";
-    case "reading":
-      return job.total ? `Reading page ${Math.min(job.done + 1, job.total)} of ${job.total}` : "Reading text…";
-    case "chunking":
-      return "Splitting into passages…";
-    case "embedding":
-      return `Indexing ${job.done} of ${job.total} passages`;
-    default:
-      return "Queued";
-  }
-}
 const PRIORITY_LABEL = { opened: "You opened this", selected: "Selected", visible: "On screen" } as const;
 
 function remaining(activity: IndexActivity) {
@@ -111,17 +85,33 @@ function JobRow({ job, activity }: { job: IndexJob; activity: IndexActivity }) {
   );
 }
 
+function ReferencesRow({ references }: { references: NonNullable<LibraryStatus["references"]> }) {
+  const progress = referencesProgress(references)!;
+  return (
+    <li className="kx-activity-job" data-stage={references.stage}>
+      <ProgressRing fraction={progress.fraction} size={18} />
+      <span>
+        <strong>{references.title || "Untitled"}</strong>
+        <small>{progress.label}</small>
+      </span>
+    </li>
+  );
+}
+
 /** The full picture: overall batch, the two pipeline stages, and the queue. */
 export function ActivityPanel({
   activity,
   modelReady,
   onPause,
   backfill,
+  references,
 }: {
   activity: IndexActivity;
   modelReady: boolean;
   onPause: (paused: boolean) => void;
   backfill?: LibraryStatus["backfill"];
+  /** The source whose references are being found or looked up now. */
+  references?: LibraryStatus["references"];
 }) {
   const { left, eta } = remaining(activity);
   const older = olderSources(backfill);
@@ -131,7 +121,7 @@ export function ActivityPanel({
     <div className="kx-activity-panel">
       <header>
         <div>
-          <strong>{activity.paused ? "Indexing paused" : left ? "Making your library searchable" : "All caught up"}</strong>
+          <strong>{activity.paused ? "Indexing paused" : left ? "Making your library searchable" : references ? "Analysing references" : "All caught up"}</strong>
           <span>
             {total ? `${activity.batchDone.toLocaleString()} of ${total.toLocaleString()} sources` : "Every source is searchable"}
             {eta && !activity.paused ? ` · ${eta}` : ""}
@@ -161,6 +151,14 @@ export function ActivityPanel({
             {now.map((job) => (
               <JobRow key={`${job.stage}:${job.id}`} job={job} activity={activity} />
             ))}
+          </ul>
+        </section>
+      )}
+      {references && (
+        <section>
+          <h3>References</h3>
+          <ul>
+            <ReferencesRow references={references} />
           </ul>
         </section>
       )}

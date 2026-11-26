@@ -34,7 +34,9 @@ pub fn detect_document(
     let pdfium = bind_pdfium()?;
     let document = pdfium.load_pdf_from_file(path, password)?;
     let mut result = HashMap::new();
+    let count = document.pages().len() as usize;
     for index in document.pages().as_range() {
+        crate::report_progress("layout-model", index as usize, count);
         let number = index as usize + 1;
         if selected_pages.is_some_and(|pages| !pages.contains(&number)) {
             continue;

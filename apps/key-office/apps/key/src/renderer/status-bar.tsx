@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useDismiss } from "@key-reader/ui/dismiss";
 import "./status-bar.css";
 import { Icon, isIconName, type IconName } from "./icons";
-import { ActivityPanel, activityLabel, isActive, olderSources, ProgressRing, useLibraryStatus } from "./index-activity";
+import { ActivityPanel, activityLabel, isActive, olderSources, ProgressRing, referencesProgress, useLibraryStatus } from "./index-activity";
 import type { Invoke, LibraryStatus, ZoteroSyncStatus } from "./library-api";
 import { ago } from "./zotero-sheet-model";
 import { overflowingStatusItems, sanitizeStatusItems, STATUS_BAR_HEIGHT, type StatusItem } from "../shared/status-items";
@@ -307,7 +307,7 @@ export function StatusBar({
   const toggle = (key: string, anchor: HTMLElement, label: string) => setPopover((open) => (open?.key === key ? undefined : { key, anchor, label }));
   useEffect(() => setPopover((open) => (open?.key.startsWith("view:") ? undefined : open)), [activeViewId]);
   const workPanel = status?.activity ? (
-    <ActivityPanel activity={status.activity} modelReady={status.model.state === "ready"} onPause={pauseIndexing} backfill={status.backfill} />
+    <ActivityPanel activity={status.activity} modelReady={status.model.state === "ready"} onPause={pauseIndexing} backfill={status.backfill} references={status.references} />
   ) : undefined;
   const popoverContent = popover?.key === "work" ? workPanel : popover?.key.startsWith("view:") ? dom?.popover?.(popover.key.slice(5)) : undefined;
   const invokeView = (item: StatusItem, anchor: HTMLElement) => {
@@ -426,6 +426,16 @@ function workItem(status: LibraryStatus | undefined): StatusItem | undefined {
       priority: 90,
     };
   }
+  // A PDF's references being found or looked up, once indexing is quiet.
+  const references = referencesProgress(status.references);
+  if (references)
+    return {
+      id: "work",
+      label: references.label,
+      ...(references.fraction === undefined ? { busy: true } : { progress: references.fraction }),
+      title: status.references?.title ? `References of ${status.references.title}` : "Analysing references",
+      priority: 90,
+    };
   if (status.enrichment)
     return {
       id: "work",

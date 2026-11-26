@@ -127,7 +127,7 @@ export default function PdfReader() {
   // Poll while the library is still analysing this PDF.
   useEffect(() => {
     if (!working(report)) return;
-    const timer = setTimeout(refreshAnalysis, 2000);
+    const timer = setTimeout(refreshAnalysis, 1000);
     return () => clearTimeout(timer);
   }, [report, refreshAnalysis]);
   const rerun = () => {

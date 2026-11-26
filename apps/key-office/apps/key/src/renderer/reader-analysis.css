@@ -20,6 +20,10 @@
   gap: 2px;
   min-width: 0;
 }
+.key-pdf-analysis small,
+.key-pdf-analysis > div > span {
+  font-variant-numeric: tabular-nums;
+}
 .key-pdf-analysis small {
   color: var(--key-ui-muted);
   font-size: 10.5px;
@@ -71,6 +75,19 @@
   background: var(--key-ui-focus);
   transition: width 300ms ease;
 }
+/* Unknown length (finding references, waiting): a short sweep instead of a fill. */
+.key-pdf-analysis-bar[data-indeterminate] i {
+  width: 28%;
+  animation: key-pdf-analysis-sweep 1.4s var(--key-ui-ease, ease) infinite;
+}
+@keyframes key-pdf-analysis-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(360%);
+  }
+}
 .key-pdf-reference-aside {
   display: flex;
   align-items: center;
@@ -96,7 +113,8 @@
   color: var(--key-ui-focus);
 }
 @media (prefers-reduced-motion: reduce) {
-  .key-pdf-analysis[data-working] > div > span::before {
+  .key-pdf-analysis[data-working] > div > span::before,
+  .key-pdf-analysis-bar[data-indeterminate] i {
     animation: none;
   }
 }
