@@ -129,7 +129,7 @@
 .key-web-proxy-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 220px;
+  max-width: min(340px, 36vw);
   margin-right: 2px;
 }
 .key-web-proxy > button {

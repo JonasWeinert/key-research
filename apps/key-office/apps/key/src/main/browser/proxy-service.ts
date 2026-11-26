@@ -339,7 +339,7 @@ export class ProxyService {
       tab.attempt = { host, url, proxyId: proxy.id, at: now, decision, because };
       if (decision === "direct" && because !== "user" && !tab.told.has(host)) {
         tab.told.add(host);
-        tab.notice = { kind: "direct", host, proxyId: proxy.id, why: because === "domain" ? "domain" : because === "site" ? "site" : "network" };
+        tab.notice = { kind: "direct", host, proxyId: proxy.id, why: because === "domain" ? "domain" : because === "site" && this.learned()?.proxies[proxy.id]?.access !== "direct" ? "site" : "network" };
         setImmediate(() => tab.changed());
       }
       if (decision === "try") this.probe(proxy, host);

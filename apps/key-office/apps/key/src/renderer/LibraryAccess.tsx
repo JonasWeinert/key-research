@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Group, Row } from "./Settings";
 import { Icon } from "./icons";
-import { Explain } from "./explain";
+import { Explain, Hint } from "./explain";
+import { hintText } from "./help-content";
 import "./library-access.css";
 
 type Kind = "ezproxy" | "openathens" | "redirect" | "custom";
@@ -19,9 +20,23 @@ export interface LibraryProxy {
   dotsToHyphens: boolean;
   enabled: boolean;
   source: Source;
+  mode?: Mode;
+  campusDomains?: string[];
+}
+type Mode = "auto" | "always" | "never";
+type Route = "direct" | "proxy";
+interface LearnedNetwork {
+  id: string;
+  label: string;
+  firstSeen: number;
+  lastSeen: number;
+  proxies: Record<string, { access: Route | "pending"; how: string; at: number }>;
+  hosts: Record<string, { access: Route; how: string; at: number }>;
 }
 interface ProxyPrefs {
   transparent: boolean;
+  mode: Mode;
+  autoReload: boolean;
   autoRecognize: boolean;
   excluded: string[];
   followZotero: boolean;
@@ -29,6 +44,9 @@ interface ProxyPrefs {
 interface ProxyData {
   prefs: ProxyPrefs;
   proxies: LibraryProxy[];
+  networks: LearnedNetwork[];
+  /** The network now (its id), when known. */
+  network?: { id: string; suffix?: string };
 }
 interface ImportReport {
   found: { label: string; count: number }[];
@@ -40,6 +58,35 @@ const api = () => (window as unknown as { key: { proxies?(action: string, payloa
 
 const SOURCE_LABEL: Record<Source, string> = { manual: "Added by you", detected: "Recognised", zotero: "From Zotero", connector: "From Zotero Connector" };
 const message = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, "");
+
+const MODE_LABEL: Record<Mode, string> = { auto: "Automatic, when this network needs it", always: "Always", never: "Never (ask me)" };
+const MODE_DETAIL: Record<Mode, string> = {
+  auto: "On your library’s network pages load directly; elsewhere they go through the proxy.",
+  always: "Every site of a proxy goes through it, wherever you are.",
+  never: "Pages load directly; when one asks you to sign in, the bar offers the proxy.",
+};
+const day = (at: number) => new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+/** What a network has shown, in words: per proxy that learned something, or chosen. */
+function networkSummary(network: LearnedNetwork, proxies: LibraryProxy[]) {
+  const parts: string[] = [];
+  for (const proxy of proxies) {
+    const o = network.proxies[proxy.id];
+    if (!o) continue;
+    const name = proxies.length > 1 ? `${proxy.name}: ` : "";
+    if (o.how === "user") parts.push(`${name}${o.access === "direct" ? "never proxied here" : "always proxied here"} (your choice)`);
+    else if (o.access === "direct") parts.push(`${name}direct access · learned ${day(o.at)}`);
+    else if (o.access === "proxy") parts.push(`${name}needs the proxy · learned ${day(o.at)}`);
+    else parts.push(`${name}one site loaded directly so far`);
+  }
+  const chosen = Object.values(network.hosts).filter((h) => h.how === "user").length;
+  if (chosen) parts.push(`${chosen === 1 ? "1 site" : `${chosen} sites`} chosen in the bar`);
+  return parts.join(" · ") || "Nothing learned yet";
+}
+/** The choice made for a network (the same for every proxy), for its menu. */
+function networkChoice(network: LearnedNetwork, proxies: LibraryProxy[]): "auto" | Route {
+  const chosen = proxies.map((p) => network.proxies[p.id]).filter((o) => o?.how === "user");
+  return chosen.length && chosen.length === proxies.length && chosen.every((o) => o.access === chosen[0].access) ? (chosen[0].access as Route) : "auto";
+}
 
 type Preset = "ezproxy-login" | "ezproxy-host" | "openathens" | "prefix";
 const PRESETS: { id: Preset; label: string; hint: string; placeholder: string }[] = [
@@ -109,12 +156,24 @@ export default function LibraryAccess() {
   };
   const prefs = data?.prefs;
   const proxies = data?.proxies ?? [];
+  const networks = data?.networks ?? [];
   return (
     <>
       <Group title="Library access" help="settings.web.access" footer={error || report || "Articles open with your library’s access; saved sources keep the publisher’s normal address."}>
-        <Row label="Use library proxies automatically" detail="Articles on a remembered proxy’s sites open through it, without asking.">
-          <input type="checkbox" className="kx-switch" aria-label="Use library proxies automatically" disabled={!prefs} checked={!!prefs?.transparent} onChange={(e) => void call("prefs", { transparent: e.target.checked })} />
+        <Row label="Use library proxies" help="settings.web.proxy-mode" detail={MODE_DETAIL[prefs?.mode ?? "auto"]}>
+          <select className="kx-settings-select" aria-label="Use library proxies" disabled={!prefs} value={prefs?.mode ?? "auto"} onChange={(e) => void call("prefs", { mode: e.target.value as Mode })}>
+            {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
+              <option key={m} value={m}>
+                {MODE_LABEL[m]}
+              </option>
+            ))}
+          </select>
         </Row>
+        {prefs?.mode === "auto" && (
+          <Row label="Reopen through the proxy when asked to sign in" detail={hintText("settings.web.auto-reload")}>
+            <input type="checkbox" className="kx-switch" aria-label="Reopen through the proxy when asked to sign in" checked={prefs.autoReload} onChange={(e) => void call("prefs", { autoReload: e.target.checked })} />
+          </Row>
+        )}
         <Row label="Recognise proxies while browsing" help="settings.web.recognise" detail="When a page is a library sign-in (EZproxy, OpenAthens), offers to remember it.">
           <input type="checkbox" className="kx-switch" aria-label="Recognise proxies while browsing" disabled={!prefs} checked={!!prefs?.autoRecognize} onChange={(e) => void call("prefs", { autoRecognize: e.target.checked })} />
         </Row>
@@ -159,6 +218,62 @@ export default function LibraryAccess() {
           </div>
         </div>
       </Group>
+      {!!proxies.length && prefs?.mode !== "always" && (
+        <Group title="Networks" help="settings.web.networks">
+          {networks.map((network) => {
+            const here = network.id === data?.network?.id;
+            const choice = networkChoice(network, proxies);
+            return (
+              <div className="kx-settings-row kx-proxy-row kx-proxy-network" key={network.id} data-enabled>
+                <span className="kx-proxy-glyph" aria-hidden>
+                  <Icon name="globe" size={14} />
+                </span>
+                <div>
+                  <span>
+                    {network.label}
+                    {here && <em className="kx-proxy-badge">This network</em>}
+                  </span>
+                  <small>{networkSummary(network, proxies)}</small>
+                </div>
+                <div className="kx-settings-control">
+                  <select
+                    className="kx-settings-select"
+                    aria-label={`Proxy on ${network.label}`}
+                    value={choice}
+                    onChange={(e) => {
+                      const access = e.target.value === "auto" ? undefined : e.target.value;
+                      void (async () => {
+                        for (const proxy of proxies) await call("network", { op: "choose", id: network.id, proxyId: proxy.id, access });
+                      })();
+                    }}
+                  >
+                    <option value="auto">Learn automatically</option>
+                    <option value="proxy">Always proxy here</option>
+                    <option value="direct">Never proxy here</option>
+                  </select>
+                  <button className="kx-settings-button" onClick={() => void call("network", { op: "forget", id: network.id })}>
+                    Forget
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+          {!networks.some((n) => n.id === data?.network?.id) && (
+            <div className="kx-settings-row kx-proxy-row kx-proxy-network">
+              <span className="kx-proxy-glyph" aria-hidden>
+                <Icon name="globe" size={14} />
+              </span>
+              <div>
+                <span>
+                  {data?.network ? (data.network.suffix ?? "This network") : "No network"}
+                  {data?.network && <em className="kx-proxy-badge">This network</em>}
+                </span>
+                <small>{data?.network ? "Nothing learned yet: the next library page you open tells" : "Offline: nothing is learned until you are back online"}</small>
+              </div>
+            </div>
+          )}
+        </Group>
+      )}
       {!!prefs?.excluded.length && (
         <Group title="Never through a proxy" footer="Sites you chose “Don’t proxy this site” for.">
           <div className="kx-settings-row kx-settings-row-wide">
@@ -316,7 +431,26 @@ function ProxySheet({ proxy, onClose, onSave, onRemove }: { proxy?: LibraryProxy
               <span>Use this proxy</span>
               <input type="checkbox" className="kx-switch" checked={draft.enabled !== false} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />
             </label>
+            <label className="kx-proxy-toggle">
+              <span>
+                When
+                <small>{draft.mode ? MODE_DETAIL[draft.mode] : "As set for all proxies in Library access."}</small>
+              </span>
+              <select className="kx-settings-select" aria-label="When to use this proxy" value={draft.mode ?? ""} onChange={(e) => setDraft({ ...draft, mode: (e.target.value || null) as Mode | undefined })}>
+                <option value="">As for all proxies</option>
+                {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
+                  <option key={m} value={m}>
+                    {MODE_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
+          <h3>Skip it on these networks</h3>
+          <div className="kx-proxy-group">
+            <Chips values={draft.campusDomains ?? []} onChange={(campusDomains) => setDraft({ ...draft, campusDomains })} label="Network domains" placeholder="uni.ac.uk" />
+          </div>
+          <Hint help="settings.web.campus-domains" />
           {error && <p className="kx-inline-error">{error}</p>}
         </div>
         <footer>
