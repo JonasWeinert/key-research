@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "@key/ui/tokens.css";
 import { openLayers, trackDetailsMenus } from "@key-reader/ui/dismiss";
 import App from "./App";
+import { preloadNoteEditorWhenIdle } from "./note-editor";
 import QuickCapture from "./QuickCapture";
 import "@key/design-system/styles.css";
 import "./design-shell.css";
@@ -22,6 +23,9 @@ if (/Macintosh/.test(navigator.userAgent))
 // <details> menus close like every other overlay (outside press, scrolling away, Escape).
 trackDetailsMenus("details.kx-menu, details.key-library-tools-menu");
 (window as unknown as { __keyOpenOverlays?: () => number }).__keyOpenOverlays = openLayers;
+// The note editor is out of the startup bundle; fetch it once the shell has settled so the
+// first note or source page shows its editor at once, without shifting the page.
+if (location.hash !== "#capture") preloadNoteEditorWhenIdle();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     {location.hash === "#capture" ? <QuickCapture /> : <App />}
