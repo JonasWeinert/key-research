@@ -18,7 +18,9 @@ const SECONDS = Number(option("--seconds", 40));
 const JSON_OUT = option("--json", null);
 // Busy loops at normal priority on this many cores: a machine with no spare CPU (low-end).
 const HOG = Number(option("--hog", 0));
-const valued = new Set(["--sources", "--seconds", "--json", "--hog"]);
+/** References the bulk import adds while the interactive commands are timed. */
+const IMPORT = Number(option("--import", 6000));
+const valued = new Set(["--sources", "--seconds", "--json", "--hog", "--import"]);
 const hosts = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 const repo = path.resolve(__dirname, "../../../../..");
 const pdfium = path.join(repo, "vendor/pdfium/lib/libpdfium.dylib");
@@ -174,8 +176,10 @@ async function run(executable) {
     while (!stop) await h.invoke("store_duplicates", { withSources: false }, "background").catch(() => {});
   })());
   load.push((async () => {
-    // Two at a time, as the Electron bridge lets background work through.
-    for (let j = 0; !stop; j += 2)
+    // Two at a time, as the Electron bridge lets background work through. A fixed number, so
+    // every host ends with the same library (lists and matching grow with it); a host that
+    // imports faster finishes sooner rather than measuring on a bigger library.
+    for (let j = 0; !stop && j < IMPORT; j += 2)
       await Promise.all(Array.from({ length: 2 }, (_, k) => h.invoke("store_create", { source: { kind: "reference", itemType: "article", title: `Imported ${words[(j + k) % 10]} item ${j + k}`, year: 2000 + ((j + k) % 25), indexStatus: "skipped" } }, "background").catch(() => {})));
   })());
   const hogs = Array.from({ length: HOG }, () => spawn(process.execPath, ["-e", "for(;;){}"], { stdio: "ignore" }));
