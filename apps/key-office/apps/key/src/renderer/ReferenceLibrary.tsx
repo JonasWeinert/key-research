@@ -29,7 +29,7 @@ import {
 import { hasExternalDrop, importDrop, setItemDrag, sourceItem } from "./item-links";
 import { SOURCE_DRAG_TYPE, currentSelection, libraryChanged, onLibraryChanged, onLibrarySelection, selectLibrary } from "./library-nav";
 import type { Creator } from "./citation";
-import { Highlight, Snippet, hasMatch, queryPattern } from "./search-highlight";
+import { Highlight, Snippet, filterTerms, hasMatch, queryPattern } from "./search-highlight";
 import SearchField, { storeFilters, type SearchFilter } from "./search-suggest";
 import SourceItemPage from "./SourcePage";
 import { indexLabel } from "./SourceInspector";
@@ -364,14 +364,15 @@ export default function ReferenceLibrary({
   const runSearch = useCallback(
     async (value: string, limit = 60) => {
       const id = ++searchRequest.current;
-      setSearch((previous) => ({ query: value, result: previous?.result, busy: true, limit }));
+      const terms = filterTerms(filters);
+      setSearch((previous) => ({ query: value, result: previous?.result, busy: true, limit, terms }));
       try {
         const result = await invoke<SearchResult>(
           "store_search",
           { text: value, collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), limit, passagesPerSource: 3 },
           workspaceId,
         );
-        if (id === searchRequest.current) setSearch({ query: value, result, busy: false, limit });
+        if (id === searchRequest.current) setSearch({ query: value, result, busy: false, limit, terms });
       } catch (e) {
         // Shown in place of the results, so a failed search never looks like it is still loading.
         if (id === searchRequest.current)
@@ -999,7 +1000,7 @@ const MIN_LIST = 380;
 
 const waitingToIndex = (s: Source) => s.indexStatus === "pending" || s.indexStatus === "indexing";
 
-type SearchState = { query: string; result?: SearchResult; busy: boolean; limit: number; error?: string };
+type SearchState = { query: string; result?: SearchResult; busy: boolean; limit: number; error?: string; /** Filter token words, highlighted too. */ terms?: string };
 
 const FIELD_LABEL: Record<FieldMatch["field"], string> = {
   creators: "Authors",
@@ -1051,7 +1052,7 @@ const SearchResults = memo(function SearchResults({
 }) {
   const result = search.result;
   const { collapsed, toggle } = useCollapsedGroups();
-  const pattern = useMemo(() => queryPattern(search.query), [search.query]);
+  const pattern = useMemo(() => queryPattern(search.query, search.terms), [search.query, search.terms]);
   const hits = result?.hits ?? [];
   const notes = result?.notes ?? [];
   const inDetails = hits.filter((h) => h.metadataMatch).length;
@@ -1180,7 +1181,9 @@ const SearchHitRow = memo(function SearchHitRow({
                 )}
                 {source.year && (
                   <span>
-                    <FilterLink filter={sourceFilter.year(source.year)}>{source.year}</FilterLink>
+                    <FilterLink filter={sourceFilter.year(source.year)}>
+                      <Highlight text={String(source.year)} pattern={pattern} />
+                    </FilterLink>
                   </span>
                 )}
                 {container && (

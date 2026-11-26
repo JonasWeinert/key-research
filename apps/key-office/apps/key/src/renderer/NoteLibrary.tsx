@@ -10,6 +10,7 @@ import { Icon } from "./icons";
 import { describeItem, openItemAt } from "./item-actions";
 import { shortCreators, type Invoke, type Source, type SourcePage } from "./library-api";
 import { CITE_DRAG_TYPE, QUOTE_DRAG_TYPE, setItemDrag, type DraggedItem, type NoteEditorHandle, type QuoteInsert, type SourceRef } from "./note-editor";
+import { filterTerms, queryPattern } from "./search-highlight";
 import { FoundHit, byItem, type ItemGroup } from "./search-results";
 import SearchField from "./search-suggest";
 import { KindChips } from "./SearchPage";
@@ -110,6 +111,8 @@ export function NoteLibraryPanel({
   const browsing = !state.text.trim() && !state.filters.length && state.kinds.length === 1 && state.kinds[0] === "source";
   const library = useLibrary(invoke, workspaceId, true);
   const result = useFind(invoke, workspaceId, state, 30);
+  const terms = filterTerms(state.filters);
+  const pattern = useMemo(() => queryPattern(state.text, terms), [state.text, terms]);
   const [current, setCurrent] = useState(-1);
   const list = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(() => {
@@ -297,6 +300,7 @@ export function NoteLibraryPanel({
                     selected={row.index === current}
                     onActive={setCurrent}
                     compact
+                    pattern={pattern}
                     byline={entry.byline ?? bylines[entry.id] ?? (entry.anchor?.startsWith("highlight:") ? entry.where : entry.kind !== "source" ? entry.where : undefined)}
                     titleHint={kindOf(entry) === "source" ? "Insert a citation (⌘-click: open in a tab)" : kindOf(entry) === "highlight" ? "Insert as a quote (⌘-click: open in a tab)" : "Insert a link (⌘-click: open in a tab)"}
                     onPick={(found, e) => (e.metaKey || e.ctrlKey ? openInTab(found) : void insert(found === entry ? entry : found, e.shiftKey))}

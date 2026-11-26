@@ -1,3 +1,4 @@
+import type { WebFilterKey, WebFilters } from "../../shared/web-filters";
 import type { WebPage, WebResult } from "../../shared/web-search";
 import type { Fetch } from "./http";
 
@@ -15,7 +16,9 @@ export interface SearchRequest {
   /** From the previous page. */
   cursor?: string;
   signal?: AbortSignal;
-  filters?: { yearFrom?: number; yearTo?: number; openAccess?: boolean };
+  /** Every filter of the search: the provider applies those in `capabilities.filters` and may
+   *  narrow by others; those others are checked on its results (shared/web-filters.ts). */
+  filters?: WebFilters;
 }
 
 /** A scholarly catalogue the search page can ask. See registry.ts to add one. */
@@ -31,6 +34,8 @@ export interface WebProvider {
     keyHelp?: string;
     /** On unless the user turns it off. */
     enabledByDefault: boolean;
+    /** The filters it applies in its own request. */
+    filters: WebFilterKey[];
   };
   search(query: string, request: SearchRequest, context: ProviderContext): Promise<WebPage>;
   /** One work by DOI or the provider's own id. */

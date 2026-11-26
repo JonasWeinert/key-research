@@ -1,9 +1,10 @@
 // A search box over the window for Open Quickly (⌘P), Commands (⌘K), Send to… (⌘⇧S)
 // and adding to a canvas: the shared search in its sections, with commands on top.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { GlobalDialog } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
 import type { Invoke } from "./library-api";
+import { queryPattern } from "./search-highlight";
 import { FoundList, foundKeys, useCollapsedGroups, visibleFound } from "./search-sections";
 import { useUnifiedSearch, type Found, type SearchOptions } from "./unified-search";
 import { EMPTY_FIND, useFind, type FindState } from "./global-search";
@@ -54,6 +55,7 @@ export default function Palette({ invoke, workspaceId, label, placeholder, optio
   const { collapsed, toggle } = useCollapsedGroups();
   const list = useRef<HTMLDivElement>(null);
   const q = query.trim();
+  const pattern = useMemo(() => queryPattern(q), [q]);
   const shownCommands = (q ? commands.map((c) => [c, fuzzyScore(q, `${c.label} ${c.keywords ?? ""}`)] as const).filter(([, s]) => s > 0).sort((a, b) => b[1] - a[1]).map(([c]) => c) : commands).slice(0, q ? 6 : 12);
   const visible = visibleFound(found, collapsed);
   const total = shownCommands.length + visible.length;
@@ -143,6 +145,7 @@ export default function Palette({ invoke, workspaceId, label, placeholder, optio
               if (!onPick(entry, { alt: e.altKey, meta: e.metaKey, shift: e.shiftKey })) onClose();
             }}
             empty={shownCommands.length ? null : q ? `Nothing matches “${q}”` : "Type to search notes, sources, highlights, canvases and pages"}
+            pattern={pattern}
           />
         </div>
         <footer className="kx-palette-foot">

@@ -218,3 +218,15 @@
 .kx-found-hit[aria-selected="true"] {
   background: var(--kx-fill);
 }
+
+/* The search column, and the web preview beside it when one is open. */
+.kx-search-page {
+  flex-direction: row;
+}
+.kx-search-page-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}

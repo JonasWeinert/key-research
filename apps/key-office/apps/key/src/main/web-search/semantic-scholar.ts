@@ -1,7 +1,8 @@
 // Semantic Scholar's Graph API (/graph/v1/paper/search): works without a key at a low,
 // shared rate limit; a key from Settings is sent as x-api-key.
+import { filterWords, type WebFilterKey, type WebFilters, type WebWorkType } from "../../shared/web-filters";
 import { bareDoi, snippetOf, type WebPage, type WebResult } from "../../shared/web-search";
-import { getJson } from "./http";
+import { ProviderError, getJson } from "./http";
 import type { WebProvider } from "./provider";
 
 const FIELDS = "title,authors,year,venue,journal,abstract,externalIds,citationCount,isOpenAccess,openAccessPdf,url,publicationTypes";
@@ -61,6 +62,32 @@ export function parseS2Page(body: { total?: number; offset?: number; next?: numb
   };
 }
 
+// Semantic Scholar applies years itself and finds a work by its identifier; journals, types,
+// open access and citation counts it narrows by but not exactly, so they are also checked
+// on its results, as are authors, titles and abstracts. Language and retractions it cannot tell.
+const FILTERS: WebFilterKey[] = ["year", "doi", "arxiv", "pmid", "pmcid"];
+const S2_TYPES: Partial<Record<WebWorkType, string>> = { article: "JournalArticle", review: "Review", book: "Book", chapter: "BookSection", "conference-paper": "Conference", dataset: "Dataset" };
+
+/** The paper to look up instead of searching, for an identifier filter. */
+export function s2PaperId(filters: WebFilters = {}) {
+  if (filters.doi) return `DOI:${filters.doi}`;
+  if (filters.arxiv) return `ARXIV:${filters.arxiv}`;
+  if (filters.pmid) return `PMID:${filters.pmid}`;
+  if (filters.pmcid) return `PMCID:${filters.pmcid.replace(/^PMC/i, "")}`;
+  return undefined;
+}
+
+/** Search parameters for these filters. */
+export function s2Params(filters: WebFilters = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (filters.yearFrom !== undefined || filters.yearTo !== undefined) out.year = filters.yearFrom === filters.yearTo ? String(filters.yearFrom) : `${filters.yearFrom ?? ""}-${filters.yearTo ?? ""}`;
+  if (filters.venue) out.venue = filters.venue.replace(/,/g, " ");
+  if (filters.openAccess) out.openAccessPdf = "";
+  if (filters.type && S2_TYPES[filters.type]) out.publicationTypes = S2_TYPES[filters.type]!;
+  if (filters.minCitations !== undefined) out.minCitationCount = String(filters.minCitations);
+  return out;
+}
+
 export const semanticScholar: WebProvider = {
   id: "s2",
   label: "Semantic Scholar",
@@ -69,11 +96,21 @@ export const semanticScholar: WebProvider = {
     apiKey: true,
     keyHelp: "Optional. Without one, Semantic Scholar answers slowly when many people search at once.",
     enabledByDefault: true,
+    filters: FILTERS,
   },
   async search(query, { limit, cursor, signal, filters }, { apiKey, fetch }) {
-    const params = new URLSearchParams({ query, offset: cursor ?? "0", limit: String(limit), fields: FIELDS });
-    if (filters?.yearFrom || filters?.yearTo) params.set("year", `${filters.yearFrom ?? ""}-${filters.yearTo ?? ""}`);
-    if (filters?.openAccess) params.set("openAccessPdf", "");
+    const id = s2PaperId(filters);
+    if (id) {
+      if (cursor) return { results: [] };
+      const paper = await semanticScholar.lookup!(id, { apiKey, fetch, signal, mailto: "" }).catch((error) => {
+        if (error instanceof ProviderError && error.status === 404) return undefined;
+        throw error;
+      });
+      return { results: paper ? [paper] : [], total: paper ? 1 : 0 };
+    }
+    const words = query || filterWords(filters ?? {});
+    if (!words) return { results: [] };
+    const params = new URLSearchParams({ query: words, offset: cursor ?? "0", limit: String(limit), fields: FIELDS, ...s2Params(filters) });
     const headers: Record<string, string> = apiKey ? { "x-api-key": apiKey } : {};
     return parseS2Page(await getJson(`${base()}/graph/v1/paper/search?${params}`, { signal, fetch, headers, label: "Semantic Scholar" }));
   },

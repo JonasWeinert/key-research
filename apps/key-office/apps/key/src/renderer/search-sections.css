@@ -105,3 +105,11 @@
   color: inherit;
   border-radius: 2px;
 }
+.kx-found-title mark {
+  border-radius: 2px;
+  background: var(--search-hit-bg);
+  color: inherit;
+}
+.kx-found-row[aria-selected="true"] mark {
+  background: color-mix(in srgb, var(--kx-accent-ink) 26%, transparent);
+}
