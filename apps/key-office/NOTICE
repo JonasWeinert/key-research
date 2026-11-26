@@ -23,3 +23,17 @@ https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
 Copyright © 1991-2026 Unicode, Inc. This data is distributed under Unicode
 License v3. The complete copyright and permission notice is reproduced in
 LICENSE-UNICODE.txt.
+
+------------------------------------------------------------------------
+
+Key
+
+Key includes a modified copy of GenOffice (https://github.com/genspark-ai/genoffice,
+commit de139a061537bea40f0cc81ef8f09a95f77ac52a). Key's changes:
+product branding, the Electron shell (replaced by Key's own apps/key), theming,
+fixes and features in the editors and packages. The upstream PDF app,
+packages/pdf2docx and the separately licensed ee/ directory are not included.
+UPSTREAM-CHANGES.txt lists every file Key modified, added or removed. The
+GenOffice files, modified or not, remain under the Apache License 2.0 (LICENSE).
+Key's own code is MIT licensed; see LICENSE and LICENSES.md at the root of
+Key's repository.
