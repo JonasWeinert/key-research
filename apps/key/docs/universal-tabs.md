@@ -1,12 +1,12 @@
 # Universal tabs and mixed splits
 
-Library scopes, all-item lists, notes, pages, saved database views and reference/media entries participate in the same main-process view ownership model as PDFs and Office documents. Sidebar navigation opens or focuses an owned view; it no longer replaces a global editor. A record has one owner per workspace regardless of the project used to reach it. Workspace/project library scopes have distinct owners. New, unsaved records have independent identities; saving transfers their identity to the canonical record ID.
+Library scopes, all-item lists, notes, pages, saved database views and reference/media entries participate in the same main-process view ownership model as PDFs and browser pages. Sidebar navigation opens or focuses an owned view; it no longer replaces a global editor. A record has one owner per workspace regardless of the project used to reach it. Workspace/project library scopes have distinct owners. New, unsaved records have independent identities; saving transfers their identity to the canonical record ID.
 
 The split picker lists other singleton tabs. Either pane can contain any supported view type. Focus, swap, separate, reorder, close and ratio changes operate on view IDs. A split group holds a nested layout of up to eight panes (see `windows-workspaces-and-panes.md`). PDF back navigation remembers the originating content view.
 
 ## Rendering and lifetime
 
-`WorkspaceContent.tsx` retains each lightweight content view in the shell renderer. Hidden panes keep their drafts, input state and scroll containers; library polling/search and record-list refresh are gated by visibility. These tabs do not create additional Chromium renderers. Closing a tab unmounts its component. PDFs and Office editors retain their existing native WebContentsViews and lifecycle policies, including the two-resident-PDF limit.
+`WorkspaceContent.tsx` retains each lightweight content view in the shell renderer. Hidden panes keep their drafts, input state and scroll containers; library polling/search and record-list refresh are gated by visibility. These tabs do not create additional Chromium renderers. Closing a tab unmounts its component. PDFs and browser pages retain their native WebContentsViews and lifecycle policies, including the two-resident-PDF limit.
 
 DOM panes and native views occupy the same content rectangle below the 40px chrome, beside the current sidebar width, with a 6px divider. DOM panes contain their dialogs so a modal does not extend under an adjacent native editor. The sidebar follows the focused view's workspace/project context.
 
@@ -14,15 +14,14 @@ The main process's `home` renderer category means shell-rendered content; snapsh
 
 ## Saving and closing
 
-Record tabs use revision-checked canonical saves; source entries keep their specialized metadata and indexing commands. Save and Cmd/Ctrl+S act on the focused record. Dirty state is tracked per owned view. Closing several tabs (a group, Close Other Tabs, a window) checks each before disposing it, and stops at the first one the user keeps. Office saves continue to use their native editor guards.
+Record tabs use revision-checked canonical saves; source entries keep their specialized metadata and indexing commands. Save and Cmd/Ctrl+S act on the focused record. Dirty state is tracked per owned view. Closing several tabs (a group, Close Other Tabs, a window) checks each before disposing it, and stops at the first one the user keeps.
 
 ## Verification
 
 - `smoke-mixed-tabs.cjs`: library and note in side-by-side groups, unsaved draft retention, saved-record ownership, shared renderer count, note and PDF groups, group sizes and sidebar bounds, and cancel/discard close paths.
-- `smoke-office.cjs`: all five Office editor types alongside the library.
 - `smoke-ui.cjs`: canonical note/database saves and reload.
 - `smoke-source-entries.cjs`: typed source metadata and entry tabs.
 - `smoke-tabs.cjs`: tab dragging within a group and native view geometry; `smoke-tab-groups.cjs`: editor groups.
-- Existing library and Office-close smoke tests cover search navigation and native save guards.
+- Existing library smoke tests cover search navigation.
 
-Run GUI smoke tests serially with an isolated KEY_USER_DATA and KEY_WORKSPACE_PARENT (the scripts provide these). `smoke-mixed-tabs.cjs`, `smoke-office.cjs` and `smoke-tabs.cjs` also accept KEY_ELECTRON_EXECUTABLE for the packaged app.
+Run GUI smoke tests serially with an isolated KEY_USER_DATA and KEY_WORKSPACE_PARENT (the scripts provide these). `smoke-mixed-tabs.cjs` and `smoke-tabs.cjs` also accept KEY_ELECTRON_EXECUTABLE for the packaged app.

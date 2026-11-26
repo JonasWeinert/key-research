@@ -662,7 +662,7 @@ function About({ info }: { info: AppInfo }) {
         ))}
       </Group>
       <Group title="Licences">
-        <Row label="Key" detail="MIT licence. The Office editors derive from GenOffice and stay under Apache 2.0." />
+        <Row label="Key" detail="MIT licence." />
         <Row label="Acknowledgements" detail="Open-source software, fonts, models and citation styles Key includes.">
           <button className="kx-settings-button" disabled={!info.notices} onClick={() => info.notices && void bridge().openPath(info.notices)}>
             Open

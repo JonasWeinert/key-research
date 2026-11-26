@@ -1,0 +1,28 @@
+/* Short chrome aliases some of Key's stylesheets use (--surface, --text, --danger, …).
+   They are defined on native.css's kx-* tokens, so they follow light and dark with them;
+   add new colors to native.css (all three blocks) and alias them here only if needed. */
+
+:root {
+  --surface: var(--kx-bg);
+  --surface-subtle: var(--kx-bg-sunken);
+  --text: var(--kx-text);
+  --text-primary: var(--kx-text);
+  --text-secondary: var(--kx-text-2);
+  --text-tertiary: var(--kx-text-3);
+  --border: var(--kx-line-strong);
+  --border-subtle: var(--kx-line);
+  --border-strong: var(--kx-line-strong);
+  --hover: var(--kx-fill);
+  --pressed: var(--kx-fill-2);
+  --active-bg: var(--kx-fill-2);
+  --bg-hover-accent: var(--kx-fill-2);
+  --danger: var(--kx-red);
+  --danger-bg: color-mix(in srgb, var(--kx-red) 10%, var(--kx-bg));
+  --search-hit-bg: color-mix(in srgb, var(--kx-amber) 34%, transparent);
+  --color-brand-secondary: var(--kx-accent);
+  --color-btn-primary: var(--kx-accent);
+  --color-btn-primary-hover: color-mix(in srgb, var(--kx-accent) 88%, var(--kx-text));
+  --color-btn-primary-text: var(--kx-accent-ink);
+  --color-bg-overlay: rgb(0 0 0 / 0.4);
+  --shadow-modal-strong: var(--kx-shadow-pop);
+}

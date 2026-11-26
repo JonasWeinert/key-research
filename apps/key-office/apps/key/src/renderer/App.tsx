@@ -431,7 +431,7 @@ export default function App() {
       return;
     }
     if (r.properties?.path && r.properties?.editor) {
-      action("open-office-record", {
+      action("open-record-file", {
         recordId: r.id,
         workspaceId: r.workspaceId || workspaceId,
       });
@@ -957,7 +957,7 @@ export default function App() {
                   <button
                     disabled={!workspaceId}
                     aria-label="Create item"
-                    title="New note, canvas, page or document"
+                    title="New note, canvas, page or database"
                     aria-expanded={createMenu}
                     onClick={() => setCreateMenu(!createMenu)}
                   >
@@ -990,21 +990,6 @@ export default function App() {
                         <Icon name="link" />
                         Link a folder…
                       </button>
-                      <hr />
-                      {["docs", "sheets", "slides", "markdown", "html"].map(
-                        (kind) => (
-                          <button
-                            key={kind}
-                            onClick={() => {
-                              setCreateMenu(false);
-                              action("create-office", { kind, workspaceId });
-                            }}
-                          >
-                            <Icon name="doc" />
-                            New {kind === "docs" ? "document" : kind}
-                          </button>
-                        ),
-                      )}
                     </div>
                   )}
                 </>
