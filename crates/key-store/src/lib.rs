@@ -7,6 +7,7 @@ mod graph;
 mod identify;
 mod linked;
 mod links;
+pub mod matching;
 mod openalex;
 mod properties;
 mod relations;

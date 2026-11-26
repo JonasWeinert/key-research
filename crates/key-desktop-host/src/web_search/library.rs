@@ -44,11 +44,40 @@ pub struct Asked {
     pub year: Option<i64>,
     #[serde(default)]
     pub ids: super::types::Ids,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub first_author: Option<String>,
 }
 
 impl From<&WebResult> for Asked {
     fn from(w: &WebResult) -> Self {
-        Self { key: "work".into(), doi: w.doi.clone(), title: w.title.clone(), year: w.year, ids: w.ids.clone() }
+        Self { key: "work".into(), doi: w.doi.clone(), title: w.title.clone(), year: w.year, ids: w.ids.clone(), url: w.landing_url.clone(), first_author: w.authors.first().cloned() }
+    }
+}
+
+impl Asked {
+    /// As the store's matcher asks it.
+    pub fn query(&self) -> Json {
+        json!({
+            "key": self.key, "doi": self.doi, "url": self.url, "title": self.title, "year": self.year, "firstAuthor": self.first_author,
+            "arxiv": self.ids.arxiv, "pmid": self.ids.pmid, "pmcid": self.ids.pmcid, "openalex": self.ids.openalex,
+        })
+    }
+}
+
+/// Which of these works the library has: key -> source id, through the store's matcher when
+/// there is one. `certain_only` leaves out title matches ("possibly in library"), which never
+/// stop a work from being added.
+pub fn existing(library: &dyn super::Library, works: &[Asked], certain_only: bool) -> Map<String, Json> {
+    let queries: Vec<Json> = works.iter().take(500).map(Asked::query).collect();
+    match library.match_works(&queries) {
+        Some(hits) => hits
+            .into_iter()
+            .filter(|h| !certain_only || h["certain"].as_bool().unwrap_or(false))
+            .filter_map(|h| Some((h["key"].as_str()?.to_string(), h["sourceId"].clone())))
+            .collect(),
+        None => find_existing(works, &|text| library.find(text)),
     }
 }
 

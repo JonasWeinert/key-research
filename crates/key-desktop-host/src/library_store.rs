@@ -146,6 +146,9 @@ impl Library {
             "store_sources" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.list_sources(&q)?)),
             "store_facets" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.facets(&q)?)),
             "store_source" => arg::<String>(args, "id").and_then(|id| json_output(self.store.source(&id)?)),
+            // "Already in library": which of these works the library has, and how it knows.
+            "store_match_identifiers" => arg::<Option<Vec<key_store::matching::MatchQuery>>>(args, "works")
+                .and_then(|works| json_output(self.store.match_identifiers(&works.unwrap_or_default())?)),
             "store_create" => arg::<SourceInput>(args, "source").and_then(|input| {
                 let source = self.store.insert_source(input)?;
                 self.indexer.wake();
