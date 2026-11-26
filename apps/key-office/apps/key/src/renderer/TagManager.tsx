@@ -10,7 +10,7 @@ import { showInLibrary } from "./filter-links";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon } from "./icons";
 import type { Invoke } from "./library-api";
-import { fold, plural, splitPath, valueLabel, type PropertyInfo, type Suggestion, type SuggestionKind, type TagIndex } from "./tag-analysis";
+import { fold, plural, type PropertyInfo, type Suggestion, type SuggestionKind, type TagIndex } from "./tag-analysis";
 import { ancestors, buildTree, planChange, sortTree, visibleRows, type ManagerPlan, type PlannedChange, type TagNode, type TagSort } from "./tag-plan";
 import "./tag-manager.css";
 
@@ -863,12 +863,28 @@ function ActionPanel({
   // Nest
   const [parent, setParent] = useState(panel.mode === "nest" ? (panel.parent ?? "") : "");
   // Convert
-  const common = commonPrefix(tags);
-  const [name, setName] = useState(panel.mode === "convert" ? (panel.name ?? (tags.length === 1 ? valueLabel(tags[0]) : common ? valueLabel(common) : "")) : "");
+  // The form's starting name and values come from the host (key-store tag_analysis.rs).
+  const [name, setName] = useState(panel.mode === "convert" ? (panel.name ?? "") : "");
   const [type, setType] = useState<"boolean" | "select">(panel.mode === "convert" ? (panel.type ?? (tags.length === 1 ? "boolean" : "select")) : "select");
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(tags.map((t) => [t, (panel.mode === "convert" && panel.values?.find(([x]) => x === t)?.[1]) || valueLabel(t, common)])),
+    Object.fromEntries(tags.map((t) => [t, (panel.mode === "convert" && panel.values?.find(([x]) => x === t)?.[1]) || t])),
   );
+  const tagsKey = tags.join("\u0000");
+  useEffect(() => {
+    if (panel.mode !== "convert") return;
+    let live = true;
+    void invoke<{ name: string; values: Record<string, string> }>("store_tag_convert_defaults", { tags }, workspaceId)
+      .then((d) => {
+        if (!live) return;
+        setName((current) => current || d.name);
+        setValues((current) => Object.fromEntries(tags.map((t) => [t, panel.values?.find(([x]) => x === t)?.[1] || (current[t] && current[t] !== t ? current[t] : d.values[t] ?? t)])));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagsKey, panel.mode]);
   const [removeTags, setRemoveTags] = useState(true);
 
   let plan: ManagerPlan | undefined;
@@ -881,7 +897,7 @@ function ActionPanel({
     const existing = properties.find((p) => fold(p.name) === fold(name.trim()));
     if (existing && existing.type !== type) problem = `“${existing.name}” is already a ${existing.type === "boolean" ? "checkbox" : existing.type} property. Choose another name or type.`;
     else if (existing) note = <>Adds to the existing “{existing.name}” property{existing.type === "select" && existing.options?.length ? ` (${plural(existing.options.length, "value")} already)` : ""}.</>;
-    plan = { type: "property", name: existing?.name ?? name.trim(), propertyType: type, values: tags.map((t): [string, string | boolean] => [t, type === "boolean" ? true : values[t]?.trim() || valueLabel(t)]), removeTags };
+    plan = { type: "property", name: existing?.name ?? name.trim(), propertyType: type, values: tags.map((t): [string, string | boolean] => [t, type === "boolean" ? true : values[t]?.trim() || t]), removeTags };
   }
   // The host plans it (and says why not) as the form changes.
   const [planned, setPlanned] = useState<{ key: string; change?: PlannedChange; problem?: string }>();
@@ -1033,8 +1049,3 @@ function ActionPanel({
   );
 }
 
-/** "status" for "status: read" and "status: to read". */
-function commonPrefix(tags: string[]) {
-  const roots = tags.map((t) => splitPath(t)?.[0]);
-  return roots.length > 1 && roots.every((r) => r && fold(r) === fold(roots[0]!)) ? roots[0] : undefined;
-}

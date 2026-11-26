@@ -255,3 +255,16 @@ fn plans_parse_from_the_renderer_shape() {
     let parsed: TagPlan = serde_json::from_value(json!({ "type": "rename", "tag": "a", "to": "b" })).unwrap();
     assert_eq!(serde_json::to_value(&parsed).unwrap()["type"], "rename");
 }
+
+#[test]
+fn convert_form_defaults_take_the_shared_root_off() {
+    let tags = vec!["status: read".to_string(), "Status: to read".to_string()];
+    let d = convert_defaults(&tags);
+    assert_eq!(d["common"], "status");
+    assert_eq!(d["name"], "Status");
+    assert_eq!(d["values"]["status: read"], "Read");
+    assert_eq!(d["values"]["Status: to read"], "To read");
+    let one = convert_defaults(&["#important".to_string()]);
+    assert_eq!(one["name"], "Important");
+    assert!(one["common"].is_null());
+}
