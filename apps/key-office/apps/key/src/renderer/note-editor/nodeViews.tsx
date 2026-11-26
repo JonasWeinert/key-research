@@ -260,7 +260,7 @@ export function SourceQuoteView({ node, editor }: ReactNodeViewProps) {
           className="ne-squote-link"
           title="Open source"
           onMouseDown={(e) => e.preventDefault()}
-          onClick={() => getRuntime(editor)?.open(id, page ?? undefined)}
+          onClick={() => getRuntime(editor)?.open(id, page ?? undefined, node.textContent)}
         >
           <Icon name="quote" size={12} />
           <span>{parts.join(" · ")}</span>

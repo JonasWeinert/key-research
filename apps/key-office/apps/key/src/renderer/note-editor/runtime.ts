@@ -25,7 +25,7 @@ export interface NoteRuntime {
   /** Items dropped in at [from, to): offers to turn the links into embeds or citations. */
   dropped(items: DraggedItem[], from: number, to: number): void;
   resolve(id: string): Promise<SourceRef | null>;
-  open(id: string, page?: number): void;
+  open(id: string, page?: number, quote?: string): void;
   openItem(item: ItemLink): void;
   promptUrl(request: UrlPromptRequest): void;
   /** Stores an image file in the workspace and answers its `media/…` path; null when notes can't store files here. */
