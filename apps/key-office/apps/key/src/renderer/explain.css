@@ -366,3 +366,18 @@
 .kx-onboarding-explain {
   margin: -4px 0 12px;
 }
+
+/* The settings window's scope line, with its (i) beside it. */
+.kx-settings-scope > small[data-settings-scope] {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.kx-settings-nav .kx-settings-scope .kx-explain-trigger {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--kx-text-muted);
+}

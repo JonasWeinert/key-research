@@ -49,7 +49,7 @@ export function Explain({ help, label, className }: { help: ExplainId; label?: b
         type="button"
         className={`${label ? "kx-explain-link" : "kx-explain-trigger"} ${className ?? ""}`}
         aria-label={label ? undefined : "Explain"}
-        aria-describedby={label ? undefined : `${popoverId}-what`}
+        aria-description={label ? undefined : entry.title}
         title={label ? undefined : entry.title}
         aria-expanded={open}
         aria-haspopup="dialog"
@@ -63,7 +63,7 @@ export function Explain({ help, label, className }: { help: ExplainId; label?: b
         }}
       >
         <Icon name="info" size={label ? 11 : 12} aria-hidden="true" />
-        {label ? <span>{text}</span> : <span id={`${popoverId}-what`} hidden>{entry.title}</span>}
+        {label && <span>{text}</span>}
       </button>
       {open && <ExplainPopover id={popoverId} entry={entry} help={help} anchor={trigger} onClose={() => setOpen(false)} />}
     </>

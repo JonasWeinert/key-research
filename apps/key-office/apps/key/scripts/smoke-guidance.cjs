@@ -51,7 +51,7 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
     }, [width, height]);
   const modal = () => page.locator(".key-modal").last();
   const section = async (name) => {
-    await modal().getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name, exact: true }).click();
+    await modal().getByRole("navigation", { name: /Settings sections$/ }).getByRole("button", { name, exact: true }).click();
     await page.waitForTimeout(350);
   };
   const inside = (box, vw, vh) => box.x >= 0 && box.y >= 0 && box.x + box.width <= vw + 0.5 && box.y + box.height <= vh + 0.5;
@@ -100,23 +100,39 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
       await modal().getByRole("heading", { name: "Library access" }).scrollIntoViewIfNeeded();
       const access = modal().locator('[data-help="settings.web.access"]');
       assert.equal(await access.getAttribute("aria-label"), "Explain");
-      assert.equal(await access.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby"))?.textContent), "What is library access?", "the (i) is described by what it explains");
+      assert.equal(await access.getAttribute("aria-description"), "What is library access?", "the (i) is described by what it explains");
       await access.click();
       await page.getByRole("dialog", { name: "What is library access?" }).waitFor();
       await page.waitForTimeout(350);
       await shot(`settings-library-access-${mode}`);
       await page.keyboard.press("Escape");
 
-      await section("Zotero");
-      await modal().getByText("Key never changes your Zotero library", { exact: false }).first().waitFor();
-      await shot(`settings-zotero-${mode}`);
-      await section("Feeds & alerts");
-      await modal().getByRole("button", { name: "What are feeds and alerts?" }).waitFor();
-      await shot(`settings-feeds-${mode}`);
       await section("General");
       await modal().getByRole("heading", { name: "Glossary" }).scrollIntoViewIfNeeded();
       await modal().getByText("Digital Object Identifier", { exact: false }).waitFor();
       await shot(`settings-general-${mode}`);
+      // Which window applies to what: Key Settings' scope line explains itself.
+      await modal().locator('[data-help="settings.scope.app"]').click();
+      await page.getByRole("dialog", { name: "Key Settings and Workspace Settings" }).waitFor();
+      await page.waitForTimeout(300);
+      await shot(`settings-scope-${mode}`);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await modal().waitFor({ state: "detached" });
+
+      // Workspace Settings: its scope, Zotero, feeds, indexing.
+      await send("open-workspace-settings");
+      await modal().waitFor();
+      await modal().locator('[data-help="settings.scope.workspace"]').waitFor();
+      await section("Zotero");
+      await modal().getByText("Key never changes your Zotero library", { exact: false }).first().waitFor();
+      await shot(`workspace-zotero-${mode}`);
+      await section("Feeds & alerts");
+      await modal().getByRole("button", { name: "What are feeds and alerts?" }).waitFor();
+      await shot(`workspace-feeds-${mode}`);
+      await section("Indexing & lookups");
+      for (const id of ["settings.search.indexing", "settings.search.metadata", "settings.libraries.find-pdf", "settings.search.people"]) await modal().locator(`[data-help="${id}"]`).first().waitFor();
+      await shot(`workspace-indexing-${mode}`);
       await page.keyboard.press("Escape");
       await modal().waitFor({ state: "detached" });
     }
