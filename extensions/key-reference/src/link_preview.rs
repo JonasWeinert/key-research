@@ -25,7 +25,7 @@ const MAX_IMAGE_PIXELS: u64 = 16_000_000;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
 const RESOLVE_TIMEOUT: Duration = Duration::from_secs(4);
-const USER_AGENT_VALUE: &str = "GPUI-PDF-Reader/0.1 link-preview";
+const USER_AGENT_VALUE: &str = "Key/0.1 link-preview";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WebsitePreview {
