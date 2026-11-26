@@ -16,14 +16,14 @@ Settings › About Key › Acknowledgements), plus `NOTICE` and `licenses/` in i
 | Rust crates `crates/key-*` (all 27, including `key-desktop-host`, `key-cite`, `key-zotero`) | MIT | `LICENSE` | yes (host binary) |
 | `apps/key` reader UI (`@key/desktop`) | MIT | `LICENSE` | yes (bundled into the Electron `pdf.html` view) |
 | `apps/key/src-tauri` (legacy Tauri shell) | MIT | `LICENSE` | no |
-| `apps/key-office/apps/key` Electron shell (`@key/electron`) | MIT, except the two files below | `LICENSE` | yes |
+| `apps/key-office/apps/key` Electron shell (`@key/electron`), including its tab strips (`tab-strip.tsx`, `tab-drag.ts`, `tab-strip.css`, Key's own implementation) | MIT | `LICENSE` | yes |
 | `apps/key-office/packages/design-system` | MIT (adapts beUI, MIT, see below) | `LICENSE`, `src/BEUI-LICENSE.txt` | yes |
 | `integrations/zotero-key-sync` (Zotero plugin) | MIT. Written against Zotero's plugin API only; it contains no Zotero (AGPL) source | `LICENSE` (also packed into the .xpi) | yes (`zotero/key-sync.xpi`) |
 | `vendor/cbindgen-compat`, `vendor/option-ext-compat`, `vendor/dwrote-compat` | MIT (Key's own stand-ins, not forks) | their `LICENSE` files | build only / inactive |
 | `extensions/*`, `experiments/*`, `tools/`, `scripts/` | MIT | `LICENSE` | no |
 
-The `@key/electron` package declares `MIT AND Apache-2.0` because of the two GenOffice-derived files
-in it; everything else in it is MIT.
+The `@key/electron` package declares `MIT`: it contains no GenOffice code. (Its earlier tab bar,
+derived from GenOffice's shell, was replaced by a new implementation.)
 
 ## GenOffice (Apache-2.0, modified by Key)
 
@@ -32,7 +32,10 @@ in it; everything else in it is MIT.
 it stays Apache-2.0, whether Key changed it or not. Key keeps upstream's `LICENSE`, `NOTICE` and
 `LICENSE-UNICODE.txt`, adds a Key section to `NOTICE`, and lists every file it modified, added or
 removed in `apps/key-office/UPSTREAM-CHANGES.txt` (`node tools/list-upstream-changes.mjs`), as
-Apache-2.0 section 4(b) requires. The upstream PDF app, `packages/pdf2docx` and the separately
+Apache-2.0 section 4(b) requires. Key removed GenOffice's and Genspark's branding (logos, product
+names, the Genspark sign-in and cloud tools, `@genspark/cli`) and renamed the bundled
+`GenOffice*` fallback fonts to `Key*` names as SIL OFL 1.1 allows; stating where the code comes
+from, as this file and `UPSTREAM.md` do, is attribution, not branding. The upstream PDF app, `packages/pdf2docx` and the separately
 licensed `ee/` directory are not included.
 
 | Component | Licence | Licence text | Shipped |
@@ -41,7 +44,6 @@ licensed `ee/` directory are not included.
 | `apps/key-office/packages/*` except `design-system` | Apache-2.0 | same | yes (bundled) |
 | `apps/key-office/apps/sheets/native/xlsx-engine` (`xlsx-sidecar`) | Apache-2.0 | same | yes (`native/xlsx-sidecar`) |
 | `apps/key-office` root package, tooling, docs, e2e | Apache-2.0 | same | no |
-| `apps/key-office/apps/key/src/renderer/TabBar.tsx`, `tabbar.css` | Apache-2.0 (derived from GenOffice `apps/shell`, modified by Key; `SPDX-License-Identifier` header in each file) | same | yes |
 
 ## Third-party code inside the tree
 
@@ -50,7 +52,7 @@ licensed `ee/` directory are not included.
 | beUI adaptations (`packages/design-system`, `apps/key/src/renderer/motion`) | MIT (Saurabh Chauhan) | `BEUI-LICENSE.txt` next to the code | yes |
 | libeot MTX decoder port (`packages/pptx-engine/src/vendor/mtx`) | **MPL-2.0** (file-level copyleft; these files stay MPL and their source stays available) | `vendor/mtx/LICENSE` | yes (Slides) |
 | emf-converter 2.0.2, modified (`packages/docx-engine/src/vendor/emf-converter`) | Apache-2.0 | its `LICENSE`, changes in its `README.md` | yes (Docs) |
-| `crates/opendataloader-pdf-rs` (Rust port of opendataloader-pdf, Java) | Apache-2.0 | its `LICENSE`, `THIRD_PARTY_NOTICES.md` | yes (host) |
+| `crates/opendataloader-pdf-rs` (Rust port of opendataloader-pdf, Java, derived from version 2.0 or later; owner-confirmed 2026-11-26) | Apache-2.0 | its `LICENSE`, `README.md` (Provenance), `THIRD_PARTY_NOTICES.md` | yes (host) |
 | `vendor/hayagriva` 0.10.1 + patch series | MIT OR Apache-2.0 (Key uses MIT; patches under the same terms) | `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE` | yes (host) |
 | `vendor/pdfium-render-tile` (pdfium-render 0.9.2 + tile patch) | MIT OR Apache-2.0 (Key uses MIT) | `LICENSE-MIT`, `LICENSE.md` | yes (host) |
 | `vendor/gpui-0.2.2-display-fix` | Apache-2.0 | `LICENSE-APACHE` | no (GPUI reader only) |
@@ -67,7 +69,8 @@ licensed `ee/` directory are not included.
 | PP-DocLayoutV3 layout model, ONNX fp16 ([JonasWeinert/key-pp-doclayoutv3-onnx](https://huggingface.co/JonasWeinert/key-pp-doclayoutv3-onnx)) | Apache-2.0 (PaddlePaddle); ONNX export taken unmodified from the embedpdf/embed-pdf-viewer dataset | the repository's `LICENSE` and model card (`tools/models/cards/`) | no: downloaded on first need (`crates/key-models`) |
 | Snowflake Arctic Embed XS, quantized ONNX ([JonasWeinert/key-arctic-embed-xs-q](https://huggingface.co/JonasWeinert/key-arctic-embed-xs-q)) | Apache-2.0 (Snowflake) | the repository's `LICENSE` and model card | no: downloaded on first need |
 | EmbeddingGemma 2, GGUF Q8_0 ([JonasWeinert/key-embeddinggemma-2-gguf](https://huggingface.co/JonasWeinert/key-embeddinggemma-2-gguf)) | Apache-2.0 (Google); GGUF conversion by ggml-org, unmodified | the repository's `LICENSE` and model card | no: downloaded on first need |
-| CSL styles (61) and locales (63) in `crates/key-cite` | **CC BY-SA 3.0**, unmodified data files | `crates/key-cite/NOTICE`; per-file authors listed in `THIRD-PARTY-NOTICES.txt` | yes (embedded in the host with `include_str!`) |
+| CSL styles (61) and locales (63) in `data/citation` | **CC BY-SA 3.0**, unmodified data files | `data/citation/NOTICE`; per-file authors listed in `THIRD-PARTY-NOTICES.txt` | yes, shipped as separate data files (`Resources/citation`), read at run time, not compiled in |
+| Citation fallback style and locale (`crates/key-cite/src/fallback`) | MIT (written for Key) | `LICENSE` | yes (in the host) |
 | Fonts: Liberation, Carlito, Noto CJK/Arabic/JP/Tamil subsets, Nanum, Poppins derivatives, KaTeX, Geist | SIL OFL 1.1 (Caladea: Apache-2.0) | `apps/key-office/apps/docs/src/renderer/fonts/LICENSE-OFL.txt`, `fonts/README.md` | yes |
 | Unicode data notice (retained from GenOffice) | Unicode-3.0 | `apps/key-office/LICENSE-UNICODE.txt` | yes |
 | Icons | Key's own glyph set (`apps/key/src/ui/glyphs.ts`); Office editors use GenOffice's and `@fluentui/react-icons` (MIT) | — | yes |
@@ -77,17 +80,17 @@ licensed `ee/` directory are not included.
 | Component | Licence | Licence text | Shipped |
 |---|---|---|---|
 | npm packages bundled into the app (≈520, from the import graph) | MIT, ISC, BSD, Apache-2.0, OFL and similar; `npm run licenses` gates the allowlist | `THIRD-PARTY-NOTICES.txt` §1 | yes |
-| `@genspark/cli` 1.4.2 + `ws` (spawned, not bundled) | MIT | `THIRD-PARTY-NOTICES.txt` §1 | yes (`gsk/`) |
 | Electron and Chromium | MIT; Chromium BSD-style and others | `LICENSES.chromium.html` | yes |
 | Rust crates in the host and `xlsx-sidecar` (≈620) | MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, etc.; dual-licensed crates used under their permissive branch | `THIRD-PARTY-NOTICES.txt` §2 (texts and NOTICE files) | yes |
 | GPUI reader graph (`crates/key-*-gpui`, `experiments/`) | see `THIRD_PARTY_NOTICES.md` and `scripts/audit-licenses.sh` | — | not in the Electron app |
 
 ## What is not MIT, and why
 
-- **GenOffice-derived code** (Office editors, their packages, `xlsx-sidecar`, `TabBar.tsx`,
-  `tabbar.css`): Apache-2.0. Key may modify and ship it but cannot relicense it; only Mainfunc
-  could. Replacing it with Key-written code is the only route to MIT for those parts.
+- **GenOffice-derived code** (Office editors, their packages, `xlsx-sidecar`): Apache-2.0.
+  Key may modify and ship it but cannot relicense it; only Mainfunc could. Replacing it with Key-written code is the only route to MIT for those parts.
 - **MPL-2.0 MTX decoder** in `pptx-engine`: stays MPL-2.0 per file.
-- **CSL styles and locales**: CC BY-SA 3.0 data, credited per file; the share-alike term applies
-  to these files (and changes to them), not to Key's program code.
+- **CSL styles and locales**: CC BY-SA 3.0 data, credited per file, shipped as separate data
+  files and not compiled in; the share-alike term applies to these files (and changes to them),
+  not to Key's program code.
+- **opendataloader-pdf port and its layout model**: Apache-2.0.
 - **Third-party libraries, models and fonts**: their own licences, listed above.

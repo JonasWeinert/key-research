@@ -177,7 +177,7 @@ const assert = require("node:assert/strict");
     geometry.push(await verifyGroups("equalized"));
 
     // Focus: clicking the left strip focuses its group; a new tab opens there; ⌘1 acts there.
-    await page.locator(`[data-group-strip="${left.id}"] .tab-strip`).click({ position: { x: 5, y: 5 }, force: true });
+    await page.locator(`[data-group-strip="${left.id}"] .kx-tabs-list`).click({ position: { x: 5, y: 5 }, force: true });
     await until(async () => (await tabs()).activeGroupId === left.id, "the left group takes focus");
     await page.evaluate(() => window.key.tabAction("new"));
     state = await tabs();
@@ -192,7 +192,7 @@ const assert = require("node:assert/strict");
     // A tab dragged onto the other group's strip moves there.
     const homeTab = (await tabs()).groups[0].tabIds.at(-1);
     const from = await page.locator(`[data-tab-id="${homeTab}"]`).boundingBox();
-    const target = await page.locator(`[data-group-strip="${right.id}"] .tab-item`).first().boundingBox();
+    const target = await page.locator(`[data-group-strip="${right.id}"] .kx-tab`).first().boundingBox();
     await page.mouse.move(from.x + 30, from.y + 14);
     await page.mouse.down();
     await page.mouse.move(target.x + target.width + 20, target.y + 14, { steps: 16 });

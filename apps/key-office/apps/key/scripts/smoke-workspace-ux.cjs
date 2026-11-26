@@ -181,7 +181,7 @@ const assert = require("node:assert/strict");
     await page.locator(".kx-highlights-row", { hasText: "Interaction effects are modest" }).waitFor();
 
     // Dropping a note on the tab bar opens it.
-    await dropOn(".tab-strip", items([{ kind: "note", id: gamma.id, title: "Gamma" }]));
+    await dropOn(".kx-tabs-list", items([{ kind: "note", id: gamma.id, title: "Gamma" }]));
     await until(async () => (await tabs()).tabs.some((t) => t.title === "Gamma"), "Gamma to open from the tab bar");
 
     // Dropping it on the sidebar canvas adds a card without opening the canvas.

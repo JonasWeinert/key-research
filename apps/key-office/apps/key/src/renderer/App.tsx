@@ -9,7 +9,7 @@ import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
 import { AddFromSourceHost } from "./add-from-source";
 import type { SearchPreviewState } from "./search-preview";
-import { TabBar, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./TabBar";
+import { GroupTabStrip, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./tab-strip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LibrarySource, type LibraryHit } from "./LibraryHome";
 import "./shell.css";
@@ -162,7 +162,7 @@ function paneItem(content?: ContentSpec, title?: string): DraggedItem | undefine
 const contentIdentity = (content?: ContentSpec) =>
   content ? [content.section, content.noteId ?? content.canvasId ?? content.sourceId ?? content.entityId ?? content.record?.id ?? content.workspaceId ?? ""].join(":") : "";
 
-/** Each group's strip, as its TabBar shows it. */
+/** Each group's strip, as its GroupTabStrip shows it. */
 const groupSummaries = (state: TabState) =>
   new Map(
     state.groups.map((group) => [
@@ -634,7 +634,7 @@ export default function App() {
       });
       const groupId = strip?.dataset.groupStrip;
       if (!strip || !groupId || groupId === drag.groupId) return undefined;
-      const rects = Array.from(strip.querySelectorAll<HTMLElement>(".tab-item"), (el) => el.getBoundingClientRect());
+      const rects = Array.from(strip.querySelectorAll<HTMLElement>(".kx-tab"), (el) => el.getBoundingClientRect());
       const found = rects.findIndex((r) => x < r.left + r.width / 2);
       const index = found < 0 ? rects.length : found;
       const marker = index < rects.length ? rects[index].left - 1 : (rects.at(-1)?.right ?? strip.getBoundingClientRect().left + 8) + 1;
@@ -1069,7 +1069,7 @@ export default function App() {
           const rect = groupRect(group.id);
           if (!rect) return null;
           return (
-            <TabBar
+            <GroupTabStrip
               key={group.id}
               api={groupApi(group.id)}
               groupId={group.id}

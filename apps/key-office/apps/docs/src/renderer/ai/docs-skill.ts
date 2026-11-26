@@ -17,7 +17,7 @@ import {
 } from './tools'
 
 const IMAGE_GEN_OFF_NOTE =
-  '\n\nNote: generate_image is currently unavailable (no image provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise it; use image_search for imagery.'
+  '\n\nNote: generate_image is currently unavailable (no image provider is configured in Settings). Do not call or promise it; use image_search for imagery.'
 
 /**
  * The docx capability as an AgentSkill: document skeleton context, the five
@@ -30,7 +30,7 @@ export function createDocsSkill(
   getTrack?: () => AiTrack | undefined,
   getComments?: () => AiCommentsAccess | undefined,
   getHf?: () => AiHeaderFooterAccess | undefined,
-  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  /** live predicate (an image provider and model are configured); false hides generate_image */
   imageGenAvailable?: () => boolean,
 ): AgentSkill {
   // Selection frozen per run: tools act on the range the prompt described,

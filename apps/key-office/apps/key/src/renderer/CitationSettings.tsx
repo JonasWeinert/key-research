@@ -96,7 +96,8 @@ export default function CitationSettings({
     };
   }, [invoke, workspaceId, style, locale, list]);
 
-  const current = list?.styles.find((s) => s.id === style);
+  // Without the shipped styles the host renders with its basic one, whatever was chosen.
+  const current = list?.styles.find((s) => s.id === style) ?? (list?.data?.available === false ? list.styles.find((s) => s.id === list.style) : undefined);
   const installed = list?.styles.filter((s) => !s.bundled) ?? [];
   const shown = useMemo(() => {
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -133,8 +134,28 @@ export default function CitationSettings({
       </Group>
     );
   }
+  const missing = list?.data && !list.data.available ? list.data : undefined;
   return (
     <>
+      {missing && (
+        <Group title="Citation data">
+          <div className="kx-settings-row kx-cite-missing" role="alert">
+            <Icon name="warning" size={16} />
+            <div>
+              <span>Citation styles not found</span>
+              <small>
+                Key’s styles and languages are missing{missing.dir ? " from the app’s resources" : ""}, so citations use a basic author–date
+                style in English. Reinstall Key to restore them.
+              </small>
+              {missing.dir && (
+                <small className="kx-settings-path" title={missing.dir}>
+                  {missing.dir}
+                </small>
+              )}
+            </div>
+          </div>
+        </Group>
+      )}
       <Group title={title} footer={footer}>
         <Row label="Style" detail={current ? `${FORMAT_LABEL[current.format]}${current.bundled ? "" : " · installed"}` : undefined}>
           <button className="kx-settings-button kx-cite-current" aria-expanded={picking} aria-label="Citation style" onClick={() => setPicking(!picking)}>

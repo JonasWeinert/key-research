@@ -116,3 +116,15 @@ and tagged-PDF diagnostics. `to_markdown()` produces pure Markdown.
 
 Licensed under Apache-2.0. The bundled model and downloaded PDFium binary retain
 their upstream licenses; review them for your distribution context.
+
+## Provenance
+
+This crate is a Rust port of opendataloader-pdf
+(<https://github.com/opendataloader-project/opendataloader-pdf>, Java), derived from its
+version 2.0 or later, which is licensed under the Apache License 2.0. Key's owner confirmed
+that version basis on 2026-11-26. The port stays under Apache-2.0 (`LICENSE`).
+
+The PP-DocLayoutV3 layout model is used under the original model's Apache-2.0 terms
+(PaddlePaddle). The ONNX export comes from a third-party dataset
+(embedpdf/embed-pdf-viewer); on 2026-11-26 the owner accepted relying on the original
+model's Apache-2.0 terms for it.

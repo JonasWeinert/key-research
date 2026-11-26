@@ -140,3 +140,22 @@
 .kx-cite-error {
   color: var(--kx-red);
 }
+
+/* The shipped styles are missing: a warning row above the style choice. */
+.kx-cite-missing {
+  align-items: flex-start;
+}
+.kx-cite-missing > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--kx-amber);
+}
+.kx-cite-missing > div {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.kx-cite-missing > div > span {
+  font-size: 13px;
+}

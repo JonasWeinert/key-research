@@ -37,9 +37,10 @@ export interface Brief {
   version: 1
 }
 
-export const BRIEF_META_NAME = 'genoffice:brief'
+export const BRIEF_META_NAME = 'key:brief'
 
-const META_RE = /<meta\s+[^>]*name\s*=\s*["']genoffice:brief["'][^>]*>/i
+// files written before the rename carry the upstream name; read both, write the new one
+const META_RE = /<meta\s+[^>]*name\s*=\s*["'](?:key|genoffice):brief["'][^>]*>/i
 
 function decodeAttr(value: string): string {
   return value

@@ -1,7 +1,6 @@
 //! Citations and bibliographies through hayagriva's CSL processor, written out as plain text,
 //! HTML and RTF. One call renders a whole document's citations so numbering, disambiguation
 //! and positions (ibid, subsequent) come out right.
-use crate::styles::locales;
 use citationberg::{
     Display, FontStyle, FontVariant, FontWeight, IndependentStyle, LocaleCode, StyleClass, TextDecoration, VerticalAlign,
     json::Item, taxonomy::Locator,
@@ -138,13 +137,20 @@ fn engine_style(style: &IndependentStyle) -> std::borrow::Cow<'_, IndependentSty
 }
 
 pub fn render(style: &IndependentStyle, locale: Option<&str>, items: &[Json], request: &RenderRequest) -> Result<RenderOutput, String> {
+    render_in(&crate::data::CitationData::global(), style, locale, items, request)
+}
+
+/// `render` with the locales of a given data folder.
+pub fn render_in(data: &crate::data::CitationData, style: &IndependentStyle, locale: Option<&str>, items: &[Json], request: &RenderRequest) -> Result<RenderOutput, String> {
     let style = engine_style(style);
     let style: &IndependentStyle = &style;
     let entries = parse_items(items);
     let find = |id: &str| entries.iter().find(|e| e.id().as_deref() == Some(id));
     let mut missing: Vec<String> = Vec::new();
     let locale = crate::styles::locale_code(locale);
-    let locale_files = locales();
+    let effective = locale.clone().or_else(|| style.default_locale.clone()).unwrap_or_else(citationberg::LocaleCode::en_us);
+    let locale_files = data.locales_for(&effective);
+    let locale_files: &[citationberg::Locale] = &locale_files;
     let note_style = style.settings.class == StyleClass::Note;
 
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
