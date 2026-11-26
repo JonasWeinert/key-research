@@ -250,6 +250,55 @@ export const HELP = {
       links: [{ label: "Request a key at semanticscholar.org", url: "https://www.semanticscholar.org/product/api#api-key-form" }],
     },
   ),
+  "settings.services.ncbi": explain(
+    "A PubMed (NCBI) key",
+    ["PubMed is free and works without a key. A free NCBI key lets Key send 10 requests a second instead of 3, so large PubMed searches finish sooner."],
+    {
+      steps: ["Sign in at ncbi.nlm.nih.gov (a free NCBI account, or your institution's login).", "Open Account settings and find API Key Management.", "Create a key, paste it here and press Save."],
+      links: [{ label: "Get a key at ncbi.nlm.nih.gov", url: "https://account.ncbi.nlm.nih.gov/settings/" }],
+    },
+  ),
+  "settings.services.elsevier": explain(
+    "A Scopus key",
+    [
+      "Scopus is Elsevier's subscription database. With a free Elsevier API key, Key can search it for you, but only if your institution subscribes to Scopus: from the institution's network, or anywhere with an institutional token.",
+      "Each key may make 20,000 search requests a week. A large search with abstracts uses one request per 25 records.",
+    ],
+    {
+      steps: ["Open dev.elsevier.com and sign in with your institutional e-mail address.", "Choose My API Key, then Create API Key, give it a label and accept the API terms.", "Copy the key, paste it here and press Save. Testing it uses one request."],
+      links: [{ label: "Get a key at dev.elsevier.com", url: "https://dev.elsevier.com/apikey/manage" }],
+      privacy: "Your search goes to Elsevier with your key.",
+    },
+  ),
+  "settings.services.elsevier-insttoken": explain(
+    "A Scopus institutional token",
+    ["An institutional token lets your Scopus key work outside your institution's network. Only your library can request one from Elsevier, and it must be kept private. You do not need it on campus."],
+    {
+      steps: ["Ask your library whether they can give you an Elsevier institutional token for API use.", "Paste it here and press Save. Key sends it with your Scopus key on the next search."],
+      links: [{ label: "Elsevier API support", url: "https://dev.elsevier.com/support.html" }],
+    },
+  ),
+  "settings.services.clarivate-wos": explain(
+    "A Web of Science key",
+    [
+      "Key searches Web of Science through Clarivate's Web of Science Starter API. It returns titles, authors, journals and DOIs, but no abstracts.",
+      "The free trial plan allows 50 requests a day (about 2,500 records). If your institution subscribes to Web of Science, choose the institutional plan for 5,000 a day.",
+    ],
+    {
+      steps: ["Open developer.clarivate.com and create an account.", "Open Web of Science Starter API and subscribe to a plan.", "Register an application, copy its API key, paste it here and press Save. Testing it uses one request."],
+      links: [{ label: "Get a key at developer.clarivate.com", url: "https://developer.clarivate.com/apis/wos-starter" }],
+      privacy: "Your search goes to Clarivate with your key.",
+    },
+  ),
+  "settings.services.clarivate-wos-expanded": explain(
+    "A Web of Science Expanded key",
+    ["The Expanded API returns full Web of Science records with abstracts. Clarivate issues its keys to institutions with an API licence, so ask your library or research office; a Starter key does not work here."],
+    {
+      steps: ["Ask your library whether your institution licenses the Web of Science Expanded API.", "Paste the key they give you here and press Save."],
+      links: [{ label: "About the Expanded API", url: "https://developer.clarivate.com/apis/wos" }],
+      privacy: "Your search goes to Clarivate with your key.",
+    },
+  ),
 
   // ── Settings: AI ─────────────────────────────────────────────────────────────────────
   "settings.ai.provider": explain(

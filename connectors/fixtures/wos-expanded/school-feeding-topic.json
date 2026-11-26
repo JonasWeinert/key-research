@@ -1,0 +1,16 @@
+{
+  "recorded": "2026-11-26",
+  "note": "Synthetic answer in the documented response shape (no key was available when this connector was written). Replace with a real recording: see the connector's guide and connectors/README.",
+  "synthetic": true,
+  "exchanges": [
+    {
+      "method": "GET",
+      "url": "https://wos-api.clarivate.com/api/wos?count=5&databaseId=WOS&firstRecord=1&optionView=FR&usrQuery=TS%3D%22school+feeding%22+AND+PY%3D%282015-2020%29",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": "{\"Data\": {\"Records\": {\"records\": {\"REC\": [{\"UID\": \"WOS:000555555000001\", \"static_data\": {\"summary\": {\"titles\": {\"count\": 2, \"title\": [{\"type\": \"source\", \"content\": \"JOURNAL OF EXAMPLE STUDIES\"}, {\"type\": \"item\", \"content\": \"School feeding and attendance: evidence from a cluster randomised trial\"}]}, \"names\": {\"count\": 2, \"name\": [{\"role\": \"author\", \"seq_no\": 1, \"wos_standard\": \"Example, A\", \"display_name\": \"Example, Ada\", \"full_name\": \"Example, Ada\"}, {\"role\": \"author\", \"seq_no\": 2, \"wos_standard\": \"Sample, B\", \"display_name\": \"Sample, Ben\", \"full_name\": \"Sample, Ben\"}]}, \"pub_info\": {\"pubyear\": 2017, \"sortdate\": \"2017-04-01\", \"pubtype\": \"Journal\", \"coverdate\": \"APR 2017\", \"vol\": 8, \"issue\": 2}, \"doctypes\": {\"count\": 1, \"doctype\": \"Article\"}, \"publishers\": {\"publisher\": {\"names\": {\"name\": {\"display_name\": \"EXAMPLE PRESS\", \"role\": \"publisher\"}}}}}, \"fullrecord_metadata\": {\"abstracts\": {\"count\": 1, \"abstract\": {\"abstract_text\": {\"count\": 2, \"p\": [\"We evaluate a school feeding programme with random assignment of schools.\", \"Synthetic test record.\"]}}}, \"keywords\": {\"count\": 2, \"keyword\": [\"School feeding\", \"Attendance\"]}, \"languages\": {\"count\": 1, \"language\": {\"type\": \"primary\", \"content\": \"English\"}}, \"category_info\": {\"subjects\": {\"count\": 1, \"subject\": [{\"ascatype\": \"extended\", \"content\": \"Education & Educational Research\"}]}}, \"addresses\": {\"count\": 1, \"address_name\": {\"address_spec\": {\"country\": \"Ghana\", \"city\": \"Example City\"}}}}, \"item\": {\"keywords_plus\": {\"count\": 1, \"keyword\": \"NUTRITION\"}}}, \"dynamic_data\": {\"cluster_related\": {\"identifiers\": {\"identifier\": [{\"type\": \"doi\", \"value\": \"10.5555/example.school.1\"}, {\"type\": \"issn\", \"value\": \"0555-0555\"}]}}}}]}}}, \"QueryResult\": {\"QueryID\": \"1\", \"RecordsSearched\": 95000000, \"RecordsFound\": 1}}"
+    }
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "format": 1,
+  "id": "who-ictrp",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "WHO ICTRP",
+  "description": "The World Health Organization's International Clinical Trials Registry Platform: one search across national and regional trial registries.",
+  "homepage": "https://trialsearch.who.int/",
+  "category": "registries",
+  "coverage": "About 1 million registrations from 17 primary registries (for example ClinicalTrials.gov, EU CTR, ISRCTN, the Chinese, Indian and Pan-African registries).",
+  "terms": "Manual. WHO offers the ICTRP web service and full data set only on request; there is no open, keyless API. Key writes the search and opens the ICTRP search portal.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 100000,
+    "chunk": "none"
+  },
+  "manual": {
+    "url": "https://trialsearch.who.int/",
+    "steps": [
+      "Key opens the ICTRP search portal. Choose Advanced Search.",
+      "Paste the search Key copied for you into Condition or Intervention as fits; ICTRP takes AND, OR and NOT.",
+      "Set the recruitment status to All.",
+      "Choose Export results, all fields, as XML, and save the file.",
+      "ICTRP includes ClinicalTrials.gov registrations; Key merges those duplicates by their NCT number."
+    ],
+    "exportFormats": [
+      "xml"
+    ],
+    "importHint": "Save the ICTRP export (XML) and import it into Key with File, Import."
+  },
+  "guide": {
+    "summary": "ICTRP is the WHO's portal over national and regional trial registries. Use it next to ClinicalTrials.gov to find trials registered elsewhere, for example in Africa, India or China.",
+    "coverage": "About 1 million registrations from 17 registries worldwide.",
+    "fields": "ICTRP searches the title, condition and intervention fields; Key's search is written as plain AND, OR, NOT.",
+    "limits": [
+      "No API: run the search on the portal and export the file.",
+      "The portal is sometimes slow or offline at busy times."
+    ],
+    "credentials": "No account needed.",
+    "tips": []
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}
