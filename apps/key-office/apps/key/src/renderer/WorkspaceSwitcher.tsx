@@ -24,7 +24,8 @@ const icons = [
   "●",
   "☀",
 ];
-const colors = [
+/** Library colours, shared with the welcome. */
+export const WORKSPACE_COLORS = [
   "#64748b",
   "#2563eb",
   "#7c3aed",
@@ -34,6 +35,7 @@ const colors = [
   "#16a34a",
   "#0891b2",
 ];
+const colors = WORKSPACE_COLORS;
 export default function WorkspaceSwitcher({
   workspaces,
   selectedId,

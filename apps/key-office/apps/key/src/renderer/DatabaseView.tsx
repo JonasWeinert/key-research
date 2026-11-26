@@ -740,10 +740,17 @@ export function ContextMenu({
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         e.stopPropagation();
-        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-        e.preventDefault();
         const items = [...(ref.current?.querySelectorAll<HTMLElement>("button:not(:disabled)") ?? [])];
         const at = items.indexOf(document.activeElement as HTMLElement);
+        // Type-ahead: a letter moves to the next item that starts with it.
+        if (e.key.length === 1 && /\S/.test(e.key) && !e.metaKey && !e.ctrlKey) {
+          const key = e.key.toLowerCase();
+          const order = [...items.slice(at + 1), ...items.slice(0, at + 1)];
+          order.find((el) => el.textContent?.trim().toLowerCase().startsWith(key))?.focus();
+          return;
+        }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+        e.preventDefault();
         items[(at + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
       }}
     >

@@ -452,6 +452,13 @@ function ContextMenu({ request, onClose }: { request: MenuRequest; onClose: () =
           const next = e.key === "ArrowDown" ? actionable[(at + 1) % actionable.length] : actionable[(at - 1 + actionable.length) % actionable.length];
           setIndex(next ?? -1);
         } else if (e.key === "Enter" && index >= 0) run(entries[index] as MenuEntry);
+        else if (e.key.length === 1 && /\S/.test(e.key) && !e.metaKey && !e.ctrlKey) {
+          // Type-ahead: a letter moves to the next item that starts with it.
+          const at = actionable.indexOf(index);
+          const order = [...actionable.slice(at + 1), ...actionable.slice(0, at + 1)];
+          const next = order.find((i) => (entries[i] as MenuEntry).label.toLowerCase().startsWith(e.key.toLowerCase()));
+          if (next !== undefined) setIndex(next);
+        }
       }}
     >
       {entries.map((entry, i) =>

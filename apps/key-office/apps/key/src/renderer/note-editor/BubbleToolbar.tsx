@@ -75,6 +75,17 @@ export function BubbleToolbar({ editor }: { editor: Editor }) {
     }),
   });
 
+  // A note in a tab that is no longer shown keeps its editor (and often its focus): the
+  // bubble hides with it rather than float over the next view.
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    const dom = editor.view.dom;
+    if (typeof IntersectionObserver !== "function") return;
+    const observer = new IntersectionObserver(([entry]) => setShown(entry.isIntersecting));
+    observer.observe(dom);
+    return () => observer.disconnect();
+  }, [editor]);
+
   // The "Turn into" menu closes on outside presses, scrolling away and Escape (ui/dismiss).
   const blockRef = useRef<HTMLDivElement>(null);
   useDismiss(blockOpen, { refs: [blockRef], onDismiss: () => setBlockOpen(false) });
@@ -100,11 +111,14 @@ export function BubbleToolbar({ editor }: { editor: Editor }) {
   return (
     <BubbleMenu
       editor={editor}
-      className="ne-bubble"
+      className={shown ? "ne-bubble" : "ne-bubble is-offscreen"}
       appendTo={() => document.body}
       options={{ placement: "top", offset: 8, flip: true, shift: { padding: 8 }, strategy: "fixed" }}
       shouldShow={({ editor: e, state: s, from, to }) => {
         if (!e.isEditable || from === to) return false;
+        // Only while the note has focus (or the bubble's own field does): a note in a hidden
+        // tab keeps no toolbar floating over other views.
+        if (!e.view.hasFocus() && !document.activeElement?.closest(".ne-bubble")) return false;
         if (s.selection instanceof NodeSelection) return false;
         if (e.isActive("codeBlock")) return false;
         return s.doc.textBetween(from, to, " ").trim().length > 0;

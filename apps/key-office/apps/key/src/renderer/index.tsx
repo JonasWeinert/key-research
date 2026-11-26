@@ -28,3 +28,5 @@ createRoot(document.getElementById("root")!).render(
 );
 
 import "./mac-shell.css";
+// Menus last: one look over every surface's own values.
+import "./menu.css";

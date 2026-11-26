@@ -1041,6 +1041,10 @@
   font-size: 13px;
   padding: 3px;
 }
+.ne-bubble.is-offscreen {
+  /* Over the menu's own inline visibility. */
+  visibility: hidden !important;
+}
 .ne-bubble-row,
 .ne-bubble-link {
   display: flex;

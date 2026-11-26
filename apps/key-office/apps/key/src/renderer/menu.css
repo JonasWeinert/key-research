@@ -1,0 +1,222 @@
+/* One look for every menu, popover and suggestion list in the app, loaded after the
+   surfaces' own stylesheets (index.tsx, pdf.tsx) so it wins over their older values.
+   An opaque raised panel (text on it is held to WCAG AA) with a hairline edge, 10px corners and the pop shadow; 24px
+   rows (28px in suggestion lists) with 5px corners; the accent highlight for hover and the
+   keyboard; quiet icons, shortcut hints and section labels; inset hairline separators.
+   The reader's own view has no kx tokens: every value falls back to the design system's. */
+:root :is(
+    .kx-menu-popover,
+    .kx-item-menu,
+    .key-create-menu,
+    .key-workspace-dropdown,
+    .key-library-tools-popover,
+    .kx-tm-menu,
+    .key-pdf-rail-menu,
+    .ne-popover,
+    .ne-bubble,
+    .kx-suggest,
+    .kx-status-popover,
+    .kx-entity-popover,
+    .kx-page-popover
+  ) {
+  --kx-menu-text: var(--kx-text, var(--key-ui-text));
+  --kx-menu-muted: var(--kx-text-2, var(--key-ui-muted));
+  --kx-menu-faint: var(--kx-text-3, var(--key-ui-muted));
+  --kx-menu-line: var(--kx-line-strong, var(--key-ui-border));
+  /* A step deeper than the accent, so white text and hints on it keep 4.5:1 in both themes. */
+  --kx-menu-highlight: color-mix(in srgb, var(--kx-accent, var(--key-ui-primary)) 82%, black);
+  --kx-menu-highlight-ink: var(--kx-accent-ink, var(--key-ui-primary-ink));
+  --kx-menu-danger: var(--kx-red, var(--key-ui-danger));
+  border: 0;
+  border-radius: 10px;
+  background: var(--kx-bg-raised, var(--key-ui-bg));
+  box-shadow: var(--kx-shadow-pop, var(--key-ui-shadow)), inset 0 0 0 0.5px var(--kx-menu-line);
+  color: var(--kx-menu-text);
+  font-family: var(--kx-font, var(--key-ui-font));
+  font-size: 13px;
+}
+/* Plain menus: a list of commands. */
+:root :is(.kx-menu-popover, .kx-item-menu, .key-create-menu, .key-library-tools-popover, .kx-tm-menu, .key-pdf-rail-menu, .ne-popover, .kx-suggest) {
+  padding: 5px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  animation: kx-menu-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+:root .key-workspace-dropdown {
+  padding: 5px;
+}
+
+/* Rows */
+:root :is(
+    .kx-menu-popover > button,
+    .kx-item-menu button,
+    .key-create-menu > button,
+    .key-shell .key-library-tools-popover .kui-button,
+    .key-shell .key-workspace-dropdown [role^="menuitem"],
+    .kx-tm-menu > button,
+    .key-pdf-rail-menu button,
+    .ne-menu-row
+  ) {
+  min-height: 24px;
+  height: auto;
+  gap: 8px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 5px;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--kx-menu-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+:root :is(
+    .kx-menu-popover > button,
+    .kx-item-menu button,
+    .key-create-menu > button,
+    .key-shell .key-library-tools-popover .kui-button,
+    .key-shell .key-workspace-dropdown [role^="menuitem"],
+    .kx-tm-menu > button,
+    .key-pdf-rail-menu button,
+    .ne-menu-row
+  )
+  > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--kx-menu-muted);
+}
+:root .key-shell .key-workspace-dropdown [role^="menuitem"] .key-workspace-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+/* Suggestion lists and the palette: a little taller, as their rows carry more. */
+:root .kx-suggest-item {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: var(--kx-menu-muted);
+}
+:root .kx-found-row,
+:root .ne-menu-item {
+  border-radius: 5px;
+}
+
+/* Highlight: hover, the keyboard's row, the open one. */
+:root :is(
+    .kx-menu-popover > button,
+    .kx-item-menu button,
+    .key-create-menu > button,
+    .key-shell .key-library-tools-popover .kui-button,
+    .key-shell .key-workspace-dropdown [role^="menuitem"],
+    .kx-tm-menu > button,
+    .key-pdf-rail-menu button,
+    .ne-menu-row
+  ):is(:hover, :focus-visible, [data-active]):not(:disabled),
+:root .key-shell .key-workspace-row:hover > .kui-button,
+:root .ne-menu-item.is-active {
+  background: var(--kx-menu-highlight);
+  color: var(--kx-menu-highlight-ink);
+}
+:root :is(
+    .kx-menu-popover > button,
+    .kx-item-menu button,
+    .key-create-menu > button,
+    .key-shell .key-library-tools-popover .kui-button,
+    .key-shell .key-workspace-dropdown [role^="menuitem"],
+    .kx-tm-menu > button,
+    .key-pdf-rail-menu button,
+    .ne-menu-row
+  ):is(:hover, :focus-visible, [data-active]):not(:disabled)
+  :is(svg, kbd, small),
+:root .ne-menu-item.is-active :is(.ne-menu-hint, .ne-menu-icon) {
+  color: inherit;
+}
+/* The slash menu's tiles turn into the highlight's ink. */
+:root .ne-menu-item.is-active .ne-menu-icon {
+  background: color-mix(in srgb, var(--kx-menu-highlight-ink) 18%, transparent);
+  box-shadow: none;
+}
+:root 
+:root :is(
+    .kx-menu-popover > button,
+    .kx-item-menu button,
+    .key-create-menu > button,
+    .key-shell .key-library-tools-popover .kui-button,
+    .kx-tm-menu > button,
+    .key-pdf-rail-menu button,
+    .ne-menu-row
+  ):disabled {
+  background: transparent;
+  color: var(--kx-menu-faint);
+  opacity: 1;
+}
+/* Destructive commands read red until highlighted, then take a red highlight. */
+:root :is(.kx-menu-popover > button, .kx-item-menu button, .kx-tm-menu > button)[data-danger]:not(:hover, :focus-visible, [data-active]) {
+  color: var(--kx-menu-danger);
+}
+:root :is(.kx-menu-popover > button, .kx-item-menu button, .kx-tm-menu > button)[data-danger]:is(:hover, :focus-visible, [data-active]) {
+  background: var(--kx-menu-danger);
+  color: var(--kx-menu-highlight-ink);
+}
+
+/* Shortcut hints sit at the end, quiet. */
+:root :is(.kx-item-menu, .kx-menu-popover, .key-pdf-rail-menu, .kx-palette) :is(kbd, .kx-menu-kbd, .kx-palette-kbd) {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--kx-menu-faint, var(--kx-text-3));
+  opacity: 1;
+  font: 12px var(--kx-font, var(--key-ui-font));
+  letter-spacing: 0.04em;
+}
+:root .kx-found-row[aria-selected="true"] .kx-palette-kbd {
+  color: inherit;
+}
+
+/* Separators and section labels */
+:root :is(.kx-menu-popover, .kx-item-menu, .key-create-menu, .key-workspace-dropdown, .key-library-tools-popover, .kx-tm-menu, .key-pdf-rail-menu, .ne-popover) hr {
+  width: auto;
+  height: 0;
+  margin: 4px 8px;
+  border: 0;
+  border-top: 0.5px solid var(--kx-menu-line);
+  background: none;
+}
+:root .ne-menu-group + .ne-menu-group {
+  border-top-color: var(--kx-menu-line);
+}
+:root :is(.kx-menu-heading, .ne-menu-heading, .kx-palette-heading),
+:root .kx-menu-hint {
+  padding: 6px 8px 2px;
+  color: var(--kx-menu-muted, var(--kx-text-2));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+:root .kx-menu-hint {
+  margin: 0;
+  font-weight: 400;
+}
+
+@keyframes kx-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+/* The palette's and the search field's chosen row: the same highlight. */
+:root :is(.kx-found-row, .kx-suggest-item)[aria-selected="true"] {
+  background: color-mix(in srgb, var(--kx-accent) 82%, black);
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.kx-menu-popover, .kx-item-menu, .key-create-menu, .key-library-tools-popover, .kx-tm-menu, .key-pdf-rail-menu, .ne-popover, .kx-suggest) {
+    animation: none;
+  }
+}

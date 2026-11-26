@@ -212,15 +212,6 @@
   gap: 8px;
   margin-top: 6px;
 }
-.kx-settings-button.kx-zotero-plugin-primary {
-  background: var(--kx-accent);
-  box-shadow: 0 0.5px 1px var(--kx-line-strong);
-  color: var(--kx-accent-ink);
-}
-.kx-settings-button.kx-zotero-plugin-primary:hover:not(:disabled) {
-  background: var(--kx-accent);
-  filter: brightness(1.06);
-}
 .kx-zotero-plugin-text > .kx-zotero-plugin-error {
   color: var(--kx-red);
   font-size: 12px;

@@ -1,13 +1,15 @@
-// First-run welcome: where the library lives, bringing sources in, on-device search and
-// appearance. Every step can be skipped; nothing here is needed to start working.
+// First-run welcome: four short steps (welcome, the library, Zotero, appearance), each with
+// one primary action and a drawing of the app beside it. Every step can be skipped; nothing
+// here is needed to start working. Styles in onboarding.css.
 import { useState, type ReactNode } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
 import { bridge, type AppInfo, type Invoke, type Theme, type WorkspaceSummary } from "./library-api";
-import { ModelProgressCard, useModelProgress } from "./model-progress";
 import { ThemePicker } from "./Settings";
+import { WORKSPACE_COLORS } from "./WorkspaceSwitcher";
+import "./onboarding.css";
 
-const STEPS = ["welcome", "library", "import", "search", "appearance", "done"] as const;
+const STEPS = ["welcome", "library", "sources", "appearance"] as const;
 type Step = (typeof STEPS)[number];
 
 export default function Onboarding({
@@ -31,42 +33,53 @@ export default function Onboarding({
   const [imported, setImported] = useState<string>();
   const [importing, setImporting] = useState<"zotero" | "files">();
   const [error, setError] = useState("");
-  const model = useModelProgress(invoke, library?.id);
   const index = STEPS.indexOf(step);
+  const last = index === STEPS.length - 1;
   const next = () => setStep(STEPS[Math.min(STEPS.length - 1, index + 1)]);
   const back = () => setStep(STEPS[Math.max(0, index - 1)]);
   const finish = () => onFinish(library?.id);
   const home = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
+  const color = library?.color || WORKSPACE_COLORS[0];
+  const setColor = (next: string) => {
+    if (!library) return;
+    setLibrary({ ...library, color: next });
+    void invoke("workspace_set_appearance", { icon: library.icon ?? "", color: next }, library.id).catch(() => {});
+  };
+  const run = async (kind: "zotero" | "files", work: () => Promise<void>) => {
+    setImporting(kind);
+    setError("");
+    try {
+      await work();
+    } catch (e) {
+      setError(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ""));
+    } finally {
+      setImporting(undefined);
+    }
+  };
 
   return (
     <GlobalDrawer presentation="window" label="Welcome to Key" onClose={finish}>
       <div className="kx-onboarding" data-step={step} data-modal-view={step}>
-        <div className="kx-onboarding-stage" key={step}>
+        <div className="kx-onboarding-copy" key={step}>
           {step === "welcome" && (
-            <Hero icon="books" title="Welcome to Key" lead="A calm place to collect, read and search your research.">
+            <Copy eyebrow="Welcome" title="Welcome to Key" lead="Collect, read and search your research in one calm place.">
               <ul className="kx-onboarding-points">
-                <Point icon="layers" title="Everything in one library">
-                  PDFs, references, web pages, notes, audio, video and images, with collections, tags and your own properties.
-                </Point>
-                <Point icon="search" title="Find anything, by words or meaning">
-                  Search titles, notes and the full text at once. Results show exactly where each match is.
-                </Point>
-                <Point icon="lock" title="Private by default">
-                  Files stay where they are. Text extraction, the search index and the search model all run on this Mac.
-                </Point>
+                <Point icon="layers">PDFs, references, web pages and notes in one library</Point>
+                <Point icon="search">Search by words or by meaning, down to the passage</Point>
+                <Point icon="lock">Everything runs and stays on this Mac</Point>
               </ul>
-            </Hero>
+            </Copy>
           )}
           {step === "library" && (
-            <Hero icon="folder" title="Where your library lives" lead="A library is a folder on this Mac. You can add more later, for example one per project.">
+            <Copy eyebrow="Library" title="Your library" lead="A folder on this Mac. Files you add stay where they are.">
               {library && (
                 <div className="kx-onboarding-card">
-                  <span className="kx-settings-swatch" style={{ background: library.color || undefined }}>
-                    {library.icon || library.name.slice(0, 1)}
+                  <span className="kx-onboarding-swatch" style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
+                    {library.icon || <Icon name="books" size={15} />}
                   </span>
                   <div>
                     <strong>{library.name}</strong>
-                    <small>{home(library.root)}</small>
+                    <small title={library.root}>{home(library.root)}</small>
                   </div>
                   <button
                     className="kx-settings-button"
@@ -75,108 +88,68 @@ export default function Onboarding({
                       if (added) setLibrary(added);
                     }}
                   >
-                    Choose another folder…
+                    Change…
                   </button>
                 </div>
               )}
-              <p className="kx-onboarding-note">Linked files are never moved or changed. Key keeps its index in a hidden .key folder inside the library.</p>
-            </Hero>
+              {library && (
+                <div className="kx-onboarding-colors" role="radiogroup" aria-label="Library colour">
+                  {WORKSPACE_COLORS.map((c) => (
+                    <button key={c} role="radio" aria-checked={color === c} aria-label={`Colour ${c}`} style={{ background: c }} onClick={() => setColor(c)} />
+                  ))}
+                </div>
+              )}
+            </Copy>
           )}
-          {step === "import" && (
-            <Hero icon="upload" title="Bring in your sources" lead="Start from what you already have, or begin with an empty library.">
+          {step === "sources" && (
+            <Copy eyebrow="Sources" title="Bring in your sources" lead="Start from what you have, or begin empty and add later.">
               <div className="kx-onboarding-choices">
                 <Choice
-                  icon="books"
-                  title={info.zoteroFound ? "Import your Zotero library" : "Zotero"}
-                  detail={
-                    info.zoteroFound
-                      ? `Found at ${home(info.zoteroDir)}. Items, collections, notes, tags and PDFs come across; Zotero is not changed.`
-                      : "No Zotero library was found in your home folder."
-                  }
+                  icon="zotero"
+                  title="Import from Zotero"
+                  detail={info.zoteroFound ? "Items, collections, notes and PDFs. Zotero is not changed." : "No Zotero library found on this Mac."}
                   busy={importing === "zotero"}
                   disabled={!info.zoteroFound || !!importing}
-                  onClick={async () => {
-                    setImporting("zotero");
-                    setError("");
-                    try {
+                  onClick={() =>
+                    run("zotero", async () => {
                       const { workspace, report } = await bridge().importZotero();
                       setLibrary(workspace as WorkspaceSummary);
-                      setImported(`Imported ${report.items?.toLocaleString() ?? "your"} items from Zotero into “${workspace.name}”.`);
-                    } catch (e) {
-                      setError(String(e).replace(/^Error: /, ""));
-                    } finally {
-                      setImporting(undefined);
-                    }
-                  }}
+                      setImported(`${report.items?.toLocaleString() ?? "Your"} items imported into ${workspace.name}`);
+                    })
+                  }
                 />
                 <Choice
                   icon="doc"
                   title="Add files"
-                  detail="PDFs, web pages, text, audio, video and images. You can also drop files on the library at any time."
+                  detail="PDFs, web pages, text, audio and images."
                   busy={importing === "files"}
                   disabled={!library || !!importing}
-                  onClick={async () => {
-                    if (!library) return;
-                    setImporting("files");
-                    setError("");
-                    try {
+                  onClick={() =>
+                    run("files", async () => {
+                      if (!library) return;
                       const created = await bridge().addFiles(library.id);
-                      if (created.length) setImported(`Added ${created.length} ${created.length === 1 ? "source" : "sources"} to “${library.name}”.`);
-                    } catch (e) {
-                      setError(String(e).replace(/^Error: /, ""));
-                    } finally {
-                      setImporting(undefined);
-                    }
-                  }}
+                      if (created.length) setImported(`${created.length} ${created.length === 1 ? "source" : "sources"} added to ${library.name}`);
+                    })
+                  }
                 />
               </div>
               {imported && (
-                <p className="kx-onboarding-done">
-                  <Icon name="check" size={13} /> {imported} Indexing has started.
+                <p className="kx-onboarding-done" role="status">
+                  <Icon name="check" size={12} /> {imported}
                 </p>
               )}
               {error && <p className="kx-inline-error">{error}</p>}
-            </Hero>
-          )}
-          {step === "search" && (
-            <Hero icon="sparkle" title="Search that understands your sources" lead="Key reads each source, splits it into passages and indexes them, so you can find a sentence by its words or by what it means.">
-              {model && model.state !== "ready" ? (
-                <ModelProgressCard progress={model} />
-              ) : (
-                <p className="kx-onboarding-done">
-                  <Icon name="check" size={13} /> The on-device search model is ready.
-                </p>
-              )}
-              <ul className="kx-onboarding-points kx-onboarding-points-compact">
-                <Point icon="activity" title="Indexing follows you">
-                  Sources you open, select or scroll to are indexed first. Progress shows at the bottom of the library.
-                </Point>
-                <Point icon="chip" title="Runs on this Mac">
-                  The model (about 310 MB) downloads once and uses your Mac’s graphics chip. Searching by words works before it finishes.
-                </Point>
-              </ul>
-            </Hero>
+              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Keep it in sync with Zotero later, in Settings.</p>}
+            </Copy>
           )}
           {step === "appearance" && (
-            <Hero icon="display" title="Choose a look" lead="You can change this any time in Settings.">
+            <Copy eyebrow="Appearance" title="Choose a look" lead="Change it any time in Settings.">
               <ThemePicker value={theme} onChange={onTheme} />
-            </Hero>
+            </Copy>
           )}
-          {step === "done" && (
-            <Hero icon="check" title="You’re all set" lead="A few things worth knowing:">
-              <ul className="kx-onboarding-tips">
-                <li>
-                  <kbd>⌘F</kbd> Search the library as you type, across details and full text.
-                </li>
-                <li>
-                  <kbd>↵</kbd> Open the selected source; click a passage to jump to its page.
-                </li>
-                <li>
-                  <kbd>⌘,</kbd> Settings: libraries, search, appearance and an optional AI provider.
-                </li>
-              </ul>
-            </Hero>
-          )}
+        </div>
+        <div className="kx-onboarding-visual" aria-hidden="true">
+          {step === "sources" ? <ImportArt zotero={info.zoteroFound} /> : <AppArt step={step} name={library?.name ?? "Personal"} color={color} icon={library?.icon ?? undefined} />}
         </div>
         <footer className="kx-onboarding-footer">
           <div className="kx-onboarding-dots" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
@@ -185,9 +158,9 @@ export default function Onboarding({
             ))}
           </div>
           <div className="kx-onboarding-actions">
-            {step !== "done" && step !== "welcome" && (
-              <button className="kx-settings-button kx-onboarding-skip" onClick={finish}>
-                Skip setup
+            {!last && (
+              <button className="kx-onboarding-skip" onClick={finish}>
+                Skip
               </button>
             )}
             {index > 0 && (
@@ -195,8 +168,8 @@ export default function Onboarding({
                 Back
               </button>
             )}
-            <button className="kx-button-primary" disabled={!!importing} onClick={step === "done" ? finish : next}>
-              {step === "welcome" ? "Get started" : step === "done" ? "Open my library" : "Continue"}
+            <button className="kx-button-primary" autoFocus disabled={!!importing} onClick={last ? finish : next}>
+              {step === "welcome" ? "Get started" : last ? "Start using Key" : "Continue"}
             </button>
           </div>
         </footer>
@@ -205,28 +178,21 @@ export default function Onboarding({
   );
 }
 
-function Hero({ icon, title, lead, children }: { icon: IconName; title: string; lead: string; children?: ReactNode }) {
+function Copy({ eyebrow, title, lead, children }: { eyebrow: string; title: string; lead: string; children?: ReactNode }) {
   return (
     <>
-      <span className="kx-onboarding-icon">
-        <Icon name={icon} size={26} />
-      </span>
+      <span className="kx-onboarding-eyebrow">{eyebrow}</span>
       <h1>{title}</h1>
       <p className="kx-onboarding-lead">{lead}</p>
       <div className="kx-onboarding-content">{children}</div>
     </>
   );
 }
-function Point({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
+function Point({ icon, children }: { icon: IconName; children: ReactNode }) {
   return (
     <li>
-      <span>
-        <Icon name={icon} size={15} />
-      </span>
-      <div>
-        <strong>{title}</strong>
-        <p>{children}</p>
-      </div>
+      <Icon name={icon} size={14} />
+      <span>{children}</span>
     </li>
   );
 }
@@ -234,13 +200,102 @@ function Choice({ icon, title, detail, busy, disabled, onClick }: { icon: IconNa
   return (
     <button className="kx-onboarding-choice" disabled={disabled} onClick={onClick}>
       <span>
-        <Icon name={icon} size={17} />
+        <Icon name={icon} size={16} />
       </span>
       <div>
         <strong>{busy ? "Working…" : title}</strong>
         <small>{detail}</small>
       </div>
-      <Icon name="chevronRight" size={12} />
+      {busy ? <span className="kx-onboarding-spinner" /> : <Icon name="chevronRight" size={11} />}
     </button>
+  );
+}
+
+/** A small drawing of Key's window: the sidebar with the library, and search results. It is
+ *  drawn with the app's own tokens, so it follows the appearance chosen beside it. */
+function AppArt({ step, name, color, icon }: { step: Step; name: string; color: string; icon?: string }) {
+  const rows: [string, string, string][] = [
+    ["Sleep and memory consolidation", "…replay during slow-wave sleep ", "strengthens recent memories"],
+    ["Hippocampal replay in rodents", "…sequences that ", "strengthen recent memories"],
+    ["Napping and recall in adults", "…a short nap ", "improves recall the next day"],
+  ];
+  return (
+    <div className="kx-art-window" data-step={step}>
+      <div className="kx-art-sidebar">
+        <div className="kx-art-lights">
+          <i />
+          <i />
+          <i />
+        </div>
+        <div className="kx-art-library">
+          <span style={{ color, background: `color-mix(in srgb, ${color} 16%, transparent)` }}>{icon || <Icon name="books" size={10} />}</span>
+          <b>{name}</b>
+        </div>
+        <div className="kx-art-nav" data-active>
+          <Icon name="books" size={10} /> Sources
+        </div>
+        <div className="kx-art-nav">
+          <Icon name="note" size={10} /> Notes
+        </div>
+        <div className="kx-art-nav">
+          <Icon name="quote" size={10} /> Highlights
+        </div>
+        <div className="kx-art-nav">
+          <Icon name="tag" size={10} /> Tags
+        </div>
+      </div>
+      <div className="kx-art-main">
+        <div className="kx-art-search">
+          <Icon name="search" size={10} />
+          <span>how does sleep help memory</span>
+        </div>
+        {rows.map(([title, before, hit]) => (
+          <div className="kx-art-row" key={title}>
+            <span className="kx-art-doc">
+              <Icon name="doc" size={10} />
+            </span>
+            <div>
+              <b>{title}</b>
+              <span>
+                {before}
+                <mark>{hit}</mark>
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Zotero's library coming across into Key. */
+function ImportArt({ zotero }: { zotero: boolean }) {
+  return (
+    <div className="kx-art-import">
+      <div className="kx-art-app" data-app="zotero">
+        <span>
+          <Icon name={zotero ? "zotero" : "folder"} size={22} />
+        </span>
+        <b>{zotero ? "Zotero" : "Files"}</b>
+        <i />
+        <i />
+        <i />
+      </div>
+      <div className="kx-art-flow">
+        <span />
+        <span />
+        <span />
+        <Icon name="arrowRight" size={14} />
+      </div>
+      <div className="kx-art-app" data-app="key">
+        <span>
+          <Icon name="books" size={22} />
+        </span>
+        <b>Key</b>
+        <i />
+        <i />
+        <i />
+      </div>
+    </div>
   );
 }

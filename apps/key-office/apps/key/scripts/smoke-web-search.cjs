@@ -265,7 +265,7 @@ const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host
     // Settings: Semantic Scholar turned off is no longer asked.
     await page.locator(".key-sidebar").getByText("Settings", { exact: true }).click();
     const settings = page.locator(".kx-settings");
-    await settings.getByRole("button", { name: "Search & indexing" }).click();
+    await settings.getByRole("button", { name: "Web & browser" }).click();
     const s2Switch = settings.getByRole("checkbox", { name: "Search Semantic Scholar" });
     await s2Switch.scrollIntoViewIfNeeded();
     await s2Switch.waitFor();

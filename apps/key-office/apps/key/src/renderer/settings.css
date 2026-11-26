@@ -1,0 +1,586 @@
+/* Settings (Settings.tsx and the section files that use its Group and Row): a window-sized
+   sheet in the manner of macOS System Settings. A sidebar of grouped sections with a search
+   field; a content pane of inset groups whose rows put the label left and the control right. */
+.key-global-drawer.key-global-window {
+  overflow: hidden;
+  background: var(--kx-bg);
+}
+.kx-settings {
+  display: grid;
+  grid-template-columns: 216px 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+}
+
+/* Sidebar */
+.kx-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 10px;
+  border-right: 0.5px solid var(--kx-line-strong);
+  background: var(--kx-bg-sunken);
+}
+.kx-settings-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  margin-bottom: 2px;
+  padding: 0 8px;
+  border-radius: 7px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text-3);
+}
+.kx-settings-search:focus-within {
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+.kx-settings-search input:focus-visible {
+  outline: none;
+}
+.kx-settings-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+}
+.kx-settings-search input::placeholder {
+  color: var(--kx-text-3);
+}
+.kx-settings-search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+.kx-settings-nav-group {
+  display: grid;
+  gap: 1px;
+}
+.kx-settings-nav button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  text-align: left;
+}
+.kx-settings-nav button:hover {
+  background: var(--kx-fill);
+}
+.kx-settings-nav button[aria-current="page"] {
+  background: var(--kx-sidebar-selected);
+  font-weight: 500;
+}
+.kx-settings-nav:focus-within button[aria-current="page"] {
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+}
+.kx-settings-nav-empty {
+  margin: 4px 8px;
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+/* Coloured tiles, as System Settings marks its panes. */
+.kx-settings-glyph {
+  --glyph: var(--kx-text-2);
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--glyph);
+  color: var(--kx-accent-ink);
+}
+.kx-settings-glyph[data-section="libraries"] {
+  --glyph: var(--kx-accent);
+}
+.kx-settings-glyph[data-section="zotero"] {
+  --glyph: var(--kx-red);
+}
+.kx-settings-glyph[data-section="search"] {
+  --glyph: var(--kx-indigo);
+}
+.kx-settings-glyph[data-section="web"] {
+  --glyph: var(--kx-green);
+}
+.kx-settings-glyph[data-section="services"] {
+  --glyph: var(--kx-amber);
+}
+.kx-settings-glyph[data-section="ai"] {
+  --glyph: var(--kx-map-tag);
+}
+.kx-settings-glyph[data-section="about"] {
+  --glyph: var(--kx-text-3);
+}
+
+/* Content pane */
+.kx-settings-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.kx-settings-body > header {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 52px;
+  padding: 0 24px;
+  border-bottom: 0.5px solid var(--kx-line);
+}
+.kx-settings-body h1 {
+  margin: 0;
+  font: 600 15px/1.2 var(--kx-font-display);
+  letter-spacing: -0.005em;
+}
+.kx-settings-body .kx-sheet-close {
+  top: 15px;
+  right: 16px;
+}
+.kx-settings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px 24px 28px;
+  animation: kx-settings-in 180ms var(--kx-ease);
+}
+@keyframes kx-settings-in {
+  from {
+    opacity: 0;
+  }
+}
+.kx-settings-scroll > :last-child {
+  margin-bottom: 0;
+}
+
+/* Groups and rows */
+.kx-settings-group {
+  margin-bottom: 20px;
+}
+.kx-settings-group > h3 {
+  margin: 0 0 6px 2px;
+  color: var(--kx-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.kx-settings-rows {
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--kx-fill);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+}
+.kx-settings-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 7px 12px;
+}
+/* Separators start at the text, as in System Settings. */
+.kx-settings-row + .kx-settings-row::before,
+.kx-settings-stats + .kx-settings-row::before,
+.kx-settings-row + .kx-settings-stats::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 12px;
+  height: 0.5px;
+  background: var(--kx-line-strong);
+}
+.kx-settings-row + .kx-settings-stats {
+  position: relative;
+}
+.kx-settings-row:not(.kx-settings-row-wide) > div:first-child {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+.kx-settings-row:not(.kx-settings-row-wide) > div:first-child > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.kx-settings-row small {
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+.kx-settings-row small.kx-settings-path {
+  white-space: nowrap;
+}
+.kx-settings-row-wide {
+  display: block;
+  padding: 12px;
+}
+.kx-settings-row-wide .kx-model-card,
+.kx-settings-row-wide .kx-activity-panel {
+  margin: 0;
+  padding: 0;
+}
+.kx-settings-row-action {
+  min-height: 34px;
+}
+.kx-settings-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.kx-settings-footnote {
+  margin: 6px 2px 0;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.kx-settings-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+
+/* Controls: one size for buttons, pop-ups and fields. */
+.kx-settings-button {
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong), 0 0.5px 1px var(--kx-line);
+  color: var(--kx-text);
+  font: 500 12px var(--kx-font);
+  white-space: nowrap;
+}
+.kx-settings-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--kx-bg-raised), var(--kx-text) 5%);
+}
+.kx-settings-button:active:not(:disabled) {
+  background: color-mix(in srgb, var(--kx-bg-raised), var(--kx-text) 10%);
+}
+.kx-settings-button:focus-visible,
+.kx-settings-select:focus-visible,
+.kx-settings-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+.kx-settings-button:disabled {
+  opacity: 0.45;
+}
+.kx-settings-button.kx-settings-primary,
+.kx-settings-button.kx-service-primary,
+.kx-settings-button.kx-proxy-primary,
+.kx-settings-button.kx-zotero-plugin-primary {
+  background: var(--kx-accent);
+  box-shadow: 0 0.5px 1px var(--kx-line-strong);
+  color: var(--kx-accent-ink);
+}
+.kx-settings-button.kx-settings-primary:hover:not(:disabled),
+.kx-settings-button.kx-service-primary:hover:not(:disabled),
+.kx-settings-button.kx-proxy-primary:hover:not(:disabled),
+.kx-settings-button.kx-zotero-plugin-primary:hover:not(:disabled) {
+  background: var(--kx-accent);
+  filter: brightness(1.06);
+}
+.kx-settings-select {
+  height: 22px;
+  max-width: 240px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  outline: none;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong), 0 0.5px 1px var(--kx-line);
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+}
+input.kx-settings-select {
+  width: 200px;
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+input.kx-settings-select::placeholder {
+  color: var(--kx-text-3);
+}
+.kx-settings-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-accent-text);
+  font: 500 12.5px var(--kx-font);
+}
+.kx-settings-link:hover {
+  background: var(--kx-accent-soft);
+}
+/* A status at the end of a row: "Ready", a key's last digits. */
+.kx-settings-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--kx-green);
+  font-size: 12px;
+  font-weight: 500;
+}
+.kx-settings-state {
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+/* One badge style for every small label next to a row's title. */
+.kx-settings-badge,
+.kx-service-badge,
+.kx-proxy-badge {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text-2);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 16px;
+}
+.kx-settings-swatch {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--kx-text-3);
+  color: var(--kx-accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* Indexing numbers */
+.kx-settings-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 12px;
+}
+.kx-settings-stats > div {
+  display: grid;
+  gap: 1px;
+}
+.kx-settings-stats strong {
+  font: 600 17px/1.15 var(--kx-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.kx-settings-stats span {
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-settings-stats > [data-tone="attention"] strong {
+  color: var(--kx-red);
+}
+
+/* Keyboard shortcuts in General */
+.kx-settings-keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 8px 24px;
+  margin: 0;
+}
+.kx-settings-keys > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.kx-settings-keys dt {
+  color: var(--kx-text);
+  font-size: 12.5px;
+}
+.kx-settings-keys dd {
+  margin: 0;
+}
+.kx-settings-keys kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong), 0 0.5px 0 var(--kx-line-strong);
+  color: var(--kx-text-2);
+  font: 500 11.5px var(--kx-font);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+/* AI provider form */
+.kx-settings-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.kx-settings-form label {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 12.5px;
+}
+.kx-settings-form label > span {
+  color: var(--kx-text-2);
+  text-align: right;
+}
+.kx-settings-form input {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  outline: none;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  color: var(--kx-text);
+  font: 12.5px var(--kx-font);
+}
+.kx-settings-form input::placeholder {
+  color: var(--kx-text-3);
+}
+.kx-settings-form input:focus {
+  box-shadow: inset 0 0 0 1px var(--kx-accent), 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-settings-form > div {
+  display: flex;
+  justify-content: flex-end;
+}
+.kx-settings-form .kx-button-primary {
+  height: 24px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+/* About */
+.kx-settings-about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 24px;
+  text-align: center;
+}
+.kx-settings-about > div {
+  display: grid;
+  gap: 2px;
+}
+.kx-settings-about strong {
+  font: 600 17px/1.2 var(--kx-font-display);
+}
+.kx-settings-about span:not(.kx-settings-appicon) {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-settings-appicon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 13px;
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+  box-shadow: var(--kx-shadow-card);
+}
+
+/* Appearance tiles: a tiny window drawn in the colours each mode would use. */
+.kx-theme-picker {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+.kx-theme-picker > button {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+}
+.kx-theme-picker > button > span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.kx-theme-preview {
+  --light-bg: #e9e9ec;
+  --light-panel: #ffffff;
+  --dark-bg: #1c1c1e;
+  --dark-panel: #3a3a3c;
+  --preview-accent: #0a6cff;
+  position: relative;
+  display: block;
+  width: 100px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--light-bg);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong), var(--kx-shadow-card);
+}
+.kx-theme-preview > span:first-child {
+  position: absolute;
+  inset: 10px 10px 0 26px;
+  border-radius: 4px 4px 0 0;
+  background: var(--light-panel);
+}
+.kx-theme-preview > span:last-child {
+  position: absolute;
+  top: 17px;
+  left: 33px;
+  width: 30px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--preview-accent);
+}
+.kx-theme-preview[data-theme-preview="dark"] {
+  background: var(--dark-bg);
+}
+.kx-theme-preview[data-theme-preview="dark"] > span:first-child {
+  background: var(--dark-panel);
+}
+.kx-theme-preview[data-theme-preview="system"] {
+  background: linear-gradient(90deg, var(--light-bg) 50%, var(--dark-bg) 50%);
+}
+.kx-theme-preview[data-theme-preview="system"] > span:first-child {
+  background: linear-gradient(90deg, var(--light-panel) calc(50% - 26px), var(--dark-panel) calc(50% - 26px));
+}
+.kx-theme-picker > button:focus-visible .kx-theme-preview,
+.kx-theme-picker > button[aria-checked="true"] .kx-theme-preview {
+  box-shadow: 0 0 0 2px var(--kx-bg), 0 0 0 4px var(--kx-accent);
+}
+.kx-theme-picker > button[aria-checked="true"] > span:last-child {
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-settings-scroll {
+    animation: none;
+  }
+}

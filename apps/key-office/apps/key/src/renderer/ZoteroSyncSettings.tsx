@@ -1,4 +1,4 @@
-// Settings → Libraries → Zotero: import, and the sync through the Key Sync plugin with a
+// Settings → Zotero: import, and the sync through the Key Sync plugin with a
 // quiet status (last synced, "Zotero is not running"), pause, change and stop.
 import { useEffect, useState } from "react";
 import { bridge, type AppInfo, type AppSettings, type Invoke, type WorkspaceSummary, type ZoteroOptions, type ZoteroStatus, type ZoteroSyncStatus } from "./library-api";
@@ -77,16 +77,13 @@ export function ZoteroSettings({
       ? `${sync.options.collectionKeys.length.toLocaleString()} collections`
       : "the whole library";
   return (
-    <Group
-      title="Zotero"
-      footer="Key only reads from Zotero. Changes made in Zotero come to Key; edits you make in Key are kept, and where both changed, Key’s version stays and is listed here. Items that leave what Key syncs stay in Key."
-    >
+    <Group title="Zotero" footer="Key only reads from Zotero. Where both changed an item, Key’s version stays and is listed here.">
       <Row
         label="Import from Zotero"
         detail={
           info.zoteroFound
-            ? `Library found at ${info.zoteroDir.replace(/^\/Users\/[^/]+/, "~")}. Import everything, chosen collections or chosen papers; importing again updates what came before.`
-            : "No Zotero library found in your home folder."
+            ? `${info.zoteroDir.replace(/^\/Users\/[^/]+/, "~")} · everything, collections or chosen papers`
+            : "No Zotero library found on this Mac"
         }
       >
         <button className="kx-settings-button" disabled={!info.zoteroFound} onClick={() => onOpen("import")}>
@@ -101,7 +98,7 @@ export function ZoteroSettings({
               {`Syncing ${scope}${sync?.libraryName ? ` from ${sync.libraryName}` : ""}. ${syncLine(sync!, now)}`}
             </span>
           ) : (
-            "Follows what you add, change and delete in Zotero, through the Key Sync plugin for Zotero."
+            "Follows changes in Zotero through the Key Sync plugin."
           )
         }
       >
@@ -126,7 +123,7 @@ export function ZoteroSettings({
         )}
       </Row>
       {configured && (
-        <Row label="Stop syncing" detail="Everything that came from Zotero stays in Key. You can set up the sync again at any time.">
+        <Row label="Stop syncing" detail="What came from Zotero stays in Key.">
           <button
             className="kx-settings-button"
             disabled={busy}
@@ -140,7 +137,7 @@ export function ZoteroSettings({
       )}
       {/* The older sync that read Zotero's database, for libraries that still use it. */}
       {!configured && settings.zoteroSync && (
-        <Row label="Follow Zotero’s database" detail={imported ? `Checks Zotero’s database every half minute. Last run ${when}. Set up the plugin sync above to replace it.` : "Import your library first."}>
+        <Row label="Follow Zotero’s database" detail={imported ? `Older sync, every half minute · last run ${when}` : "Import your library first"}>
           <input type="checkbox" className="kx-switch" aria-label="Follow Zotero’s database" checked={settings.zoteroSync} onChange={(e) => onSettings({ zoteroSync: e.target.checked })} />
         </Row>
       )}

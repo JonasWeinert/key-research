@@ -29,16 +29,6 @@
 .kx-proxy-row small {
   white-space: nowrap;
 }
-.kx-proxy-badge {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--kx-fill-2);
-  color: var(--kx-text-2);
-  font-size: 10.5px;
-  font-style: normal;
-  font-weight: 500;
-}
 .kx-proxy-chips {
   display: flex;
   flex-wrap: wrap;
@@ -232,15 +222,6 @@
 }
 .kx-proxy-spacer {
   flex: 1;
-}
-.kx-settings-button.kx-proxy-primary {
-  background: var(--kx-accent);
-  box-shadow: none;
-  color: var(--kx-accent-ink);
-}
-.kx-settings-button.kx-proxy-primary:hover:not(:disabled) {
-  background: var(--kx-accent);
-  filter: brightness(1.06);
 }
 .kx-settings-button.kx-proxy-remove {
   color: var(--kx-red);
