@@ -12,16 +12,18 @@ import SearchField from "./search-suggest";
 import { SectionHeader, Snippet, foundIcon, useCollapsedGroups } from "./search-sections";
 import { claimSidebar } from "./sidebar-intent";
 import { GROUPS, GROUP_LABEL, type Found } from "./unified-search";
+import { useWebSearch } from "./web-search";
+import WebResults, { WebPill } from "./WebResults";
 import "./reference-library.css";
 import "./search-page.css";
 
 const ONE: Record<FindKind, string> = { source: "Source", note: "Note", record: "Page", canvas: "Canvas", highlight: "Highlight" };
 
 /** All · Sources · Notes …, each with its count; a click shows only that kind (⌘-click adds it). */
-export function KindChips({ result, kinds, onKinds }: { result: FindResult; kinds: FindKind[]; onKinds: (kinds: FindKind[]) => void }) {
+export function KindChips({ result, kinds, onKinds, none }: { result: FindResult; kinds: FindKind[]; onKinds: (kinds: FindKind[]) => void; none?: boolean }) {
   return (
     <div className="kx-kind-chips" role="group" aria-label="Show">
-      <button type="button" aria-pressed={!kinds.length} onMouseDown={(e) => e.preventDefault()} onClick={() => onKinds([])}>
+      <button type="button" aria-pressed={!kinds.length && !none}onMouseDown={(e) => e.preventDefault()} onClick={() => onKinds([])}>
         All <span className="kx-count">{result.all}</span>
       </button>
       {FIND_KINDS.map((kind) => (
@@ -29,7 +31,7 @@ export function KindChips({ result, kinds, onKinds }: { result: FindResult; kind
           key={kind}
           type="button"
           data-kind={kind}
-          aria-pressed={kinds.includes(kind)}
+          aria-pressed={kinds.includes(kind) && !none}
           disabled={!result.counts[kind] && !kinds.includes(kind)}
           onMouseDown={(e) => e.preventDefault()}
           onClick={(e) =>
@@ -77,6 +79,9 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
   const [state, setState] = useState<FindState>(() => takePendingFind(workspaceId) ?? EMPTY_FIND);
   useEffect(() => onPendingFind(workspaceId, setState), [workspaceId]);
   const result = useFind(invoke, workspaceId, state, 40);
+  // The Web pill: web results alone, or (⌘-click) beside the workspace's. Off: no network.
+  const [web, setWeb] = useState<"off" | "only" | "with">("off");
+  const webSearch = useWebSearch(invoke, workspaceId, state.text, web !== "off");
   const [groupBy, setGroupByState] = useState<GroupBy>(() => {
     try {
       return localStorage.getItem(GROUP_BY) === "kind" ? "kind" : "section";
@@ -182,15 +187,24 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
           inputRef={input}
           label="Search everything"
           placeholder="Search sources, notes, pages, canvases and highlights"
-          onSubmit={() => open(visible[Math.max(0, current)])}
+          onSubmit={() => web !== "only" && open(visible[Math.max(0, current)])}
           onArrowIntoResults={() => {
-            if (!visible.length) return;
+            if (!visible.length || web === "only") return;
             setCurrent(0);
             list.current?.focus();
           }}
         />
         <div className="kx-search-page-bar">
-          <KindChips result={result} kinds={state.kinds} onKinds={(kinds) => setState((s) => ({ ...s, kinds }))} />
+          <KindChips
+            result={result}
+            kinds={state.kinds}
+            none={web === "only"}
+            onKinds={(kinds) => {
+              setState((s) => ({ ...s, kinds }));
+              if (web === "only") setWeb("off");
+            }}
+          />
+          <WebPill pressed={web !== "off"} onClick={(e) => setWeb(e.metaKey || e.shiftKey ? (web === "off" ? "with" : "off") : web === "only" ? "off" : "only")} />
           <span className="kx-spacer" />
           <div className="kx-segmented" role="group" aria-label="Group by">
             <button type="button" aria-pressed={groupBy === "section"} onClick={() => setGroupBy("section")}>
@@ -221,7 +235,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
           e.preventDefault();
         }}
       >
-        {!sections.length && !result.found.pending ? (
+        {web === "only" ? null : !sections.length && !result.found.pending ? (
           <p className="kx-found-empty">{state.text.trim() || state.filters.length || state.kinds.length ? "Nothing matches" : "Nothing in this workspace yet"}</p>
         ) : (
           grouped.map((section) => (
@@ -273,6 +287,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
             </section>
           ))
         )}
+        {web !== "off" && <WebResults web={webSearch} invoke={invoke} workspaceId={workspaceId} query={state.text} collectionId={state.filters.find((f) => f.field === "collection")?.value} />}
       </div>
     </section>
   );

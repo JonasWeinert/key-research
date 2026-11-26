@@ -1,0 +1,248 @@
+/* The Web pill and the web results on the search page. Rows reuse the search's .kx-hit
+   look; this adds the provider badges, the open-access mark and the add button. */
+
+.kx-web-pill button {
+  gap: 4px;
+}
+.kx-web .kx-search-spinner {
+  position: static;
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-width: 1.5px;
+}
+
+.kx-web-head {
+  cursor: default;
+}
+.kx-web-sources {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  font-weight: 500;
+}
+.kx-web-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.kx-web-source[data-status="error"] {
+  color: var(--kx-text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--kx-text-3);
+}
+
+.kx-web-hit {
+  align-items: flex-start;
+}
+.kx-web-hit .kx-hit-meta {
+  white-space: nowrap;
+}
+.kx-web-abstract {
+  display: -webkit-box;
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  user-select: text;
+}
+.kx-web-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-top: 3px;
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-web-badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.kx-web-oa {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--kx-green);
+  font-weight: 500;
+}
+.kx-web-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kx-text-3);
+  font: inherit;
+  cursor: pointer;
+}
+.kx-web-link:hover {
+  color: var(--kx-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.kx-web-actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 112px;
+}
+.kx-web-add,
+.kx-web-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0.5px solid var(--kx-line);
+  border-radius: 6px;
+  background: var(--kx-bg);
+  color: var(--kx-text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: default;
+}
+.kx-web-add:hover {
+  border-color: transparent;
+  background: var(--kx-accent);
+  color: var(--kx-on-accent);
+}
+.kx-web-in {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--kx-green) 12%, transparent);
+  color: var(--kx-green);
+}
+.kx-web-in-open {
+  color: var(--kx-text-2);
+}
+.kx-web-in-open::before {
+  content: "·";
+  margin-right: 4px;
+  color: var(--kx-text-3);
+}
+.kx-web-in:hover .kx-web-in-open {
+  color: var(--kx-accent);
+}
+.kx-web-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kx-web-tools {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms var(--kx-ease);
+}
+.kx-web-hit:hover .kx-web-tools,
+.kx-web-tools:focus-within {
+  opacity: 1;
+}
+.kx-web-tools button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-2);
+}
+.kx-web-tools button:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+
+.kx-web-skeleton {
+  display: grid;
+  gap: 2px;
+}
+.kx-web-skeleton-row {
+  display: flex;
+  gap: 12px;
+  padding: 10px 8px;
+}
+.kx-web-skeleton-icon {
+  flex: none;
+  width: 30px;
+  height: 34px;
+  border-radius: 4px 7px 4px 4px;
+  background: var(--kx-bg-sunken);
+}
+.kx-web-skeleton-lines {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  align-content: start;
+  padding-top: 4px;
+}
+.kx-web-skeleton-lines .kx-skeleton-line:first-child {
+  width: 78%;
+  height: 12px;
+}
+
+.kx-web-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  margin: 6px 8px 10px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-web-note small {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-web-note button,
+.kx-web-more {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kx-accent);
+  font: inherit;
+  cursor: pointer;
+}
+.kx-web-note button:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.kx-web-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  margin-top: 4px;
+  border-radius: 7px;
+  font-size: 12px;
+}
+.kx-web-more:hover:not(:disabled) {
+  background: var(--kx-fill);
+}
+.kx-web-more:disabled {
+  color: var(--kx-text-2);
+  cursor: default;
+}
