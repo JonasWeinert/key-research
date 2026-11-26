@@ -6,104 +6,13 @@
 import { useState } from "react";
 import { useRetryingLookup } from "@key-reader/pdfjs/use-retrying-lookup";
 import { Icon } from "./icons";
-import { openItemAt } from "./item-actions";
-import { itemAttrs } from "./item-ui";
-import { libraryChanged } from "./library-nav";
-import type { Invoke, OpenAlexExtra, Source, SourceGraph, WorkReference } from "./library-api";
+import type { Invoke, OpenAlexExtra, SourceGraph } from "./library-api";
+import { SourceListItem, type ListWork } from "./source-list";
 import "./entity.css";
 
 const SHOWN = 12;
 
-type Work = Pick<WorkReference, "title" | "byline" | "year" | "container" | "doi" | "openalexId" | "matchedSourceId" | "text">;
-
-/** One work: its title and byline; opened, its abstract (read when first opened) and what
- *  can be done with it. Works already in the library say so. */
-function WorkRow({ work, invoke, workspaceId, onAdd }: { work: Work; invoke: Invoke; workspaceId: string; onAdd?: () => Promise<void> }) {
-  const title = work.title || work.text || work.doi || "Untitled work";
-  const detail = [work.byline, work.year, work.container].filter(Boolean).join(" · ");
-  const inLibrary = !!work.matchedSourceId;
-  const [open, setOpen] = useState(false);
-  // Read when first opened, kept when folded again.
-  const [asked, setAsked] = useState(false);
-  const [lookup, retry] = useRetryingLookup<{ abstract?: string | null; doi?: string | null; oaUrl?: string | null }>(
-    asked ? `${work.matchedSourceId ?? ""}|${work.openalexId ?? ""}` : null,
-    () =>
-      inLibrary
-        ? invoke<Source | null>("store_source", { id: work.matchedSourceId }, workspaceId).then((s) => ({ abstract: s?.abstract, doi: s?.doi, oaUrl: s?.oaUrl }))
-        : work.openalexId
-          ? invoke<{ abstract?: string | null; doi?: string | null; oaUrl?: string | null }>("store_openalex_work", { openalexId: work.openalexId }, workspaceId)
-          : Promise.resolve({ abstract: null, doi: work.doi }),
-  );
-  const about = lookup.status === "ready" ? lookup.value : undefined;
-  const [adding, setAdding] = useState(false);
-  const toggle = () => {
-    setOpen(!open);
-    setAsked(true);
-  };
-  const link = about ? (about.doi ? `https://doi.org/${about.doi}` : about.oaUrl) : work.doi ? `https://doi.org/${work.doi}` : undefined;
-  return (
-    <li data-in-library={inLibrary} data-open={open} {...(inLibrary ? itemAttrs({ kind: "source", id: work.matchedSourceId!, title }) : {})}>
-      <button className="kx-work-head" aria-expanded={open} onClick={toggle}>
-        <Icon name="chevronRight" size={10} />
-        <span className="kx-work-text">
-          <span className="kx-work-title">{title}</span>
-          {detail && <small>{detail}</small>}
-        </span>
-        {inLibrary && <span className="kx-work-badge">In library</span>}
-      </button>
-      {open && (
-        <div className="kx-work-body">
-          {lookup.status === "loading" || lookup.status === "idle" ? (
-            <div className="kx-work-abstract kx-skeleton" role="status" aria-label="Loading the abstract">
-              <div className="kx-skeleton-line" />
-              <div className="kx-skeleton-line" />
-              <div className="kx-skeleton-line short" />
-            </div>
-          ) : lookup.status === "unavailable" ? (
-            <p className="kx-work-abstract kx-work-muted">
-              Couldn’t load the abstract.{" "}
-              <button className="kx-work-retry" onClick={retry}>
-                Retry
-              </button>
-            </p>
-          ) : lookup.status === "missing" ? (
-            <p className="kx-work-abstract kx-work-muted">No abstract available.</p>
-          ) : about?.abstract ? (
-            <p className="kx-work-abstract">{about.abstract}</p>
-          ) : (
-            <p className="kx-work-abstract kx-work-muted">No abstract available.</p>
-          )}
-          {!inLibrary && work.text && work.text !== title && <p className="kx-work-abstract kx-work-muted">{work.text}</p>}
-          <div className="kx-work-actions">
-            {inLibrary ? (
-              <button className="kx-page-action" onClick={(e) => openItemAt({ kind: "source", id: work.matchedSourceId! }, e.altKey ? "split" : "tab", title)}>
-                <Icon name="doc" size={12} /> Open
-              </button>
-            ) : (
-              onAdd && (
-                <button
-                  className="kx-page-action"
-                  disabled={adding}
-                  onClick={() => {
-                    setAdding(true);
-                    void onAdd().finally(() => setAdding(false));
-                  }}
-                >
-                  <Icon name="plus" size={12} /> {adding ? "Adding…" : "Add to library"}
-                </button>
-              )
-            )}
-            {link && (
-              <a className="kx-page-action" href={link} target="_blank" rel="noreferrer">
-                <Icon name="external" size={12} /> {link.includes("doi.org") ? "DOI" : "Open access copy"}
-              </a>
-            )}
-          </div>
-        </div>
-      )}
-    </li>
-  );
-}
+type Work = ListWork;
 
 export function WorkReferences({ invoke, workspaceId, sourceId, graph, hasWork, onChanged }: { invoke: Invoke; workspaceId: string; sourceId: string; graph: SourceGraph; hasWork: boolean; onChanged: () => void }) {
   const [all, setAll] = useState(false);
@@ -112,12 +21,9 @@ export function WorkReferences({ invoke, workspaceId, sourceId, graph, hasWork, 
     invoke<OpenAlexExtra>("store_openalex_extra", { kind: "source", id: sourceId }, workspaceId),
   );
   const extra = extraLookup.status === "ready" ? extraLookup.value : undefined;
-  const add = async (work: Work) => {
-    if (!work.openalexId) return;
-    await invoke("store_add_work", { openalexId: work.openalexId, title: work.title, doi: work.doi, year: work.year }, workspaceId);
-    libraryChanged();
-    onChanged();
-  };
+  // Added from here: the chooser offers this source's collections (add-from-source.tsx).
+  const origin = { workspaceId, sourceId };
+  const row = (key: string, work: Work) => <SourceListItem key={key} work={work} invoke={invoke} workspaceId={workspaceId} origin={origin} onAdded={onChanged} />;
   // Works already in the library first, each group in the bibliography's order.
   const references = [...graph.references.filter((r) => r.matchedSourceId), ...graph.references.filter((r) => !r.matchedSourceId)];
   const inLibrary = references.filter((r) => r.matchedSourceId).length;
@@ -132,7 +38,7 @@ export function WorkReferences({ invoke, workspaceId, sourceId, graph, hasWork, 
           </h3>
           <ul className="kx-work-list">
             {shown.map((work) => (
-              <WorkRow key={`${work.origin}:${work.seq}`} work={work} invoke={invoke} workspaceId={workspaceId} onAdd={work.openalexId ? () => add(work) : undefined} />
+              row(`${work.origin}:${work.seq}`, work)
             ))}
           </ul>
           {references.length > SHOWN && (
@@ -149,7 +55,7 @@ export function WorkReferences({ invoke, workspaceId, sourceId, graph, hasWork, 
           </h3>
           <ul className="kx-work-list">
             {graph.citedBy.map((s) => (
-              <WorkRow key={s.id} work={{ title: s.title, year: s.year, matchedSourceId: s.id }} invoke={invoke} workspaceId={workspaceId} />
+              row(s.id, { title: s.title, year: s.year, matchedSourceId: s.id })
             ))}
           </ul>
         </section>
@@ -188,7 +94,7 @@ export function WorkReferences({ invoke, workspaceId, sourceId, graph, hasWork, 
                   </h3>
                   <ul className="kx-work-list">
                     {extra.related.map((work) => (
-                      <WorkRow key={work.openalexId} work={work} invoke={invoke} workspaceId={workspaceId} onAdd={() => add(work)} />
+                      row(work.openalexId, work)
                     ))}
                   </ul>
                 </>

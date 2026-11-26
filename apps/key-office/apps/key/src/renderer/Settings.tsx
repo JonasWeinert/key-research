@@ -9,6 +9,7 @@ import "./entity.css";
 import MergeReview from "./MergeReview";
 import { ZoteroImport } from "./ZoteroImport";
 import { ZoteroSettings } from "./ZoteroSyncSettings";
+import { ADD_MODES } from "./add-from-source";
 import type { Mode as ZoteroMode } from "./zotero-sheet-model";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import WebSearchSettings from "./WebSearchSettings";
@@ -219,6 +220,17 @@ function Libraries({
           <button className="kx-settings-button" onClick={() => void bridge().addWorkspace().then((added) => added && onChanged())}>
             Choose folder…
           </button>
+        </Row>
+      </Group>
+      <Group title="Adding sources" footer="For works added from another source: from its references, related works or a citation card in its PDF.">
+        <Row label="Put them in" detail="Asking offers the source's own collections first; you can pick several.">
+          <select className="kx-settings-select" aria-label="Where sources added from another source go" value={settings.addFromSource ?? "ask"} onChange={(e) => onSettings({ addFromSource: e.target.value as AppSettings["addFromSource"] })}>
+            {ADD_MODES.map(([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ))}
+          </select>
         </Row>
       </Group>
       <ZoteroSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpen={(mode, current) => setImporting({ mode, current })} />

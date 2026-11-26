@@ -10,12 +10,10 @@ import { copyItemLink, openItemAt } from "./item-actions";
 import { ItemPage } from "./ItemPage";
 import LinkedFrom from "./LinkedFrom";
 import { libraryChanged } from "./library-nav";
-import { itemAttrs } from "./item-ui";
+import { SourceListItem } from "./source-list";
 import {
-  KIND_ICON,
   bridge,
   fetchedAgo,
-  shortCreators,
   type Invoke,
   type NamedCount,
   type Note,
@@ -208,15 +206,7 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
         </h3>
         <ul className="kx-work-list">
           {sources.map((s) => (
-            <li key={s.id} data-in-library="true" {...itemAttrs({ kind: "source", id: s.id, title: s.title || "Untitled" })}>
-              <button className="kx-work-head" onClick={(e) => openItemAt({ kind: "source", id: s.id }, e.altKey ? "split" : "tab", s.title)}>
-                <Icon name={KIND_ICON[s.kind] ?? "doc"} size={13} />
-                <span className="kx-work-text">
-                  <span className="kx-work-title">{s.title || "Untitled"}</span>
-                  <small>{[shortCreators(s.creators), s.year, s.containerShort || s.containerTitle, s.retracted === 1 ? "Retracted" : ""].filter(Boolean).join(" · ")}</small>
-                </span>
-              </button>
-            </li>
+            <SourceListItem key={s.id} source={s} invoke={invoke} workspaceId={workspaceId} />
           ))}
         </ul>
       </section>

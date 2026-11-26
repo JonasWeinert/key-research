@@ -7,6 +7,7 @@ import { markdownToPlainText } from "./note-editor";
 import Settings, { type SettingsSection } from "./Settings";
 import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api";
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
+import { AddFromSourceHost } from "./add-from-source";
 import type { SearchPreviewState } from "./search-preview";
 import { TabBar, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./TabBar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -732,6 +733,7 @@ export default function App() {
       }}
     >
       <GlobalDrawerHost />
+      <AddFromSourceHost invoke={invoke} />
       <ItemLayer />
       <CommandCenter
         invoke={invoke}

@@ -26,6 +26,7 @@ import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
 import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { startZoteroPluginSync } from "./zotero-sync";
+import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
 import { fatal, installErrorHandlers, serveNotices } from "./app-notices";
 import { serveStatusItems } from "./status-items";
@@ -2576,6 +2577,13 @@ else
         syncing: (running) => emit("zotero-syncing", running),
         check: (sender) => void shell(sender),
       });
+      registerAddFromSource({
+        shellFor: (sender) => {
+          const record = bound(sender);
+          return (record ? shellOfView(record.id) : shellBySender(sender))?.window.webContents;
+        },
+        check: (sender) => void shell(sender),
+      });
       ipcMain.handle("key:open-sources", (event, id) => {
         return importSources(id, shell(event.sender.id));
       });
@@ -2985,6 +2993,8 @@ else
             return snapshot(w);
           }
           case "open-url": {
+            // "Open in Zotero" on a synced source: selects the item in Zotero.
+            if (/^zotero:\/\/select\/library\/items\/[A-Z0-9]{8}$/.test(String(p.url))) return void (await systemShell.openExternal(String(p.url)));
             if (!webUrl(p.url) && !systemUrl(p.url)) throw Error("Unsupported link");
             if (p.external) await systemShell.openExternal(String(webUrl(p.url) ?? systemUrl(p.url)));
             else openLink(p.url, w, { background: Boolean(p.background) });
