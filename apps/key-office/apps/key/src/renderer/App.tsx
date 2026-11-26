@@ -27,6 +27,7 @@ import CommandCenter from "./CommandCenter";
 import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
+import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { ZoteroImportSheet } from "./ZoteroImport";
 import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
@@ -1080,6 +1081,22 @@ export default function App() {
                       />
                     );
                     if (!docked) return content;
+                    const host = tabs.tabs.find((t) => t.views[0]?.id === docked)?.views[0]?.content;
+                    if (host?.section === "webpage" && host.workspaceId && host.sourceId)
+                      return (
+                        <WebReaderPanel
+                          invoke={api().invoke}
+                          viewId={v.id}
+                          readerId={docked}
+                          workspaceId={host.workspaceId}
+                          sourceId={host.sourceId}
+                          tab={((v as { tab?: WebPanelTab }).tab as WebPanelTab) ?? "details"}
+                          details={content}
+                          onTab={(tab) => action("panel-tab", { viewId: docked, tab })}
+                          onPopOut={() => action("panel-pop-out", { viewId: docked })}
+                          onClose={() => action("panel-close", { viewId: docked })}
+                        />
+                      );
                     // A reader's panel: the source's details and note, or the PDF's references.
                     return (
                       <ReaderPanel

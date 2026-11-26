@@ -96,7 +96,9 @@ export class PageActions {
       if (!work.title) throw Error("This page has no title to add");
       const { source, existed } = await this.deps.addWork(workspaceId, work);
       state.sourceId = source.id;
-      if (!existed) void this.attachPdf(workspaceId, source.id, article.pdfUrl ?? work.pdfUrl);
+      // A reference already in the library without its PDF gains it too.
+      const bare = existed && !(await this.deps.invoke<{ filePath?: string } | null>("store_source", { id: source.id }, workspaceId).catch(() => null))?.filePath;
+      if (!existed || bare) void this.attachPdf(workspaceId, source.id, article.pdfUrl ?? work.pdfUrl);
       return { sourceId: source.id, existed };
     } finally {
       state.busy = false;

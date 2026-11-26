@@ -37,6 +37,9 @@ export function chipLabel(number: number, numbered: boolean, position: number, m
   return identity ? `${number} · ${identity}` : String(number);
 }
 
+/** Where the go-to-reference action leads: its page, or the list on a page without pages. */
+const referencePlace = (reference: ScientificReference) => (reference.page >= 0 ? `p. ${reference.page + 1}` : 'References');
+
 /** The reference as printed, without its list number. */
 export function printedReference(reference: ScientificReference) {
   return reference.text.replace(new RegExp(`^\\s*[[(]?${reference.number}[\\]).:]?\\s*`), '').trim();
@@ -357,7 +360,7 @@ export function CitationCardBody({
               metadata={metadata}
               title={metadata?.title ?? printedReference(reference)}
               printed={printedReference(reference)}
-              page={reference.page}
+              page={reference.page >= 0 ? reference.page : undefined}
             />
           )}
           <footer className="pdfjs-cite-actions">
@@ -370,7 +373,7 @@ export function CitationCardBody({
             <DetailLinks links={links} />
             <span className="pdfjs-cite-spacer" />
             <button type="button" className="pdfjs-cite-action" title="Go to the reference list" onClick={() => onGoToReference(reference)}>
-              p. {reference.page + 1}
+              {referencePlace(reference)}
               <Icon name="next" />
             </button>
           </footer>
@@ -399,7 +402,7 @@ export function CitationCardBody({
                   title="Go to the reference list"
                   onClick={() => onGoToReference(reference)}
                 >
-                  p. {reference.page + 1}
+                  {referencePlace(reference)}
                   <Icon name="next" />
                 </button>
                 {metadata && (

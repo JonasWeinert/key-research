@@ -18,6 +18,30 @@ export function takeWebFocus(sourceId: string) {
   return focus;
 }
 
+/** Shows a highlight or passage in a reader of `sourceId` that is open already (its panel's
+ * highlights list), without going through the tabs. */
+export function focusWebPage(sourceId: string, focus: Omit<WebFocus, "sourceId">) {
+  pending.set(sourceId, { sourceId, ...focus });
+  window.dispatchEvent(new CustomEvent(WEB_FOCUS_EVENT, { detail: sourceId }));
+}
+
+/** The reader's references, between it and its panel: go to one, read the page again, or
+ *  (from the reader) the stored analysis changed. */
+export const WEB_REFERENCE_EVENT = "key:web-page-reference";
+export const WEB_REANALYZE_EVENT = "key:web-page-reanalyze";
+export const WEB_ANALYSIS_EVENT = "key:web-page-analysis";
+export const webPageEvent = (name: string, detail: { sourceId: string; number?: number }) => window.dispatchEvent(new CustomEvent(name, { detail }));
+
+/** The status bar's switch for a saved page's panel, from its reader or the panel itself. */
+export function webPanelStatusItems(panelTab: string | undefined) {
+  return [
+    { id: "details", label: "Details", icon: "panelRight", active: panelTab === "details", title: "Show or hide this source’s details and note" },
+    { id: "highlights", label: "Highlights", icon: "pen", active: panelTab === "highlights", title: "Show or hide this page’s highlights" },
+    { id: "references", label: "References", icon: "book", active: panelTab === "references", title: "Show or hide the references cited on this page" },
+  ];
+}
+export const toggleWebPanel = (readerViewId: string, tab: string) => bridge().tabAction("web-panel", { viewId: readerViewId, tab });
+
 export function openWebPage(workspaceId: string, sourceId: string, focus?: Omit<WebFocus, "sourceId">, title?: string, where: Record<string, unknown> = {}) {
   if (focus?.annotationId || focus?.text) {
     pending.set(sourceId, { sourceId, ...focus });

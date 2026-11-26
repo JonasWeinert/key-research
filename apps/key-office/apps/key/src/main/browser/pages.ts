@@ -127,6 +127,17 @@ export class BrowserService {
     });
   }
 
+  /** Loads a page with the profile, off screen, and hands it to `work` once it has settled. */
+  async withLoadedPage<T>(url: string, work: (contents: WebContents) => Promise<T>, { timeoutMs = 60_000, settleMs = 1500 } = {}) {
+    const web = webUrl(url);
+    if (!web) throw Error("Use an HTTP or HTTPS URL");
+    return withPage(timeoutMs, async (contents) => {
+      await contents.loadURL(web);
+      await wait(settleMs);
+      return work(contents);
+    });
+  }
+
   /** Downloads a PDF with the profile (its cookies and logins), into a fresh temporary
    * folder: the URL itself, or the PDF an article page names (citation_pdf_url). */
   async downloadPdf(url: string, { timeoutMs = 120_000 } = {}) {
