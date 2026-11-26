@@ -2522,7 +2522,14 @@ else
               "workspace_save_entry",
               "workspace_set_project_membership",
               "store_tag_apply",
+              "store_tag_apply_many",
               "store_tag_restore",
+              // Journaled too: ⌘Z can bring these back.
+              "store_collection_create",
+              "store_collection_update",
+              "store_collection_reorder",
+              "store_collection_delete",
+              "store_note_delete",
               // The operations journal, merges and metadata updates (see the host's hygiene.rs).
               "store_undo",
               "store_redo",
@@ -2536,6 +2543,9 @@ else
           // Tags turned into a property define (or undefine) it.
           if ((command === "store_tag_apply" && args?.operation?.property) || (command === "store_tag_restore" && args?.snapshot?.definition))
             emit("property-definitions-changed", { workspaceId: targetWorkspace, name: args?.operation?.property?.name ?? args?.snapshot?.definition?.[0] });
+          // Several operations at once, or an undo that may take a definition back.
+          if ((command === "store_tag_apply_many" && args?.operations?.some?.((o: any) => o?.property)) || command === "store_undo" || command === "store_redo")
+            emit("property-definitions-changed", { workspaceId: targetWorkspace });
           // Every view showing a note or a PDF's highlights stays in step with edits made elsewhere.
           if (command === "store_note_save" || command === "store_note_meta" || command === "store_note_delete")
             emit("note-changed", { workspaceId: targetWorkspace, noteId: (result as any)?.id ?? args?.id, sourceId: (result as any)?.sourceId ?? args?.sourceId });

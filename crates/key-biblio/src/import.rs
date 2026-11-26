@@ -137,6 +137,9 @@ struct Journal {
     notes: Vec<String>,
     collections: Vec<String>,
     undone: bool,
+    /// Its entry in the library's operations journal (⌘Z undoes the import there too).
+    #[serde(default)]
+    seq: Option<i64>,
 }
 
 // ── Duplicates ───────────────────────────────────────────────────────────────
@@ -574,8 +577,28 @@ pub fn run(
     store.ensure_citation_keys()?;
     report.collections_created = journal.collections.len();
     report.created_ids = journal.created.clone();
+    journal.seq = record_in_journal(store, &journal)?;
     save_journal(store, &journal, &report)?;
     Ok(report)
+}
+
+/// One entry in the operations journal for the whole import: undo moves the new sources to
+/// the Trash and takes back merges, notes, filings and new collections; redo brings them back.
+fn record_in_journal(store: &Store, journal: &Journal) -> Result<Option<i64>, String> {
+    let mut changed: BTreeMap<String, Map<String, Json>> = BTreeMap::new();
+    for (id, undo) in &journal.merged {
+        changed.entry(id.clone()).or_default().extend(undo.clone());
+    }
+    for (collection, id) in &journal.memberships {
+        let undo = changed.entry(id.clone()).or_default();
+        let mut gone = undo.remove("collectionsRemove").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        gone.push(Json::from(collection.clone()));
+        undo.insert("collectionsRemove".into(), Json::Array(gone));
+    }
+    let rows = [("collections", "id", journal.collections.clone()), ("source_collections", "source_id", journal.created.clone()), ("notes", "id", journal.notes.clone())];
+    let label = if journal.label.is_empty() { "Import".to_string() } else { format!("Import {}", journal.label) };
+    let entry = store.journal_added("import", &label, &journal.created, &rows, &changed.into_iter().collect::<Vec<_>>())?;
+    Ok(entry.map(|e| e.seq))
 }
 
 fn save_journal(store: &Store, journal: &Journal, report: &Report) -> Result<(), String> {
@@ -599,14 +622,20 @@ pub fn history(store: &Store) -> Result<Vec<Report>, String> {
     let mut out = Vec::new();
     for id in list.iter().rev() {
         let Some(value) = store.meta(&format!("{JOURNAL_PREFIX}{id}"))?.and_then(|v| serde_json::from_str::<Json>(&v).ok()) else { continue };
-        if let Some(report) = value.get("report").and_then(|r| serde_json::from_value::<Report>(r.clone()).ok()) {
+        if let Some(mut report) = value.get("report").and_then(|r| serde_json::from_value::<Report>(r.clone()).ok()) {
+            // Undone or redone with ⌘Z in the library since.
+            let seq = value.get("journal").and_then(|j| j.get("seq")).and_then(Json::as_i64);
+            if let Some((_, undone)) = seq.map(|s| store.journal_entry(s)).transpose()?.flatten() {
+                report.undone = undone;
+            }
             out.push(report);
         }
     }
     Ok(out)
 }
 
-/// Undoes an import: its new sources (and their notes) are deleted, merged sources put
+/// Undoes an import through the operations journal (its new sources go to the Trash);
+/// an import too old for the journal: its new sources (and their notes) are deleted, merged sources put
 /// back, collections it created removed when nothing else is in them.
 pub fn undo(store: &Store, id: &str) -> Result<Report, String> {
     let key = format!("{JOURNAL_PREFIX}{id}");
@@ -615,6 +644,20 @@ pub fn undo(store: &Store, id: &str) -> Result<Report, String> {
     let mut report: Report = serde_json::from_value(value.get("report").cloned().unwrap_or_default()).unwrap_or_default();
     if journal.undone {
         return Err("That import was already undone".into());
+    }
+    if let Some(seq) = journal.seq {
+        match store.journal_entry(seq)? {
+            Some((_, true)) => return Err("That import was already undone".into()),
+            Some((_, false)) => {
+                store.undo_entry(seq)?;
+                journal.undone = true;
+                report.undone = true;
+                store.set_meta(&key, &serde_json::to_string(&json!({ "journal": journal, "report": report })).map_err(|e| e.to_string())?)?;
+                return Ok(report);
+            }
+            // Gone from the journal (too old): undone the way it was recorded here.
+            None => {}
+        }
     }
     for note in &journal.notes {
         let _ = store.delete_note(note);

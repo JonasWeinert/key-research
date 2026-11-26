@@ -14,16 +14,19 @@ import { fold, plural, splitPath, valueLabel, type PropertyInfo, type Suggestion
 import { ancestors, buildTree, planChange, sortTree, visibleRows, type ManagerPlan, type PlannedChange, type TagNode, type TagSort } from "./tag-plan";
 import "./tag-manager.css";
 
-interface Snapshot {
-  sources: unknown[];
-  tree?: unknown;
-  definition?: unknown;
-}
+/** A tag operation's entry in the library's operations journal (the History tab shows those). */
 interface HistoryEntry {
-  id: number;
+  seq: number;
+  kind: string;
   label: string;
-  snapshots: Snapshot[];
-  affected: number;
+  /** Items it changed. */
+  count: number;
+  createdAt: number;
+  undone?: boolean;
+}
+interface JournalState {
+  undo?: HistoryEntry | null;
+  entries: HistoryEntry[];
 }
 type Panel =
   | { mode: "suggestions" }
@@ -58,12 +61,17 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
   const anchor = useRef<string | undefined>(undefined);
   const [renaming, setRenaming] = useState<string>();
   const [panel, setPanel] = useState<Panel>({ mode: "suggestions" });
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [journal, setJournal] = useState<JournalState>({ entries: [] });
+  const history = journal.entries.filter((entry) => entry.kind === "tags");
+  const opened = useRef(Date.now());
+  // The footer reports what was done since the manager opened.
+  const latest = history.find((entry) => !entry.undone && entry.createdAt >= opened.current);
+  /** The newest tag entry, when it is also the library's next undo. */
+  const undoable = history.find((entry) => entry.seq === journal.undo?.seq);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; tags: string[] }>();
   const [dropTarget, setDropTarget] = useState<string>();
-  const historyId = useRef(0);
 
   const load = useCallback(async () => {
     const [next, defs] = await Promise.all([
@@ -72,6 +80,7 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     ]);
     setIndex(next);
     setProperties(defs);
+    setJournal(await invoke<JournalState>("store_journal", { limit: 100 }, workspaceId).catch(() => ({ entries: [] })));
   }, [invoke, workspaceId]);
   useEffect(() => {
     void load().catch((e) => setError(String(e)));
@@ -110,23 +119,14 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     if (!changes.length) return;
     setBusy(true);
     setError("");
-    const snapshots: Snapshot[] = [];
-    let affected = 0;
     try {
-      for (const change of changes) {
-        const result = await invoke<{ affected: number; kept: number; undo: Snapshot }>("store_tag_apply", { operation: change.operation }, workspaceId);
-        snapshots.push(result.undo);
-        affected += result.affected;
-      }
+      // One journal entry for all of it: ⌘Z here or in the library takes it back.
+      await invoke("store_tag_apply_many", { operations: changes.map((c) => c.operation), label: label ?? changes[0].label }, workspaceId);
       setPanel({ mode: "suggestions" });
       setSelected(new Set());
     } catch (e) {
       setError(String(e).replace(/^Error: /, ""));
     } finally {
-      if (snapshots.length) {
-        const entry = { id: ++historyId.current, label: label ?? changes[0].label, snapshots, affected };
-        setHistory((h) => [entry, ...h].slice(0, 50));
-      }
       await load().catch(() => {});
       setBusy(false);
     }
@@ -138,12 +138,11 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
       (e) => setError(String(e).replace(/^Error: /, "")),
     );
   };
-  const undo = async (entry: HistoryEntry) => {
+  const undo = async () => {
     setBusy(true);
     setError("");
     try {
-      for (const snapshot of [...entry.snapshots].reverse()) await invoke("store_tag_restore", { snapshot }, workspaceId);
-      setHistory((h) => h.filter((x) => x.id !== entry.id));
+      await invoke("store_undo", {}, workspaceId);
     } catch (e) {
       setError(String(e).replace(/^Error: /, ""));
     } finally {
@@ -212,9 +211,9 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     }
     const typing = (e.target as HTMLElement).closest("input, textarea, select");
     if (typing) return;
-    if ((e.metaKey || e.ctrlKey) && e.key === "z" && history[0] && !busy) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "z" && undoable && !busy) {
       e.preventDefault();
-      void undo(history[0]);
+      void undo();
     }
     if ((e.metaKey || e.ctrlKey) && e.key === "f") {
       e.preventDefault();
@@ -402,7 +401,7 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
                 </div>
                 <div className="kx-tm-side-scroll">
                   {panel.mode === "history" ? (
-                    <History history={history} busy={busy} onUndo={(entry) => void undo(entry)} />
+                    <History history={history} undoable={undoable} busy={busy} onUndo={() => void undo()} />
                   ) : !suggestions ? (
                     <div className="kx-tm-empty">
                       <span className="kx-tm-spinner" />
@@ -456,17 +455,17 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
             <span className="kx-tm-error" role="alert">
               <Icon name="warning" size={12} /> {error}
             </span>
-          ) : history[0] ? (
+          ) : latest ? (
             <span className="kx-tm-last" role="status">
-              <Icon name="check" size={12} /> {history[0].label}
-              {history[0].affected > 0 && ` · ${plural(history[0].affected, "item")} updated`}
+              <Icon name="check" size={12} /> {latest.label}
+              {latest.count > 0 && ` · ${plural(latest.count, "item")} updated`}
             </span>
           ) : (
             <span className="kx-tm-last">Changes apply to every item in the library at once.</span>
           )}
           <span className="kx-spacer" />
-          {history[0] && (
-            <button className="kx-tm-button" disabled={busy} onClick={() => void undo(history[0])} title="Undo (⌘Z)">
+          {undoable && (
+            <button className="kx-tm-button" disabled={busy} onClick={() => void undo()} title="Undo (⌘Z)">
               <Icon name="undo" size={12} /> Undo
             </button>
           )}
@@ -815,18 +814,18 @@ function PreviewLines({ change, limit = 8 }: { change: PlannedChange; limit?: nu
   );
 }
 
-function History({ history, busy, onUndo }: { history: HistoryEntry[]; busy: boolean; onUndo: (entry: HistoryEntry) => void }) {
+function History({ history, undoable, busy, onUndo }: { history: HistoryEntry[]; undoable?: HistoryEntry; busy: boolean; onUndo: () => void }) {
   if (!history.length) return <div className="kx-tm-empty">Changes you make here are listed so you can take them back.</div>;
   return (
     <ul className="kx-tm-history">
-      {history.map((entry, i) => (
-        <li key={entry.id}>
+      {history.map((entry) => (
+        <li key={entry.seq} data-undone={entry.undone || undefined}>
           <span>
             {entry.label}
-            <small>{entry.affected ? plural(entry.affected, "item") : "Tree only"}</small>
+            <small>{entry.undone ? "Undone" : entry.count ? plural(entry.count, "item") : "Tree only"}</small>
           </span>
-          {i === 0 && (
-            <button className="kx-tm-button kx-tm-small" disabled={busy} onClick={() => onUndo(entry)}>
+          {entry === undoable && (
+            <button className="kx-tm-button kx-tm-small" disabled={busy} onClick={onUndo} title="Undo (⌘Z)">
               Undo
             </button>
           )}

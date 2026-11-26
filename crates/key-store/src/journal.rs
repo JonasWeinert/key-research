@@ -62,6 +62,19 @@ struct Payload {
     moves: Vec<Move>,
     #[serde(default)]
     pairs: Vec<PairChange>,
+    /// Rows of other tables (collections, memberships, notes, links, the tag tree, property
+    /// definitions) as they were before and after.
+    #[serde(default)]
+    rows: Vec<RowChange>,
+    /// Sources the operation added (an import): undo moves them to the Trash, redo back.
+    #[serde(default)]
+    created: Vec<String>,
+}
+
+impl Payload {
+    fn is_empty(&self) -> bool {
+        self.changes.is_empty() && self.moves.is_empty() && self.pairs.is_empty() && self.rows.is_empty() && self.created.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -74,6 +87,9 @@ pub struct JournalEntry {
     pub created_at: i64,
     /// The sources it changed.
     pub ids: Vec<String>,
+    /// Undone (and not redone).
+    #[serde(default)]
+    pub undone: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -123,6 +139,8 @@ pub(crate) struct Recorder {
     before: HashMap<String, Map<String, Json>>,
     moves: Vec<Move>,
     pairs: Vec<PairChange>,
+    watches: Vec<Watch>,
+    created: Vec<String>,
 }
 
 impl Recorder {
@@ -165,6 +183,192 @@ impl Recorder {
         }
         Ok(changed)
     }
+}
+
+/// Tables whose rows operations can journal, with their key columns.
+const ROW_TABLES: &[(&str, &[&str])] = &[
+    ("collections", &["id"]),
+    ("source_collections", &["source_id", "collection_id"]),
+    ("notes", &["id"]),
+    ("links", &["id"]),
+    ("meta", &["key"]),
+    ("property_definitions", &["name"]),
+];
+
+/// One row of another table before and after an operation (`None`: absent).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct RowChange {
+    table: String,
+    key: Map<String, Json>,
+    before: Option<Map<String, Json>>,
+    after: Option<Map<String, Json>>,
+}
+
+/// Rows of a table an operation may change, read before it runs.
+pub(crate) struct Watch {
+    table: &'static str,
+    keys: &'static [&'static str],
+    condition: String,
+    values: Vec<Value>,
+    before: Vec<Map<String, Json>>,
+}
+
+fn json_value(value: &Json) -> Value {
+    match value {
+        Json::Null => Value::Null,
+        Json::Bool(b) => Value::Integer(i64::from(*b)),
+        Json::Number(n) => n.as_i64().map(Value::Integer).unwrap_or_else(|| Value::Real(n.as_f64().unwrap_or(0.0))),
+        Json::String(s) => Value::Text(s.clone()),
+        other => Value::Text(other.to_string()),
+    }
+}
+
+fn read_rows(db: &Connection, table: &str, condition: &str, values: &[Value]) -> Result<Vec<Map<String, Json>>> {
+    let mut statement = db.prepare(&format!("SELECT * FROM {table} WHERE {condition}")).map_err(e)?;
+    let names: Vec<String> = statement.column_names().into_iter().map(String::from).collect();
+    let rows = statement
+        .query_map(rusqlite::params_from_iter(values.iter()), |r| {
+            let mut row = Map::new();
+            for (i, name) in names.iter().enumerate() {
+                row.insert(name.clone(), value_json(&r.get::<_, Value>(i)?));
+            }
+            Ok(row)
+        })
+        .map_err(e)?;
+    rows.collect::<std::result::Result<_, _>>().map_err(e)
+}
+
+impl Watch {
+    fn key_of(&self, row: &Map<String, Json>) -> Map<String, Json> {
+        self.keys.iter().map(|k| ((*k).to_string(), row.get(*k).cloned().unwrap_or(Json::Null))).collect()
+    }
+
+    /// What changed since the watch began.
+    fn finish(self, db: &Connection) -> Result<Vec<RowChange>> {
+        let after = read_rows(db, self.table, &self.condition, &self.values)?;
+        let mut out = Vec::new();
+        let mut later: HashMap<String, Map<String, Json>> = after.iter().map(|r| (Json::Object(self.key_of(r)).to_string(), r.clone())).collect();
+        for row in &self.before {
+            let key = self.key_of(row);
+            let now = later.remove(&Json::Object(key.clone()).to_string());
+            if now.as_ref() != Some(row) {
+                out.push(RowChange { table: self.table.into(), key, before: Some(row.clone()), after: now });
+            }
+        }
+        // Rows that are new, in the order they were read.
+        for row in after {
+            let key = self.key_of(&row);
+            if later.remove(&Json::Object(key.clone()).to_string()).is_some() {
+                out.push(RowChange { table: self.table.into(), key, before: None, after: Some(row) });
+            }
+        }
+        Ok(out)
+    }
+}
+
+impl Recorder {
+    /// Watches the rows of `table` matching `condition` (over `values`): whatever the
+    /// operation does to them (or rows it adds that match) is journaled.
+    pub(crate) fn watch(&mut self, db: &Connection, table: &str, condition: &str, values: Vec<Value>) -> Result<()> {
+        let (table, keys) = ROW_TABLES.iter().find(|(t, _)| *t == table).copied().ok_or("Unknown table for the journal")?;
+        let before = read_rows(db, table, condition, &values)?;
+        self.watches.push(Watch { table, keys, condition: condition.into(), values, before });
+        Ok(())
+    }
+
+    /// Watches rows by one column's values (`id IN (…)`).
+    pub(crate) fn watch_in(&mut self, db: &Connection, table: &str, column: &str, ids: &[String]) -> Result<()> {
+        for chunk in ids.chunks(500) {
+            let marks = vec!["?"; chunk.len()].join(", ");
+            self.watch(db, table, &format!("{column} IN ({marks})"), chunk.iter().map(|i| Value::Text(i.clone())).collect())?;
+        }
+        Ok(())
+    }
+}
+
+/// Writes rows back: `undo` puts the "before" rows back, redo the "after" ones. Rows to
+/// remove go first (last one first), then rows to add (in order), so parents come before
+/// children; a row on both sides is updated in place (deleting a collection would cascade).
+fn apply_rows(db: &Connection, rows: &[RowChange], undo: bool) -> Result<()> {
+    fn target(r: &RowChange, undo: bool) -> (Option<&Map<String, Json>>, Option<&Map<String, Json>>) {
+        if undo { (r.after.as_ref(), r.before.as_ref()) } else { (r.before.as_ref(), r.after.as_ref()) }
+    }
+    let condition = |key: &Map<String, Json>| key.keys().map(|k| format!("{k} IS ?")).collect::<Vec<_>>().join(" AND ");
+    let key_values = |key: &Map<String, Json>| key.values().map(json_value).collect::<Vec<_>>();
+    for row in rows.iter().rev() {
+        if let (Some(_), None) = target(row, undo) {
+            db.execute(&format!("DELETE FROM {} WHERE {}", row.table, condition(&row.key)), rusqlite::params_from_iter(key_values(&row.key))).map_err(e)?;
+        }
+    }
+    let mut properties = BTreeSet::new();
+    let mut sources = BTreeSet::new();
+    let mut inserts: Vec<(String, Vec<Value>)> = Vec::new();
+    for row in rows {
+        let (from, to) = target(row, undo);
+        let Some(to) = to else { continue };
+        let mut to = to.clone();
+        // A restored note is cut into passages again.
+        if row.table == "notes" {
+            to.insert("indexed_at".into(), Json::Null);
+            if let Some(source) = to.get("source_id").and_then(Json::as_str) {
+                sources.insert(source.to_string());
+            }
+        }
+        if row.table == "property_definitions" {
+            properties.insert(to.get("name").and_then(Json::as_str).unwrap_or("").to_string());
+        }
+        let columns: Vec<&String> = to.keys().collect();
+        let values: Vec<Value> = to.values().map(json_value).collect();
+        if from.is_some() {
+            let set = columns.iter().map(|c| format!("{c} = ?")).collect::<Vec<_>>().join(", ");
+            let mut all = values;
+            all.extend(key_values(&row.key));
+            db.execute(&format!("UPDATE {} SET {set} WHERE {}", row.table, condition(&row.key)), rusqlite::params_from_iter(all)).map_err(e)?;
+        } else {
+            let marks = vec!["?"; columns.len()].join(", ");
+            let names = columns.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ");
+            inserts.push((format!("INSERT OR REPLACE INTO {} ({names}) VALUES ({marks})", row.table), values));
+        }
+    }
+    // Rows come back in table order, so a child can precede its parent: retry until
+    // nothing more goes in. A parent (a collection, a source) that is gone for good
+    // takes its rows with it.
+    while !inserts.is_empty() {
+        let before = inserts.len();
+        let mut waiting = Vec::new();
+        for (sql, values) in inserts {
+            match db.execute(&sql, rusqlite::params_from_iter(values.iter())) {
+                Ok(_) => {}
+                Err(error) if error.to_string().contains("FOREIGN KEY") => waiting.push((sql, values)),
+                Err(error) => return Err(e(error)),
+            }
+        }
+        if waiting.len() == before {
+            break;
+        }
+        inserts = waiting;
+    }
+    for row in rows.iter().filter(|r| r.table == "notes") {
+        if let Some(source) = row.before.as_ref().or(row.after.as_ref()).and_then(|r| r.get("source_id")).and_then(Json::as_str) {
+            sources.insert(source.to_string());
+        }
+    }
+    for name in properties.into_iter().filter(|n| !n.is_empty()) {
+        crate::properties::sync_options(db, &name)?;
+    }
+    for source in sources {
+        refresh_fts(db, &source)?;
+    }
+    Ok(())
+}
+
+/// Moves added sources to the Trash (undo) or out of it (redo).
+fn trash_created(db: &Connection, ids: &[String], undo: bool) -> Result<()> {
+    let now = now_ms();
+    for id in ids {
+        db.execute("UPDATE sources SET trashed_at = ?2, updated_at = ?3 WHERE id = ?1", params![id, undo.then_some(now), now]).map_err(e)?;
+    }
+    Ok(())
 }
 
 fn set_pair(db: &Connection, a: &str, b: &str, kind: &str, added: bool) -> Result<bool> {
@@ -381,10 +585,10 @@ pub(crate) fn edited_fields(db: &Connection, id: &str) -> Result<Vec<String>> {
 fn read_entry(r: &rusqlite::Row) -> rusqlite::Result<(JournalEntry, String)> {
     let payload: String = r.get(5)?;
     let ids = serde_json::from_str::<Payload>(&payload).map(|p| p.changes.into_iter().map(|c| c.id).collect()).unwrap_or_default();
-    Ok((JournalEntry { seq: r.get(0)?, kind: r.get(1)?, label: r.get(2)?, count: r.get(3)?, created_at: r.get(4)?, ids }, payload))
+    Ok((JournalEntry { seq: r.get(0)?, kind: r.get(1)?, label: r.get(2)?, count: r.get(3)?, created_at: r.get(4)?, ids, undone: r.get(6)? }, payload))
 }
 
-const ENTRY_COLUMNS: &str = "seq, kind, label, count, created_at, payload";
+const ENTRY_COLUMNS: &str = "seq, kind, label, count, created_at, payload, undone";
 
 fn plural(n: usize, one: &str) -> String {
     if n == 1 { format!("1 {one}") } else { format!("{n} {one}s") }
@@ -396,12 +600,15 @@ impl Store {
     pub(crate) fn journaled<T>(&self, kind: &str, label: &str, ids: &[String], op: impl FnOnce(&Connection, &mut Recorder) -> Result<T>) -> Result<(T, Option<JournalEntry>)> {
         let db = self.db()?;
         let tx = db.unchecked_transaction().map_err(e)?;
-        let mut recorder = Recorder { order: Vec::new(), before: HashMap::new(), moves: Vec::new(), pairs: Vec::new() };
+        let mut recorder = Recorder { order: Vec::new(), before: HashMap::new(), moves: Vec::new(), pairs: Vec::new(), watches: Vec::new(), created: Vec::new() };
         for id in ids {
             recorder.touch(&tx, id)?;
         }
         let out = op(&tx, &mut recorder)?;
-        let mut payload = Payload { moves: std::mem::take(&mut recorder.moves), pairs: std::mem::take(&mut recorder.pairs), ..Default::default() };
+        let mut payload = Payload { moves: std::mem::take(&mut recorder.moves), pairs: std::mem::take(&mut recorder.pairs), created: std::mem::take(&mut recorder.created), ..Default::default() };
+        for watch in std::mem::take(&mut recorder.watches) {
+            payload.rows.extend(watch.finish(&tx)?);
+        }
         for id in &recorder.order {
             let after = capture(&tx, id)?.unwrap_or_default();
             let (before, after) = diff(&recorder.before[id], &after);
@@ -409,7 +616,7 @@ impl Store {
                 payload.changes.push(Change { id: id.clone(), before, after });
             }
         }
-        let entry = if payload.changes.is_empty() && payload.moves.is_empty() && payload.pairs.is_empty() {
+        let entry = if payload.is_empty() {
             None
         } else {
             Some(record(&tx, kind, label, payload)?)
@@ -522,42 +729,70 @@ impl Store {
             format!("SELECT {ENTRY_COLUMNS} FROM journal WHERE undone = 1 ORDER BY seq ASC LIMIT 1")
         };
         let Some((entry, payload)) = tx.query_row(&sql, [], read_entry).optional().map_err(e)? else { return Ok(None) };
-        let payload: Payload = serde_json::from_str(&payload).map_err(e)?;
-        if undo {
-            for change in payload.changes.iter().rev() {
-                restore(&tx, &change.id, &change.before)?;
-            }
-            for m in payload.moves.iter().rev() {
-                let key = MOVABLE.iter().find(|(t, c, _)| *t == m.table && *c == m.column).map(|(_, _, k)| *k).ok_or("Unknown row kind")?;
-                set_rows(&tx, &m.table, &m.column, key, &m.rows, &m.from)?;
-            }
-            for p in payload.pairs.iter().rev() {
-                set_pair(&tx, &p.a, &p.b, &p.kind, !p.added)?;
-            }
-        } else {
-            for m in &payload.moves {
-                let key = MOVABLE.iter().find(|(t, c, _)| *t == m.table && *c == m.column).map(|(_, _, k)| *k).ok_or("Unknown row kind")?;
-                set_rows(&tx, &m.table, &m.column, key, &m.rows, &m.to)?;
-            }
-            for change in &payload.changes {
-                restore(&tx, &change.id, &change.after)?;
-            }
-            for p in &payload.pairs {
-                set_pair(&tx, &p.a, &p.b, &p.kind, p.added)?;
-            }
-        }
-        // Notes that moved count towards a different source's search text.
-        for m in &payload.moves {
-            if m.table == "notes" {
-                refresh_fts(&tx, &m.from)?;
-                refresh_fts(&tx, &m.to)?;
-            }
-        }
+        apply_entry(&tx, &serde_json::from_str(&payload).map_err(e)?, undo)?;
         tx.execute("UPDATE journal SET undone = ?2 WHERE seq = ?1", params![entry.seq, undo]).map_err(e)?;
         tx.commit().map_err(e)?;
         Ok(Some(entry))
     }
 
+    /// Undoes one entry out of order ("Undo this import"): its own changes are put back;
+    /// later operations keep theirs. `None` when it is gone or undone already.
+    pub fn undo_entry(&self, seq: i64) -> Result<Option<JournalEntry>> {
+        let db = self.db()?;
+        let tx = db.unchecked_transaction().map_err(e)?;
+        let found = tx.query_row(&format!("SELECT {ENTRY_COLUMNS} FROM journal WHERE seq = ?1 AND undone = 0"), [seq], read_entry).optional().map_err(e)?;
+        let Some((entry, payload)) = found else { return Ok(None) };
+        apply_entry(&tx, &serde_json::from_str(&payload).map_err(e)?, true)?;
+        tx.execute("UPDATE journal SET undone = 1 WHERE seq = ?1", [seq]).map_err(e)?;
+        tx.commit().map_err(e)?;
+        Ok(Some(entry))
+    }
+
+    /// An entry and whether it is undone.
+    pub fn journal_entry(&self, seq: i64) -> Result<Option<(JournalEntry, bool)>> {
+        let db = self.read()?;
+        db.query_row(&format!("SELECT {ENTRY_COLUMNS} FROM journal WHERE seq = ?1"), [seq], |r| read_entry(r).map(|(entry, _)| { let undone = entry.undone; (entry, undone) })).optional().map_err(e)
+    }
+}
+
+fn apply_entry(tx: &Connection, payload: &Payload, undo: bool) -> Result<()> {
+    // Other rows first: a collection comes back before sources are filed in it again.
+    apply_rows(tx, &payload.rows, undo)?;
+    if undo {
+        for change in payload.changes.iter().rev() {
+            restore(tx, &change.id, &change.before)?;
+        }
+        for m in payload.moves.iter().rev() {
+            let key = MOVABLE.iter().find(|(t, c, _)| *t == m.table && *c == m.column).map(|(_, _, k)| *k).ok_or("Unknown row kind")?;
+            set_rows(tx, &m.table, &m.column, key, &m.rows, &m.from)?;
+        }
+        for p in payload.pairs.iter().rev() {
+            set_pair(tx, &p.a, &p.b, &p.kind, !p.added)?;
+        }
+    } else {
+        for m in &payload.moves {
+            let key = MOVABLE.iter().find(|(t, c, _)| *t == m.table && *c == m.column).map(|(_, _, k)| *k).ok_or("Unknown row kind")?;
+            set_rows(tx, &m.table, &m.column, key, &m.rows, &m.to)?;
+        }
+        for change in &payload.changes {
+            restore(tx, &change.id, &change.after)?;
+        }
+        for p in &payload.pairs {
+            set_pair(tx, &p.a, &p.b, &p.kind, p.added)?;
+        }
+    }
+    trash_created(tx, &payload.created, undo)?;
+    // Notes that moved count towards a different source's search text.
+    for m in &payload.moves {
+        if m.table == "notes" {
+            refresh_fts(tx, &m.from)?;
+            refresh_fts(tx, &m.to)?;
+        }
+    }
+    Ok(())
+}
+
+impl Store {
     /// The next undo and redo, and the latest entries.
     pub fn journal_state(&self, limit: usize) -> Result<JournalState> {
         let db = self.read()?;
@@ -579,7 +814,7 @@ impl Store {
 fn record(db: &Connection, kind: &str, label: &str, payload: Payload) -> Result<JournalEntry> {
     db.execute("DELETE FROM journal WHERE undone = 1", []).map_err(e)?;
     let now = now_ms();
-    let count = payload.changes.len().max(payload.moves.iter().map(|m| m.rows.len()).sum::<usize>().min(1)) as i64;
+    let count = (payload.changes.len() + payload.created.len()).max(payload.moves.iter().map(|m| m.rows.len()).sum::<usize>().min(1)).max(usize::from(!payload.rows.is_empty())) as i64;
     let last = db.query_row(&format!("SELECT {ENTRY_COLUMNS} FROM journal ORDER BY seq DESC LIMIT 1"), [], read_entry).optional().map_err(e)?;
     if let Some((entry, old)) = last {
         let old: Payload = serde_json::from_str(&old).unwrap_or_default();
@@ -587,7 +822,7 @@ fn record(db: &Connection, kind: &str, label: &str, payload: Payload) -> Result<
         let ids = |p: &Payload| p.changes.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
         let within = old.changes.len() == payload.changes.len() && old.changes.iter().zip(&payload.changes).all(|(o, n)| o.id == n.id && n.after.keys().all(|k| o.after.contains_key(k)));
         let quick = kind == "edit" && entry.kind == "edit" && now - entry.created_at < COALESCE_MS && entry.label == label;
-        if quick && old.moves.is_empty() && payload.moves.is_empty() && old.pairs.is_empty() && payload.pairs.is_empty() && within && ids(&old) == ids(&payload) {
+        if quick && old.rows.is_empty() && payload.rows.is_empty() && old.moves.is_empty() && payload.moves.is_empty() && old.pairs.is_empty() && payload.pairs.is_empty() && within && ids(&old) == ids(&payload) {
             let changes: Vec<Change> = old
                 .changes
                 .into_iter()
@@ -611,7 +846,7 @@ fn record(db: &Connection, kind: &str, label: &str, payload: Payload) -> Result<
     .map_err(e)?;
     let seq = db.last_insert_rowid();
     db.execute("DELETE FROM journal WHERE seq <= ?1", [seq - MAX_ENTRIES]).map_err(e)?;
-    Ok(JournalEntry { seq, kind: kind.into(), label: label.into(), count, created_at: now, ids })
+    Ok(JournalEntry { seq, kind: kind.into(), label: label.into(), count, created_at: now, ids, undone: false })
 }
 
 /// The values `formulas` give on source `id` (a failing formula leaves its property alone).
@@ -678,7 +913,140 @@ pub fn field_label(key: &str) -> String {
     }
 }
 
+// ── Journaled collection, note and import operations ─────────────────────────────
+
+fn collection_name(db: &Connection, id: &str) -> Result<String> {
+    Ok(db.query_row("SELECT name FROM collections WHERE id = ?", [id], |r| r.get::<_, String>(0)).optional().map_err(e)?.unwrap_or_default())
+}
+
+impl Store {
+    /// Creates a collection, journaled (the library's sidebar).
+    pub fn create_collection_undoable(&self, name: &str, parent_id: Option<&str>) -> Result<(crate::Collection, Option<JournalEntry>)> {
+        let id = crate::new_id();
+        let label = format!("New collection “{}”", name.trim());
+        let (_, entry) = self.journaled("collection", &label, &[], |db, rec| {
+            rec.watch_in(db, "collections", "id", std::slice::from_ref(&id))?;
+            crate::create_collection_in(db, &id, name, parent_id, None).map(|_| ())
+        })?;
+        let collection = self.collections()?.into_iter().find(|c| c.id == id).ok_or("Collection missing")?;
+        Ok((collection, entry))
+    }
+
+    /// Renames or moves a collection, journaled.
+    pub fn update_collection_undoable(&self, id: &str, name: Option<&str>, parent_id: Option<Option<&str>>) -> Result<Option<JournalEntry>> {
+        let old = collection_name(&*self.read()?, id)?;
+        let label = match name {
+            Some(name) if name.trim() != old => format!("Rename “{old}” to “{}”", name.trim()),
+            _ => format!("Move “{old}”"),
+        };
+        Ok(self
+            .journaled("collection", &label, &[], |db, rec| {
+                rec.watch_in(db, "collections", "id", &[id.to_string()])?;
+                crate::update_collection_in(db, id, name, parent_id)
+            })?
+            .1)
+    }
+
+    /// Reorders (and re-parents) collections, journaled.
+    pub fn reorder_collections_undoable(&self, parent_id: Option<&str>, ids: &[String]) -> Result<Option<JournalEntry>> {
+        let label = if ids.len() == 1 { format!("Move “{}”", collection_name(&*self.read()?, &ids[0])?) } else { format!("Move {} collections", ids.len()) };
+        Ok(self
+            .journaled("collection", &label, &[], |db, rec| {
+                rec.watch(db, "collections", "parent_id IS ?1 OR id IN (SELECT value FROM json_each(?2))", vec![
+                    parent_id.map_or(Value::Null, |p| Value::Text(p.into())),
+                    Value::Text(serde_json::to_string(ids).map_err(e)?),
+                ])?;
+                crate::reorder_collections_in(db, parent_id, ids)
+            })?
+            .1)
+    }
+
+    /// Deletes a collection and those under it, journaled: undo brings them back with the
+    /// sources filed in them.
+    pub fn delete_collection_undoable(&self, id: &str) -> Result<Option<JournalEntry>> {
+        let label = format!("Delete collection “{}”", collection_name(&*self.read()?, id)?);
+        Ok(self
+            .journaled("collection", &label, &[], |db, rec| {
+                let tree = crate::collection_subtree(db, id)?;
+                rec.watch_in(db, "collections", "id", &tree)?;
+                rec.watch_in(db, "source_collections", "collection_id", &tree)?;
+                db.execute("DELETE FROM collections WHERE id = ?", [id]).map_err(e)?;
+                Ok(())
+            })?
+            .1)
+    }
+
+    /// Deletes a note, journaled: undo brings it back with the links it wrote (and the
+    /// links to it whole again); its passages are cut again.
+    pub fn delete_note_undoable(&self, id: &str) -> Result<Option<JournalEntry>> {
+        let title: String = self.read()?.query_row("SELECT title FROM notes WHERE id = ?", [id], |r| r.get(0)).optional().map_err(e)?.unwrap_or_default();
+        let label = if title.trim().is_empty() { "Delete note".to_string() } else { format!("Delete note “{}”", title.trim()) };
+        Ok(self
+            .journaled("note", &label, &[], |db, rec| {
+                rec.watch_in(db, "notes", "id", &[id.to_string()])?;
+                rec.watch(db, "links", "(owner_kind = 'note' AND owner_id = ?1) OR (to_kind = 'note' AND to_id = ?1)", vec![Value::Text(id.into())])?;
+                let source: Option<String> = db.query_row("SELECT source_id FROM notes WHERE id = ?", [id], |r| r.get(0)).optional().map_err(e)?.flatten();
+                db.execute("DELETE FROM notes WHERE id = ?", [id]).map_err(e)?;
+                crate::links::forget_item(db, crate::links::NOTE, id)?;
+                if let Some(source) = source {
+                    refresh_fts(db, &source)?;
+                }
+                Ok(())
+            })?
+            .1)
+    }
+
+    /// Journals an operation that already ran in several steps (a bibliography import):
+    /// the sources it added, rows it added (`(table, column, ids)`: notes, collections), and
+    /// existing sources it changed with the values to put back (an import's merge patch).
+    pub fn journal_added(&self, kind: &str, label: &str, created: &[String], rows: &[(&str, &str, Vec<String>)], changed: &[(String, Map<String, Json>)]) -> Result<Option<JournalEntry>> {
+        let db = self.db()?;
+        let tx = db.unchecked_transaction().map_err(e)?;
+        let mut payload = Payload { created: created.to_vec(), ..Default::default() };
+        for (table, column, ids) in rows {
+            let (table, keys) = ROW_TABLES.iter().find(|(t, _)| t == table).copied().ok_or("Unknown table for the journal")?;
+            for chunk in ids.chunks(500) {
+                let marks = vec!["?"; chunk.len()].join(", ");
+                let values: Vec<Value> = chunk.iter().map(|i| Value::Text(i.clone())).collect();
+                let watch = Watch { table, keys, condition: format!("{column} IN ({marks})"), values, before: Vec::new() };
+                payload.rows.extend(watch.finish(&tx)?);
+            }
+        }
+        for (id, undo) in changed {
+            let Some(after) = capture(&tx, id)? else { continue };
+            let mut before = after.clone();
+            for (key, value) in undo {
+                if key == "properties" {
+                    let mut properties = before.get("properties").and_then(Json::as_object).cloned().unwrap_or_default();
+                    for (name, old) in value.as_object().into_iter().flatten() {
+                        if old.is_null() {
+                            properties.remove(name);
+                        } else {
+                            properties.insert(name.clone(), old.clone());
+                        }
+                    }
+                    before.insert(key.clone(), Json::Object(properties));
+                } else if key == "collectionsRemove" {
+                    let gone: Vec<&str> = value.as_array().into_iter().flatten().filter_map(Json::as_str).collect();
+                    let kept: Vec<Json> = before.get("collections").and_then(Json::as_array).into_iter().flatten().filter(|c| !c.as_str().is_some_and(|c| gone.contains(&c))).cloned().collect();
+                    before.insert("collections".into(), Json::Array(kept));
+                } else {
+                    before.insert(key.clone(), value.clone());
+                }
+            }
+            let (before, after) = diff(&before, &after);
+            if !before.is_empty() {
+                payload.changes.push(Change { id: id.clone(), before, after });
+            }
+        }
+        let entry = if payload.is_empty() { None } else { Some(record(&tx, kind, label, payload)?) };
+        tx.commit().map_err(e)?;
+        Ok(entry)
+    }
+}
+
 #[cfg(test)]
+
 mod tests {
     use super::BatchEdit;
     use crate::{SourceInput, Store};
@@ -788,5 +1156,64 @@ mod tests {
         assert_eq!(store.source(&a).unwrap().unwrap().collections, vec![c.clone()]);
         store.undo().unwrap();
         assert!(store.source(&a).unwrap().unwrap().collections.is_empty());
+    }
+
+    #[test]
+    fn collections_notes_tags_and_imports_share_the_journal() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let a = source(&store, "A", &["ml"]);
+        // Collections: create, rename, nest, delete with what is filed in them.
+        let (parent, _) = store.create_collection_undoable("Thesis", None).unwrap();
+        let (child, _) = store.create_collection_undoable("Chapter 1", None).unwrap();
+        store.update_collection_undoable(&child.id, Some("Chapter one"), Some(Some(&parent.id))).unwrap();
+        store.file_sources(&child.id, std::slice::from_ref(&a), true).unwrap();
+        let entry = store.delete_collection_undoable(&parent.id).unwrap().unwrap();
+        assert_eq!(entry.label, "Delete collection “Thesis”");
+        assert!(store.collections().unwrap().is_empty());
+        store.undo().unwrap();
+        let names: Vec<(String, Option<String>)> = store.collections().unwrap().into_iter().map(|c| (c.name, c.parent_id)).collect();
+        assert!(names.contains(&("Chapter one".into(), Some(parent.id.clone()))), "{names:?}");
+        assert_eq!(store.source(&a).unwrap().unwrap().collections, vec![child.id.clone()]);
+        store.redo().unwrap();
+        assert!(store.collections().unwrap().is_empty());
+        store.undo().unwrap();
+        // Back past the filing and the rename.
+        store.undo().unwrap();
+        assert_eq!(store.undo().unwrap().unwrap().label, "Rename “Chapter 1” to “Chapter one”");
+        let c = store.collections().unwrap().into_iter().find(|c| c.id == child.id).unwrap();
+        assert_eq!((c.name.as_str(), c.parent_id), ("Chapter 1", None));
+
+        // A deleted note comes back with its links.
+        let note = store.save_note(None, Some(&a), "Reading notes", "Body", None).unwrap();
+        store.delete_note_undoable(&note.id).unwrap().unwrap();
+        assert!(store.note(&note.id).unwrap().is_none());
+        store.undo().unwrap();
+        assert_eq!(store.note(&note.id).unwrap().unwrap().title, "Reading notes");
+        assert!(store.stale_notes(10).unwrap().iter().any(|n| n.id == note.id));
+
+        // Tag manager operations are entries too.
+        let op: crate::TagOperation = serde_json::from_value(json!({"replace": [{"from": "ml", "to": ["Machine learning"]}], "tree": {"Machine learning": {"parent": "Methods"}}})).unwrap();
+        let result = store.apply_tags(&op).unwrap();
+        assert_eq!(result.entry.unwrap().label, "Rename tag “ml” to “Machine learning”");
+        assert_eq!(store.source(&a).unwrap().unwrap().tags, vec!["Machine learning"]);
+        store.undo().unwrap();
+        assert_eq!(store.source(&a).unwrap().unwrap().tags, vec!["ml"]);
+        assert!(store.tag_index().unwrap()["tree"].as_object().unwrap().is_empty());
+
+        // An import that ran in steps, journaled afterwards; undone out of order.
+        let b = source(&store, "Imported", &[]);
+        let mut undo = Map::new();
+        undo.insert("volume".into(), Json::Null);
+        let mut patch = Map::new();
+        patch.insert("volume".into(), json!("4"));
+        store.update_source(&a, &patch).unwrap();
+        let imported = store.journal_added("import", "Import refs.bib", std::slice::from_ref(&b), &[], &[(a.clone(), undo)]).unwrap().unwrap();
+        store.edit_sources(std::slice::from_ref(&a), &edit(json!({"patch": {"publisher": "X"}})), None).unwrap();
+        store.undo_entry(imported.seq).unwrap().unwrap();
+        assert!(store.source(&b).unwrap().unwrap().trashed_at.is_some());
+        let a1 = store.source(&a).unwrap().unwrap();
+        assert_eq!((a1.field("volume"), a1.field("publisher")), (None, Some("X")));
+        assert!(store.journal_entry(imported.seq).unwrap().unwrap().1);
     }
 }
