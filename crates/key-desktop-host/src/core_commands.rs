@@ -27,6 +27,9 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
             let kinds = arg::<Option<bool>>(args, "kinds")?.unwrap_or(false);
             json_output(store.parse_query(&text, kinds)?)
         })(),
+        // Every field a search can filter by (the workspace's properties included), typed, with
+        // operators and examples, for the suggestions and the filter builder.
+        "store_filter_fields" => (|| json_output(store.filter_fields()?))(),
         // A saved page's references: from `html` (the live page, JSON-LD included) or its
         // saved file. Stored unless `store` is false; the scan comes back for the reader.
         "store_web_references_detect" => (|| {

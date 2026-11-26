@@ -13,7 +13,7 @@ const INTERACTIVE: &[&str] = &[
     "store_tag_restore", "store_retag", "store_collection_create", "store_collection_update", "store_collection_reorder", "store_collection_delete",
     "store_membership", "store_note_save", "store_note_meta", "store_note_delete", "store_canvas_save", "store_canvas_delete", "store_ui_get",
     "store_ui_set", "store_undo", "store_redo", "store_add_work", "store_add_published", "store_match_identifiers", "store_source", "store_sources",
-    "store_search", "store_suggest", "store_find", "store_parse_query", "store_facets", "store_tag_index", "store_collections", "store_notes",
+    "store_search", "store_suggest", "store_find", "store_parse_query", "store_filter_fields", "store_facets", "store_tag_index", "store_collections", "store_notes",
     "store_note", "store_canvas", "store_canvases", "store_links", "store_link_targets", "store_highlight_uses", "store_set_reading_status",
     "store_reading_event", "store_enrich", "store_media_save", "store_merge_sources", "store_merge_exact", "store_mark_distinct", "store_journal",
     "store_citation_key_set", "store_citation_key_pin", "store_biblio_copy", "store_cite_render", "store_cite_items", "store_retraction_dismiss",
