@@ -6,7 +6,7 @@ import { Icon, type IconName } from "./icons";
 import type { Invoke } from "./library-api";
 import { Highlight, prefixPattern } from "./search-highlight";
 import { useDismiss } from "@key-reader/ui/dismiss";
-import { detectQuery, type DetectedKind, type KnownNames } from "./smart-query";
+import { parseQuery, type DetectedKind, type Detection } from "./smart-query";
 
 export interface SearchFilter {
   /** creator | container | title | notes | fulltext | tag | collection | year | property */
@@ -126,22 +126,25 @@ export default function SearchField({
   const request = useRef(0);
   const typed = text.trim();
 
-  // Tag and collection names, to recognise them inside a longer query. Loaded once typing starts.
-  const [known, setKnown] = useState<KnownNames>();
-  const wantsNames = typed.length >= 3;
-  useEffect(() => setKnown(undefined), [workspaceId]);
+  // The host's reading of the query (identifiers, years, citations, kinds, the workspace's
+  // tag and collection names). A short debounce: it answers in a millisecond or two.
+  const [parsed, setParsed] = useState<{ text: string; detections: Detection[] }>({ text: "", detections: [] });
+  const wantsKinds = !!onKinds;
   useEffect(() => {
-    if (!wantsNames || known) return;
+    if (typed.length < 3) return setParsed({ text: typed, detections: [] });
     let live = true;
-    void Promise.all([
-      invoke<{ tags: { value: string }[] }>("store_facets", { scope: "all" }, workspaceId).catch(() => ({ tags: [] })),
-      invoke<{ id: string; name: string }[]>("store_collections", {}, workspaceId).catch(() => []),
-    ]).then(([facets, collections]) => live && setKnown({ tags: facets.tags.map((t) => t.value), collections: collections.map(({ id, name }) => ({ id, name })) }));
+    const t = setTimeout(() => {
+      void parseQuery(invoke, workspaceId, typed, wantsKinds)
+        .catch(() => [])
+        .then((detections) => live && setParsed({ text: typed, detections }));
+    }, 30);
     return () => {
       live = false;
+      clearTimeout(t);
     };
-  }, [wantsNames, known, invoke, workspaceId]);
-  const detections = useMemo(() => detectQuery(typed, { known, kinds: !!onKinds }), [typed, known, onKinds]);
+  }, [typed, wantsKinds, invoke, workspaceId]);
+  // A reading of older text stays shown only while it still starts the query.
+  const detections = parsed.text === typed || typed.startsWith(parsed.text) ? parsed.detections : [];
 
   useEffect(() => {
     const id = ++request.current;

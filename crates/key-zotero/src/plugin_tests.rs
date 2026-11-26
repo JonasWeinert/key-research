@@ -394,3 +394,20 @@ fn sync_needs_a_setup_and_can_be_paused_and_removed() {
     configure(&store, Configure { remove: true, ..Default::default() }).unwrap();
     assert!(!configured(&store));
 }
+
+#[test]
+fn sync_pace_backs_off_and_recovers() {
+    let root = std::path::Path::new("/tmp/key-zotero-pace-test");
+    reset_delay(root);
+    assert_eq!(next_delay(root, Some(&Connection::Ok), false), SYNC_EVERY_MS);
+    assert_eq!(next_delay(root, Some(&Connection::NotRunning), false), SYNC_EVERY_MS * 2);
+    assert_eq!(next_delay(root, Some(&Connection::PluginMissing), false), SYNC_EVERY_MS * 4);
+    for _ in 0..10 {
+        next_delay(root, None, true);
+    }
+    assert_eq!(next_delay(root, None, true), SYNC_BACKOFF_MAX_MS);
+    assert_eq!(next_delay(root, Some(&Connection::Ok), false), SYNC_EVERY_MS);
+    assert_eq!(next_delay(root, Some(&Connection::Paused), false), SYNC_IDLE_MS);
+    reset_delay(root);
+    assert_eq!(next_delay(root, Some(&Connection::Unpaired), false), SYNC_EVERY_MS * 2);
+}

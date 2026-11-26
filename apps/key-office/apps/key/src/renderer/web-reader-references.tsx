@@ -1,6 +1,6 @@
-// A saved web page's references in its reader: the list is read from the page's HTML
-// (shared/web-references.ts) and kept as the library keeps a PDF's analysis (the host looks
-// each one up as it does a PDF's). Links in the page that point into the list show the same
+// A saved web page's references in its reader: the host reads the list from the page's HTML
+// (key-store `web_references.rs`, `store_web_references_detect`) and keeps it as the library
+// keeps a PDF's analysis (looking each one up as it does a PDF's). Links in the page that point into the list show the same
 // citation card as the PDF reader on hover; a click pins it, Details grows it in place.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -9,13 +9,19 @@ import { anchoredFloatingCardPosition } from "@key-reader/pdfjs/floating-card";
 import type { ScholarlyMetadata, ScientificCitation, ScientificReference } from "@key-reader/engines/types";
 import type { ScholarlyEntry } from "@key-reader/pdfjs/scholarly-metadata";
 import { useDismiss } from "@key-reader/ui/dismiss";
-import { detectWebReferences, referenceInputs, type WebReferenceScan } from "../shared/web-references";
 import type { AnalysisReport } from "./reader-analysis";
 import { working } from "./reader-analysis";
 import type { Invoke, Source } from "./library-api";
 import { bridge } from "./library-api";
 import { webPageEvent, WEB_ANALYSIS_EVENT, WEB_REANALYZE_EVENT, WEB_REFERENCE_EVENT } from "./web-page-open";
 import "./web-reader-panel.css";
+
+/** The host's reading of a page: its reference list and the in-text links to it. */
+export interface WebReferenceScan {
+  references: { number: number; text: string; anchor?: string; doi?: string; url?: string; title?: string; authors?: string[]; year?: number }[];
+  citations: { anchor: string; numbers: number[] }[];
+  method: "list" | "entries" | "meta" | "json-ld" | "none";
+}
 
 export type WebAnalysisReport = AnalysisReport & { references: (AnalysisReport["references"][number] & { seq?: number; error?: string | null })[] };
 
@@ -72,36 +78,31 @@ export function useWebReferences({
   onFlash: (el: Element) => void;
 }): ReactNode {
   const [report, refresh] = useWebAnalysis(invoke, workspaceId, sourceId);
-  const scan = useMemo<WebReferenceScan | null>(() => {
-    if (!doc) return null;
-    try {
-      return detectWebReferences(doc);
-    } catch {
-      return { references: [], citations: [], method: "none" };
-    }
-  }, [doc]);
-
-  // A page saved before references were read (or read with another method): read it now.
-  const stored = useRef("");
+  // The host reads the saved page once the report is in; a page saved before references were
+  // read (or read with another method) is stored now, and again when asked to re-analyse.
+  const [scan, setScan] = useState<WebReferenceScan | null>(null);
+  const read = useRef("");
   const store = useCallback(
-    async (force: boolean) => {
-      if (!scan || source?.kind !== "web") return;
-      if (!force && stored.current === sourceId) return;
-      stored.current = sourceId;
+    async (save: boolean) => {
+      if (source?.kind !== "web") return;
       try {
-        await invoke("store_web_references", { id: sourceId, references: referenceInputs(scan) }, workspaceId);
+        const answer = await invoke<{ scan: WebReferenceScan }>("store_web_references_detect", { id: sourceId, store: save }, workspaceId);
+        setScan(answer.scan);
       } catch {
-        /* an older host: the page is read without its references stored */
+        setScan({ references: [], citations: [], method: "none" });
+        return;
       }
+      if (!save) return;
       await refresh();
       webPageEvent(WEB_ANALYSIS_EVENT, { sourceId });
     },
-    [scan, source?.kind, sourceId, invoke, workspaceId, refresh],
+    [source?.kind, sourceId, invoke, workspaceId, refresh],
   );
   useEffect(() => {
-    if (report === undefined || !scan) return;
-    if (!report?.analysis || report.analysis.engine !== "html") void store(false);
-  }, [report, scan, store]);
+    if (report === undefined || !doc || read.current === sourceId) return;
+    read.current = sourceId;
+    void store(!report?.analysis || report.analysis.engine !== "html");
+  }, [report, doc, sourceId, store]);
   useEffect(() => {
     const listener = (event: Event) => (event as CustomEvent).detail?.sourceId === sourceId && void store(true);
     window.addEventListener(WEB_REANALYZE_EVENT, listener);
