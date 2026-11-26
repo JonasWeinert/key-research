@@ -180,10 +180,12 @@
 }
 .kx-feeds-add-form {
   display: flex;
+  flex: 1;
   gap: 6px;
 }
 .kx-feeds-input {
-  width: 240px;
+  flex: 1;
+  min-width: 0;
   padding: 4px 8px;
   border: 0.5px solid var(--kx-line-strong);
   border-radius: 6px;
@@ -199,8 +201,19 @@
   gap: 10px;
 }
 .kx-feeds-row > div:nth-child(2) {
+  display: grid;
   flex: 1;
+  gap: 1px;
   min-width: 0;
+}
+.kx-feeds-title {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-feeds-add > div:first-child {
+  flex: 0 1 180px !important;
 }
 .kx-feeds-row small {
   overflow: hidden;

@@ -155,6 +155,9 @@ pub struct ItemQuery {
     pub offset: usize,
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Items read while the list was shown: they stay in the unread view until it is left.
+    #[serde(default)]
+    pub keep: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -472,6 +475,11 @@ impl Store {
         }
         .to_string()];
         let mut values = Vec::new();
+        let keep: Vec<&String> = query.keep.iter().take(500).collect();
+        if query.view.as_deref() == Some("unread") && !keep.is_empty() {
+            conditions[0] = format!("(i.read = 0 OR i.id IN ({})) AND i.dismissed_at IS NULL", vec!["?"; keep.len()].join(","));
+            values.extend(keep.into_iter().map(|id| Value::Text(id.clone())));
+        }
         if let Some(id) = &query.subscription_id {
             conditions.push("EXISTS (SELECT 1 FROM feed_item_subscriptions x WHERE x.item_id = i.id AND x.subscription_id = ?)".into());
             values.push(Value::Text(id.clone()));
@@ -729,6 +737,8 @@ mod tests {
         assert_eq!((view("all"), view("unread"), view("saved"), view("dismissed")), (2, 2, 1, 1));
         store.mark_feed_read(&ItemQuery::default()).unwrap();
         assert_eq!(view("unread"), 0);
+        let kept = store.feed_items(&ItemQuery { view: Some("unread".into()), keep: vec![ids[2].clone()], ..Default::default() }).unwrap();
+        assert_eq!(kept.total, 1, "read while shown: still listed");
         // A dismissed item is not brought back by the feed that still lists it, even purged.
         store.set_feed_retention(&Retention { unread_days: 1, read_days: 1, dismissed_days: 1 }).unwrap();
         let later = now_ms() + 2 * 86_400_000;

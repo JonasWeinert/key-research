@@ -55,17 +55,26 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
   const [refreshing, setRefreshing] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number }>();
   const list = useRef<HTMLUListElement>(null);
+  const shown = useRef(active);
+  shown.current = active;
   // Items acted on stay where they are until the list is read again (the cursor keeps its place).
   const [gone, setGone] = useState<Set<string>>(new Set());
 
+  // Read while shown: they stay in the Unread view until another view or filter is chosen.
+  const readHere = useRef(new Set<string>());
+  useEffect(() => {
+    readHere.current = new Set();
+  }, [view, filter]);
   const load = useCallback(async () => {
     const [items, subs] = await Promise.all([
-      invoke<ItemPage>("feeds_items", { view, subscriptionId: filter.subscriptionId ?? null, kind: filter.kind ?? null, limit: PAGE }, workspaceId),
+      invoke<ItemPage>("feeds_items", { view, subscriptionId: filter.subscriptionId ?? null, kind: filter.kind ?? null, limit: PAGE, keep: [...readHere.current] }, workspaceId),
       invoke<Subscription[]>("feeds_subscriptions", {}, workspaceId),
     ]);
     setPage(items);
     setSubscriptions(subs);
     setGone(new Set());
+    // What is shown while the Inbox is in front has been seen.
+    if (shown.current) markInboxSeen(workspaceId);
   }, [invoke, workspaceId, view, filter]);
   useEffect(() => {
     void load().catch(() => {});
@@ -82,7 +91,10 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
   const patch = (id: string, change: Partial<FeedItem>) => setPage((p) => p && { ...p, items: p.items.map((i) => (i.id === id ? { ...i, ...change } : i)) });
 
   const set = useCallback(
-    (ids: string[], change: { read?: boolean; saved?: boolean; dismissed?: boolean }) => invoke("feeds_set", { ids, ...change }, workspaceId).then(() => feedsChanged()),
+    (ids: string[], change: { read?: boolean; saved?: boolean; dismissed?: boolean }) => {
+      if (change.read || change.saved) ids.forEach((id) => readHere.current.add(id));
+      return invoke("feeds_set", { ids, ...change }, workspaceId).then(() => feedsChanged());
+    },
     [invoke, workspaceId],
   );
   // Looking at an item a moment reads it.
@@ -114,6 +126,7 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
     if (view === "saved" && item.saved) setGone((g) => new Set(g).add(item.id));
   };
   const added = (item: FeedItem, source: Source) => {
+    readHere.current.add(item.id);
     patch(item.id, { added: true, read: true, sourceId: source.id, inLibrary: "added" });
     void invoke("feeds_added", { id: item.id, sourceId: source.id }, workspaceId).then(() => feedsChanged());
   };
@@ -131,6 +144,7 @@ export default function InboxPage({ invoke, workspaceId, viewId, active }: { inv
     void bridge().tabAction("open-url", { url, placement: "split", fromViewId: viewId });
   };
   const markAllRead = () =>
+    items.forEach((i) => readHere.current.add(i.id)) ||
     void invoke<number>("feeds_mark_read", { subscriptionId: filter.subscriptionId ?? null, kind: filter.kind ?? null }, workspaceId).then((n) => {
       feedsChanged();
       toast(n ? `Marked ${n} as read` : "Nothing unread here");

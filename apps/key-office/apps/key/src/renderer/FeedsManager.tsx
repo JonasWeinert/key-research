@@ -104,7 +104,7 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
           <div className="kx-settings-row kx-feeds-add">
             <div>
               <span>Address</span>
-              <small>A journal’s table of contents, an arXiv listing, a blog: its feed, or the page that links to it.</small>
+              <small>A feed, or the page that links to one</small>
             </div>
             <form
               className="kx-settings-control kx-feeds-add-form"
@@ -121,7 +121,7 @@ export function FeedsManager({ invoke, workspaceId }: { invoke: Invoke; workspac
           </div>
         </div>
         {error && <p className="kx-inline-error">{error}</p>}
-        <p className="kx-settings-footnote">Authors, journals and topics are followed from their pages; “Alert me” on a web search, a source or a collection follows new results and citations.</p>
+        <p className="kx-settings-footnote">A journal’s table of contents, an arXiv listing or a blog. Authors, journals and topics are followed from their pages; “Alert me” on a web search, a source or a collection follows new results and citations.</p>
       </section>
       <section className="kx-settings-group">
         <h3>Following</h3>
@@ -238,7 +238,7 @@ export function FeedsSettings({ invoke, workspaces }: { invoke: Invoke; workspac
 export function FeedsSheet({ invoke, workspaceId, onClose }: { invoke: Invoke; workspaceId: string; onClose: () => void }) {
   return (
     <GlobalDrawer onClose={onClose} presentation="sheet" label="Feeds and alerts">
-      <div className="key-property-editor kx-feeds-sheet" role="dialog" aria-label="Feeds and alerts" data-modal-view="feeds">
+      <div className="key-property-editor kx-feeds-sheet" data-modal-view="feeds">
         <header>
           <h2>Feeds &amp; alerts</h2>
           <p>What your Inbox follows.</p>

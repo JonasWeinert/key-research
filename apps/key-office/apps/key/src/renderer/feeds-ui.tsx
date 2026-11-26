@@ -99,7 +99,7 @@ export function markInboxSeen(workspaceId: string) {
   } catch {
     /* per-viewer convenience only */
   }
-  feedsChanged();
+  window.dispatchEvent(new Event("key:inbox-seen"));
 }
 
 export interface FeedCounts {
@@ -127,10 +127,12 @@ export function useFeedCounts(invoke: Invoke, workspaceId?: string): FeedCounts 
     read();
     const timer = setInterval(read, 60_000);
     const off = onFeedsChanged(read);
+    window.addEventListener("key:inbox-seen", read);
     return () => {
       live = false;
       clearInterval(timer);
       off();
+      window.removeEventListener("key:inbox-seen", read);
     };
   }, [invoke, workspaceId]);
   return counts;
