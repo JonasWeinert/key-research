@@ -356,6 +356,11 @@ impl Run<'_> {
                 }
             }
             let id = known.and_then(|t| t.id.clone()).or_else(|| index.get(&item.key).map(|(id, _)| id.clone()));
+            // A source merged into another in Key: the item now updates the one it became.
+            let id = match id {
+                Some(id) => Some(self.store.resolve_source_id(&id)?),
+                None => None,
+            };
             let Some(id) = id else {
                 new.push((input, item, z));
                 continue;

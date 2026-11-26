@@ -11,6 +11,8 @@ mod linked_folders;
 mod core_commands;
 #[path = "openalex.rs"]
 mod openalex;
+#[path = "hygiene.rs"]
+mod hygiene;
 #[path = "reference_worker.rs"]
 mod reference_worker;
 #[path = "web_search/mod.rs"]
