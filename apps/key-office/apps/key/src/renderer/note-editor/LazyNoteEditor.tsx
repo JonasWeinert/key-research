@@ -25,7 +25,7 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element | null {
   useEffect(() => {
     if (Editor) return;
     let live = true;
-    void loadNoteEditor().then((e) => live && setEditor(() => e));
+    loadNoteEditor().then((e) => live && setEditor(() => e), (error) => console.error(error));
     return () => {
       live = false;
     };
