@@ -9,6 +9,8 @@ export interface RustHostOptions {
   /** Requests sent first whenever the process starts (again): how the host learns the
    *  user's API keys, which never go through its environment. */
   prelude?: () => HostRequest[];
+  /** Events the host sends unasked (id 0 frames: `library-changed` while lookups fill sources in). */
+  onEvent?: (name: string) => void;
 }
 export interface HostRequest {
   command: string;
@@ -304,8 +306,14 @@ export class RustHost {
         if (this.available < this.headerLength!) return;
         const response = JSON.parse(
           this.take(this.headerLength!).toString(),
-        ) as Response;
+        ) as Response & { event?: string };
         this.headerLength = undefined;
+        if (response.id === 0 && typeof response.event === "string" && !response.binaryLength) {
+          try {
+            this.options.onEvent?.(response.event);
+          } catch {}
+          continue;
+        }
         if (
           !Number.isSafeInteger(response.id) ||
           typeof response.ok !== "boolean" ||

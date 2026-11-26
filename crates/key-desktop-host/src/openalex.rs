@@ -155,7 +155,10 @@ impl OpenAlex {
             };
             match next {
                 Ok(Some(job)) => {
-                    if let Err(fail) = enrich(&store, &job, &options) {
+                    let result = enrich(&store, &job, &options);
+                    // Open library views refresh (throttled) as lookups fill sources in.
+                    crate::events::library_changed();
+                    if let Err(fail) = result {
                         let (status, retry) = match &fail {
                             Fail::NotFound | Fail::Unlisted { .. } => ("not_found", None),
                             // Busy: back off 1, 2, 4 … minutes, then give up until asked again.

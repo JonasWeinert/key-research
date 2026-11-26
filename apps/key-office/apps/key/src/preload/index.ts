@@ -98,6 +98,7 @@ contextBridge.exposeInMainWorld("key", {
         "proxies-changed",
         "add-from-source",
         "full-screen",
+        "library-sources-changed",
       ].includes(event)
     )
       throw Error("Unknown event");

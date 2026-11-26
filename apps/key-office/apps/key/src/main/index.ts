@@ -2276,6 +2276,10 @@ else
             ? join(process.resourcesPath, "backend/libpdfium.dylib")
             : join(root, "vendor/pdfium/lib/libpdfium.dylib")),
         prelude: hostKeyRequests,
+        // Background lookups filled sources in: open views refresh (the host throttles it).
+        onHostEvent: (workspaceId, name) => {
+          if (name === "library-changed") emit("library-sources-changed", { workspaceId });
+        },
       });
       serveNoteMedia(registry);
       tempPdfs = new TempPdfs(browserCache(), { workspace: scratchWorkspace, invoke: (c, a, id) => registry.invoke(c, a, id) });

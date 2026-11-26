@@ -1,5 +1,6 @@
 mod backend;
 const ADMISSION: usize = 16;
+mod events;
 mod ipc;
 mod layout_helper;
 use std::{
@@ -35,6 +36,7 @@ fn run() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let host = Arc::new(backend::Host::new(root)?);
     let out = Arc::new(Mutex::new(std::io::stdout()));
+    events::start(out.clone());
     // Room for everything the app keeps in flight (six requests and eight urgent ones).
     let admission = Arc::new(tokio::sync::Semaphore::new(ADMISSION));
     let mut input = std::io::stdin().lock();

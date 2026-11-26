@@ -293,8 +293,9 @@ export default function ReferenceLibrary({
     const known = knownCount.current;
     knownCount.current = status.counts.all;
     if (known !== undefined && known !== status.counts.all) return void load(0);
-    // One more refresh when work (indexing, metadata lookups) settles, so the last results show.
-    const working = !!status.busy || status.counts.indexing > 0 || (status.enrichment ?? 0) > 0;
+    // One more refresh when indexing settles, so the last results show. Metadata lookups
+    // announce themselves (`library-sources-changed`, below).
+    const working = !!status.busy || status.counts.indexing > 0;
     const settled = wasWorking.current && !working;
     wasWorking.current = working;
     if (settled || (working && Date.now() - lastRefresh.current > 3000)) {
@@ -308,6 +309,23 @@ export default function ReferenceLibrary({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
+  // The host says (throttled) when background lookups filled sources in: the rows refresh.
+  const refreshRows = useRef<() => void>(() => {});
+  refreshRows.current = () => {
+    if (search) return;
+    void invoke<SourcePage>("store_sources", { ...query, offset: 0, limit: Math.max(PAGE, items.length) }, workspaceId)
+      .then((page) => {
+        setItems(page.items);
+        setCounts(page.counts);
+      })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    if (!active) return;
+    return bridge().on("library-sources-changed", (payload) => {
+      if ((payload as { workspaceId?: string } | undefined)?.workspaceId === workspaceId) refreshRows.current();
+    });
+  }, [active, workspaceId]);
   // Indexing follows the user: what they open, select and scroll to is read first.
   const prioritize = useCallback(
     (ids: string[], reason: "opened" | "selected" | "visible") => {

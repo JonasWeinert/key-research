@@ -19,6 +19,8 @@ export interface RegistryOptions {
   pdfiumPath?: string
   /** Sent to every host when it starts (see RustHost's prelude). */
   prelude?: () => HostRequest[]
+  /** An event a workspace's host sent unasked. */
+  onHostEvent?: (workspaceId: string, name: string) => void
 }
 type SearchPage = {
   hits: Record<string, unknown>[]
@@ -234,6 +236,7 @@ export class Registry {
         pdfiumPath: this.options.pdfiumPath,
         env: (workspace as HiddenWorkspace).env,
         prelude: this.options.prelude,
+        onEvent: (name) => this.options.onHostEvent?.(workspace.id, name),
       })
       this.hosts.set(workspace.id, host)
     }
