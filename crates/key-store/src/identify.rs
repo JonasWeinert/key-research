@@ -716,7 +716,32 @@ pub struct Identification {
     pub score: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<i64>,
+    /// The `BACKFILL_VERSION` that last looked at this source in the background pass over
+    /// older PDFs; it is not looked at again until the version goes up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backfill: Option<u32>,
 }
+
+/// Raised when the background pass over older PDFs learns something new (e.g. another
+/// service to search), so sources it gave up on are tried once more.
+pub const BACKFILL_VERSION: u32 = 1;
+
+/// The background pass over PDFs added before they were identified on arrival, or never
+/// matched: how many wait to be read, and how many wait for a lookup.
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackfillStatus {
+    pub identify: i64,
+    pub lookup: i64,
+}
+
+/// PDFs with a file and no identifier that the current backfill has not looked at, and
+/// are not already waiting for a lookup.
+const BACKFILL_CANDIDATES: &str = "FROM sources s LEFT JOIN meta m ON m.key = 'identify:' || s.id
+     WHERE s.kind = 'pdf' AND s.trashed_at IS NULL AND coalesce(s.file_path, '') <> '' AND s.index_status IN ('ready', 'no_text')
+       AND coalesce(nullif(s.doi, ''), nullif(s.pmid, ''), nullif(s.openalex_id, '')) IS NULL
+       AND coalesce(s.enrich_status, '') NOT IN ('requested', 'pending', 'backfill')
+       AND (m.value IS NULL OR NOT json_valid(m.value) OR coalesce(json_extract(m.value, '$.backfill'), 0) < ?1)";
 
 fn record_key(id: &str) -> String {
     format!("identify:{id}")
@@ -826,6 +851,67 @@ impl Store {
             )
             .map(|_| ())
             .map_err(e)
+    }
+
+    // ── The background pass over older PDFs ─────────────────
+
+    /// The next older PDF to identify in the background, most recently added first.
+    pub fn next_backfill_identification(&self) -> Result<Option<String>> {
+        self.read()?
+            .query_row(&format!("SELECT s.id {BACKFILL_CANDIDATES} ORDER BY s.added_at DESC LIMIT 1"), [BACKFILL_VERSION], |r| r.get(0))
+            .optional()
+            .map_err(e)
+    }
+
+    /// Records that the current backfill looked at a source, so it is not taken again.
+    pub fn mark_backfilled(&self, id: &str) -> Result<()> {
+        let mut record = self.identification(id)?.unwrap_or_default();
+        record.backfill = Some(BACKFILL_VERSION);
+        self.set_identification(id, &record)
+    }
+
+    /// Queues a background lookup: one only taken when nothing else waits. A lookup just
+    /// queued for the source (a DOI attached by the backfill) moves to the back with it.
+    pub fn queue_backfill_lookup(&self, id: &str) -> Result<bool> {
+        let changed = self
+            .db()?
+            .execute(
+                "UPDATE sources SET enrich_status = 'backfill', enrich_error = NULL, enrich_attempts = 0, enrich_after = NULL
+                 WHERE id = ? AND trashed_at IS NULL AND (enrich_status IS NULL OR enrich_status IN ('pending', 'not_found', 'failed'))",
+                [id],
+            )
+            .map_err(e)?;
+        Ok(changed > 0)
+    }
+
+    /// The next background lookup, most recently added first.
+    pub fn next_backfill_enrichment(&self) -> Result<Option<crate::EnrichJob>> {
+        self.read()?
+            .query_row(
+                "SELECT id, doi, pmid, openalex_id, title, year, enrich_attempts FROM sources
+                 WHERE trashed_at IS NULL AND enrich_status = 'backfill' AND coalesce(enrich_after, 0) <= ?1 ORDER BY added_at DESC LIMIT 1",
+                [now_ms()],
+                |r| {
+                    Ok(crate::EnrichJob {
+                        id: r.get(0)?,
+                        doi: r.get(1)?,
+                        pmid: r.get(2)?,
+                        openalex_id: r.get(3)?,
+                        title: r.get(4)?,
+                        year: r.get(5)?,
+                        attempts: r.get(6)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(e)
+    }
+
+    pub fn backfill_status(&self) -> Result<BackfillStatus> {
+        let db = self.read()?;
+        let identify = db.query_row(&format!("SELECT count(*) {BACKFILL_CANDIDATES}"), [BACKFILL_VERSION], |r| r.get(0)).map_err(e)?;
+        let lookup = db.query_row("SELECT count(*) FROM sources WHERE trashed_at IS NULL AND enrich_status = 'backfill'", [], |r| r.get(0)).map_err(e)?;
+        Ok(BackfillStatus { identify, lookup })
     }
 
     /// Gives a source the title of the work it was identified as, when its title is still

@@ -306,6 +306,8 @@ export interface LibraryStatus {
   activity?: IndexActivity;
   /** Sources waiting for an OpenAlex lookup. */
   enrichment?: number;
+  /** Older PDFs identified and looked up in the background, behind everything else. */
+  backfill?: { identify: number; lookup: number };
 }
 
 export type Theme = "system" | "light" | "dark";

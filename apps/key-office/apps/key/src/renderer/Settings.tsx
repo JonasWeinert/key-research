@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
-import { ActivityPanel, useLibraryStatus } from "./index-activity";
+import { ActivityPanel, olderSources, useLibraryStatus } from "./index-activity";
 import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type Theme, type WorkspaceSummary, type ZoteroOptions } from "./library-api";
 import "./entity.css";
 import MergeReview from "./MergeReview";
@@ -319,12 +319,13 @@ function SearchSettings({
             </div>
           </div>
         )}
-        {status?.activity && (status.activity.batchTotal > 0 || status.activity.paused) && (
+        {status?.activity && (status.activity.batchTotal > 0 || status.activity.paused || olderSources(status.backfill) > 0) && (
           <div className="kx-settings-row kx-settings-row-wide">
             <ActivityPanel
               activity={status.activity}
               modelReady={status.model.state === "ready"}
               onPause={setPaused}
+              backfill={status.backfill}
             />
           </div>
         )}
@@ -396,9 +397,17 @@ function SearchSettings({
       </Group>
       <Group
         title="OpenAlex"
-        footer="Sources with a DOI, PMID or OpenAlex id are looked up in OpenAlex, the open catalogue of research: authors with their ORCID, the journal, topics, funding, open-access status, retractions and the works each one cites. Citation counts are refreshed when a page is opened. Only identifiers are sent, never your files or notes."
+        footer="Sources with a DOI, PMID or OpenAlex id are looked up in OpenAlex, the open catalogue of research: authors with their ORCID, the journal, topics, funding, open-access status, retractions and the works each one cites. Citation counts are refreshed when a page is opened. PDFs without a DOI are matched by their title, also in Crossref; older ones are looked up when the library is otherwise idle. Only identifiers and titles are sent, never your files or notes."
       >
-        <Row label="Look up new sources" detail={status?.enrichment ? `${status.enrichment.toLocaleString()} waiting` : "Off: only when you choose Look up in OpenAlex."}>
+        <Row label="Look up new sources" detail={
+            !settings.openalex
+              ? "Off: only when you choose Look up in OpenAlex."
+              : status?.enrichment
+                ? `${status.enrichment.toLocaleString()} waiting`
+                : olderSources(status?.backfill)
+                  ? `Looking up ${olderSources(status?.backfill).toLocaleString()} older sources when idle`
+                  : "On"
+          }>
           <input
             type="checkbox"
             className="kx-switch"

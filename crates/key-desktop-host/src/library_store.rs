@@ -92,6 +92,9 @@ impl Library {
         indexer.set_layout_model(std::env::var("KEY_LAYOUT_MODEL_ENABLED").map_or(true, |v| v != "0"));
         let references = super::reference_worker::ReferenceWorker::start(store.clone(), native, cache);
         let openalex = super::openalex::OpenAlex::start(store.clone());
+        // Older PDFs are looked up only while indexing is idle, and not while it is paused.
+        let gate = indexer.clone();
+        openalex.set_backfill_gate(move || !gate.is_paused() && !gate.is_busy());
         Ok(Self { store, indexer, references, openalex, zotero: Default::default(), zotero_progress: Default::default() })
     }
 
@@ -270,6 +273,8 @@ impl Library {
                     "activity": self.indexer.activity(),
                     "references": self.store.references_activity()?,
                     "enrichment": self.store.enrichment_queue(self.openalex.options().auto)?,
+                    // Older PDFs identified and looked up in the background.
+                    "backfill": self.store.backfill_status()?,
                     "vectors": self.store.vector_count()?,
                     "counts": counts,
                 }))

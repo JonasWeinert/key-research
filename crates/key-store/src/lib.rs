@@ -17,7 +17,7 @@ pub use graph::{
     TopicPage, TopicRef, Venue, VenuePage, WorkReference, name_key,
 };
 pub use identify::{
-    ARXIV_DOI, DoiHit, Evidence, EvidenceLine, EvidencePage, FoundDoi, Identification, TitleCandidate, TitleContext, accept_title, arxiv_watermark, document_doi,
+    ARXIV_DOI, BACKFILL_VERSION, BackfillStatus, DoiHit, Evidence, EvidenceLine, EvidencePage, FoundDoi, Identification, TitleCandidate, TitleContext, accept_title, arxiv_watermark, document_doi,
     find_dois, normalize_doi, plausible_title, push_title, tagged_values, title_candidates, title_similarity,
 };
 pub use openalex::{EnrichJob, abstract_text};

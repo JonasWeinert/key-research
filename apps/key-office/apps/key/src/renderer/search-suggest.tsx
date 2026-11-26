@@ -6,6 +6,7 @@ import { Icon, type IconName } from "./icons";
 import type { Invoke } from "./library-api";
 import { Highlight, prefixPattern } from "./search-highlight";
 import { useDismiss } from "@key-reader/ui/dismiss";
+import { detectQuery, type DetectedKind, type KnownNames } from "./smart-query";
 
 export interface SearchFilter {
   /** creator | container | title | notes | fulltext | tag | collection | year | property */
@@ -23,10 +24,13 @@ interface Suggestion {
   count: number;
 }
 interface MenuItem {
-  filter: SearchFilter;
+  key: string;
+  filters: SearchFilter[];
   icon: IconName;
   content: ReactNode;
   count?: number;
+  /** A reading of the query (smart-query.ts): the text left to search, and kinds to show. */
+  detected?: { rest: string; kinds?: DetectedKind[] };
 }
 
 const FIELD: Record<string, { label: string; icon: IconName }> = {
@@ -56,7 +60,15 @@ const FIELD: Record<string, { label: string; icon: IconName }> = {
   language: { label: "Language", icon: "globe" },
   // "Only in" one note, canvas, page or source (the search tab's sidebar picks).
   item: { label: "Only in", icon: "pin" },
+  // Identifiers, read from a pasted DOI, link or number (smart-query.ts).
+  doi: { label: "DOI", icon: "link" },
+  arxiv: { label: "arXiv", icon: "link" },
+  pmid: { label: "PubMed", icon: "link" },
+  pmcid: { label: "PMC", icon: "link" },
+  isbn: { label: "ISBN", icon: "book" },
+  url: { label: "Link", icon: "globe" },
 };
+const KIND_NAME: Record<DetectedKind, string> = { source: "Sources", note: "Notes", record: "Pages", canvas: "Canvases", highlight: "Highlights" };
 // Specific matches come first, in this order; a typed year leads.
 const ORDER = ["year", "citations", "creator", "container", "topic", "keyword", "tag", "collection", "funder", "property"];
 const CONTAINS: [string, string][] = [
@@ -85,6 +97,7 @@ export default function SearchField({
   onArrowIntoResults,
   label = "Search the library",
   placeholder = "Search titles, authors, notes and full text",
+  onKinds,
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -100,12 +113,31 @@ export default function SearchField({
   onArrowIntoResults: () => void;
   label?: string;
   placeholder?: string;
+  /** Where kinds of items can be shown (the search tab): "notes" etc. are read as kinds. */
+  onKinds?: (kinds: DetectedKind[]) => void;
 }) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [index, setIndex] = useState(-1);
   const [open, setOpen] = useState(false);
   const request = useRef(0);
   const typed = text.trim();
+
+  // Tag and collection names, to recognise them inside a longer query. Loaded once typing starts.
+  const [known, setKnown] = useState<KnownNames>();
+  const wantsNames = typed.length >= 3;
+  useEffect(() => setKnown(undefined), [workspaceId]);
+  useEffect(() => {
+    if (!wantsNames || known) return;
+    let live = true;
+    void Promise.all([
+      invoke<{ tags: { value: string }[] }>("store_facets", { scope: "all" }, workspaceId).catch(() => ({ tags: [] })),
+      invoke<{ id: string; name: string }[]>("store_collections", {}, workspaceId).catch(() => []),
+    ]).then(([facets, collections]) => live && setKnown({ tags: facets.tags.map((t) => t.value), collections: collections.map(({ id, name }) => ({ id, name })) }));
+    return () => {
+      live = false;
+    };
+  }, [wantsNames, known, invoke, workspaceId]);
+  const detections = useMemo(() => detectQuery(typed, { known, kinds: !!onKinds }), [typed, known, onKinds]);
 
   useEffect(() => {
     const id = ++request.current;
@@ -126,14 +158,51 @@ export default function SearchField({
   const items = useMemo<MenuItem[]>(() => {
     if (!typed) return [];
     const taken = new Set(filters.map(filterKey));
+    // Readings of the query lead, shown as the tokens they would add; nothing applies until picked.
+    const detected = detections
+      .map((d) => ({ ...d, filters: d.filters.filter((f) => !taken.has(filterKey(f))) }))
+      .filter((d) => d.filters.length || d.kinds?.length)
+      .map(
+        (d): MenuItem => ({
+          key: `detected:${d.id}:${d.filters.map(filterKey).join("|")}:${d.kinds?.join() ?? ""}`,
+          filters: d.filters,
+          icon: d.filters.length ? (FIELD[d.filters[0].field] ?? FIELD.property).icon : "filter",
+          detected: { rest: d.rest, kinds: d.kinds },
+          content: (
+            <>
+              {d.filters.map((f) => (
+                <span key={filterKey(f)} className="kx-suggest-token" data-field={f.field}>
+                  {tokenScope(f) && <span className="kx-suggest-token-scope">{tokenScope(f)}</span>}
+                  {f.label}
+                </span>
+              ))}
+              {d.kinds?.map((k) => (
+                <span key={k} className="kx-suggest-token" data-kind={k}>
+                  <span className="kx-suggest-token-scope">Show</span>
+                  {KIND_NAME[k]}
+                </span>
+              ))}
+              {d.rest && (
+                <span className="kx-suggest-scope">
+                  {" "}
+                  and search <span className="kx-suggest-value">{d.rest}</span>
+                </span>
+              )}
+            </>
+          ),
+        }),
+      );
+    const offered = new Set(detected.flatMap((d) => d.filters.map(filterKey)));
     const specific = [...suggestions]
       .sort((a, b) => ORDER.indexOf(a.filter.field) - ORDER.indexOf(b.filter.field))
-      .filter((s) => !taken.has(filterKey(s.filter)))
+      .filter((s) => !taken.has(filterKey(s.filter)) && !(detected.length && offered.has(filterKey(s.filter))))
       .slice(0, 8)
       .map((s): MenuItem => {
         const field = FIELD[s.filter.field] ?? FIELD.property;
+        const filter: SearchFilter = { ...s.filter, op: s.filter.op ?? "is", label: s.label };
         return {
-          filter: { ...s.filter, op: s.filter.op ?? "is", label: s.label },
+          key: filterKey(filter),
+          filters: [filter],
           icon: field.icon,
           count: s.count,
           content: (
@@ -147,18 +216,23 @@ export default function SearchField({
           ),
         };
       });
-    const generic = CONTAINS.map(([field, phrase]): MenuItem => ({
-      filter: { field, op: "contains", value: typed, label: typed },
-      icon: FIELD[field].icon,
-      content: (
-        <>
-          <span className="kx-suggest-scope">{phrase}: </span>
-          <span className="kx-suggest-value">{typed}</span>
-        </>
-      ),
-    })).filter((item) => !taken.has(filterKey(item.filter)));
-    return [...specific, ...generic];
-  }, [suggestions, typed, filters, pattern]);
+    const generic = CONTAINS.map(([field, phrase]): MenuItem => {
+      const filter: SearchFilter = { field, op: "contains", value: typed, label: typed };
+      return {
+        key: filterKey(filter),
+        filters: [filter],
+        icon: FIELD[field].icon,
+        content: (
+          <>
+            <span className="kx-suggest-scope">{phrase}: </span>
+            <span className="kx-suggest-value">{typed}</span>
+          </>
+        ),
+      };
+    }).filter((item) => !taken.has(item.key));
+    const seen = new Set<string>();
+    return [...detected, ...specific, ...generic].filter((item) => !seen.has(item.key) && !!seen.add(item.key));
+  }, [suggestions, detections, typed, filters, pattern]);
   useEffect(() => setIndex(-1), [typed]);
   const showMenu = open && items.length > 0;
   // The list closes on blur already; scrolling away or a press in another view closes it
@@ -167,8 +241,9 @@ export default function SearchField({
   useDismiss(showMenu, { refs: [formRef], kind: "passive", escape: false, anchor: formRef, onDismiss: () => setOpen(false) });
 
   const pick = (item: MenuItem) => {
-    onFilters([...filters, item.filter]);
-    onText("");
+    if (item.filters.length) onFilters([...filters, ...item.filters]);
+    if (item.detected?.kinds?.length) onKinds?.(item.detected.kinds);
+    onText(item.detected?.rest ?? "");
     setIndex(-1);
     inputRef.current?.focus();
   };
@@ -259,11 +334,12 @@ export default function SearchField({
         <div id="kx-suggest" className="kx-suggest" role="listbox" aria-label="Search suggestions">
           {items.map((item, i) => (
             <div
-              key={filterKey(item.filter)}
+              key={item.key}
               id={`kx-suggest-${i}`}
               role="option"
               aria-selected={i === index}
               className="kx-suggest-item"
+              data-detected={item.detected ? true : undefined}
               // Keep the field focused while choosing.
               onMouseDown={(e) => {
                 e.preventDefault();

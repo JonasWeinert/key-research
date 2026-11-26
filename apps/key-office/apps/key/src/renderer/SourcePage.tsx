@@ -824,6 +824,7 @@ const IDENTIFIED: Record<string, [string, string]> = {
   page: ["Identified via DOI", "The DOI printed in the PDF"],
   arxiv: ["Identified via arXiv", "The arXiv identifier printed in the PDF"],
   title: ["Matched by title", "Found by the PDF's title, with its authors and year agreeing"],
+  crossref: ["Matched by title", "Found in Crossref by the PDF's title, with its authors and year agreeing"],
 };
 
 /** "Article", "Book chapter" for OpenAlex's article, book-chapter … */

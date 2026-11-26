@@ -114,6 +114,68 @@ const fixtures = path.resolve(__dirname, "../../../../../tests/fixtures");
     assert.equal(s.identifiedBy, "title");
     assert.equal(s.title, "Big data, medicines safety and pharmacovigilance");
 
+    // Older PDFs: in the library with metadata of their own (as from Zotero), so not looked up
+    // on arrival; the background pass looks them up once nothing else waits.
+    const printPdf = async (file, title, byline) => {
+      const data = await app.evaluate(async ({ BrowserWindow }, { title, byline }) => {
+        const w = new BrowserWindow({ show: false });
+        const html = `<html><head><title>draft</title></head><body style="font-family: Georgia; margin: 60px">
+          <h1 style="font-size: 30px; font-weight: 600">${title}</h1><p style="font-size: 12px">${byline}</p>
+          <p style="font-size: 12px">An observational account of the matter, written for this check.</p></body></html>`;
+        await w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+        const pdf = await w.webContents.printToPDF({});
+        w.destroy();
+        return pdf.toString("base64");
+      }, { title, byline });
+      await writeFile(file, Buffer.from(data, "base64"));
+      return file;
+    };
+    const olderBigData = await call("store_create", {
+      source: {
+        kind: "pdf", title: "Hussain commentary (Zotero)", year: 2021, creators: [{ family: "Hussain", given: "Rabia" }],
+        filePath: await printPdf(path.join(temp, "older-big-data.pdf"), "Big data, medicines safety and pharmacovigilance", "Rabia Hussain, 2021"),
+      },
+    });
+    // Only Crossref knows this one: its DOI is attached.
+    const olderCrossref = await call("store_create", {
+      source: {
+        kind: "pdf", title: "Wandering study", year: 2020, creators: [{ family: "Nickels" }],
+        filePath: await printPdf(path.join(temp, "older-wandering.pdf"), "Night-time wandering in memory care units: a observational cohort", "Shirley Nickels, 2020"),
+      },
+    });
+    // The pass is counted in the status and follows the indexing pause.
+    let status;
+    for (let i = 0; i < 240; i++) {
+      status = await call("store_status");
+      if (status.backfill && status.backfill.identify + status.backfill.lookup > 0) break;
+      await page.waitForTimeout(250);
+    }
+    assert.ok(status.backfill.identify + status.backfill.lookup > 0, "the status counts the background pass");
+    await call("store_index_control", { action: "pause" });
+    const pill = page.locator(".kx-activity summary").first();
+    if (await pill.count()) {
+      await pill.click();
+      await page.locator(".kx-activity-backfill").first().waitFor({ timeout: 6000 });
+      await page.screenshot({ path: path.join(temp, "backfill.png") });
+      await pill.click();
+    }
+    await call("store_index_control", { action: "resume" });
+    s = await until(olderBigData.id, (x) => x.enrichStatus === "done", "the older PDF looked up in the background");
+    assert.equal(s.doi, "10.1186/s40545-021-00329-4");
+    assert.equal(s.title, "Hussain commentary (Zotero)", "the user's title stays");
+    assert.equal(s.creators.length, 1, "the user's authors stay");
+    s = await until(olderCrossref.id, (x) => !!x.doi, "the older PDF matched in Crossref");
+    assert.equal(s.doi, "10.5555/key-smoke-wandering");
+    assert.equal(s.identifiedBy, "crossref");
+    s = await until(olderCrossref.id, (x) => x.enrichStatus === "not_found", "the Crossref-only work settling");
+    let settled;
+    for (let i = 0; i < 240; i++) {
+      settled = (await call("store_status")).backfill;
+      if (settled.identify + settled.lookup === 0) break;
+      await page.waitForTimeout(250);
+    }
+    assert.deepEqual(settled, { identify: 0, lookup: 0 }, "the pass ends; nothing is retried");
+
     // No DOI of a cited work, no title anyone else wrote.
     s = await until(synthetic.id, (x) => ["not_found", "done", "failed"].includes(x.enrichStatus) || x.indexStatus === "ready", "the synthetic paper");
     s = await until(synthetic.id, (x) => x.enrichStatus !== "pending" && x.indexStatus !== "pending" && x.indexStatus !== "indexing", "the synthetic paper settling");

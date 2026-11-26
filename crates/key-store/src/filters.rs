@@ -67,7 +67,30 @@ pub(crate) fn condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
                 .into(),
             vec![text()],
         ),
-        ("year", _) => ("s.year = ?".into(), vec![Value::Integer(value.parse().ok()?)]),
+        ("year", _) => {
+            let operator = match filter.op.as_deref() {
+                Some("gt") => ">",
+                Some("gte") => ">=",
+                Some("lt") => "<",
+                Some("lte") => "<=",
+                _ => "=",
+            };
+            (format!("s.year {operator} ?"), vec![Value::Integer(value.parse().ok()?)])
+        }
+        // Identifiers as the search field reads them from a pasted DOI, link or number.
+        ("doi", _) => (
+            "lower(trim(s.doi)) IN (lower(?), 'https://doi.org/' || lower(?), 'http://doi.org/' || lower(?), 'https://dx.doi.org/' || lower(?), 'doi:' || lower(?))".into(),
+            vec![text(), text(), text(), text(), text()],
+        ),
+        ("pmid", _) => ("trim(s.pmid) = ?".into(), vec![text()]),
+        ("pmcid", _) => ("upper(trim(s.pmcid)) IN (upper(?), 'PMC' || upper(?))".into(), vec![text(), text()]),
+        // Stored with or without its version; a preprint may only carry its arXiv DOI.
+        ("arxiv", _) => (
+            "(lower(s.arxiv_id) = lower(?) OR lower(s.arxiv_id) LIKE lower(?) || 'v%' OR lower(s.arxiv_id) = 'arxiv:' || lower(?) OR lower(s.doi) = '10.48550/arxiv.' || lower(?))".into(),
+            vec![text(), text(), text(), text()],
+        ),
+        ("isbn", _) => ("replace(replace(upper(s.isbn), '-', ''), ' ', '') LIKE ? ESCAPE '\\'".into(), vec![like(&value.to_uppercase().replace(['-', ' '], ""))]),
+        ("url", _) => ("s.url LIKE ? ESCAPE '\\'".into(), vec![like(value)]),
         ("kind", _) => ("s.kind = ?".into(), vec![text()]),
         ("itemType", _) => ("s.item_type = ?".into(), vec![text()]),
         ("person", _) => ("EXISTS (SELECT 1 FROM source_people sp WHERE sp.source_id = s.id AND sp.person_id = ?)".into(), vec![text()]),

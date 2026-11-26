@@ -16,7 +16,7 @@ const assert = require("node:assert/strict");
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
     args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
-    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces") },
+    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"), KEY_OPENALEX_ENABLED: "0" },
   });
   const shot = (page, name) => page.screenshot({ path: path.join(temp, `${name}.png`) });
   try {
@@ -44,7 +44,7 @@ const assert = require("node:assert/strict");
 
     // A tagged source in a collection, another source, a note and a canvas.
     const [source] = await page.evaluate(({ id, files }) => window.key.importPaths(id, files), { id: ws.id, files: [fixture] });
-    await call("store_update", { id: source.id, patch: { creators: [{ given: "Marco", family: "Palma" }], year: 2022, tags: ["covid"] } });
+    await call("store_update", { id: source.id, patch: { creators: [{ given: "Marco", family: "Palma" }], year: 2022, tags: ["covid"], doi: "https://doi.org/10.5555/interaction.2022" } });
     await call("store_create", { source: { kind: "reference", title: "Interaction budgets elsewhere", year: 2019, tags: ["economics"] } }).catch(() => undefined);
     const reading = await call("store_collection_create", { name: "Reading list", parentId: null });
     await call("store_membership", { collectionId: reading.id, ids: [source.id], present: true });
@@ -171,8 +171,87 @@ const assert = require("node:assert/strict");
     assert.equal(await library.locator('.kx-token[data-field="tag"]').count(), 1);
     await shot(page, "library-filtered");
 
+    // What the query looks like is offered, never applied by itself: a citation reads as
+    // author and year, a pasted DOI as a DOI, a quoted phrase as the title.
+    const search = library.getByRole("combobox", { name: "Search the library" });
+    await search.fill("");
+    await library.getByRole("button", { name: "Clear search" }).click();
+    await page.waitForFunction(() => !document.querySelector(".kx-library .kx-token"));
+    const detected = library.locator('.kx-suggest-item[data-detected="true"]');
+    await search.fill("Palma et al. 2022");
+    await detected.first().waitFor();
+    assert.match(await detected.first().textContent(), /Author contains\s*Palma.*Year\s*2022/);
+    assert.equal(await library.locator(".kx-token").count(), 0, "nothing applies until it is picked");
+    assert.equal(await search.inputValue(), "Palma et al. 2022");
+    await page.waitForTimeout(300);
+    await shot(page, "smart-citation");
+    await search.press("ArrowDown");
+    await search.press("Enter");
+    await library.locator('.kx-token[data-field="creator"]', { hasText: "Palma" }).waitFor();
+    await library.locator('.kx-token[data-field="year"]', { hasText: "2022" }).waitFor();
+    assert.equal(await search.inputValue(), "");
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll(".kx-library .kx-row strong")].filter((r) => r.offsetParent);
+      return rows.length === 1 && rows[0].textContent.includes("Interaction study");
+    });
+    // Removing a token undoes just that part.
+    await library.getByRole("button", { name: "Remove filter Year 2022" }).click();
+    await page.waitForFunction(() => !document.querySelector('.kx-library .kx-token[data-field="year"]'));
+    await library.getByRole("button", { name: "Clear search" }).click();
+
+    await search.fill("see https://doi.org/10.5555/Interaction.2022.");
+    await detected.first().waitFor();
+    assert.match(await detected.first().textContent(), /DOI\s*10\.5555\/interaction\.2022\s*and search see/);
+    await page.waitForTimeout(300);
+    await shot(page, "smart-doi");
+    await detected.first().click();
+    await library.locator('.kx-token[data-field="doi"]', { hasText: "10.5555/interaction.2022" }).waitFor();
+    assert.equal(await search.inputValue(), "see", "the rest of the query stays");
+    await search.fill("");
+    // The store narrows by identifier (key-store filters.rs).
+    const byDoi = (await call("store_sources", { filters: [{ field: "doi", op: "is", value: "10.5555/interaction.2022" }], limit: 50 })).items.length;
+    assert.equal(byDoi, 1);
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll(".kx-library .kx-row strong")].filter((r) => r.offsetParent);
+      return rows.length === 1 && rows[0].textContent.includes("Interaction study");
+    });
+    await library.getByRole("button", { name: "Clear search" }).click();
+
+    await search.fill('"Interaction budgets elsewhere"');
+    await detected.first().waitFor();
+    await detected.first().click();
+    await library.locator('.kx-token[data-field="title"]', { hasText: "Interaction budgets elsewhere" }).waitFor();
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll(".kx-library .kx-row strong")].filter((r) => r.offsetParent);
+      return rows.length === 1 && rows[0].textContent.includes("budgets");
+    });
+    await library.getByRole("button", { name: "Clear search" }).click();
+
+    // In the search tab a kind of item is a kind to show.
+    await command("search");
+    await popup.waitFor();
+    await popup.getByRole("button", { name: "Open in tab" }).click();
+    await waitKind("search");
+    const searchTab = page.locator(".kx-search-page:visible");
+    const tabField = searchTab.getByRole("combobox", { name: "Search everything" });
+    // The tab takes the popup's (empty) query as it opens; type once it has.
+    for (let i = 0; i < 20; i++) {
+      await tabField.fill("notes interaction");
+      await page.waitForTimeout(300);
+      if ((await tabField.inputValue()) === "notes interaction") break;
+    }
+    const tabDetected = searchTab.locator('.kx-suggest-item[data-detected="true"]');
+    await tabDetected.first().waitFor();
+    assert.match(await tabDetected.first().textContent(), /Show\s*Notes\s*and search interaction/);
+    await page.waitForTimeout(300);
+    await shot(page, "smart-kind");
+    await tabDetected.first().click();
+    await searchTab.locator('.kx-kind-chips button[data-kind="note"][aria-pressed="true"]').waitFor();
+    assert.equal(await tabField.inputValue(), "interaction");
+    await searchTab.locator(".kx-found-hit", { hasText: "Alpha" }).first().waitFor();
+
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ ok: true, temp, prefiltered: true, kinds: true, expanded: true, sidebarFilters: true, secondClickOpens: true, tagToLibrary: true }));
+    console.log(JSON.stringify({ ok: true, temp, prefiltered: true, kinds: true, expanded: true, sidebarFilters: true, secondClickOpens: true, tagToLibrary: true, smartQuery: true }));
   } catch (e) {
     await app.windows()[0]?.screenshot({ path: path.join(temp, "failure.png") }).catch(() => {});
     console.error("Artifacts", temp);

@@ -778,6 +778,29 @@ fn filtered(store: &Store, filters: Value) -> Vec<String> {
 use serde_json::Value;
 
 #[test]
+fn identifier_and_year_range_filters_match_stored_forms() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    for source in [
+        json!({"kind": "reference", "title": "a", "year": 2015, "doi": "https://doi.org/10.1000/ABC", "pmid": "123456", "pmcid": "PMC777"}),
+        json!({"kind": "reference", "title": "b", "year": 2019, "doi": "10.48550/arxiv.1706.03762", "isbn": "978-0-306-40615-7"}),
+        json!({"kind": "reference", "title": "c", "year": 2021, "arxivId": "2101.00001v2", "url": "https://example.org/paper"}),
+    ] {
+        store.insert_source(input(source)).unwrap();
+    }
+    assert_eq!(filtered(&store, json!([{"field": "doi", "value": "10.1000/abc"}])), vec!["a"]);
+    assert_eq!(filtered(&store, json!([{"field": "pmid", "value": "123456"}])), vec!["a"]);
+    assert_eq!(filtered(&store, json!([{"field": "pmcid", "value": "777"}])), vec!["a"]);
+    assert_eq!(filtered(&store, json!([{"field": "arxiv", "value": "1706.03762"}])), vec!["b"]);
+    assert_eq!(filtered(&store, json!([{"field": "arxiv", "value": "2101.00001"}])), vec!["c"]);
+    assert_eq!(filtered(&store, json!([{"field": "isbn", "value": "9780306406157"}])), vec!["b"]);
+    assert_eq!(filtered(&store, json!([{"field": "url", "value": "example.org"}])), vec!["c"]);
+    assert_eq!(filtered(&store, json!([{"field": "year", "op": "gt", "value": "2015"}])), vec!["b", "c"]);
+    assert_eq!(filtered(&store, json!([{"field": "year", "op": "gte", "value": "2015"}, {"field": "year", "op": "lte", "value": "2019"}])), vec!["a", "b"]);
+    assert_eq!(filtered(&store, json!([{"field": "year", "value": "2021"}])), vec!["c"]);
+}
+
+#[test]
 fn migration_links_existing_creators_and_journals() {
     register_vector_extension();
     let dir = tempfile::tempdir().unwrap();
