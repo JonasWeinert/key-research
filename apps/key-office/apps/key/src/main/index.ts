@@ -2373,7 +2373,7 @@ else
       ai = new AiService({
         settingsPath: join(app.getPath("userData"), "ai-settings.json"),
         secrets: secretStore,
-        invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
+        invoke: (command, args, workspaceId) => registry.invoke(command, args as Record<string, unknown>, workspaceId),
         emit: (event, value) => {
           emit(event, value);
           if (event === "fill-progress" && (value as { run?: { status?: string } })?.run?.status === "done") emit("library-changed");
@@ -2775,7 +2775,7 @@ else
       });
       setInterval(() => void syncZotero(), 30_000);
       startZoteroPluginSync({
-        invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
+        invoke: (command, args, workspaceId) => registry.invoke(command, args as Record<string, unknown>, workspaceId),
         workspace: async () => {
           const root = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
           return root ? (await registry.list()).find((w) => w.root === root) : undefined;

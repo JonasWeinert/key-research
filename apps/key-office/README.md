@@ -6,7 +6,6 @@ The npm workspace Key's desktop app builds in. It holds:
 |---|---|
 | `apps/key` (`@key/electron`) | The Key app: Electron main process, preload, React interface and smokes. See its [README](apps/key/README.md). |
 | `packages/design-system` (`@key/design-system`) | Key's controls and `--key-ui-*` variables, adapted from beUI (MIT). |
-| `packages/agent-core`, `packages/ai-provider` | Agent loop and model providers used by the AI fill feature, pending replacement by Key's own AI client. |
 | `tools/` | `gen-third-party-notices.mjs` (the app's acknowledgements) and `check-theme-colors.mjs`. |
 
 The PDF reader the app hosts lives in `../key/src` and is aliased as `@key-reader`.
