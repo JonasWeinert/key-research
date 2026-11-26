@@ -327,8 +327,9 @@ const want = (name) => !only.length || only.includes(name);
       if (magnified.at < 0 || magnified.count < 8) throw Error(`The rail has too few ticks to check: ${JSON.stringify(magnified)}`);
       if (!(magnified.hovered > magnified.near && magnified.near > magnified.next && magnified.next > magnified.far))
         throw Error(`The rail does not magnify around the pointer: ${JSON.stringify(magnified)}`);
-      if (/rgba\(0, 0, 0, 0\)|transparent/.test(magnified.plate) || !/blur/.test(magnified.blur))
-        throw Error(`The open rail has no backing: ${magnified.plate} ${magnified.blur}`);
+      // No plate behind the open rail (the owner asked for none): a halo keeps it legible.
+      if (!/rgba\(0, 0, 0, 0\)|transparent/.test(magnified.plate) || /blur/.test(magnified.blur))
+        throw Error(`The open rail should have no backing: ${magnified.plate} ${magnified.blur}`);
       result.railDock = magnified;
       await themes("rail-hover", async () => {
         await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2 + 1);
