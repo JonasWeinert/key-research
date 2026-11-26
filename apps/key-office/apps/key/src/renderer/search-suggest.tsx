@@ -31,7 +31,9 @@ interface MenuItem {
   content: ReactNode;
   count?: number;
   /** A reading of the query (smart-query.ts): the text left to search, and kinds to show. */
-  detected?: { rest: string; kinds?: DetectedKind[] };
+  /** A reading of the query: what remains as text, kinds to show, and the text it read
+   *  (the parser answers asynchronously, so the field may hold more by the time it is picked). */
+  detected?: { rest: string; kinds?: DetectedKind[]; read: string };
   /** Picked, it does this instead of adding tokens ("Add … to library"). */
   action?: () => void;
 }
@@ -182,7 +184,7 @@ export default function SearchField({
           key: `detected:${d.id}:${d.filters.map(filterKey).join("|")}:${d.kinds?.join() ?? ""}`,
           filters: d.filters,
           icon: d.filters.length ? (FIELD[d.filters[0].field] ?? FIELD.property).icon : "filter",
-          detected: { rest: d.rest, kinds: d.kinds },
+          detected: { rest: d.rest, kinds: d.kinds, read: parsed.text },
           content: (
             <>
               {d.filters.map((f) => (
@@ -283,7 +285,7 @@ export default function SearchField({
     }
     if (item.filters.length) onFilters([...filters, ...item.filters]);
     if (item.detected?.kinds?.length) onKinds?.(item.detected.kinds);
-    onText(item.detected?.rest ?? "");
+    onText(item.detected ? restAfterPick(item.detected.rest ?? "", item.detected.read, text) : "");
     setIndex(-1);
     inputRef.current?.focus();
   };
@@ -410,6 +412,13 @@ export default function SearchField({
       )}
     </form>
   );
+}
+
+/** The text left after picking a reading of `read`: its rest plus whatever was typed since. */
+export function restAfterPick(rest: string, read: string, current: string) {
+  const now = current.trim();
+  if (!read || now === read || !now.startsWith(read)) return rest;
+  return (rest + now.slice(read.length)).trimStart();
 }
 
 /** "Author", "Status" or "Title contains" in front of the token's value. */
