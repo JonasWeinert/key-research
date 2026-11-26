@@ -70,7 +70,7 @@ const LAYOUT = "pp-doclayoutv3-fp16";
 
     // Settings › Search & indexing lists the models with source, licence and state.
     await page.locator(".key-sidebar").getByRole("button", { name: "Settings", exact: true }).click();
-    const settings = page.getByRole("dialog", { name: "Settings", exact: true });
+    const settings = page.getByRole("dialog", { name: "Key Settings", exact: true });
     await settings.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Search & indexing" }).click();
     const row = settings.locator(`.kx-models-row[data-model="${LAYOUT}"]`);
     await row.getByText("Not downloaded").waitFor();
