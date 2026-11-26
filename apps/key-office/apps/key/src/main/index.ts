@@ -1488,6 +1488,9 @@ function createShell(
     }
   });
   window.on("resize", () => layout(w));
+  // In native full screen the traffic lights are gone, so the chrome drops their inset.
+  window.on("enter-full-screen", () => emitTo(w, "full-screen", true));
+  window.on("leave-full-screen", () => emitTo(w, "full-screen", false));
   window.on("move", () => saveWindows());
   window.on("focus", () => {
     lastFocusedShell = w;
@@ -2846,6 +2849,8 @@ else
             }
             return { frames };
           }
+          case "full-screen-state":
+            return w.window.isFullScreen();
           case "global-overlay-close": {
             if (w.globalOverlay === p.id) {
               w.globalOverlay = undefined;

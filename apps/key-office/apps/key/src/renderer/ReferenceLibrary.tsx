@@ -1,5 +1,6 @@
 import { apa } from "./citation";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
+import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { itemAttrs, selectItems } from "./item-ui";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { GROUPS, type SearchGroup } from "./unified-search";
@@ -671,18 +672,17 @@ export default function ReferenceLibrary({
 
         {(
         <div className="kx-filter-bar" data-searching={!!search}>
-          <div className="kx-scopes" role="group" aria-label="Library views">
-            {SCOPES.map(([value, label]) => {
+          <SegmentedTabs
+            className="kx-scope-tabs"
+            label="Library views"
+            value={scope}
+            onChange={setScope}
+            tabs={SCOPES.flatMap(([value, label]) => {
               const count = value === "all" ? counts?.all : value === "trashed" ? counts?.trashed : value === "starred" ? counts?.starred : value === "unfiled" ? counts?.unfiled : counts?.attention;
-              if (value !== "all" && value !== "trashed" && !count && scope !== value) return null;
-              return (
-                <button key={value} aria-pressed={scope === value} onClick={() => setScope(value)}>
-                  {label}
-                  {!!count && <span className="kx-count">{count.toLocaleString()}</span>}
-                </button>
-              );
+              if (value !== "all" && value !== "trashed" && !count && scope !== value) return [];
+              return [{ id: value, label, badge: count ? count.toLocaleString() : undefined }];
             })}
-          </div>
+          />
           {!search && (
             <div className="kx-controls-end">
               <DatabaseToolbar

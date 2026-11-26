@@ -17,7 +17,8 @@
 // Pass `active`/`onActiveChange` to control the section from outside (another view, the
 // status bar); left out, the panel keeps it itself. Sections are a plain list, so a host adds
 // one by adding an entry.
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { SegmentedTabs } from './SegmentedTabs';
 import './side-panel.css';
 
 export interface SidePanelSection {
@@ -90,17 +91,6 @@ export function SidePanel({ label, sections, active, onActiveChange, storageKey,
   useEffect(() => {
     if (width !== undefined) write(storageKey && `${storageKey}.width`, String(Math.round(width)));
   }, [storageKey, width]);
-  const tabs = useRef<HTMLDivElement>(null);
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-    event.preventDefault();
-    const enabled = sections.filter(s => !s.disabled);
-    const at = enabled.findIndex(s => s.id === shown?.id);
-    const next = enabled[(at + (event.key === 'ArrowRight' ? 1 : -1) + enabled.length) % enabled.length];
-    if (!next) return;
-    choose(next.id);
-    requestAnimationFrame(() => tabs.current?.querySelector<HTMLElement>(`[data-section="${next.id}"]`)?.focus());
-  };
   return (
     <aside
       className={`key-side-panel${className ? ` ${className}` : ''}`}
@@ -137,26 +127,14 @@ export function SidePanel({ label, sections, active, onActiveChange, storageKey,
       )}
       <header className="key-side-panel-head">
         {sections.length > 1 ? (
-          <div ref={tabs} className="key-side-panel-switch" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
-            {sections.map(section => (
-              <button
-                key={section.id}
-                type="button"
-                role="tab"
-                data-section={section.id}
-                aria-selected={section.id === shown?.id}
-                tabIndex={section.id === shown?.id ? 0 : -1}
-                disabled={section.disabled}
-                onClick={() => choose(section.id)}
-              >
-                {section.icon}
-                <span>{section.title}</span>
-                {section.badge !== undefined && section.badge !== null && section.badge !== '' && (
-                  <small className="key-side-panel-badge">{section.badge}</small>
-                )}
-              </button>
-            ))}
-          </div>
+          <SegmentedTabs
+            className="key-side-panel-switch"
+            size="small"
+            label={label}
+            value={shown?.id}
+            onChange={choose}
+            tabs={sections.map(section => ({ id: section.id, label: section.title, icon: section.icon, badge: section.badge, disabled: section.disabled }))}
+          />
         ) : (
           <strong className="key-side-panel-title">
             {shown?.icon}

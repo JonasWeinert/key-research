@@ -7,6 +7,7 @@ import {
   useReducedMotion,
 } from "motion/react";
 import { useEffect, useRef, type ReactNode } from "react";
+import { useStableModalSize } from "../modal-size";
 const SPRING_PANEL = {
   type: "spring",
   stiffness: 420,
@@ -26,6 +27,8 @@ function Panel({
   const present = useIsPresent(),
     reduce = useReducedMotion();
   const ref = useRef<HTMLElement>(null);
+  const modal = presentation !== "drawer";
+  useStableModalSize(ref, modal);
   useEffect(() => {
     if (present)
       ref.current
@@ -37,7 +40,8 @@ function Panel({
   return (
     <motion.aside
       ref={ref}
-      className={`key-global-drawer key-ui-root ${presentation === "dialog" ? "key-global-dialog" : presentation === "sheet" ? "key-global-sheet" : presentation === "window" ? "key-global-sheet key-global-window" : ""}`}
+      data-presentation={modal ? presentation : undefined}
+      className={`key-global-drawer key-ui-root ${modal ? "key-modal " : ""}${presentation === "dialog" ? "key-global-dialog" : presentation === "sheet" ? "key-global-sheet" : presentation === "window" ? "key-global-sheet key-global-window" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label={label}

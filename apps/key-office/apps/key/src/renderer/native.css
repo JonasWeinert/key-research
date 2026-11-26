@@ -1931,33 +1931,6 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   padding: 0 24px;
   box-shadow: inset 0 -1px 0 var(--kx-line);
 }
-.kx-tabs {
-  display: flex;
-  gap: 18px;
-}
-.kx-tabs button {
-  position: relative;
-  padding: 8px 0 10px;
-  border: 0;
-  background: transparent;
-  color: var(--kx-text-2);
-  font: 500 13px var(--kx-font);
-  cursor: default;
-}
-.kx-tabs button:hover {
-  color: var(--kx-text);
-}
-.kx-tabs button[aria-pressed="true"] {
-  color: var(--kx-text);
-}
-.kx-tabs button[aria-pressed="true"]::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: var(--kx-text);
-}
 .kx-library-stats {
   display: flex;
   align-items: center;
@@ -1981,35 +1954,6 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   gap: 12px;
   padding: 12px 24px 10px;
 }
-.kx-scopes {
-  display: flex;
-  gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.kx-scopes button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--kx-text-2);
-  font: 500 12px var(--kx-font);
-  white-space: nowrap;
-  cursor: default;
-}
-.kx-scopes button:hover {
-  background: var(--kx-fill);
-  color: var(--kx-text);
-}
-.kx-scopes button[aria-pressed="true"] {
-  background: var(--kx-text);
-  color: var(--kx-bg);
-}
 .kx-count {
   min-width: 16px;
   padding: 0 5px;
@@ -2020,9 +1964,6 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   line-height: 16px;
   text-align: center;
   font-variant-numeric: tabular-nums;
-}
-.kx-scopes button[aria-pressed="true"] .kx-count {
-  background: color-mix(in srgb, var(--kx-bg) 22%, transparent);
 }
 .kx-controls-end {
   display: flex;
@@ -2712,20 +2653,8 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
 html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titlebar) {
   -webkit-app-region: no-drag;
 }
-.key-global-dialog.key-global-drawer {
-  top: 50%;
-}
+/* Position and size come from modal.css; this is the sheet's look. */
 .key-global-drawer.key-global-sheet {
-  overflow: auto;
-}
-.key-global-drawer.key-global-sheet {
-  top: 48px;
-  bottom: auto;
-  left: 50%;
-  width: min(520px, calc(100vw - 48px));
-  height: auto;
-  max-height: calc(100vh - 72px);
-  margin-left: max(calc(min(520px, 100vw - 48px) / -2), -260px);
   border: 0;
   border-radius: 14px;
   background: var(--kx-bg-sunken);
@@ -2740,7 +2669,6 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
 /* The editor slide sizes the sheet; the agent slide overlays it. */
 .key-global-sheet .key-drawer-slide:first-child {
   position: relative;
-  max-height: calc(100vh - 72px);
 }
 .key-global-sheet .key-property-editor {
   display: flex;
@@ -3249,7 +3177,7 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
     flex-wrap: wrap;
     row-gap: 8px;
   }
-  .kx-scopes {
+  .kx-scope-tabs {
     flex: 1 1 100%;
   }
   .kx-controls-end {
@@ -3262,14 +3190,6 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
 @container (max-width: 480px) {
   .key-shell .key-library .key-primary.kui-button {
     padding: 0 9px;
-  }
-  .kx-tabs {
-    gap: 14px;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .kx-tabs button {
-    white-space: nowrap;
   }
 }
 .key-library .key-source-grid small {
@@ -3723,17 +3643,13 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
 
 /* ── Settings and onboarding (window-sized sheet) ───────────────── */
 .key-global-drawer.key-global-window {
-  top: max(40px, calc(50vh - 310px));
-  width: min(820px, calc(100vw - 48px));
-  height: min(620px, calc(100vh - 72px));
-  max-height: none;
-  margin-left: calc(min(820px, 100vw - 48px) / -2);
   overflow: hidden;
   background: var(--kx-bg);
 }
 .kx-settings {
   display: grid;
   grid-template-columns: 210px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 .kx-settings-nav {

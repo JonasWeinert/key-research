@@ -5,6 +5,7 @@
 // set up, the sheet starts on an overview of what is set up instead: the mode, how Zotero is
 // reached, what is synced and when, with ways to change it, sync now, pause or stop.
 import { Button } from "@key/design-system";
+import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
@@ -273,7 +274,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
           : "Reading your Zotero library…"
         : "Changes made in Zotero come to Key while both apps are open; edits made in Key are kept.";
   return (
-    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title} data-step={result || running ? "done" : step} data-scope={choice.scope}>
+    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title} data-step={result || running ? "done" : step} data-modal-view={result || running ? "done" : `${mode}-${step}`} data-scope={choice.scope}>
       <header>
         <h2>{title}</h2>
         <p>{lede}</p>
@@ -559,13 +560,13 @@ function ScopePicker({ scope, preview, onChange }: { scope: Scope; preview?: Zot
         : "Only the papers you tick.";
   return (
     <>
-      <div className="kx-segmented kx-zotero-segmented" role="radiogroup" aria-label="Scope">
-        {SCOPES.map(([id, label]) => (
-          <button key={id} role="radio" aria-checked={scope === id} aria-pressed={scope === id} disabled={id === "collections" && preview && !preview.collections.length} onClick={() => onChange(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <SegmentedTabs
+        className="kx-zotero-scope-tabs"
+        label="Scope"
+        value={scope}
+        onChange={onChange}
+        tabs={SCOPES.map(([id, label]) => ({ id, label, disabled: id === "collections" && !!preview && !preview.collections.length }))}
+      />
       <p className="kx-zotero-scope-detail">{detail}</p>
     </>
   );

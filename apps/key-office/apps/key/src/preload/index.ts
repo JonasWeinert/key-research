@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld("key", {
         "app-notice",
         "proxies-changed",
         "add-from-source",
+        "full-screen",
       ].includes(event)
     )
       throw Error("Unknown event");

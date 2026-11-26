@@ -416,8 +416,7 @@
 
 /* Possible duplicates: a wider sheet with the two people side by side. */
 .key-global-drawer.key-global-sheet:has(.kx-merge-review) {
-  width: min(780px, calc(100vw - 48px));
-  margin-left: max(calc(min(780px, 100vw - 48px) / -2), -390px);
+  --kx-modal-width: 780px;
 }
 .kx-merge-review .key-property-body {
   padding: 4px 20px 8px;

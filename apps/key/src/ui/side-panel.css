@@ -34,57 +34,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* A macOS segmented control: a sunken track, the chosen segment raised on it. */
-.key-side-panel-switch {
-  display: inline-flex;
-  flex: 0 1 auto;
-  gap: 1px;
-  min-width: 0;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--key-ui-hover);
-}
-.key-side-panel-switch button {
-  display: inline-flex;
+/* The switch is the shared SegmentedTabs; in the header it takes the width the actions leave. */
+.key-side-panel-head > .key-side-panel-switch {
   flex: 1 1 auto;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 0;
-  height: 22px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--key-ui-muted);
-  font: inherit;
-  font-size: var(--key-ui-text-sm, 12px);
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: default;
 }
-.key-side-panel-switch button span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.key-side-panel-switch button:hover:not([aria-selected="true"], :disabled) {
-  color: var(--key-ui-text);
-}
-.key-side-panel-switch button[aria-selected="true"] {
-  background: var(--key-ui-surface, var(--key-ui-bg));
-  color: var(--key-ui-text);
-  box-shadow:
-    0 0 0 0.5px var(--key-ui-border),
-    0 1px 2px var(--key-side-panel-raise);
-}
-.key-side-panel-switch button:disabled {
-  opacity: 0.45;
-}
-.key-side-panel-switch button:focus-visible {
-  outline: 2px solid var(--key-ui-focus);
-  outline-offset: -1px;
-}
-.key-side-panel-switch svg,
 .key-side-panel-title svg {
   flex: none;
   width: 13px;

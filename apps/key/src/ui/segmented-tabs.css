@@ -1,0 +1,143 @@
+/* SegmentedTabs (ui/SegmentedTabs.tsx): design-system tokens (--key-ui-*), which the shell and
+   the reader both define. The pill's raised fill is the only themed value of its own. */
+.key-segmented {
+  --key-segmented-min: 76px;
+  --key-segmented-height: 28px;
+  --key-segmented-pad: 3px;
+  --key-segmented-track: var(--key-ui-hover);
+  --key-segmented-pill: var(--key-ui-bg);
+  --key-segmented-pill-shadow: 0 0 0 0.5px var(--key-ui-border), 0 1px 3px rgb(0 0 0 / 12%);
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  border-radius: 999px;
+  background: var(--key-segmented-track);
+  box-shadow: inset 0 0 0 0.5px var(--key-ui-border-subtle, var(--key-ui-border));
+  -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  backdrop-filter: saturate(1.6) blur(14px);
+  font-family: var(--key-ui-font);
+}
+:root[data-theme="dark"] .key-segmented {
+  --key-segmented-pill: rgb(255 255 255 / 15%);
+  --key-segmented-pill-shadow: 0 0 0 0.5px rgb(255 255 255 / 10%), 0 1px 3px rgb(0 0 0 / 35%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .key-segmented {
+    --key-segmented-pill: rgb(255 255 255 / 15%);
+    --key-segmented-pill-shadow: 0 0 0 0.5px rgb(255 255 255 / 10%), 0 1px 3px rgb(0 0 0 / 35%);
+  }
+}
+.key-segmented[data-size="small"] {
+  --key-segmented-min: 64px;
+  --key-segmented-height: 24px;
+  --key-segmented-pad: 2px;
+}
+.key-segmented-track {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--key-segmented-pad);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  border-radius: inherit;
+}
+.key-segmented-track::-webkit-scrollbar {
+  display: none;
+}
+/* Faded edges where more tabs sit out of view. */
+.key-segmented[data-fade-start] .key-segmented-track {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 28px);
+  mask-image: linear-gradient(90deg, transparent 0, black 28px);
+}
+.key-segmented[data-fade-end] .key-segmented-track {
+  -webkit-mask-image: linear-gradient(270deg, transparent 0, black 28px);
+  mask-image: linear-gradient(270deg, transparent 0, black 28px);
+}
+.key-segmented[data-fade-start][data-fade-end] .key-segmented-track {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, black 28px, black calc(100% - 28px), transparent 100%);
+}
+.key-segmented-pill {
+  position: absolute;
+  top: var(--key-segmented-pad);
+  left: 0;
+  height: var(--key-segmented-height);
+  border-radius: 999px;
+  background: var(--key-segmented-pill);
+  box-shadow: var(--key-segmented-pill-shadow);
+  pointer-events: none;
+}
+.key-segmented-pill[data-animate] {
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.key-segmented-track > [role="tab"] {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: 1 0 var(--key-segmented-min);
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: var(--key-segmented-min);
+  height: var(--key-segmented-height);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--key-ui-muted);
+  font: inherit;
+  font-size: var(--key-ui-text-sm, 12px);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+  transition: color 160ms;
+}
+.key-segmented[data-size="small"] .key-segmented-track > [role="tab"] {
+  padding: 0 9px;
+  font-size: var(--key-ui-text-xs, 11px);
+}
+.key-segmented-track > [role="tab"]:hover:not([aria-selected="true"], :disabled) {
+  color: var(--key-ui-text);
+}
+.key-segmented-track > [role="tab"][aria-selected="true"] {
+  color: var(--key-ui-text);
+}
+.key-segmented-track > [role="tab"]:disabled {
+  opacity: 0.45;
+}
+.key-segmented-track > [role="tab"]:focus-visible {
+  outline: 2px solid var(--key-ui-focus);
+  outline-offset: -2px;
+}
+.key-segmented-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.key-segmented-track > [role="tab"] svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+}
+.key-segmented-badge {
+  color: var(--key-ui-muted);
+  font-size: var(--key-ui-text-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-segmented-pill[data-animate] {
+    transition: none;
+  }
+  .key-segmented-track {
+    scroll-behavior: auto;
+  }
+}

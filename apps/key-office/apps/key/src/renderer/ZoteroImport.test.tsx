@@ -69,6 +69,7 @@ const click = async (element: Element | null | undefined) => {
   await act(() => new Promise((r) => setTimeout(r, 200)));
 };
 const button = (view: HTMLElement, text: string) => [...view.querySelectorAll("button")].find((b) => b.textContent?.trim() === text);
+const tab = (view: HTMLElement, text: string) => [...view.querySelectorAll('[role="tab"]')].find((b) => b.textContent?.includes(text));
 const radio = (view: HTMLElement, text: string) => [...view.querySelectorAll('[role="radio"]')].find((b) => b.textContent?.includes(text));
 const type = async (input: Element | null, value: string) => {
   const el = input as HTMLInputElement;
@@ -110,7 +111,7 @@ describe("Zotero sheet", () => {
     expect(view.querySelector(".kx-zotero-count")?.textContent).toBe("1,200 items · 300 files · 80 notes · 12 annotations");
     expect(view.textContent).toContain("~/Zotero");
 
-    await click(radio(view, "Collections"));
+    await click(tab(view, "Collections"));
     expect(view.querySelector(".kx-zotero-count")?.textContent).toBe("Choose at least one collection");
     expect((view.querySelector(".key-property-primary") as HTMLButtonElement).disabled).toBe(true);
     const rows = () => [...view.querySelectorAll('[role="treeitem"]')].map((r) => r.textContent);
@@ -125,7 +126,7 @@ describe("Zotero sheet", () => {
     expect([thesis.checked, thesis.indeterminate]).toEqual([true, false]);
 
     // Papers: a searchable list.
-    await click(radio(view, "Papers"));
+    await click(tab(view, "Papers"));
     expect(view.querySelector(".kx-zotero-count")?.textContent).toBe("Choose at least one paper");
     expect([...view.querySelectorAll(".kx-zotero-paper")].length).toBe(2);
     await type(view.querySelector('input[aria-label="Search papers"]'), "rossi 2019");
@@ -173,7 +174,7 @@ describe("Zotero sheet", () => {
     connection = "ok";
     await click(button(view, "Check again"));
     expect(view.textContent).toContain("Connected to Zotero 9.0.6");
-    await click(radio(view, "Collections"));
+    await click(tab(view, "Collections"));
     await click(view.querySelector('input[aria-label="Other"]'));
     await click(view.querySelector(".key-property-primary"));
     expect(invoke).toHaveBeenCalledWith("store_zotero_plugin_configure", expect.objectContaining({ options: expect.objectContaining({ collectionKeys: ["OTHER"] }), libraryID: 1 }), "zw");
@@ -202,7 +203,7 @@ describe("Zotero sheet", () => {
       current: { collectionKeys: ["OTHER"], attachments: false, notes: true, annotations: true, mirrorCollections: true },
     });
     expect(view.querySelector("h2")?.textContent).toBe("Change what Key syncs");
-    expect(radio(view, "Collections")?.getAttribute("aria-checked")).toBe("true");
+    expect(tab(view, "Collections")?.getAttribute("aria-selected")).toBe("true");
     expect((view.querySelector('input[aria-label="Other"]') as HTMLInputElement).checked).toBe(true);
     expect((view.querySelector('input[aria-label="PDFs and other files"]') as HTMLInputElement).checked).toBe(false);
     expect(button(view, "Save and sync")).toBeTruthy();

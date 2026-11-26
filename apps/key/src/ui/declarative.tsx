@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { SegmentedTabs } from './SegmentedTabs';
 import { Icon, type IconName } from './Icon';
 import { Button, IconButton } from './primitives';
 
@@ -210,11 +211,12 @@ export function DeclarativeView({
         const active = node.tabs.find(tab => tab.id === selected) ?? node.tabs[0];
         return (
           <div key={node.id} className="key-ui-tabs">
-            <div role="tablist">
-              {node.tabs.map(tab => (
-                <button key={tab.id} type="button" role="tab" aria-selected={tab.id === active?.id} onClick={() => dispatch({ id: node.command, payload: tab.id })}>{tab.label}</button>
-              ))}
-            </div>
+            <SegmentedTabs
+              label="Sections"
+              value={active?.id}
+              onChange={id => dispatch({ id: node.command, payload: id })}
+              tabs={node.tabs.map(tab => ({ id: tab.id, label: tab.label }))}
+            />
             {active && render(active.content)}
           </div>
         );
