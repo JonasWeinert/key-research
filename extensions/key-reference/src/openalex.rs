@@ -13,6 +13,8 @@ const MAX_OPENALEX_BYTES: usize = 8 * 1024 * 1024;
 pub struct OpenAlexResponse {
     pub status: u16,
     pub retry_after: Option<Duration>,
+    /// What is left of the caller's budget, when the service says (X-RateLimit-Remaining).
+    pub remaining: Option<u64>,
     pub body: Vec<u8>,
 }
 
@@ -34,7 +36,8 @@ pub fn openalex_get(path: &str, query: &[(&str, &str)], mailto: Option<&str>, ap
     }
     let response = fetch_public_json_response(url.as_str(), MAX_OPENALEX_BYTES, &CancellationToken::active()).map_err(|error| format!("OpenAlex: {error}"))?;
     let retry_after = response.header("retry-after").and_then(|h| h.value_str()).and_then(|v| v.trim().parse::<u64>().ok()).map(Duration::from_secs);
-    Ok(OpenAlexResponse { status: response.status(), retry_after, body: response.body().to_vec() })
+    let remaining = response.header("x-ratelimit-remaining").and_then(|h| h.value_str()).and_then(|v| v.trim().parse::<u64>().ok());
+    Ok(OpenAlexResponse { status: response.status(), retry_after, remaining, body: response.body().to_vec() })
 }
 
 /// GET `https://api.crossref.org/<path>?<query>&mailto=…` (Crossref's polite pool), for a
@@ -53,5 +56,6 @@ pub fn crossref_get(path: &str, query: &[(&str, &str)], mailto: Option<&str>) ->
     }
     let response = fetch_public_json_response(url.as_str(), MAX_OPENALEX_BYTES, &CancellationToken::active()).map_err(|error| format!("Crossref: {error}"))?;
     let retry_after = response.header("retry-after").and_then(|h| h.value_str()).and_then(|v| v.trim().parse::<u64>().ok()).map(Duration::from_secs);
-    Ok(OpenAlexResponse { status: response.status(), retry_after, body: response.body().to_vec() })
+    let remaining = response.header("x-ratelimit-remaining").and_then(|h| h.value_str()).and_then(|v| v.trim().parse::<u64>().ok());
+    Ok(OpenAlexResponse { status: response.status(), retry_after, remaining, body: response.body().to_vec() })
 }

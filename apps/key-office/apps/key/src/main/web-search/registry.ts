@@ -8,6 +8,8 @@
 // Let its base URL be overridden by an environment variable so smokes can point it at a mock.
 import { openalex } from "./openalex";
 import type { WebProvider } from "./provider";
+import { scholarSerpApi } from "./scholar-serpapi";
 import { semanticScholar } from "./semantic-scholar";
 
-export const PROVIDERS: WebProvider[] = [openalex, semanticScholar];
+// Google Scholar (via SerpApi) comes last: off by default, and the fallback when the others fail.
+export const PROVIDERS: WebProvider[] = [openalex, semanticScholar, scholarSerpApi];

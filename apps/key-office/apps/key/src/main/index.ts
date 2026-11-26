@@ -25,6 +25,8 @@ import { downloadPdf } from "./download-pdf";
 import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
 import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
+import { publicSettings, type KeyedServices } from "./services";
+import { hostKeyRequests, startKeyedServices } from "./services/setup";
 import { startZoteroPluginSync } from "./zotero-sync";
 import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
@@ -687,6 +689,7 @@ let webSources: WebSources;
 let browserService: BrowserService;
 let proxyService: ProxyService | undefined;
 let webSearchService: WebSearch | undefined;
+let keyedServices: KeyedServices | undefined;
 /** Embedded PDFs and article pages in browser tabs (see browser/page-actions.ts). */
 const browserPages = new PageActions({
   service: () => browserService,
@@ -2195,6 +2198,7 @@ else
           (app.isPackaged
             ? join(process.resourcesPath, "backend/libpdfium.dylib")
             : join(root, "vendor/pdfium/lib/libpdfium.dylib")),
+        prelude: hostKeyRequests,
       });
       serveNoteMedia(registry);
       tempPdfs = new TempPdfs(browserCache(), { workspace: scratchWorkspace, invoke: (c, a, id) => registry.invoke(c, a, id) });
@@ -2238,7 +2242,12 @@ else
         },
         () => emit("library-changed"),
       );
-      const webSearch = (webSearchService = new WebSearch({ settings: () => appSettings.get(), invoke: (c, a, w) => registry.invoke(c, a, w), emit }));
+      const webSearch = (webSearchService = new WebSearch({
+        settings: () => appSettings.get(),
+        invoke: (c, a, w) => registry.invoke(c, a, w),
+        emit,
+        keys: { key: (s) => keyedServices?.key(s), mode: (s) => keyedServices?.mode(s) ?? "fallback", record: (s, o) => keyedServices?.record(s, o) },
+      }));
       routeEmbeddedMedia();
       agentFill = new AgentFill(
         registry,
@@ -2246,6 +2255,7 @@ else
       );
       appSettings = new AppSettingsStore(join(app.getPath("userData"), "app-settings.json"));
       await appSettings.load();
+      keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
       // The bundled layout model, for packaged builds (development finds it in the crate).
       if (app.isPackaged) process.env.KEY_LAYOUT_MODEL ??= join(process.resourcesPath, "models/layout/model_fp16.onnx");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
@@ -2385,6 +2395,7 @@ else
           }
           if (linkedFolders.handles(command)) return linkedFolders.handle(command, args, targetWorkspace, (from ?? focusedShell()).window);
           if (webSearch.handles(command)) return webSearch.handle(command, args, targetWorkspace);
+          if (keyedServices?.handles(command)) return keyedServices.handle(command, args);
           if (webSources.handles(command)) {
             if (record) throw Error("Saved pages are read by the shell");
             return webSources.handle(command, args, targetWorkspace);
@@ -2450,7 +2461,7 @@ else
       );
       ipcMain.handle("key:app-settings", async (event) => {
         shell(event.sender.id);
-        const settings = appSettings.get();
+        const settings = publicSettings(appSettings.get());
         // Automated checks run on fresh profiles; onboarding would cover what they test.
         if (process.env.KEY_SKIP_ONBOARDING) settings.onboarded = true;
         return { settings, info: await appInfo(workspaceParent) };
@@ -2458,18 +2469,24 @@ else
       ipcMain.handle("key:set-app-settings", async (event, patch) => {
         shell(event.sender.id);
         const before = appSettings.get();
+        // Keys never stay in the settings file: an older Settings page's key goes to the secret store.
+        if (patch && typeof patch.openalexApiKey === "string") {
+          if (patch.openalexApiKey.trim()) await keyedServices?.handle("services_set_key", { id: "openalex", key: patch.openalexApiKey });
+          delete patch.openalexApiKey;
+        }
+        if (patch?.webProviders) for (const entry of Object.values(patch.webProviders as Record<string, { apiKey?: string }>)) delete entry.apiKey;
         const next = await appSettings.update(patch ?? {});
         if (!before.zoteroSync && next.zoteroSync) void syncZotero(true);
         // Running library hosts pick up the layout setting at once.
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
-        if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto || before.openalexApiKey !== next.openalexApiKey)
+        if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
             void registry
-              .invoke("store_enrich_options", { auto: next.openalex, mailto: next.openalexMailto, apiKey: next.openalexApiKey }, workspace.id)
+              .invoke("store_enrich_options", { auto: next.openalex, mailto: next.openalexMailto, apiKey: keyedServices?.key("openalex") ?? "", keyMode: keyedServices?.mode("openalex") }, workspace.id)
               .catch(() => {});
-        return next;
+        return publicSettings(next);
       });
       ipcMain.handle("key:workspaces", async (event) => {
         shell(event.sender.id);

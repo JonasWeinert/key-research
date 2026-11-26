@@ -95,7 +95,7 @@ export default function WebResults({
   /** Show the work in the preview beside the results. */
   onOpen: (hit: WebHit) => void;
 }) {
-  const label = (id: string) => web.providers.find((p) => p.info.id === id)?.info.label ?? id;
+  const label = (id: string) => (web.providers.find((p) => p.info.id === id)?.info ?? web.infos.find((p) => p.id === id))?.label ?? id;
   const names = web.providers.map((p) => p.info.label).join(" and ");
 
   const loading = web.providers.filter((p) => p.status === "loading");

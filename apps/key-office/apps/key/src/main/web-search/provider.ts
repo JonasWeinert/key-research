@@ -36,6 +36,8 @@ export interface WebProvider {
     enabledByDefault: boolean;
     /** The filters it applies in its own request. */
     filters: WebFilterKey[];
+    /** Its key is managed as this service (main/services/registry.ts), used as a fallback. */
+    service?: string;
   };
   search(query: string, request: SearchRequest, context: ProviderContext): Promise<WebPage>;
   /** One work by DOI or the provider's own id. */

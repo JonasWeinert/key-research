@@ -268,7 +268,9 @@ const fixtures = path.resolve(__dirname, "../src/main/web-search/fixtures");
     await settings.getByRole("button", { name: "Search & indexing" }).click();
     const s2Switch = settings.getByRole("checkbox", { name: "Search Semantic Scholar" });
     await s2Switch.scrollIntoViewIfNeeded();
-    await settings.getByRole("textbox", { name: "Semantic Scholar API key" }).waitFor();
+    await s2Switch.waitFor();
+    // Keys live under Services & API keys now, not next to the switch.
+    assert.equal(await settings.getByRole("textbox", { name: "Semantic Scholar API key" }).count(), 0);
     await shot(page, "settings-web-light");
     await s2Switch.click();
     await page.waitForFunction(async () => (await window.key.appSettings()).settings.webProviders?.s2?.enabled === false);

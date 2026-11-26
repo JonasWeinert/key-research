@@ -134,7 +134,7 @@ export const openalex: WebProvider = {
   id: "openalex",
   label: "OpenAlex",
   icon: "globe",
-  capabilities: { apiKey: true, keyHelp: "Optional. Uses the key from OpenAlex above.", enabledByDefault: true, filters: FILTERS },
+  capabilities: { apiKey: true, keyHelp: "Optional. Uses the key from OpenAlex above.", enabledByDefault: true, filters: FILTERS, service: "openalex" },
   async search(query, { limit, cursor, signal, filters }, { mailto, apiKey, fetch }) {
     const filter = openAlexFilter(filters);
     const params = new URLSearchParams({ search: query, "per-page": String(limit), cursor: cursor ?? "*", select: FIELDS, ...auth(mailto, apiKey) });

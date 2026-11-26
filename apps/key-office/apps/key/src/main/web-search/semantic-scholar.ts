@@ -97,6 +97,7 @@ export const semanticScholar: WebProvider = {
     keyHelp: "Optional. Without one, Semantic Scholar answers slowly when many people search at once.",
     enabledByDefault: true,
     filters: FILTERS,
+    service: "semantic-scholar",
   },
   async search(query, { limit, cursor, signal, filters }, { apiKey, fetch }) {
     const id = s2PaperId(filters);

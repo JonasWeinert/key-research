@@ -18,7 +18,7 @@ export interface AppSettings {
   openalex: boolean
   /** Sent with OpenAlex requests (their polite pool); empty uses the app's own address. */
   openalexMailto: string
-  /** An OpenAlex API key, for a daily budget of one's own. */
+  /** Only in settings files from before the secret store (moved there on load; always blank now). */
   openalexApiKey: string
   /** Web search providers by id (see main/web-search): turned off, or given an API key. */
   webProviders: Record<string, WebProviderSetting>
@@ -94,7 +94,9 @@ function apply(settings: AppSettings) {
   process.env.KEY_LAYOUT_MODEL_ENABLED = settings.layoutModel ? '1' : '0'
   process.env.KEY_OPENALEX_ENABLED = settings.openalex ? '1' : '0'
   process.env.KEY_OPENALEX_MAILTO = settings.openalexMailto
-  process.env.KEY_OPENALEX_API_KEY = settings.openalexApiKey
+  // API keys never go through the environment (children would inherit them): hosts get the
+  // OpenAlex key over their IPC channel (see services/ and the registry's prelude).
+  delete process.env.KEY_OPENALEX_API_KEY
 }
 
 /** Versions, data locations and whether a Zotero library is present on this Mac. */
