@@ -142,7 +142,7 @@ const assert = require("node:assert/strict");
       near(b.x + b.width, d.width, `${label}: right reader reaches the window edge`);
       for (const v of views) {
         near(v.y, 40, `${label}: reader below the strips`);
-        near(v.y + v.height, d.height, `${label}: reader reaches the bottom`);
+        near(v.y + v.height, d.height - 24, `${label}: reader reaches the status bar`);
       }
       near(d.strips[0].right, d.sashes[0].left, `${label}: first strip ends at the sash`);
       near(d.strips[1].left, d.sashes[0].right, `${label}: second strip starts after it`);
@@ -238,6 +238,47 @@ const assert = require("node:assert/strict");
     await until(async () => (await tabs()).groups.length === 2, "the emptied group closes");
     state = await tabs();
     assert.ok(Math.abs(state.groups.reduce((s, g) => s + g.size, 0) - 1) < 1e-9);
+
+    // Dragging a tab along its own strip reorders it.
+    const drag = async (fromBox, x, y, waitFor) => {
+      await page.mouse.move(fromBox.x + 30, fromBox.y + 14);
+      await page.mouse.down();
+      await page.mouse.move(x, y, { steps: 18 });
+      if (waitFor) await page.locator(waitFor).waitFor();
+      await page.mouse.up();
+    };
+    const [firstTab, secondTab] = state.groups[0].tabIds;
+    const second = await page.locator(`[data-tab-id="${secondTab}"]`).boundingBox();
+    await drag(await page.locator(`[data-tab-id="${firstTab}"]`).boundingBox(), second.x + second.width - 8, second.y + 14);
+    await until(async () => (await tabs()).groups[0].tabIds.indexOf(firstTab) === 1, "the tab moves after its neighbour");
+
+    // A group's last tab dropped on another group's content joins it, and its group closes.
+    state = await tabs();
+    assert.equal(state.groups[1].tabIds.length, 1);
+    const lastTab = state.groups[1].tabIds[0];
+    let d2 = await dom();
+    await drag(await page.locator(`[data-tab-id="${lastTab}"]`).boundingBox(), (d2.sidebar + d2.sashes[0].left) / 2, 420, ".key-pane-drop-preview");
+    await until(async () => (await tabs()).groups.length === 1, "the emptied group closes");
+    state = await tabs();
+    assert.equal(state.groups[0].tabIds.at(-1), lastTab, "the tab joins the other group at its end");
+    assert.equal(state.groups[0].activeTabId, lastTab);
+    await settle();
+    assert.equal((await page.locator(".key-native-overlay-frame").count()), 0, "the still frames go when the drag ends");
+
+    // Dropped at the left side of a group's content, a tab opens a group of its own there.
+    d2 = await dom();
+    await drag(await page.locator(`[data-tab-id="${lastTab}"]`).boundingBox(), d2.sidebar + 24, 420, ".key-pane-drop-preview");
+    await until(async () => (await tabs()).groups.length === 2, "a group opens on the left");
+    state = await tabs();
+    assert.deepEqual(state.groups[0].tabIds, [lastTab], "the new group is on the left");
+    // Put it back on the right (by strip drag and a split), as the rest of this smoke expects.
+    d2 = await dom();
+    await drag(await page.locator(`[data-tab-id="${lastTab}"]`).boundingBox(), d2.width - 24, 420, ".key-pane-drop-preview");
+    await until(async () => {
+      const s = await tabs();
+      return s.groups.length === 2 && s.groups[1].tabIds.join() === lastTab;
+    }, "the tab's group moves to the right");
+    state = await tabs();
 
     // A reader's details and notes: a panel inside the reader's own tab.
     await page.evaluate((groupId) => window.key.tabAction("focus-group", { groupId }), state.groups[0].id);

@@ -27,6 +27,9 @@ import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
+import { STATUS_BAR_HEIGHT } from "../shared/status-items";
+import { StatusBar } from "./status-bar";
+import { zoteroWorkspaceOf } from "./ZoteroSyncSettings";
 interface Workspace {
   id: string;
   name: string;
@@ -233,9 +236,9 @@ export default function App() {
     };
   }, []);
   // The content area's size, which native views and DOM panes share.
-  const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight - STATUS_BAR_HEIGHT });
   useEffect(() => {
-    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    const resize = () => setViewport({ width: window.innerWidth, height: window.innerHeight - STATUS_BAR_HEIGHT });
     window.addEventListener("resize", resize);
     return () => window.removeEventListener("resize", resize);
   }, []);
@@ -1207,6 +1210,16 @@ export default function App() {
           style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }}
         />
       ))}{" "}
+      <StatusBar
+        invoke={invoke}
+        workspaceId={workspaceId}
+        workspaceName={selectedWorkspace?.name}
+        zoteroWorkspaceId={zoteroWorkspaceOf(workspaces)?.id}
+        activeViewId={tabs.activeViewId}
+        onOpenZotero={() => setSettingsSection("libraries")}
+        onOpenWorkspace={() => setSwitcherRequest((n) => n + 1)}
+        onOpenLibrary={() => action("open-content", { section: "sources", workspaceId })}
+      />
       {dialog && (
         <GlobalDialog label={dialog === "project" ? "New project" : "Link a folder"} onClose={()=>setDialog(null)}>
           <form

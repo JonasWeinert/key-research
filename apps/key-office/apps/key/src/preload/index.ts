@@ -47,6 +47,16 @@ contextBridge.exposeInMainWorld("key", {
   readerOpenPage: () => ipcRenderer.invoke("key:reader-open-page"),
   clearBrowsingData: () => ipcRenderer.invoke("key:clear-browsing-data"),
   readerState: (state: unknown) => ipcRenderer.send("key:reader-state", state),
+  // The status bar (shared/status-items.ts): a native view's own items, and their clicks.
+  setStatusItems: (items: unknown) => ipcRenderer.send("key:status-items", items),
+  onStatusItem: (callback: (id: string) => void) => {
+    const listener = (_: unknown, value: { id?: unknown }) => typeof value?.id === "string" && callback(value.id);
+    ipcRenderer.on("status-item-invoke", listener);
+    return () => ipcRenderer.removeListener("status-item-invoke", listener);
+  },
+  statusItems: () => ipcRenderer.invoke("key:status-items"),
+  invokeStatusItem: (viewId: string, id: string) => ipcRenderer.invoke("key:status-item-invoke", viewId, id),
+  notices: () => ipcRenderer.invoke("key:notices"),
   on: (event: string, callback: (value: unknown) => void) => {
     if (
       ![
@@ -73,6 +83,8 @@ contextBridge.exposeInMainWorld("key", {
         "send-items",
         "browser-notice",
         "dismiss-overlays",
+        "status-items",
+        "app-notice",
       ].includes(event)
     )
       throw Error("Unknown event");
@@ -80,4 +92,12 @@ contextBridge.exposeInMainWorld("key", {
     ipcRenderer.on(event, listener);
     return () => ipcRenderer.removeListener(event, listener);
   },
+});
+// Uncaught page errors go to the log (main/app-notices.ts).
+const reportError = (message: unknown, detail?: unknown) =>
+  ipcRenderer.send("key:report-error", { message: String(message), detail: detail === undefined ? undefined : String(detail) });
+window.addEventListener("error", (event) => reportError(event.message, (event.error as Error | undefined)?.stack));
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason as Error | undefined;
+  reportError(reason?.message ?? reason, reason?.stack);
 });

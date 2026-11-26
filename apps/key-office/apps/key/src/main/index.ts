@@ -27,6 +27,9 @@ import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { startZoteroPluginSync } from "./zotero-sync";
 import { Registry, type WorkspaceInfo } from "./workspaces";
+import { fatal, installErrorHandlers, serveNotices } from "./app-notices";
+import { serveStatusItems } from "./status-items";
+import { STATUS_BAR_HEIGHT } from "../shared/status-items";
 import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-media";
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
@@ -799,7 +802,8 @@ function laidOutGroups(w: ShellWindow) {
     x: w.sidebarWidth,
     y: 0,
     width: Math.max(0, width - w.sidebarWidth - (w.inspectorWidth ?? 0)),
-    height,
+    // The status bar runs along the window's bottom, below every group.
+    height: Math.max(0, height - STATUS_BAR_HEIGHT),
   }).groups;
 }
 function placeViews(w: ShellWindow) {
@@ -2048,6 +2052,7 @@ app.setName("Key");
 registerMediaScheme();
 if (process.env.KEY_USER_DATA)
   app.setPath("userData", process.env.KEY_USER_DATA);
+installErrorHandlers();
 app.on("second-instance", () => {
   const w = focusedShell();
   if (w) {
@@ -2206,6 +2211,12 @@ else
       });
       const bound = (sender: number) =>
         [...views.values()].find((v) => v.view?.webContents.id === sender);
+      serveNotices(() => liveShells().map((s) => s.window.webContents));
+      serveStatusItems({
+        viewOf: (sender) => bound(sender.id)?.id,
+        contentsOf: (viewId) => views.get(viewId)?.view?.webContents,
+        shells: () => liveShells().map((s) => s.window.webContents),
+      });
       const shell = (sender: number) => {
         const w = shellBySender(sender);
         if (!w) throw Error("Only the workspace shell can perform this operation");
@@ -3061,8 +3072,7 @@ else
       if (restoring.length > 1) first.window.focus();
     })
     .catch((error) => {
-      console.error(error);
-      dialog.showErrorBox("Key could not start", String(error));
+      fatal("Key could not start", error);
       app.quit();
     });
 app.on("window-all-closed", () => app.quit());
