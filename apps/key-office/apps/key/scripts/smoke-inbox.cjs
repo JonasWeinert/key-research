@@ -181,6 +181,7 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     // Settings › Feeds & alerts shows the same manager.
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "feeds" })));
     await page.locator(".kx-feeds-row", { hasText: "Ashish Vaswani" }).waitFor();
+    await page.waitForTimeout(700);
     await shot(page, "settings-feeds-light");
     await page.keyboard.press("Escape");
 
