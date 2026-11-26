@@ -437,3 +437,22 @@
   padding: 0 10px 0 8px;
   color: var(--key-ui-focus);
 }
+
+/* The citation card as an app popover: a translucent material, hairline edge, popover shadow. */
+.key-pdf-reader .pdfjs-cite-card {
+  --key-press: var(--key-ui-selected);
+  background: color-mix(in srgb, var(--key-ui-bg) 88%, transparent);
+  box-shadow:
+    0 0 0 0.5px var(--key-ui-border),
+    0 12px 32px -6px color-mix(in srgb, var(--key-ui-text) 22%, transparent),
+    0 2px 6px -2px color-mix(in srgb, var(--key-ui-text) 10%, transparent);
+  font-family: var(--key-ui-font, sans-serif);
+}
+.key-pdf-reader .pdfjs-cite-actions {
+  border-top-color: var(--key-ui-border-subtle);
+}
+
+/* Panels open below the floating toolbar, not under it. */
+.key-pdf-reader .key-panel-shell {
+  top: 50px;
+}

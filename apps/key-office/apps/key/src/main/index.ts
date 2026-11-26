@@ -91,7 +91,7 @@ type OwnedView = {
   source?: any;
   searchTarget?: any;
   /** Where the reader should go once it is ready: a page, and the annotation to light up. */
-  pendingFocus?: { page?: number; annotationId?: string };
+  pendingFocus?: { page?: number; annotationId?: string; text?: string };
   searchResults?: {
     id: string;
     documentHash: string;
@@ -2196,6 +2196,7 @@ else
           focus,
           notesOpen: !!besides && views.get(besides)?.content?.section === "source",
           source: v.source,
+          workspaceId: v.workspaceId,
           viewState: v.viewState,
           searchTarget: v.searchTarget,
           searchNavigation: {
@@ -2416,7 +2417,11 @@ else
           case "reader-focus": {
             const v = views.get(`pdf:${p.workspaceId}:${p.documentHash}`);
             if (v?.kind !== "pdf") throw Error("The PDF is not open");
-            const target = { page: typeof p.page === "number" ? p.page : undefined, annotationId: p.annotationId ? String(p.annotationId) : undefined };
+            const target = {
+              page: typeof p.page === "number" ? p.page : undefined,
+              annotationId: p.annotationId ? String(p.annotationId) : undefined,
+              text: typeof p.text === "string" && p.text.trim() ? p.text.slice(0, 4000) : undefined,
+            };
             v.pendingFocus = target;
             v.view?.webContents.send("reader-focus", target);
             return snapshot(w);
