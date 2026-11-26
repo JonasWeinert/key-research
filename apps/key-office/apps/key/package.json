@@ -124,6 +124,11 @@
         "to": "zotero/key-sync.xpi"
       },
       {
+        "from": "../../../../data/citation",
+        "to": "citation",
+        "filter": ["styles/*.csl", "locales/*.xml", "index.json", "NOTICE"]
+      },
+      {
         "from": "../sheets/native/xlsx-engine/target/release/xlsx-sidecar",
         "to": "native/xlsx-sidecar"
       },

@@ -2277,6 +2277,8 @@ else
       // installed styles in one app-wide folder.
       process.env.KEY_APP_SETTINGS_FILE = join(app.getPath("userData"), "app-settings.json");
       process.env.KEY_CITATION_STYLES_DIR = join(app.getPath("userData"), "citation-styles");
+      // The shipped CSL styles and locales (CC BY-SA data files, read by the host on demand).
+      process.env.KEY_CITATION_DATA_DIR ??= app.isPackaged ? join(process.resourcesPath, "citation") : join(root, "data/citation");
       registry = new Registry({
         registryDir: join(app.getPath("userData"), "workspaces"),
         defaultWorkspaceParent: workspaceParent,

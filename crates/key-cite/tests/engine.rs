@@ -217,7 +217,7 @@ fn installing_and_removing_a_style() {
     let dir = std::env::temp_dir().join(format!("key-cite-test-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let styles = Styles::new(Some(dir.clone()));
-    let xml = include_str!("../styles/apa.csl").replace("http://www.zotero.org/styles/apa\"", "http://www.zotero.org/styles/my-apa\"").replace(
+    let xml = include_str!("../../../data/citation/styles/apa.csl").replace("http://www.zotero.org/styles/apa\"", "http://www.zotero.org/styles/my-apa\"").replace(
         "<id>http://www.zotero.org/styles/apa</id>",
         "<id>http://www.zotero.org/styles/my-apa</id>",
     );
@@ -357,5 +357,8 @@ fn quote_attributions() {
 fn locales_are_all_bundled() {
     let list = key_cite::styles::locale_list();
     assert!(list.len() >= 60);
-    assert_eq!(key_cite::styles::locales().len(), list.len(), "every locale file parses");
+    let data = key_cite::data::CitationData::global();
+    for locale in &list {
+        assert!(data.locale(&locale.code).is_some(), "{} parses", locale.code);
+    }
 }

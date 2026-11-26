@@ -2,7 +2,7 @@
 // any bundled or installed CSL style, the style and locale lists, installing a `.csl` (file
 // contents, or a style from the official repository by id or URL) and removing one.
 // Installed styles live in KEY_CITATION_STYLES_DIR (the app's user-data folder), shared by
-// every workspace.
+// every workspace; the shipped ones are data files in KEY_CITATION_DATA_DIR (key_cite::data).
 use super::{json_output, library_store::Library};
 use crate::ipc::{Output, arg};
 use key_cite::{CitationInput, RenderRequest, Styles, csl_json};
@@ -23,18 +23,21 @@ pub(super) fn styles() -> &'static Styles {
 pub(super) fn chosen(args: &Json) -> Result<(String, Option<String>), String> {
     let style: Option<String> = arg::<Option<String>>(args, "style")?.filter(|s| !s.trim().is_empty());
     let locale: Option<String> = arg::<Option<String>>(args, "locale")?.filter(|s| !s.trim().is_empty());
-    if style.is_some() && locale.is_some() {
-        return Ok((style.unwrap_or_default(), locale));
+    // (Without the shipped styles, any style asked for falls back to Key's basic one.)
+    if let (Some(style), Some(locale)) = (&style, &locale)
+        && (styles().data().available() || styles().summary(style).is_some())
+    {
+        return Ok((style.clone(), Some(locale.clone())));
     }
     let settings: Json = std::env::var_os("KEY_APP_SETTINGS_FILE")
         .and_then(|path| std::fs::read(path).ok())
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or(Json::Null);
     let saved = |key: &str| settings.get(key).and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
-    let mut style = style.or_else(|| saved("citationStyle")).unwrap_or_else(|| key_cite::DEFAULT_STYLE.into());
+    let mut style = style.or_else(|| saved("citationStyle")).unwrap_or_else(|| styles().default_id().into());
     // A removed style falls back to the default rather than failing every citation.
     if styles().summary(&style).is_none() {
-        style = key_cite::DEFAULT_STYLE.into();
+        style = styles().default_id().into();
     }
     Ok((style, locale.or_else(|| saved("citationLocale"))))
 }
@@ -81,7 +84,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         // CSL-JSON for sources (export, the Word add-in): { ids } -> [item].
         "store_cite_items" => arg::<Vec<String>>(args, "ids").and_then(|ids| json_output(csl_items(library, &ids)?)),
         "store_cite_styles" => chosen(&Json::Null).and_then(|(style, locale)| {
-            json_output(json!({ "styles": styles().list(), "locales": key_cite::styles::locale_list(), "folder": styles().dir(), "style": style, "locale": locale }))
+            json_output(json!({ "styles": styles().list(), "locales": key_cite::styles::locale_list(), "folder": styles().dir(), "style": style, "locale": locale, "data": styles().data().status() }))
         }),
         // { xml } (a file's contents) or { url } (a style id, or a zotero.org/styles or
         // citation-style-language/styles address). A dependent style's parent comes along.

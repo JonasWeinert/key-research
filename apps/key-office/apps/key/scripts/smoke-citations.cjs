@@ -217,6 +217,7 @@ const HOUSE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     const styles = await call("store_cite_styles");
     assert.ok(!styles.styles.some((s) => s.id === "key-smoke-house"), "the style is gone");
     assert.equal(styles.style, "apa");
+    assert.equal(styles.data?.available, true, "the shipped styles are found in the data folder");
     await page.keyboard.press("Escape");
     await page.locator(".kx-settings").waitFor({ state: "detached" });
     await editor.locator("a", { hasText: "(Narang et al., 2021)" }).waitFor();

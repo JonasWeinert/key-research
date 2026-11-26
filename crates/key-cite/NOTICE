@@ -1,17 +1,7 @@
-key-cite bundles data from the Citation Style Language project. These files are not
-covered by Key's MIT licence; they keep their own licence and are shipped unmodified.
-
-styles/*.csl
-  From https://github.com/citation-style-language/styles
-  Licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported licence
-  (https://creativecommons.org/licenses/by-sa/3.0/). Each file names its authors and
-  contributors in its <info> block.
-
-locales/locales-*.xml
-  From https://github.com/citation-style-language/locales
-  Licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported licence
-  (https://creativecommons.org/licenses/by-sa/3.0/). Each file names its translators in
-  its <info> block.
+key-cite is part of Key (MIT). The CSL styles and locales it renders with are not part of
+this crate: they are shipped as separate, unmodified data files under their own licence
+(CC BY-SA 3.0); see data/citation/NOTICE. The fallback style and English terms in
+src/fallback/ were written for Key and are MIT.
 
 Citations are rendered with hayagriva (https://github.com/typst/hayagriva) and
 citationberg (https://github.com/typst/citationberg), both MIT OR Apache-2.0. A copy of

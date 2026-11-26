@@ -557,14 +557,16 @@ const MODELS = [
 for (const [name, text] of MODELS) out += sub(name) + text + '\nThe Apache License 2.0 text is reproduced in section 0.\n'
 
 out += hr('8. Citation Style Language styles and locales — CC BY-SA 3.0')
-out += readRepo('crates/key-cite/NOTICE') + '\n'
+out += readRepo('data/citation/NOTICE') + '\n'
 out += `
 Licence: Creative Commons Attribution-ShareAlike 3.0 Unported,
 https://creativecommons.org/licenses/by-sa/3.0/legalcode
-These data files are embedded unmodified in the Key host binary; the same
-files are available from the source URLs above and in Key's source repository
-(crates/key-cite/styles, crates/key-cite/locales). The CC BY-SA licence applies
-to these files only, not to Key's program code.
+These data files are shipped unmodified as separate files beside the app
+(Key.app/Contents/Resources/citation/styles and .../citation/locales) and are
+read at run time; they are not compiled into Key's program. The same files are
+available from the source URLs above and in Key's source repository
+(data/citation/styles, data/citation/locales). The CC BY-SA licence applies to
+these files only, not to Key's program code.
 `
 const xmlText = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
 const people = (info, tag) => [...info.matchAll(new RegExp(`<${tag}>[\\s\\S]*?<name>([^<]*)</name>[\\s\\S]*?</${tag}>`, 'g'))].map((m) => xmlText(m[1]))
@@ -582,8 +584,8 @@ const credit = (dir, title) => {
   }
   return sub(title) + lines.join('\n') + '\n'
 }
-out += credit('crates/key-cite/styles', 'Styles (https://github.com/citation-style-language/styles)')
-out += credit('crates/key-cite/locales', 'Locales (https://github.com/citation-style-language/locales)')
+out += credit('data/citation/styles', 'Styles (https://github.com/citation-style-language/styles)')
+out += credit('data/citation/locales', 'Locales (https://github.com/citation-style-language/locales)')
 
 // `--out <file>` writes elsewhere (checks); the default is the file packaging ships
 const outArg = process.argv.indexOf('--out')
