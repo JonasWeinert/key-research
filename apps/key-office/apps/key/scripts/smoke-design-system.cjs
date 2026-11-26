@@ -45,7 +45,7 @@ const assert = require("node:assert/strict");
       .locator(".key-shell-body")
       .evaluate((el) => el.removeAttribute("data-theme"));
     const [ws] = await page.evaluate(() => window.key.workspaces());
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${ws.id}"]`).click();
     // Switching workspace lands on Home; the sidebar's Library row opens this workspace's library.
     await page.locator(".kx-sidebar-titlebar .key-workspace-home strong", { hasText: ws.name }).waitFor();

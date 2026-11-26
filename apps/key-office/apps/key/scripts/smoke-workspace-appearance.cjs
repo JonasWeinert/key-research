@@ -22,7 +22,7 @@ const assert = require("node:assert/strict");
   try {
     let page = await app.firstWindow();
     await page
-      .getByRole("button", { name: "Workspace", exact: true })
+      .locator(".kx-status-item[data-status-item=workspace]")
       .waitFor();
     const [workspace] = await page.evaluate(() => window.key.workspaces());
     assert.equal(await page.locator(".key-navbar").count(), 0);
@@ -39,9 +39,9 @@ const assert = require("node:assert/strict");
       shadow: "none",
       border: "0px",
     });
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${workspace.id}"]`).click();
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.getByRole("menuitem", { name: "Customize workspace…" }).click();
     await page.getByRole("button", { name: "Use 🔬", exact: true }).click();
     await page
@@ -67,7 +67,7 @@ const assert = require("node:assert/strict");
         filePaths: [folder],
       });
     }, addedPath);
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page
       .getByRole("menuitem", { name: "Add workspace…", exact: true })
       .click();
@@ -84,11 +84,11 @@ const assert = require("node:assert/strict");
     app = await launch();
     page = await app.firstWindow();
     await page
-      .getByRole("button", { name: "Workspace", exact: true })
+      .locator(".kx-status-item[data-status-item=workspace]")
       .waitFor();
     const restored = await page.evaluate(() => window.key.workspaces());
     assert.equal(restored.find((w) => w.id === workspace.id).color, "#7c3aed");
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     assert(
       await page
         .locator(`[data-workspace-id="${workspace.id}"]`)

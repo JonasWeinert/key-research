@@ -39,7 +39,7 @@ const assert = require("node:assert/strict");
     await page.screenshot({ path: path.join(temp, "full-width-home.png") });
     const workspaces = await page.evaluate(() => window.key.workspaces());
     assert(workspaces.length > 0);
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${workspaces[0].id}"]`).click();
     await page
       .getByRole("button", { name: "Create item", exact: true })
@@ -130,7 +130,7 @@ const assert = require("node:assert/strict");
     await page
       .getByRole("textbox", { name: "Page title", exact: true })
       .waitFor();
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${workspaces[0].id}"]`).click();
     await page
       .locator(".key-sidebar")

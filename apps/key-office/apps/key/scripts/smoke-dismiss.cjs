@@ -84,12 +84,16 @@ const assert = require("node:assert/strict");
     report.sidebarMenu = true;
 
     // The workspace switcher: a press in the sidebar closes it; Escape returns focus to it.
-    const trigger = page.getByRole("button", { name: "Workspace", exact: true });
+    const trigger = page.locator(".kx-status-item[data-status-item=workspace]");
     const dropdown = page.locator(".key-workspace-dropdown");
     await trigger.click();
     await dropdown.waitFor();
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: path.join(temp, "1b-workspace-menu.png") });
+    // The menu rises from the status bar over the sidebar's foot: press above it.
     const blank = await sidebarBlank();
-    await page.mouse.click(blank.x, blank.y);
+    const over = await dropdown.boundingBox();
+    await page.mouse.click(blank.x, Math.min(blank.y, over.y - 24));
     await gone(dropdown, "the workspace switcher (press in the sidebar)");
     await trigger.click();
     await dropdown.waitFor();

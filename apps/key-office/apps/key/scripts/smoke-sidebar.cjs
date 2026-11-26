@@ -182,7 +182,7 @@ const assert = require("node:assert/strict");
     await app.evaluate(({ dialog }, folder) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [folder] });
     }, other);
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.getByRole("menuitem", { name: "Add workspace…", exact: true }).click();
     const choice = page.getByRole("menu", { name: "Open Fieldwork" });
     await choice.waitFor();

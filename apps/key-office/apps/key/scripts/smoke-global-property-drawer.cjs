@@ -29,7 +29,7 @@ const assert = require("node:assert/strict");
       .getByRole("heading", { name: "All sources", exact: true })
       .waitFor();
     const [ws] = await page.evaluate(() => window.key.workspaces());
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
+    await page.locator(".kx-status-item[data-status-item=workspace]").click();
     await page.locator(`[data-workspace-id="${ws.id}"]`).click();
     // Switching workspace navigates asynchronously; settle on this workspace's Sources tab.
     let owner;

@@ -199,14 +199,15 @@ export function StatusBar({
   return (
     <footer className="kx-status-bar" role="contentinfo" aria-label="Status" style={{ height: STATUS_BAR_HEIGHT }}>
       <div className="kx-status-side">
-        <Item item={zoteroItem(sync, now)} onClick={onOpenZotero} />
-        {work && <Item item={work} onClick={onOpenLibrary} className="kx-status-work" />}
+        {/* Fixed items first, so they do not move when work comes and goes. */}
         {workspaceName && (
           <Item
             item={{ id: "workspace", label: workspaceName, icon: "folder", title: "Switch workspace" }}
             onClick={onOpenWorkspace}
           />
         )}
+        <Item item={zoteroItem(sync, now)} onClick={onOpenZotero} />
+        {work && <Item item={work} onClick={onOpenLibrary} className="kx-status-work" />}
         {notice && (
           <span className="kx-status-notice" data-level={notice.level} role="status" aria-live="polite">
             <button
