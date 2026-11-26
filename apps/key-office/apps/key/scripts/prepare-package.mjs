@@ -3,12 +3,12 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const officeRoot = resolve(appRoot, "../..");
+const workspaceRoot = resolve(appRoot, "../..");
 const config = JSON.parse(
   readFileSync(resolve(appRoot, "package.json"), "utf8"),
 );
 execFileSync(process.execPath, ["tools/gen-third-party-notices.mjs"], {
-  cwd: officeRoot,
+  cwd: workspaceRoot,
   stdio: "inherit",
 });
 // The Key Sync plugin for Zotero, carried in the app for the Zotero sheet.
@@ -27,8 +27,8 @@ if (weights.length)
 for (const path of paths)
   if (!existsSync(resolve(appRoot, path)))
     throw new Error(
-      `Packaging input missing: ${path}. Build the Key shell, office modules, and Rust host first.`,
+      `Packaging input missing: ${path}. Build the Key shell and the Rust host first.`,
     );
 console.log(
-  "Packaging an unsigned development Key.app with the release Rust host and release spreadsheet worker.",
+  "Packaging an unsigned development Key.app with the release Rust host.",
 );
