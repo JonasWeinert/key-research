@@ -4,6 +4,8 @@ import { clipboard, Menu, type BaseWindow, type MenuItemConstructorOptions, type
 import { browserSession } from "./profile";
 import { harden, newPageView } from "./pages";
 import { webUrl } from "./urls";
+import { pdfBehindViewer } from "./readers";
+import { cleanScan, doiOfResolverUrl, SCAN_SCRIPT, type PageScan, type ScholarlyArticle } from "./scan";
 
 export interface WebTabState {
   url: string;
@@ -14,6 +16,10 @@ export interface WebTabState {
   loading: boolean;
   /** A page has been shown (a tab opened straight onto a PDF never shows one). */
   committed: boolean;
+  /** The page is a scholarly article (its meta tags, or reached through doi.org). */
+  article?: ScholarlyArticle;
+  /** A bot check ("Just a moment…") has not moved on for a while. */
+  stalled?: boolean;
 }
 export interface WebTabHooks {
   changed(patch: Partial<WebTabState>): void;
@@ -22,6 +28,10 @@ export interface WebTabHooks {
   /** Opens in the system's default browser. */
   external(url: string): void;
   window(): BaseWindow | undefined;
+  /** What the page turned out to be once it loaded. */
+  scanned?(scan: PageScan): void;
+  /** The page is going to a blob or data URL: true when it was a PDF, now in the reader. */
+  inlinePdf?(url: string): Promise<boolean>;
 }
 
 const favicons = new Map<string, string>();
@@ -57,11 +67,71 @@ export function createWebTab(url: string, hooks: WebTabHooks) {
     canGoForward: contents.navigationHistory.canGoForward(),
   });
   contents.on("did-start-loading", () => hooks.changed({ loading: true }));
+  // Online readers and viewers that wrap a PDF: the tab goes to the PDF itself, which the
+  // profile turns into a download for the app's reader (see profile.ts).
+  const toPdf = (event: { preventDefault(): void; url: string; isMainFrame?: boolean }) => {
+    const pdf = event.isMainFrame === false ? undefined : pdfBehindViewer(event.url);
+    if (!pdf) return;
+    event.preventDefault();
+    void contents.loadURL(pdf).catch(() => undefined);
+  };
+  contents.on("will-navigate", toPdf);
+  contents.on("will-redirect", toPdf);
+  // A page going to a PDF it made (a blob or data URL) would show it in Chromium's viewer:
+  // the page hands the bytes to the reader instead; anything else goes ahead.
+  let allowed: string | undefined;
+  contents.on("will-navigate", (event) => {
+    if (event.isMainFrame === false || !/^(blob:|data:application\/(x-)?pdf)/i.test(event.url) || !hooks.inlinePdf) return;
+    if (allowed === event.url) return void (allowed = undefined);
+    event.preventDefault();
+    const target = event.url;
+    void hooks.inlinePdf(target).then((handled) => {
+      if (handled || contents.isDestroyed()) return;
+      allowed = target;
+      void contents.executeJavaScript(`location.href = ${JSON.stringify(target)}`).catch(() => undefined);
+    });
+  });
+  // A tab that came through doi.org knows the DOI of the page it landed on.
+  let pendingDoi: string | undefined;
+  let viaDoi: string | undefined;
+  let challengeTimer: ReturnType<typeof setTimeout> | undefined;
+  contents.on("did-start-navigation", (event) => {
+    if (!event.isMainFrame || event.isSameDocument) return;
+    pendingDoi = doiOfResolverUrl(event.url);
+    clearTimeout(challengeTimer);
+    hooks.changed({ stalled: false });
+  });
+  const rescan = () => contents.executeJavaScriptInIsolatedWorld(1999, [{ code: SCAN_SCRIPT }]).then((raw) => cleanScan(raw, viaDoi));
+  const scan = async () => {
+    if (contents.isDestroyed()) return;
+    const found = await rescan().catch(() => undefined);
+    if (!found || contents.isDestroyed()) return;
+    hooks.changed({ article: found.article });
+    clearTimeout(challengeTimer);
+    // A bot check still up after a while: the bar offers to reload (the person passes it).
+    if (found.challenge) {
+      const at = contents.getURL();
+      challengeTimer = setTimeout(() => {
+        if (contents.isDestroyed() || contents.getURL() !== at) return;
+        void rescan().then((again) => again.challenge && hooks.changed({ stalled: true }), () => undefined);
+      }, Number(process.env.KEY_BROWSER_STALL_MS) || 20_000);
+    } else hooks.changed({ stalled: false });
+    hooks.scanned?.(found);
+  };
+  contents.on("did-finish-load", () => {
+    void scan();
+    // Pages that build themselves after load (embedded viewers, article apps).
+    setTimeout(() => void scan(), 1500);
+  });
+  contents.on("destroyed", () => clearTimeout(challengeTimer));
   contents.on("did-stop-loading", () => hooks.changed({ loading: false, ...history() }));
   contents.on("did-navigate", (_event, target) => {
     // The error page stands in for the URL that failed.
     if (target.startsWith("data:")) return hooks.changed({ committed: true, ...history() });
     failedUrl = undefined;
+    viaDoi = pendingDoi;
+    pendingDoi = undefined;
+    hooks.changed({ article: undefined });
     hooks.changed({ url: target, committed: true, ...history() });
   });
   contents.on("did-navigate-in-page", (_event, target, isMainFrame) => {
@@ -116,7 +186,7 @@ export function createWebTab(url: string, hooks: WebTabHooks) {
     const window = hooks.window();
     Menu.buildFromTemplate(items).popup(window ? { window } : {});
   });
-  void contents.loadURL(url).catch(() => undefined);
+  void contents.loadURL(pdfBehindViewer(url) ?? url).catch(() => undefined);
   return view;
 }
 

@@ -47,6 +47,17 @@ export function browserUserAgent(fallback: string, appName = "Key") {
     .trim();
 }
 
+/** The languages a page is told the browser reads, from the system's: each one, then its
+ * base language ("en-GB" → "en-GB,en"), deduplicated. Chromium adds the q-weights. */
+export function acceptLanguages(preferred: string[]) {
+  const out: string[] = [];
+  for (const tag of preferred.length ? preferred : ["en-US"]) {
+    const clean = tag.replace(/_/g, "-").replace(/-u-.*$/i, "");
+    for (const lang of [clean, clean.split("-")[0]]) if (lang && !out.some((x) => x.toLowerCase() === lang.toLowerCase())) out.push(lang);
+  }
+  return out.slice(0, 8).join(",");
+}
+
 /** Whether a download is a PDF, by its type or its name. */
 export function looksLikePdf(mime: string | undefined, filename: string | undefined) {
   return /^application\/(x-)?pdf\b/i.test(mime ?? "") || /\.pdf$/i.test(filename ?? "");

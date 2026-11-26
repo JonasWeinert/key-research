@@ -10,6 +10,8 @@ export interface TempPdf {
   hash: string;
   /** Where the browser found it. */
   url: string;
+  /** The page that led to it (the article's landing page), when it was not the PDF itself. */
+  referrer?: string;
   title: string;
   /** The PDF in the cache folder. */
   file: string;
@@ -99,7 +101,7 @@ export class TempPdfs {
     return Object.values(this.entries).map((e) => ({ ...e }));
   }
   /** Takes a finished download into the cache and the scratch library. The file is moved. */
-  async add(downloaded: string, url: string, title: string) {
+  async add(downloaded: string, url: string, title: string, referrer?: string) {
     await this.load();
     if (!(await isPdfFile(downloaded))) {
       await rm(downloaded, { force: true });
@@ -111,7 +113,7 @@ export class TempPdfs {
     else await rename(downloaded, file);
     const { size } = await stat(file);
     const at = this.now();
-    this.entries[hash] = { ...(this.entries[hash] ?? { addedAt: at }), hash, url, title, file, size, lastOpened: at };
+    this.entries[hash] = { ...(this.entries[hash] ?? { addedAt: at }), hash, url, referrer: referrer ?? this.entries[hash]?.referrer, title, file, size, lastOpened: at };
     await this.analyse(hash);
     await this.save();
     return { ...this.entries[hash] };

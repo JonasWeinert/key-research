@@ -2,18 +2,33 @@
 // workspace and headless page, kept across restarts (cookies, storage, cache, logins).
 // Nothing clears it but "Clear browsing data" in Settings.
 import { app, session, type Session } from "electron";
-import { browserUserAgent, looksLikePdf } from "./urls";
+import { acceptLanguages, browserUserAgent, looksLikePdf } from "./urls";
 
 export const BROWSER_PARTITION = "persist:key-browser";
 /** Permissions a page gets without asking; everything else is refused. */
-const ALLOWED = new Set(["fullscreen", "clipboard-sanitized-write"]);
+const ALLOWED = new Set(["fullscreen", "clipboard-sanitized-write", "storage-access", "top-level-storage-access"]);
+/** Bot-check cookies (Cloudflare's) are left exactly as the check sets them. */
+const CHALLENGE_COOKIE = /^(__cf|cf_|__cflb|_cfuvid)/i;
 
 const SESSION_COOKIE_DAYS = 30;
+/** PDFs a page's frames tried to load, by the page's contents id (a few each). */
+const pdfFrames = new Map<number, string[]>();
+function notePdfFrame(contentsId: number, url: string) {
+  const list = pdfFrames.get(contentsId) ?? [];
+  pdfFrames.set(contentsId, [url, ...list.filter((u) => u !== url)].slice(0, 8));
+  if (pdfFrames.size > 200) pdfFrames.delete(pdfFrames.keys().next().value!);
+}
+/** Whether a frame of this page was a PDF at `url`. */
+export function wasPdfFrame(contentsId: number, url: string) {
+  return pdfFrames.get(contentsId)?.includes(url) ?? false;
+}
 let configured: Session | undefined;
 export function browserSession(): Session {
   if (configured) return configured;
   const ses = session.fromPartition(BROWSER_PARTITION, { cache: true });
-  ses.setUserAgent(browserUserAgent(app.userAgentFallback, app.getName()));
+  // Chrome's user agent (requests, `navigator`, workers alike), and the system's languages
+  // with weights the way Chrome sends them ("en-GB,en;q=0.9"), not a bare single locale.
+  ses.setUserAgent(browserUserAgent(app.userAgentFallback, app.getName()), acceptLanguages(app.getPreferredSystemLanguages()));
   ses.setPermissionRequestHandler((_contents, permission, callback) => callback(ALLOWED.has(permission)));
   ses.setPermissionCheckHandler((_contents, permission) => ALLOWED.has(permission));
   ses.setDevicePermissionHandler(() => false);
@@ -36,7 +51,15 @@ export function browserSession(): Session {
   ses.webRequest.onHeadersReceived({ urls: ["http://*/*", "https://*/*"] }, (details, callback) => {
     const headers = details.responseHeaders ?? {};
     const type = Object.entries(headers).find(([name]) => name.toLowerCase() === "content-type")?.[1]?.[0];
-    if (details.resourceType !== "mainFrame" || !looksLikePdf(type, undefined)) return callback({});
+    if (!looksLikePdf(type, undefined)) return callback({});
+    // A PDF in a frame or object would show in Chromium's viewer (`plugins: false` does not
+    // stop it): it is not loaded. A page that is only that PDF opens it in the reader instead
+    // (see PageActions); the address is noted for that.
+    if (details.resourceType === "subFrame" || details.resourceType === "object") {
+      if (details.webContentsId !== undefined) notePdfFrame(details.webContentsId, details.url);
+      return callback({ cancel: true });
+    }
+    if (details.resourceType !== "mainFrame") return callback({});
     const disposition = Object.keys(headers).find((name) => name.toLowerCase() === "content-disposition");
     const value = disposition ? headers[disposition][0] : "";
     if (disposition) delete headers[disposition];
@@ -46,7 +69,7 @@ export function browserSession(): Session {
   // Session cookies (no expiry) would end with the app: they are kept for 30 days instead,
   // so sign-ins last across restarts the way they do in a browser that restores its session.
   ses.cookies.on("changed", (_event, cookie, _cause, removed) => {
-    if (removed || !cookie.session || !cookie.domain) return;
+    if (removed || !cookie.session || !cookie.domain || CHALLENGE_COOKIE.test(cookie.name) || /(^|\.)cloudflare\.com$/i.test(cookie.domain)) return;
     const host = cookie.domain.replace(/^\./, "");
     void ses.cookies
       .set({

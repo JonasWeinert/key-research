@@ -31,6 +31,7 @@ import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
+import { PageActions } from "./browser/page-actions";
 import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browser/temp-pdfs";
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
 import { webPageRect } from "../shared/browser-layout";
@@ -93,8 +94,13 @@ type OwnedView = {
   web?: WebTabState;
   /** The title of the page a browser tab was opened from. */
   referrer?: string;
-  /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library. */
-  temp?: { url: string; hash: string };
+  /** The address of that page. */
+  referrerUrl?: string;
+  /** A browser tab on an article page: the library source it is (once looked up), and an add in progress. */
+  articleState?: { key: string; sourceId?: string; busy?: boolean };
+  /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library.
+   * `referrer` is the page that led to it. */
+  temp?: { url: string; hash: string; referrer?: string };
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
   libraryNotice?: "added" | "exists";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
@@ -424,7 +430,15 @@ function viewSummary(id: string) {
     forward: v?.forward?.at(-1)?.title,
     nav: v?.nav,
     favicon: v?.web?.favicon,
-    web: v?.web && { host: hostLabel(v.web.url), url: v.web.url, loading: v.web.loading, canGoBack: v.web.canGoBack, canGoForward: v.web.canGoForward },
+    web: v?.web && {
+      host: hostLabel(v.web.url),
+      url: v.web.url,
+      loading: v.web.loading,
+      canGoBack: v.web.canGoBack,
+      canGoForward: v.web.canGoForward,
+      stalled: v.web.stalled || undefined,
+      article: v.web.article && { title: v.web.article.title, doi: v.web.article.doi, inLibrary: !!v.articleState?.sourceId, busy: !!v.articleState?.busy },
+    },
     temp: v?.temp ? true : undefined,
   };
 }
@@ -592,10 +606,13 @@ registerNativeKind("web", {
       open(url, background) {
         const w = shellOfView(record.id) ?? focusedShell();
         const found = w && findViewTab(w.state, record.id);
-        openLink(url, w, found ? { groupId: found.group.id, index: found.index + 1, background, referrer: record.title } : { background, referrer: record.title });
+        const from = { background, referrer: record.title, referrerUrl: webUrl(web.url) };
+        openLink(url, w, found ? { ...from, groupId: found.group.id, index: found.index + 1 } : from);
       },
       external: (url) => void systemShell.openExternal(url),
       window: () => record.host?.window,
+      scanned: (scan) => browserPages.scanned(record, scan),
+      inlinePdf: (url) => browserPages.inlinePdf(record, url),
     });
   },
   dispose(record) {
@@ -620,7 +637,7 @@ function webView(url: string, title?: string): OwnedView {
 }
 /** Every web link in the app comes here: http(s) opens as a browser tab in the focused group
  * (or at `options`), mail and phone links go to the system, anything else is ignored. */
-function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string } = {}) {
+function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string; referrerUrl?: string } = {}) {
   const web = webUrl(url);
   if (!web) {
     const external = systemUrl(url);
@@ -631,6 +648,7 @@ function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), opt
   const previous = options.background ? activeWorkspaceTab(w.state)?.id : undefined;
   const record = webView(web);
   record.referrer = options.referrer;
+  record.referrerUrl = options.referrerUrl;
   add(record, w, { groupId: options.groupId, index: options.index });
   if (previous && findTab(w.state, previous)) {
     w.state = activateWorkspaceTab(w.state, previous);
@@ -647,6 +665,25 @@ const scratchWorkspace = () =>
   }));
 let tempPdfs: TempPdfs;
 let browserService: BrowserService;
+let webSearchService: WebSearch | undefined;
+/** Embedded PDFs and article pages in browser tabs (see browser/page-actions.ts). */
+const browserPages = new PageActions({
+  service: () => browserService,
+  incomingPath: (id) => tempPdfs.incomingPath(id),
+  openPdf: (contents, file, replace) => openDownloadedPdf(contents, file, replace),
+  workspaceOf: (record) => (shellOfView(record.id) ?? focusedShell())?.workspaceId,
+  invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
+  lookupDoi: async (doi, workspaceId) => (webSearchService ? ((await webSearchService.handle("web_lookup", { provider: "openalex", id: doi }, workspaceId)) as any) : undefined),
+  addWork: async (workspaceId, work) => {
+    if (!webSearchService) throw Error("The library is still starting");
+    return webSearchService.add(workspaceId, work);
+  },
+  changed: (record) => {
+    const w = shellOfView(record.id);
+    if (w) tabsChanged(w);
+  },
+  emit,
+});
 /** A reader for a PDF kept from the browser, analysed in the scratch library. */
 async function tempPdfView(entry: TempPdf): Promise<OwnedView> {
   const workspaceId = await tempPdfs.analyse(entry.hash);
@@ -657,23 +694,25 @@ async function tempPdfView(entry: TempPdf): Promise<OwnedView> {
     title: entry.title || info.title,
     workspaceId,
     source: info,
-    temp: { url: entry.url, hash: entry.hash },
+    temp: { url: entry.url, hash: entry.hash, referrer: entry.referrer },
     lastUsed: Date.now(),
   };
 }
 /** A PDF a page downloaded opens in the reader as a tab of its own; a tab that opened
  * straight onto the PDF (it never showed a page) becomes that reader. */
-async function openDownloadedPdf(contents: Electron.WebContents | undefined, file: { path: string; url: string; filename: string }) {
+async function openDownloadedPdf(contents: Electron.WebContents | undefined, file: { path: string; url: string; filename: string }, replace = false) {
   const from = contents && [...views.values()].find((v) => v.kind === "web" && v.view?.webContents === contents);
   const w = (from && shellOfView(from.id)) ?? focusedShell();
   try {
     const page = from && (from.web?.committed ? from.web.title : from.referrer);
-    const entry = await tempPdfs.add(file.path, file.url, pdfTitle(file.filename, file.url, page));
+    // The landing page that led to the PDF (the tab's page, or the page that opened the tab).
+    const referrer = from && webUrl(from.web?.committed ? from.web.url : from.referrerUrl);
+    const entry = await tempPdfs.add(file.path, file.url, pdfTitle(file.filename, file.url, page), referrer !== file.url ? referrer : undefined);
     const record = await tempPdfView(entry);
     if (!w || w.closed) return;
     if (views.has(record.id) && shellOfView(record.id)) return focus(record.id);
     const found = from && findViewTab(w.state, from.id);
-    if (from && found && !from.web?.committed) {
+    if (from && found && (!from.web?.committed || replace)) {
       views.set(record.id, record);
       w.state = replaceWorkspaceView(w.state, from.id, record.id);
       nativeKinds.web.dispose(from);
@@ -703,6 +742,18 @@ async function swapToLibrary(temp: OwnedView, workspaceId: string, hash: string,
   layout(w);
   focusShown(w);
 }
+/** What the person did on a temporary PDF goes with it into the library: its annotations
+ * (highlights, comments, ink) and the notes written on it. The reading position travels
+ * with the tab (see swapToLibrary). */
+async function carryTempWork(entry: TempPdf, workspaceId: string, sourceId: string) {
+  const scratch = await scratchWorkspace();
+  const annotations = await registry.invoke<any[]>("library_annotations", { hash: entry.hash }, scratch.id).catch(() => []);
+  if (annotations?.length) await registry.invoke("library_apply_annotations", { hash: entry.hash, upserts: annotations, deleted: [] }, workspaceId);
+  if (!entry.sourceId) return;
+  const notes = await registry.invoke<any[]>("store_notes", { sourceId: entry.sourceId }, scratch.id).catch(() => []);
+  for (const note of notes ?? [])
+    if (note?.body?.trim()) await registry.invoke("store_note_save", { id: null, sourceId, title: note.title ?? "", body: note.body }, workspaceId);
+}
 /** Adds a temporary PDF to the window's library through the usual import (identification,
  * metadata, analysis and indexing follow), with the page it came from as its URL. */
 async function addTempToLibrary(temp: OwnedView) {
@@ -712,6 +763,7 @@ async function addTempToLibrary(temp: OwnedView) {
   if (!entry || !existsSync(entry.file)) throw Error("This PDF is no longer kept; open it from the page again");
   const known = await registry.invoke<{ items: any[] }>("store_sources", { ids: [entry.hash], limit: 1, scope: "all" }, workspaceId);
   if (known.items[0]) {
+    await carryTempWork(entry, workspaceId, known.items[0].id);
     await swapToLibrary(temp, workspaceId, entry.hash, "exists");
     return { status: "exists" };
   }
@@ -723,6 +775,7 @@ async function addTempToLibrary(temp: OwnedView) {
     const imported: any = await registry.invoke("library_import_file", { path }, workspaceId);
     if (imported.hash !== entry.hash) throw Error("The PDF changed while it was added");
     if (!imported.existing) await registry.invoke("store_update", { id: imported.id, patch: { url: entry.url } }, workspaceId).catch(() => undefined);
+    await carryTempWork(entry, workspaceId, imported.id);
     void registry
       .invoke("library_processing_control", { hash: imported.hash, action: "resume" }, workspaceId)
       .then(() => emit("library-changed"))
@@ -2116,7 +2169,7 @@ else
       setTimeout(() => void cleanTempPdfs().catch(() => undefined), Math.min(15_000, cleanupEvery));
       setInterval(() => void cleanTempPdfs().catch(() => undefined), cleanupEvery).unref();
       const linkedFolders = new LinkedFolders((c, a, w) => registry.invoke(c, a, w), () => liveShells().map((w) => w.workspaceId), (v) => emit("linked-folders-changed", v));
-      const webSearch = new WebSearch({ settings: () => appSettings.get(), invoke: (c, a, w) => registry.invoke(c, a, w), emit });
+      const webSearch = (webSearchService = new WebSearch({ settings: () => appSettings.get(), invoke: (c, a, w) => registry.invoke(c, a, w), emit }));
       routeEmbeddedMedia();
       agentFill = new AgentFill(
         registry,
@@ -2609,7 +2662,7 @@ else
               .catch(() => false)
           : false;
         return {
-          web: v.temp ? { url: v.temp.url, host: hostLabel(v.temp.url), inLibrary } : notice ? { notice } : undefined,
+          web: v.temp ? { url: v.temp.url, referrer: v.temp.referrer, host: hostLabel(v.temp.referrer ?? v.temp.url), inLibrary } : notice ? { notice } : undefined,
           focus,
           notesOpen: !!v.panel,
           source: v.source,
@@ -2639,7 +2692,8 @@ else
       });
       ipcMain.handle("key:reader-open-page", (event) => {
         const v = bound(event.sender.id);
-        if (v?.temp) openLink(v.temp.url, shellOfView(v.id));
+        // The page it came from (opening the PDF's own URL would only download it again).
+        if (v?.temp) openLink(v.temp.referrer ?? v.temp.url, shellOfView(v.id));
       });
       ipcMain.handle("key:clear-browsing-data", async (event) => {
         shell(event.sender.id);
@@ -2754,6 +2808,15 @@ else
           case "history":
             stepHistory(w, String(p.viewId ?? activeViewId(w) ?? ""), Number(p.step) < 0 ? -1 : 1);
             return snapshot(w);
+          // A browser tab's bar: reload, and Add to library / In library on an article page.
+          case "web-page": {
+            const view = views.get(String(p.viewId ?? activeViewId(w) ?? ""));
+            if (view?.kind !== "web" || !view.view) throw Error("Not a browser tab");
+            if (p.op === "reload") view.view.webContents.reload();
+            else if (p.op === "add-article") await browserPages.addArticle(view);
+            else if (p.op === "open-article" && view.articleState?.sourceId) await openSourcePage(w, { workspaceId: w.workspaceId, sourceId: view.articleState.sourceId });
+            return snapshot(w);
+          }
           // A note's tab follows its title as it is edited.
           case "content-title": {
             const view = views.get(p.viewId);

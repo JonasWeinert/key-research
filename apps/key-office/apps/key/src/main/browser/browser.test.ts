@@ -4,7 +4,40 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TempPdfs, fileSha256 } from "./temp-pdfs";
-import { browserUserAgent, citationPdfUrl, hostLabel, looksLikePdf, navigable, pdfTitle, safeFileName, systemUrl, uniqueName, webUrl } from "./urls";
+import { pdfBehindViewer } from "./readers";
+import { bareDoiOf, cleanScan, doiOfResolverUrl } from "./scan";
+import { acceptLanguages, browserUserAgent,citationPdfUrl, hostLabel, looksLikePdf, navigable, pdfTitle, safeFileName, systemUrl, uniqueName, webUrl } from "./urls";
+
+describe("online readers and article pages", () => {
+  it("finds the PDF behind a viewer or publisher reader", () => {
+    expect(pdfBehindViewer("https://example.org/pdfjs/web/viewer.html?file=%2Ffiles%2Fa.pdf")).toBe("https://example.org/files/a.pdf");
+    expect(pdfBehindViewer("https://onlinelibrary.wiley.com/doi/epdf/10.1002/abc.123")).toBe("https://onlinelibrary.wiley.com/doi/pdfdirect/10.1002/abc.123?download=true");
+    expect(pdfBehindViewer("https://www.tandfonline.com/doi/epdf/10.1080/x.2020.1")).toBe("https://www.tandfonline.com/doi/pdf/10.1080/x.2020.1?download=true");
+    expect(pdfBehindViewer("https://journals.sagepub.com/doi/reader/10.1177/abc")).toBe("https://journals.sagepub.com/doi/pdf/10.1177/abc?download=true");
+    expect(pdfBehindViewer("https://reader.elsevier.com/reader/sd/pii/S0140673620301835?token=x")).toContain("/pii/S0140673620301835/pdfft");
+    expect(pdfBehindViewer("https://www.sciencedirect.com/science/article/pii/S0140673620301835/pdf")).toContain("/pdfft");
+    expect(pdfBehindViewer("https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=123")).toBe("https://ieeexplore.ieee.org/stampPDF/getPDF.jsp?tp=&arnumber=123");
+    expect(pdfBehindViewer("https://link.springer.com/epdf/10.1007/s1-2")).toBe("https://link.springer.com/content/pdf/10.1007/s1-2.pdf");
+    expect(pdfBehindViewer("https://docs.google.com/viewer?url=https://x.org/a.pdf")).toBe("https://x.org/a.pdf");
+    // Ordinary pages and the PDFs themselves are left alone.
+    expect(pdfBehindViewer("https://www.sciencedirect.com/science/article/pii/S0140673620301835")).toBeUndefined();
+    expect(pdfBehindViewer("https://onlinelibrary.wiley.com/doi/full/10.1002/abc.123")).toBeUndefined();
+    expect(pdfBehindViewer("https://example.org/viewer.html?file=javascript:alert(1)")).toBeUndefined();
+  });
+  it("reads DOIs from doi.org links and cleans a page scan", () => {
+    expect(doiOfResolverUrl("https://doi.org/10.1038/nature14539")).toBe("10.1038/nature14539");
+    expect(doiOfResolverUrl("https://dx.doi.org/10.1000%2Fabc")).toBe("10.1000/abc");
+    expect(doiOfResolverUrl("https://example.org/10.1/x")).toBeUndefined();
+    expect(bareDoiOf("doi:10.1234/abc.")).toBe("10.1234/abc");
+    expect(cleanScan({ article: { title: "T", doi: "https://doi.org/10.5555/x", authors: ["A", 3] } }).article).toMatchObject({ doi: "10.5555/x", title: "T", authors: ["A"] });
+    expect(cleanScan({}, "10.9999/y").article?.doi).toBe("10.9999/y");
+    expect(cleanScan({ challenge: "yes" }).challenge).toBe(false);
+  });
+  it("sends the system's languages the way Chrome does", () => {
+    expect(acceptLanguages(["en-GB", "de-DE"])).toBe("en-GB,en,de-DE,de");
+    expect(acceptLanguages([])).toBe("en-US,en");
+  });
+});
 
 describe("browser URLs", () => {
   it("opens only web pages in the browser, and mail links in the system", () => {
