@@ -22,6 +22,8 @@ const assert = require("node:assert/strict");
     page.setDefaultTimeout(20000);
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    // Page details start folded; the property's Configure button lives in them.
+    await page.evaluate(() => localStorage.setItem("key.page.details.open", "1"));
     await page.getByRole("button", { name: "Browse all sources", exact: true }).click();
     await page
       .getByRole("heading", { name: "All sources", exact: true })
@@ -120,7 +122,7 @@ const assert = require("node:assert/strict");
     // The modal dims and disables the tab bar, so switch through the shell API (as ⌘⇧] would).
     const home = before.tabs.find((t) => t.id !== owner);
     if (home) {
-      assert.equal(await page.locator(".tab-bar").evaluate((el) => el.inert), true);
+      assert.ok((await page.locator(".tab-bar").evaluateAll((els) => els.map((el) => el.inert))).every(Boolean), "every group's tab strip is inert");
       await page.evaluate((tabId) => window.key.tabAction("activate", { tabId }), home.id);
       await drawer.waitFor();
       assert.equal(
