@@ -17,13 +17,16 @@ mod chunk;
 mod layout;
 mod links;
 mod note;
-pub use chunk::{PageText, TextChar, chunk_pages};
+pub use chunk::{PageText, TextChar, chunk_pages, page_lines};
 pub use layout::{Layout, LayoutBlock, LayoutSentence, chunk_layout};
 pub use links::{note_links, parse_href};
 pub use note::chunk_note;
 
 use key_embed::{Embedder, ModelDir};
-use key_store::{ChunkInput, LinkedFile, Note, Source, Store};
+use key_store::{
+    ChunkInput, Evidence, EvidenceLine, EvidencePage, Identification, LinkedFile, Note, Source, Store, document_doi, plausible_title, push_title, tagged_values,
+    title_candidates,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
@@ -50,6 +53,23 @@ pub trait PdfText: Send + Sync + 'static {
     fn layout(&self, _path: &Path, _hash: &str, _model: bool) -> Result<Option<Layout>> {
         Ok(None)
     }
+    /// The document information and the text of the first pages and the last, for
+    /// identifying an added PDF. `None` when the host cannot read them.
+    fn document_info(&self, _path: &Path) -> Result<Option<DocumentInfo>> {
+        Ok(None)
+    }
+}
+
+/// What a PDF says about itself (see `PdfText::document_info`).
+#[derive(Clone, Debug, Default)]
+pub struct DocumentInfo {
+    /// The document information title.
+    pub title: Option<String>,
+    /// All document information values.
+    pub metadata: Vec<String>,
+    /// The first two pages and the last.
+    pub pages: Vec<PageText>,
+    pub page_count: usize,
 }
 
 /// Why a source jumps the queue, strongest first.
@@ -86,7 +106,7 @@ pub struct Job {
     pub id: String,
     pub title: String,
     pub kind: String,
-    /// opening | reading | chunking | embedding
+    /// opening | identifying | analysing | reading | chunking | embedding
     pub stage: String,
     /// Pages read, or passages embedded, so far.
     pub done: u64,
@@ -520,6 +540,11 @@ impl Indexer {
                 return Ok(None);
             }
             let hash = file_hash(&path)?;
+            // An added PDF that carries the DOI of a reference already in the library joins
+            // it; that reference is indexed next in its place.
+            if source.kind == "pdf" && self.identify(&source, &path, &hash, pdf, &job)? {
+                return Ok(None);
+            }
             let mut patch = serde_json::Map::new();
             if source.file_hash() != Some(hash.as_str()) {
                 patch.insert("fileHash".into(), serde_json::Value::from(hash.clone()));
@@ -533,6 +558,9 @@ impl Indexer {
                     Ok(layout) => analysed = layout,
                     Err(error) => eprintln!("Key layout analysis for {id} fell back to PDF text: {error}"),
                 }
+            }
+            if let Some(layout) = &analysed {
+                self.identify_by_heading(&source, &hash, layout)?;
             }
             let (body, page_count, engine, markdown) = match analysed {
                 Some(layout) => {
@@ -570,6 +598,90 @@ impl Indexer {
         }
         self.store.set_index_status(id, "indexing", None, 0, chunks.len() as i64)?;
         Ok(Some(Prepared { id: id.to_string(), title: source.title().to_string(), kind: source.kind.clone(), chunks, status }))
+    }
+
+    /// Identifies an added PDF once per file (see key_store::identify): a DOI it carries is
+    /// attached (which queues the metadata lookup), or the PDF joins a metadata-only source
+    /// with that DOI (answers true); without one, the titles to search for are kept and a
+    /// title lookup is queued when the source has little metadata of its own.
+    fn identify(&self, source: &Source, path: &Path, hash: &str, pdf: &dyn PdfText, job: &Job) -> Result<bool> {
+        let known = ["doi", "pmid", "openalexId"].iter().any(|f| source.field(f).is_some_and(|v| !v.trim().is_empty()));
+        let mut record = self.store.identification(&source.id)?.unwrap_or_default();
+        if known || record.hash.as_deref() == Some(hash) {
+            return Ok(false);
+        }
+        self.set_reading(Some(Job { stage: "identifying".into(), ..job.clone() }));
+        let info = match pdf.document_info(path) {
+            Ok(Some(info)) => info,
+            Ok(None) => return Ok(false),
+            Err(error) => {
+                eprintln!("Key identification of {}: {error}", source.id);
+                return Ok(false);
+            }
+        };
+        let pages: Vec<EvidencePage> = info
+            .pages
+            .iter()
+            .enumerate()
+            .map(|(order, page)| EvidencePage {
+                index: page.page.map_or(order, |p| p.max(0) as usize),
+                lines: page_lines(page).into_iter().map(|(text, size)| EvidenceLine { text, size }).collect(),
+            })
+            .collect();
+        let evidence = Evidence { tagged: tagged_values(&head_and_tail(path)), metadata: info.metadata, title: info.title, pages, page_count: info.page_count };
+        record.hash = Some(hash.to_string());
+        record.first_page = evidence.pages.iter().find(|p| p.index == 0).map(|p| p.text().chars().take(4000).collect());
+        match document_doi(&evidence) {
+            Some(found) => {
+                record.via = Some(found.via.to_string());
+                record.doi = Some(found.doi.clone());
+                record.alternates = found.alternates;
+                record.titles.clear();
+                self.store.set_identification(&source.id, &record)?;
+                if let Some(reference) = self.store.file_less_source_for(&source.id, None, Some(&found.doi))? {
+                    self.store.adopt_file(&reference, &source.id)?;
+                    return Ok(true);
+                }
+                let mut patch = serde_json::Map::new();
+                patch.insert("doi".into(), serde_json::Value::from(found.doi));
+                self.store.update_source(&source.id, &patch)?;
+            }
+            None => {
+                record.titles = title_candidates(&evidence, record.placeholder.as_deref());
+                self.store.set_identification(&source.id, &record)?;
+                if !record.titles.is_empty() && thin(source, &record) {
+                    self.store.queue_lookup(&source.id)?;
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// The first heading layout analysis found on the first page is the best title to
+    /// search for, when the PDF carried no DOI.
+    fn identify_by_heading(&self, source: &Source, hash: &str, layout: &Layout) -> Result<()> {
+        let Some(mut record) = self.store.identification(&source.id)? else { return Ok(()) };
+        if record.hash.as_deref() != Some(hash) || record.doi.is_some() || record.via.is_some() {
+            return Ok(());
+        }
+        let heading = layout
+            .blocks
+            .iter()
+            .take_while(|b| b.page == 0)
+            .filter(|b| b.kind == "heading")
+            .find_map(|b| plausible_title(&b.text, record.placeholder.as_deref()));
+        let Some(heading) = heading else { return Ok(()) };
+        let had = !record.titles.is_empty();
+        let mut titles = vec![heading];
+        for title in std::mem::take(&mut record.titles) {
+            push_title(&mut titles, title);
+        }
+        record.titles = titles;
+        self.store.set_identification(&source.id, &record)?;
+        if !had && thin(source, &record) {
+            self.store.queue_lookup(&source.id)?;
+        }
+        Ok(())
     }
 
     /// Stage two: embed the chunks and mark the source ready.
@@ -621,6 +733,35 @@ struct Prepared {
     kind: String,
     chunks: Vec<ChunkInput>,
     status: &'static str,
+}
+
+/// A source with little metadata of its own: its title still the file name, or no authors
+/// and no year. Only these are looked up by title.
+fn thin(source: &Source, record: &Identification) -> bool {
+    record.placeholder.as_deref().is_some_and(|p| p == source.title()) || (source.creators.is_empty() && source.fields.get("year").is_none_or(|y| y.is_null()))
+}
+
+/// The start and end of a file, where its XMP packet and document information sit.
+fn head_and_tail(path: &Path) -> Vec<u8> {
+    const WHOLE: u64 = 32 << 20;
+    const PART: usize = 4 << 20;
+    let Ok(mut file) = std::fs::File::open(path) else { return Vec::new() };
+    let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut bytes = Vec::new();
+    if size <= WHOLE {
+        let _ = file.read_to_end(&mut bytes);
+        return bytes;
+    }
+    use std::io::{Seek, SeekFrom};
+    let mut head = vec![0; PART];
+    let read = file.read(&mut head).unwrap_or(0);
+    head.truncate(read);
+    let mut tail = Vec::new();
+    if file.seek(SeekFrom::End(-(PART as i64))).is_ok() {
+        let _ = file.read_to_end(&mut tail);
+    }
+    head.extend(tail);
+    head
 }
 
 /// Title + abstract as one chunk, so metadata-only references are semantically searchable.
@@ -780,5 +921,84 @@ mod tests {
         assert_eq!(found.files[0].name, "field notes.md");
         let folders = store.linked_folders().unwrap();
         assert_eq!((folders[0].indexed_files, folders[0].pending_files), (1, 0));
+    }
+
+    /// A PDF whose first page and last page are given as text.
+    struct Paper(&'static str, &'static str);
+    impl PdfText for Paper {
+        fn pages(&self, _: &Path, _: &str, _: &dyn Fn(usize, usize)) -> Result<Vec<PageText>> {
+            Ok(vec![PageText { page: Some(0), ..PageText::plain(self.0.into()) }])
+        }
+        fn document_info(&self, _: &Path) -> Result<Option<DocumentInfo>> {
+            let page = |index: i64, text: &str| PageText { page: Some(index), ..PageText::plain(text.into()) };
+            Ok(Some(DocumentInfo { title: Some("Untitled".into()), metadata: vec![], pages: vec![page(0, self.0), page(5, self.1)], page_count: 6 }))
+        }
+    }
+
+    fn add_pdf(store: &Store, dir: &Path, name: &str) -> Source {
+        let path = dir.join(format!("{name}.pdf"));
+        std::fs::write(&path, format!("%PDF-1.7 {name}")).unwrap();
+        let input = serde_json::from_value(serde_json::json!({"kind": "pdf", "title": name, "filePath": path, "indexStatus": "pending"})).unwrap();
+        let source = store.insert_source(input).unwrap();
+        store.set_identification(&source.id, &Identification { placeholder: Some(name.into()), ..Default::default() }).unwrap();
+        source
+    }
+
+    #[test]
+    fn an_added_pdf_gets_the_doi_it_carries_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join(".key")).unwrap();
+        let indexer = idle(&store, dir.path());
+        let paper = Paper("Utility of a Deep-Learning Algorithm\nJAMA Cardiol. 2021;6(6):624-632. doi:10.1001/jamacardio.2021.0185", "References\n1. doi:10.1000/cited");
+        let source = add_pdf(&store, dir.path(), "PUBMED 33599681");
+        indexer.prepare(&source.id, &paper).unwrap();
+        let identified = store.source(&source.id).unwrap().unwrap();
+        assert_eq!(identified.field("doi"), Some("10.1001/jamacardio.2021.0185"));
+        assert_eq!(identified.field("enrichStatus"), Some("pending"), "the metadata lookup is queued");
+        assert_eq!(identified.field("identifiedBy"), Some("page"));
+        // Indexed again (the same file): not identified again, the user's DOI edit stands.
+        let mut patch = serde_json::Map::new();
+        patch.insert("doi".into(), serde_json::json!(""));
+        store.update_source(&source.id, &patch).unwrap();
+        indexer.prepare(&source.id, &paper).unwrap();
+        assert_eq!(store.source(&source.id).unwrap().unwrap().field("doi"), None);
+    }
+
+    #[test]
+    fn an_added_pdf_joins_the_reference_with_its_doi() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join(".key")).unwrap();
+        let indexer = idle(&store, dir.path());
+        let input = serde_json::from_value(serde_json::json!({"kind": "reference", "title": "Falls in memory care", "doi": "10.2196/17551"})).unwrap();
+        let reference = store.insert_source(input).unwrap();
+        let source = add_pdf(&store, dir.path(), "PUBMED 34137723");
+        let paper = Paper("Original Paper\nReduction of Time on the Ground", "Please cite as:\nBayen E\ndoi: 10.2196/17551\nPMID:");
+        assert!(indexer.prepare(&source.id, &paper).unwrap().is_none());
+        assert!(store.source(&source.id).unwrap().is_none());
+        let joined = store.source(&reference.id).unwrap().unwrap();
+        assert_eq!((joined.kind.as_str(), joined.index_status.as_str(), joined.title()), ("pdf", "pending", "Falls in memory care"));
+        assert!(joined.file_path().is_some_and(|p| p.ends_with("PUBMED 34137723.pdf")));
+    }
+
+    #[test]
+    fn a_pdf_without_a_doi_is_looked_up_by_its_title_only_when_its_metadata_is_thin() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join(".key")).unwrap();
+        let indexer = idle(&store, dir.path());
+        let paper = Paper("Synthetic Scientific Paper About Things\nPrior work established the first result", "References\n1. doi:10.1000/one\n2. doi:10.1000/two");
+        let source = add_pdf(&store, dir.path(), "scientific unlinked");
+        indexer.prepare(&source.id, &paper).unwrap();
+        let looked = store.source(&source.id).unwrap().unwrap();
+        assert_eq!(looked.field("doi"), None, "reference DOIs are not the document's");
+        assert_eq!(looked.field("enrichStatus"), Some("pending"));
+        assert_eq!(store.identification(&source.id).unwrap().unwrap().titles, vec!["Synthetic Scientific Paper About Things"]);
+        // Titled and authored by the user (or Zotero): no title search.
+        let other = add_pdf(&store, dir.path(), "zotero item");
+        let mut patch = serde_json::Map::new();
+        patch.insert("title".into(), serde_json::json!("A curated title"));
+        patch.insert("creators".into(), serde_json::json!([{"family": "Doe"}]));
+        store.update_source(&other.id, &patch).unwrap();
+        indexer.prepare(&other.id, &paper).unwrap();
+        assert_eq!(store.source(&other.id).unwrap().unwrap().field("enrichStatus"), None);
     }
 }

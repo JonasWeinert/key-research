@@ -4,6 +4,7 @@
 mod analysis;
 mod filters;
 mod graph;
+mod identify;
 mod linked;
 mod links;
 mod openalex;
@@ -14,6 +15,10 @@ pub use filters::{Filter, Suggestion};
 pub use graph::{
     CitingSource, Grant, Institution, Keyword, MergeSuggestion, NamedCount, Person, PersonPage, Publisher, SourceGraph, SourcePerson, SourceTopic, Topic,
     TopicPage, TopicRef, Venue, VenuePage, WorkReference, name_key,
+};
+pub use identify::{
+    ARXIV_DOI, DoiHit, Evidence, EvidenceLine, EvidencePage, FoundDoi, Identification, TitleCandidate, TitleContext, accept_title, arxiv_watermark, document_doi,
+    find_dois, normalize_doi, plausible_title, push_title, tagged_values, title_candidates, title_similarity,
 };
 pub use openalex::{EnrichJob, abstract_text};
 pub use properties::PropertyOption;
@@ -567,9 +572,11 @@ impl Store {
 
     pub fn source(&self, id: &str) -> Result<Option<Source>> {
         let db = self.read()?;
-        db.query_row(&format!("{} WHERE s.id = ?", select_sources()), [id], read_source)
-            .optional()
-            .map_err(e)
+        let mut source = db.query_row(&format!("{} WHERE s.id = ?", select_sources()), [id], read_source).optional().map_err(e)?;
+        if let Some(source) = source.as_mut() {
+            identify::decorate(&db, source)?;
+        }
+        Ok(source)
     }
 
     pub fn source_by_hash(&self, hash: &str) -> Result<Option<Source>> {

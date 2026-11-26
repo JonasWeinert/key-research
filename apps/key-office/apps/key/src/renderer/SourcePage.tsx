@@ -703,7 +703,9 @@ function ResearchRows({ source, graph, onEnrich }: { source: Source; graph?: Sou
   );
   const status = source.enrichStatus;
   const looking = status === "pending" || status === "requested";
-  const nice = (n: number) => [1000, 500, 100, 50, 10].find((step) => n >= step);
+  const identified = source.identifiedBy ? IDENTIFIED[source.identifiedBy] : undefined;
+  const provenance = identified && <span title={identified[1]}>{identified[0]}</span>;
+  const nice =(n: number) => [1000, 500, 100, 50, 10].find((step) => n >= step);
   return (
     <>
       {source.citedByCount != null &&
@@ -769,11 +771,13 @@ function ResearchRows({ source, graph, onEnrich }: { source: Source; graph?: Sou
               <a href={`https://openalex.org/${source.openalexId}`} target="_blank" rel="noreferrer">
                 {source.openalexId}
               </a>
+              {provenance}
               <span>looked up {fetchedAgo(source.enrichedAt)}</span>
               <button onClick={onEnrich}>Look up again</button>
             </>
           ) : (
             <>
+              {provenance}
               {status === "not_found" ? <span>Not found</span> : status === "failed" ? <span title={source.enrichError}>Lookup failed</span> : null}
               <button onClick={onEnrich}>{status ? "Try again" : "Look up"}</button>
             </>
@@ -783,6 +787,14 @@ function ResearchRows({ source, graph, onEnrich }: { source: Source; graph?: Sou
     </>
   );
 }
+
+/** How an added PDF was identified, and what that means. */
+const IDENTIFIED: Record<string, [string, string]> = {
+  metadata: ["Identified via DOI", "The DOI recorded in the PDF's metadata"],
+  page: ["Identified via DOI", "The DOI printed in the PDF"],
+  arxiv: ["Identified via arXiv", "The arXiv identifier printed in the PDF"],
+  title: ["Matched by title", "Found by the PDF's title, with its authors and year agreeing"],
+};
 
 /** "Article", "Book chapter" for OpenAlex's article, book-chapter … */
 function workTypeLabel(type: string) {

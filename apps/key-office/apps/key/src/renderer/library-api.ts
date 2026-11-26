@@ -53,6 +53,8 @@ export interface Source extends CitableSource {
   enrichStatus?: string;
   enrichError?: string;
   enrichedAt?: number;
+  /** How an added PDF was identified: metadata | page | arxiv (the DOI it carries) or title. */
+  identifiedBy?: string;
   venueId?: string;
   publisherId?: string;
 }

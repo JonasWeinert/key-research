@@ -8,7 +8,7 @@
 // S….json and works-batch.json), nothing goes to the network; tests and smokes use it.
 use super::{json_output, library_store::Library};
 use crate::ipc::{Output, arg};
-use key_store::{EnrichJob, Store, name_key};
+use key_store::{EnrichJob, Identification, Store, TitleCandidate, TitleContext, accept_title, title_similarity};
 use serde_json::{Value as Json, json};
 use std::{
     path::PathBuf,
@@ -207,7 +207,8 @@ fn fixture(dir: &std::path::Path, path: &str, query: &[(&str, &str)]) -> Result<
             let mut seen = std::collections::HashSet::new();
             records().into_iter().filter(|r| ids.contains(&short(r).as_str()) && seen.insert(short(r))).collect()
         } else if let Some(title) = filter.strip_prefix("title.search:") {
-            records().into_iter().filter(|r| r.get("display_name").and_then(Json::as_str).is_some_and(|t| name_key(t) == name_key(title))).take(1).collect()
+            // Like OpenAlex's search, loose: what to accept is the caller's decision.
+            records().into_iter().filter(|r| r.get("display_name").and_then(Json::as_str).is_some_and(|t| title_similarity(t, title) >= 0.6)).take(5).collect()
         } else {
             Vec::new()
         };
@@ -240,48 +241,100 @@ fn bare_doi(doi: &str) -> String {
     ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"].iter().find_map(|p| doi.strip_prefix(p).map(String::from)).unwrap_or(doi)
 }
 
-/// The work for a source: by OpenAlex id, DOI or PMID, else by an exact title match.
-fn find_work(job: &EnrichJob, options: &Options) -> Result<Json, Fail> {
+/// The work for a source: by OpenAlex id, DOI (as read from an added PDF, then its other
+/// readings) or PMID, else by title. A title search result is accepted only when it is
+/// clearly the same work (key_store::accept_title); the second value is that match's score.
+fn find_work(job: &EnrichJob, options: &Options, record: Option<&Identification>, surnames: &[String]) -> Result<(Json, Option<f64>), Fail> {
     let fields = [("select", WORK_FIELDS)];
-    let ids = [
-        job.openalex_id.as_deref().filter(|w| w.starts_with('W')).map(String::from),
-        job.doi.as_deref().map(bare_doi).filter(|d| d.starts_with("10.")).map(|d| format!("doi:{d}")),
-        job.pmid.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(|p| format!("pmid:{p}")),
-    ];
+    let doi = job.doi.as_deref().map(bare_doi).filter(|d| d.starts_with("10."));
+    let alternates = record.filter(|r| r.doi.is_some() && r.doi == doi).map(|r| r.alternates.clone()).unwrap_or_default();
+    let ids = [job.openalex_id.as_deref().filter(|w| w.starts_with('W')).map(String::from)]
+        .into_iter()
+        .chain(doi.into_iter().chain(alternates).map(|d| Some(format!("doi:{d}"))))
+        .chain([job.pmid.as_deref().map(str::trim).filter(|p| !p.is_empty()).map(|p| format!("pmid:{p}"))]);
     let mut last = Fail::NotFound;
-    for id in ids.into_iter().flatten() {
+    for id in ids.flatten() {
         match get(&format!("works/{id}"), &fields, options) {
             Err(Fail::NotFound) => continue,
             Err(fail) => last = fail,
-            found => return found,
+            Ok(found) => return Ok((found, None)),
         }
     }
     if !matches!(last, Fail::NotFound) {
         return Err(last);
     }
-    // No identifier worked: an exact title (and, when known, the year) is accepted.
-    let title = job.title.as_deref().map(str::trim).filter(|t| t.chars().count() >= 12).ok_or(Fail::NotFound)?;
-    let filter = format!("title.search:{}", title.replace([',', '|', ':'], " "));
-    let page = get("works", &[("filter", &filter), ("per-page", "5"), ("select", WORK_FIELDS)], options)?;
-    page["results"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|w| {
-            let same_title = w.get("display_name").and_then(Json::as_str).is_some_and(|t| name_key(t) == name_key(title));
-            let year = w.get("publication_year").and_then(Json::as_i64);
-            same_title && (job.year.is_none() || year.is_none() || job.year.zip(year).is_some_and(|(a, b)| (a - b).abs() <= 1))
-        })
-        .cloned()
-        .ok_or(Fail::NotFound)
+    // No identifier worked: the titles read from the PDF, else the source's own title.
+    let placeholder = record.and_then(|r| r.placeholder.as_deref());
+    let titles: Vec<String> = match record.map(|r| r.titles.clone()).unwrap_or_default() {
+        titles if !titles.is_empty() => titles,
+        _ => job.title.iter().map(|t| t.trim().to_string()).filter(|t| t.chars().count() >= 12 && Some(t.as_str()) != placeholder).collect(),
+    };
+    let context = TitleContext { year: job.year, surnames: surnames.to_vec(), page_text: record.and_then(|r| r.first_page.clone()) };
+    let mut best: Option<(f64, Json)> = None;
+    for title in titles.iter().take(3) {
+        let filter = format!("title.search:{}", title.replace([',', '|', ':'], " "));
+        let page = get("works", &[("filter", &filter), ("per-page", "8"), ("select", WORK_FIELDS)], options)?;
+        for work in page["results"].as_array().into_iter().flatten() {
+            let candidate = TitleCandidate {
+                title: work["display_name"].as_str().unwrap_or("").to_string(),
+                year: work["publication_year"].as_i64(),
+                surnames: work["authorships"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|a| a["author"]["display_name"].as_str())
+                    .filter_map(|name| name.split_whitespace().last().map(String::from))
+                    .collect(),
+            };
+            if let Some(score) = accept_title(title, &candidate, &context) {
+                if best.as_ref().is_none_or(|(b, _)| score > *b) {
+                    best = Some((score, work.clone()));
+                }
+            }
+        }
+        if best.is_some() {
+            break;
+        }
+    }
+    best.map(|(score, work)| (work, Some(score))).ok_or(Fail::NotFound)
 }
 
 /// Looks one source up and stores what OpenAlex knows, then the details of what it cites.
+/// An added PDF identified as a work the library holds without a file joins that source;
+/// its file-name title gives way to the work's.
 pub fn enrich(store: &Store, job: &EnrichJob, options: &Options) -> Result<(), Fail> {
-    let work = find_work(job, options)?;
-    store.apply_openalex_work(&job.id, &work).map_err(Fail::Error)?;
+    let record = store.identification(&job.id).map_err(Fail::Error)?;
+    let source = store.source(&job.id).map_err(Fail::Error)?;
+    let surnames: Vec<String> = source.iter().flat_map(|s| s.creators.iter()).filter_map(|c| c.family.clone().or_else(|| c.literal.clone())).collect();
+    let (work, score) = find_work(job, options, record.as_ref(), &surnames)?;
+    let work_id = work["id"].as_str().map(|w| w.rsplit('/').next().unwrap_or("").to_string());
+    let work_doi = work["doi"].as_str().map(bare_doi);
+    let mut id = job.id.clone();
+    if source.as_ref().is_some_and(|s| s.file_path().is_some()) {
+        if let Some(reference) = store.file_less_source_for(&job.id, work_id.as_deref(), work_doi.as_deref()).map_err(Fail::Error)? {
+            store.adopt_file(&reference, &job.id).map_err(Fail::Error)?;
+            id = reference;
+        }
+    }
+    store.apply_openalex_work(&id, &work).map_err(Fail::Error)?;
+    if let Some(mut record) = store.identification(&id).map_err(Fail::Error)? {
+        if let Some(score) = score {
+            record.via = Some("title".into());
+            record.score = Some(score);
+            record.doi = work_doi.clone();
+        } else if let (Some(read), Some(actual)) = (record.doi.clone(), work_doi.clone()) {
+            // Found through another reading of the printed DOI: OpenAlex's is the right one.
+            if read != actual && store.correct_doi(&id, &read, &actual).map_err(Fail::Error)? {
+                record.doi = Some(actual);
+            }
+        }
+        store.set_identification(&id, &record).map_err(Fail::Error)?;
+        if let Some(title) = work["display_name"].as_str().or(work["title"].as_str()) {
+            store.adopt_title(&id, title).map_err(Fail::Error)?;
+        }
+    }
     for _ in 0..4 {
-        let ids = store.cites_without_details(&job.id, 50).map_err(Fail::Error)?;
+        let ids = store.cites_without_details(&id, 50).map_err(Fail::Error)?;
         if ids.is_empty() {
             break;
         }
@@ -292,7 +345,7 @@ pub fn enrich(store: &Store, job: &EnrichJob, options: &Options) -> Result<(), F
             Err(_) => break,
         };
         let works = page["results"].as_array().cloned().unwrap_or_default();
-        store.apply_openalex_cited(&job.id, &works).map_err(Fail::Error)?;
+        store.apply_openalex_cited(&id, &works).map_err(Fail::Error)?;
         if works.is_empty() {
             break;
         }
@@ -498,4 +551,69 @@ fn refresh_later(store: Store, kind: String, id: String, path: String, query: Ve
         RUNNING.lock().unwrap_or_else(|e| e.into_inner()).retain(|k| *k != key);
     });
     spawned.is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use key_store::SourceInput;
+
+    fn input(value: Json) -> SourceInput {
+        serde_json::from_value(value).unwrap()
+    }
+
+    /// Title searches and the joining of a reference, from recorded responses.
+    #[test]
+    fn an_added_pdf_found_by_title_takes_the_works_metadata_and_joins_its_reference() {
+        let dir = tempfile::tempdir().unwrap();
+        let fixtures = dir.path().join("fixtures");
+        std::fs::create_dir_all(&fixtures).unwrap();
+        let title = "Reduction of Time on the Ground Related to Real-Time Video Detection of Falls in Memory Care Facilities: Observational Study";
+        let work = json!({
+            "id": "https://openalex.org/W1", "doi": "https://doi.org/10.5555/falls", "display_name": title, "publication_year": 2021,
+            "authorships": [{"author": {"display_name": "Eleonore Bayen"}}, {"author": {"display_name": "Shirley Nickels"}}]
+        });
+        let reply = json!({
+            "id": "https://openalex.org/W2", "display_name": format!("Reply: {title}"), "publication_year": 2021,
+            "authorships": [{"author": {"display_name": "A Critic"}}]
+        });
+        std::fs::write(fixtures.join("W1.json"), work.to_string()).unwrap();
+        std::fs::write(fixtures.join("W2.json"), reply.to_string()).unwrap();
+        // SAFETY: the only test in this binary that reads the fixtures setting.
+        unsafe { std::env::set_var("KEY_OPENALEX_FIXTURES", &fixtures) };
+        let store = Store::open(dir.path().join("library")).unwrap();
+        let options = Options { auto: true, mailto: DEFAULT_MAILTO.into(), api_key: None };
+        let reference = store.insert_source(input(json!({"kind": "reference", "title": "Falls paper (to read)", "doi": "10.5555/falls"}))).unwrap();
+        let added = store.insert_source(input(json!({"kind": "pdf", "title": "Downloaded paper", "filePath": "/tmp/x.pdf", "fileHash": "h1"}))).unwrap();
+        let record = Identification {
+            placeholder: Some("Downloaded paper".into()),
+            titles: vec!["Reduction of time on the ground related to real-time video detection of falls in memory care facilities".into()],
+            first_page: Some("Original Paper\nReduction of Time on the Ground\nEleonore Bayen1,2, MD, PhD; Shirley Nickels3".into()),
+            ..Default::default()
+        };
+        store.set_identification(&added.id, &record).unwrap();
+        store.queue_lookup(&added.id).unwrap();
+        let job = store.next_enrichment(true, &[reference.id.clone()]).unwrap().unwrap();
+        let job = if job.id == added.id { job } else { EnrichJob { id: added.id.clone(), title: Some("Downloaded paper".into()), ..Default::default() } };
+        enrich(&store, &job, &options).unwrap();
+        assert!(store.source(&added.id).unwrap().is_none(), "joined the reference");
+        let joined = store.source(&reference.id).unwrap().unwrap();
+        assert_eq!((joined.field("openalexId"), joined.file_hash(), joined.title()), (Some("W1"), Some("h1"), "Falls paper (to read)"));
+        assert_eq!(joined.field("identifiedBy"), Some("title"));
+
+        // Another file of the same work with no reference to join: the work's title replaces
+        // the file name. A title nothing was written like finds nothing.
+        let second = store.insert_source(input(json!({"kind": "pdf", "title": "PUBMED 34137723", "filePath": "/tmp/y.pdf", "fileHash": "h2"}))).unwrap();
+        let record = Identification { placeholder: Some("PUBMED 34137723".into()), titles: vec![title.into()], ..Default::default() };
+        store.set_identification(&second.id, &record).unwrap();
+        enrich(&store, &EnrichJob { id: second.id.clone(), title: Some("PUBMED 34137723".into()), ..Default::default() }, &options).unwrap();
+        let named = store.source(&second.id).unwrap().unwrap();
+        assert_eq!(named.title(), title);
+        assert_eq!(named.creators.len(), 2);
+        let third = store.insert_source(input(json!({"kind": "pdf", "title": "notes", "filePath": "/tmp/z.pdf"}))).unwrap();
+        let record = Identification { titles: vec!["Falls in nursing homes and what to do about them".into()], ..Default::default() };
+        store.set_identification(&third.id, &record).unwrap();
+        assert!(matches!(enrich(&store, &EnrichJob { id: third.id.clone(), ..Default::default() }, &options), Err(Fail::NotFound)));
+        unsafe { std::env::remove_var("KEY_OPENALEX_FIXTURES") };
+    }
 }
