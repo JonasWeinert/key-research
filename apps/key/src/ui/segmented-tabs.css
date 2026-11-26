@@ -75,8 +75,8 @@
 }
 .key-segmented-pill[data-animate] {
   transition:
-    transform 260ms cubic-bezier(0.3, 1.2, 0.5, 1),
-    width 260ms cubic-bezier(0.3, 1.2, 0.5, 1);
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .key-segmented-track > [role="tab"] {
   position: relative;
