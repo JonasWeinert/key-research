@@ -1,0 +1,22 @@
+Citations:
+(Narang et al., 2021)
+(Kahneman, 2011, p. 12)
+(2022)
+(Narang et al., 2021, p. 626)
+(Doe, 2020a; 2020b)
+(A. Smith, 2019; B. Smith, 2019)
+(see Vaswani et al., 2017 for a review)
+
+Bibliography:
+Doe, J. (2020b). Attention across scripts. Cognition, 205, 1–15.
+Doe, J. (2020a). Measuring attention in reading. Cognition, 201, 104–118.
+He, K., & Zhang, X. (2016). Deep residual learning for image recognition. Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 770–778.
+Intergovernmental Panel on Climate Change. (2021). Climate change 2021: The physical science basis. Cambridge University Press. https://doi.org/10.1017/9781009157896
+Kahneman, D. (2011). Thinking, fast and slow. Farrar, Straus and Giroux.
+Lee, M.-jun. (2018). Neural correlates of reading fluency [PhD thesis]. University of Toronto.
+Narang, A., Bae, R., Hong, H., Thomas, Y., & Surette, S. (2021). Utility of a deep-learning algorithm to guide novices to acquire echocardiograms for limited diagnostic use. JAMA Cardiology, 6(6), 624–632. https://doi.org/10.1001/jamacardio.2021.0185
+Palma, M. A., & Huseynov, S. (2022). Consumer willingness to pay for food safety. In J. L. Lusk (Ed.), The Oxford handbook of food economics (2nd ed., pp. 112–130). Oxford University Press.
+Smith, A. (2019). Soil carbon under grazing. Geoderma, 340, 50–60.
+Smith, B. (2019). Grazing and nitrogen. Geoderma, 341, 10–20.
+Vaswani, A., Shazeer, N., & Parmar, N. (2017). Attention is all you need (Preprint ArXiv:1706.03762). arXiv. https://arxiv.org/abs/1706.03762
+World Health Organization. (2023, December 4). Malaria fact sheet. WHO. https://www.who.int/news-room/fact-sheets/detail/malaria

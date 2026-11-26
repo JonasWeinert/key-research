@@ -3,6 +3,7 @@ members = [
     "crates/key-processing",
     "crates/key-library",
     "crates/key-store",
+    "crates/key-cite",
     "crates/key-embed",
     "crates/key-index",
     "crates/key-zotero",

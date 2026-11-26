@@ -1,0 +1,96 @@
+[
+  {
+    "id": "narang2021", "kind": "pdf", "itemType": "article",
+    "title": "Utility of a deep-learning algorithm to guide novices to acquire echocardiograms for limited diagnostic use",
+    "creators": [
+      { "family": "Narang", "given": "Akhil", "role": "author" },
+      { "family": "Bae", "given": "Richard", "role": "author" },
+      { "family": "Hong", "given": "Ha", "role": "author" },
+      { "family": "Thomas", "given": "Yngvil", "role": "author" },
+      { "family": "Surette", "given": "Samuel", "role": "author" }
+    ],
+    "year": 2021, "date": "2021-02-01", "containerTitle": "JAMA Cardiology", "containerShort": "JAMA Cardiol",
+    "volume": "6", "issue": "6", "pages": "624-632", "doi": "https://doi.org/10.1001/jamacardio.2021.0185", "issn": "2380-6583",
+    "pmid": "33599681", "language": "en"
+  },
+  {
+    "id": "kahneman2011", "kind": "reference", "itemType": "book",
+    "title": "Thinking, fast and slow",
+    "creators": [{ "family": "Kahneman", "given": "Daniel", "role": "author" }],
+    "year": 2011, "publisher": "Farrar, Straus and Giroux", "place": "New York", "isbn": "9780374275631"
+  },
+  {
+    "id": "palma2022", "kind": "pdf", "itemType": "chapter",
+    "title": "Consumer willingness to pay for food safety",
+    "creators": [
+      { "family": "Palma", "given": "Marco A.", "role": "author" },
+      { "family": "Huseynov", "given": "Samir", "role": "author" },
+      { "family": "Lusk", "given": "Jayson L.", "role": "editor" }
+    ],
+    "year": 2022, "containerTitle": "The Oxford handbook of food economics", "pages": "112-130",
+    "publisher": "Oxford University Press", "place": "Oxford", "edition": "2"
+  },
+  {
+    "id": "doe2020a", "kind": "pdf", "itemType": "article",
+    "title": "Measuring attention in reading",
+    "creators": [{ "family": "Doe", "given": "Jane", "role": "author" }],
+    "year": 2020, "containerTitle": "Cognition", "volume": "201", "pages": "104-118"
+  },
+  {
+    "id": "doe2020b", "kind": "pdf", "itemType": "article",
+    "title": "Attention across scripts",
+    "creators": [{ "family": "Doe", "given": "Jane", "role": "author" }],
+    "year": 2020, "containerTitle": "Cognition", "volume": "205", "pages": "1-15"
+  },
+  {
+    "id": "smitha2019", "kind": "pdf", "itemType": "article",
+    "title": "Soil carbon under grazing",
+    "creators": [{ "family": "Smith", "given": "Anna", "role": "author" }],
+    "year": 2019, "containerTitle": "Geoderma", "volume": "340", "pages": "50-60"
+  },
+  {
+    "id": "smithb2019", "kind": "pdf", "itemType": "article",
+    "title": "Grazing and nitrogen",
+    "creators": [{ "family": "Smith", "given": "Bob", "role": "author" }],
+    "year": 2019, "containerTitle": "Geoderma", "volume": "341", "pages": "10-20"
+  },
+  {
+    "id": "who2023", "kind": "web", "itemType": "webpage",
+    "title": "Malaria fact sheet",
+    "creators": [{ "literal": "World Health Organization", "role": "author" }],
+    "date": "2023-12-04", "url": "https://www.who.int/news-room/fact-sheets/detail/malaria", "accessed": "2024-01-15",
+    "containerTitle": "WHO"
+  },
+  {
+    "id": "lee2018", "kind": "pdf", "itemType": "thesis",
+    "title": "Neural correlates of reading fluency",
+    "creators": [{ "family": "Lee", "given": "Min-jun", "role": "author" }],
+    "year": 2018, "institution": "University of Toronto", "genre": "PhD thesis"
+  },
+  {
+    "id": "vaswani2017", "kind": "pdf", "itemType": "preprint",
+    "title": "Attention is all you need",
+    "creators": [
+      { "family": "Vaswani", "given": "Ashish", "role": "author" },
+      { "family": "Shazeer", "given": "Noam", "role": "author" },
+      { "family": "Parmar", "given": "Niki", "role": "author" }
+    ],
+    "year": 2017, "arxivId": "1706.03762"
+  },
+  {
+    "id": "ipcc2021", "kind": "pdf", "itemType": "report",
+    "title": "Climate change 2021: The physical science basis",
+    "creators": [{ "literal": "Intergovernmental Panel on Climate Change", "role": "author" }],
+    "year": 2021, "publisher": "Cambridge University Press", "place": "Cambridge", "doi": "10.1017/9781009157896"
+  },
+  {
+    "id": "he2016", "kind": "pdf", "itemType": "conference-paper",
+    "title": "Deep residual learning for image recognition",
+    "creators": [
+      { "family": "He", "given": "Kaiming", "role": "author" },
+      { "family": "Zhang", "given": "Xiangyu", "role": "author" }
+    ],
+    "year": 2016, "containerTitle": "Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition",
+    "pages": "770-778", "publisher": "IEEE", "place": "Las Vegas, NV"
+  }
+]

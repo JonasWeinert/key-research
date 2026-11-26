@@ -1,0 +1,19 @@
+key-cite bundles data from the Citation Style Language project. These files are not
+covered by Key's MIT licence; they keep their own licence and are shipped unmodified.
+
+styles/*.csl
+  From https://github.com/citation-style-language/styles
+  Licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported licence
+  (https://creativecommons.org/licenses/by-sa/3.0/). Each file names its authors and
+  contributors in its <info> block.
+
+locales/locales-*.xml
+  From https://github.com/citation-style-language/locales
+  Licensed under the Creative Commons Attribution-ShareAlike 3.0 Unported licence
+  (https://creativecommons.org/licenses/by-sa/3.0/). Each file names its translators in
+  its <info> block.
+
+Citations are rendered with hayagriva (https://github.com/typst/hayagriva) and
+citationberg (https://github.com/typst/citationberg), both MIT OR Apache-2.0. A copy of
+hayagriva 0.10.1 with one fix lives in vendor/hayagriva (its LICENSE-MIT,
+LICENSE-APACHE and NOTICE files are kept there).

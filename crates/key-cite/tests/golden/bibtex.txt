@@ -1,0 +1,22 @@
+Citations:
+Narang_Bae_Hong_Thomas_Surette_2021
+Kahneman_2011
+_2022
+Narang_Bae_Hong_Thomas_Surette_2021
+Doe_2020a_2020b
+Smith_2019a_Smith_2019b
+see Vaswani_Shazeer_Parmar_2017 for a review
+
+Bibliography:
+@article{Doe_2020a, title={Measuring attention in reading}, volume={201}, journal={Cognition}, author={Doe, Jane}, year={2020}, pages={104–118} }
+@article{Doe_2020b, title={Attention across scripts}, volume={205}, journal={Cognition}, author={Doe, Jane}, year={2020}, pages={1–15} }
+@inproceedings{He_Zhang_2016, address={Las Vegas, NV}, title={Deep residual learning for image recognition}, booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition}, publisher={IEEE}, author={He, Kaiming and Zhang, Xiangyu}, year={2016}, pages={770–778} }
+@book{Intergovernmental Panel on Climate Change_2021, address={Cambridge}, title={Climate change 2021: The physical science basis}, DOI={10.1017/9781009157896}, institution={Cambridge University Press}, author={Intergovernmental Panel on Climate Change}, year={2021}, }
+@book{Kahneman_2011, address={New York}, title={Thinking, fast and slow}, ISBN={9780374275631}, publisher={Farrar, Straus and Giroux}, author={Kahneman, Daniel}, year={2011}, }
+@phdthesis{Lee_2018, type={PhD thesis}, title={Neural correlates of reading fluency}, school={University of Toronto}, author={Lee, Min-jun}, year={2018}, }
+@article{Narang_Bae_Hong_Thomas_Surette_2021, title={Utility of a deep-learning algorithm to guide novices to acquire echocardiograms for limited diagnostic use}, volume={6}, ISSN={2380-6583}, DOI={10.1001/jamacardio.2021.0185}, number={6}, journal={JAMA Cardiology}, author={Narang, Akhil and Bae, Richard and Hong, Ha and Thomas, Yngvil and Surette, Samuel}, year={2021}, month=feb, pages={624–632}, language={en} }
+@inbook{Palma_Huseynov_2022, address={Oxford}, edition={2}, title={Consumer willingness to pay for food safety}, booktitle={The Oxford handbook of food economics}, publisher={Oxford University Press}, author={Palma, Marco A. and Huseynov, Samir}, editor={Lusk, Jayson L.}, year={2022}, pages={112–130} }
+@article{Smith_2019a, title={Soil carbon under grazing}, volume={340}, journal={Geoderma}, author={Smith, Anna}, year={2019}, pages={50–60} }
+@article{Smith_2019b, title={Grazing and nitrogen}, volume={341}, journal={Geoderma}, author={Smith, Bob}, year={2019}, pages={10–20} }
+@article{Vaswani_Shazeer_Parmar_2017, type={Preprint}, title={Attention is all you need}, url={https://arxiv.org/abs/1706.03762}, number={arXiv:1706.03762}, publisher={arXiv}, author={Vaswani, Ashish and Shazeer, Noam and Parmar, Niki}, year={2017}, }
+@misc{World Health Organization_2023, title={Malaria fact sheet}, url={https://www.who.int/news-room/fact-sheets/detail/malaria}, journal={WHO}, author={World Health Organization}, year={2023}, month=dec }
