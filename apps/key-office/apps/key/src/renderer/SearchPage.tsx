@@ -6,25 +6,24 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EMPTY_FIND, FIND_KINDS, KIND_LABEL, kindOf, onPendingFind, sidebarFilter, takePendingFind, useFind, type FindKind, type FindResult, type FindState } from "./global-search";
 import { Icon } from "./icons";
 import { openItemAt } from "./item-actions";
-import { itemAttrs } from "./item-ui";
 import { bridge, type Invoke } from "./library-api";
 import SearchField from "./search-suggest";
-import { SectionHeader, Snippet, foundIcon, useCollapsedGroups } from "./search-sections";
+import { FoundHit, byItem, type ItemGroup } from "./search-results";
+import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { claimSidebar } from "./sidebar-intent";
 import { GROUPS, GROUP_LABEL, type Found } from "./unified-search";
 import "./reference-library.css";
 import "./search-page.css";
 
-const ONE: Record<FindKind, string> = { source: "Source", note: "Note", record: "Page", canvas: "Canvas", highlight: "Highlight" };
-
-/** All · Sources · Notes …, each with its count; a click shows only that kind (⌘-click adds it). */
-export function KindChips({ result, kinds, onKinds }: { result: FindResult; kinds: FindKind[]; onKinds: (kinds: FindKind[]) => void }) {
+/** All · Sources · Notes …, each with its count; a click shows only that kind (⌘-click adds it).
+ *  `only` limits the chips to some kinds (the note's library panel). */
+export function KindChips({ result, kinds, onKinds, only = FIND_KINDS }: { result: FindResult; kinds: FindKind[]; onKinds: (kinds: FindKind[]) => void; only?: FindKind[] }) {
   return (
     <div className="kx-kind-chips" role="group" aria-label="Show">
       <button type="button" aria-pressed={!kinds.length} onMouseDown={(e) => e.preventDefault()} onClick={() => onKinds([])}>
         All <span className="kx-count">{result.all}</span>
       </button>
-      {FIND_KINDS.map((kind) => (
+      {only.map((kind) => (
         <button
           key={kind}
           type="button"
@@ -53,25 +52,6 @@ export function KindChips({ result, kinds, onKinds }: { result: FindResult; kind
 
 type GroupBy = "section" | "kind";
 const GROUP_BY = "key.search.groupBy";
-
-/** The results of one item in one section: the item, and each place it matched. */
-interface ItemGroup {
-  key: string;
-  item: Found;
-  matches: Found[];
-}
-/** Results by item, like the library's search: a source once, its passages beneath it. */
-function byItem(entries: Found[]): ItemGroup[] {
-  const groups = new Map<string, ItemGroup>();
-  for (const entry of entries) {
-    // A highlight is an item of its own; a page of a document belongs to the document.
-    const key = entry.anchor?.startsWith("highlight:") ? `${entry.kind}:${entry.id}:${entry.anchor}` : `${entry.kind}:${entry.id}`;
-    const group = groups.get(key) ?? { key, item: { ...entry, anchor: entry.anchor?.startsWith("highlight:") ? entry.anchor : undefined, snippet: undefined, where: undefined }, matches: [] };
-    if (entry.snippet || entry.where) group.matches.push(entry);
-    groups.set(key, group);
-  }
-  return [...groups.values()];
-}
 
 export default function SearchPage({ invoke, workspaceId, active, viewId }: { invoke: Invoke; workspaceId: string; active: boolean; viewId?: string }) {
   const [state, setState] = useState<FindState>(() => takePendingFind(workspaceId) ?? EMPTY_FIND);
@@ -229,45 +209,16 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
               {section.header}
               {section.items.map((group) => {
                 const index = visible.indexOf(group);
-                const { item } = group;
-                const kind = kindOf(item);
                 return (
-                  <article
+                  <FoundHit
                     key={group.key}
-                    role="option"
-                    aria-selected={index === current}
-                    data-index={index}
-                    className="kx-hit kx-found-hit"
-                    {...itemAttrs(item)}
-                    onMouseMove={() => index !== current && setCurrent(index)}
-                  >
-                    <span className="kx-row-kind" data-kind={item.sourceKind ?? kind}>
-                      <Icon name={foundIcon(item)} size={15} data-color={item.color} />
-                    </span>
-                    <div className="kx-hit-body">
-                      <button type="button" className="kx-found-open" title="Open beside the search (⌘-click: in a new tab)" onClick={(e) => openMatch(item, e.metaKey)}>
-                        <strong className="kx-hit-title">{item.title}</strong>
-                        <span className="kx-found-kind">{ONE[kind]}</span>
-                      </button>
-                      {item.byline && <span className="kx-hit-meta">{item.byline}</span>}
-                      {group.matches.length > 0 && (
-                        <ul className="kx-hit-matches">
-                          {group.matches.map((match, i) => (
-                            <li key={`${match.anchor ?? ""}:${match.passageId ?? i}`}>
-                              <button type="button" className="kx-passage" data-related={match.group === "meaning"} onClick={(e) => openMatch(match, e.metaKey)}>
-                                {match.where && <span className="kx-match-where">{match.where}</span>}
-                                {match.snippet && (
-                                  <span className="kx-match-text">
-                                    <Snippet text={match.snippet} />
-                                  </span>
-                                )}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </article>
+                    group={group}
+                    index={index}
+                    selected={index === current}
+                    onActive={setCurrent}
+                    titleHint="Open beside the search (⌘-click: in a new tab)"
+                    onPick={(entry, e) => openMatch(entry, e.metaKey)}
+                  />
                 );
               })}
             </section>

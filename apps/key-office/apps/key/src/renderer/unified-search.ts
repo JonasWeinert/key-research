@@ -28,6 +28,8 @@ export interface Found extends DraggedItem {
   /** A matching passage of a document: its id (to open the reader there) and the document. */
   passageId?: string;
   documentHash?: string;
+  /** The whole passage the snippet is cut from, for quoting it. */
+  passageText?: string;
 }
 
 export interface Found3 {
@@ -132,6 +134,7 @@ export async function searchText(invoke: Invoke, workspaceId: string, query: str
         into.push({
           ...base,
           passageId: passage.id,
+          passageText: passage.text,
           anchor: passage.page != null ? `page:${passage.page}` : undefined,
           group: into === text ? "text" : "meaning",
           where: passage.page != null ? `p. ${passage.page + 1}` : undefined,
