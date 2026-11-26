@@ -1,5 +1,4 @@
 import { describe, it, expect, vi } from 'vitest'
-vi.mock('@key/ai-search', () => ({ gskApiKey: () => '' }))
 import { AgentFill, validateFillValue } from './agent-fill'
 describe('agent property proposals', () => {
   it('validates typed provider output instead of coercing invented values', () => {

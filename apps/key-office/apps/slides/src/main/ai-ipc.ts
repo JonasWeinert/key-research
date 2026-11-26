@@ -25,27 +25,18 @@ import {
   activeProvider,
   maxOutputTokensOf,
   resolveAiSettings,
+  providerConfigured,
   setAiUserAgent,
   setRescueFetch,
   streamForProvider,
   type AiSettings,
   type AiStreamChunk,
   type AiStreamRequest,
-  type GenSparkAccountStatus,
   type LegacyAiSettings,
 } from '@key/ai-provider'
 import { shutdownCodexAppServers } from '@key/ai-provider/codex-app-server'
 import { fetchRemoteImage } from '@key/electron-utils'
-import {
-  webSearchTool,
-  imageSearchTool,
-  ensureGenofficeLogin,
-  gskApiKey,
-  generateImageTool,
-  analyzeMediaTool,
-  gskLoginInfo,
-  hasGskAuth,
-} from '@key/ai-search'
+import { webSearchTool, imageSearchTool, generateImageTool, analyzeMediaTool } from '@key/ai-search'
 import { addPicture, editPictureSrcRect, replacePictureBytes } from '@key/pptx-engine'
 import { matchesElementRef } from '@key/pptx-engine/identity'
 import { coverCropFractions } from '../shared/cover-crop'
@@ -110,24 +101,10 @@ export function registerAiIpc(): void {
   ipcMain.handle('ai:get-settings', (): AiSettings => {
     const stored = readJson<Partial<AiSettings> & LegacyAiSettings>(AI_SETTINGS_PATH(), {})
     const settings = resolveAiSettings(stored, defaultAiSettings())
-    // a stored BYOK provider is honored when usable; half-filled configs fall back to genspark
+    // a stored provider is honored when usable; anything else resolves to the
+    // (unconfigured) custom slot, which requests report as "no AI provider"
     settings.provider = activeProvider(settings)
     return settings
-  })
-
-  // Genspark account (gsk login state): the auth source for AI features; when logged out the frontend uses this to guide login
-  ipcMain.handle(
-    'ai:gsk-status',
-    async (_event, withEmail?: boolean): Promise<GenSparkAccountStatus> => {
-      if (!hasGskAuth()) return { loggedIn: false }
-      if (!withEmail) return { loggedIn: true }
-      const info = await gskLoginInfo()
-      return info?.email ? { loggedIn: true, email: info.email } : { loggedIn: true }
-    },
-  )
-
-  ipcMain.handle('ai:gsk-login', () => {
-    ensureGenofficeLogin((url) => void shell.openExternal(url))
   })
 
   ipcMain.handle('ai:set-settings', (_event, settings: AiSettings) => {
@@ -143,20 +120,16 @@ export function registerAiIpc(): void {
     const tools = request.tools ?? []
     const maxTokens = request.maxTokens ?? maxOutputTokensOf(settings)
     const provider = settings.provider
-    let config = settings.providers?.[provider]
-    // The genspark key never enters the settings file; it is fetched from the gsk login state per request
-    if (provider === 'genspark' && config && !config.apiKey) {
-      config = { ...config, apiKey: gskApiKey() }
-    }
+    const config = settings.providers?.[provider]
     const send = (chunk: AiStreamChunk) => {
       if (!event.sender.isDestroyed()) event.sender.send('ai:stream-chunk', chunk)
     }
-    if (!config || (provider !== 'codex' && !config.apiKey)) {
-      send({
-        requestId,
-        type: 'error',
-        error: provider === 'genspark' ? tm('errGskNotLoggedIn') : tm('errNoApiKey', { provider }),
-      })
+    if (!config || (provider === 'custom' && !providerConfigured(provider, config))) {
+      send({ requestId, type: 'error', error: tm('errAiNotConfigured') })
+      return
+    }
+    if (provider !== 'codex' && provider !== 'custom' && !config.apiKey) {
+      send({ requestId, type: 'error', error: tm('errNoApiKey', { provider }) })
       return
     }
     if (provider !== 'codex' && !config.model) {
@@ -253,7 +226,7 @@ export function registerAiIpc(): void {
 // never called; docs does not have these channels, so putting them in the wrong place raises
 // "No handler registered".
 export function registerSlidesOnlyAiIpc(): void {
-  // gsk (Genspark CLI) capabilities: AI image generation / media analysis. Returns an error prompt when not logged in.
+  // AI image generation / media analysis through the configured media provider; an error when none is set up.
   ipcMain.handle(
     'ai:generate-image',
     async (
@@ -277,7 +250,7 @@ export function registerSlidesOnlyAiIpc(): void {
           aspectRatio: op.aspectRatio ? String(op.aspectRatio) : undefined,
           imageSize: op.imageSize ? String(op.imageSize) : undefined,
         },
-        { notLoggedInError: tm('errGskCli') },
+        { notConfiguredError: tm('errMediaNotConfigured') },
       )
     },
   )
@@ -291,7 +264,7 @@ export function registerSlidesOnlyAiIpc(): void {
           mediaUrls: (op.mediaUrls ?? []).map(String),
           requirements: String(op.requirements ?? ''),
         },
-        { notLoggedInError: tm('errGskCli') },
+        { notConfiguredError: tm('errMediaNotConfigured') },
       )
     },
   )
