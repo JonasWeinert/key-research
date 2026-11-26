@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { libraryChanged } from "./library-nav";
-import { bridge, type Collection, type Invoke, type Source, type WorkspaceSummary } from "./library-api";
+import { bridge, type Collection, type Invoke, type Source } from "./library-api";
 import { EXPORT_FORMATS, openBibExport, type AutoExportTarget } from "./BiblioSheets";
 import { Group, Row } from "./Settings";
 import "./biblio.css";
@@ -101,9 +101,9 @@ const ago = (at?: number | null) => {
   return new Date(at).toLocaleDateString();
 };
 
-/** Settings › Citation keys & export. */
-export function CitationKeySettings({ invoke, workspaces }: { invoke: Invoke; workspaces: WorkspaceSummary[] }) {
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id);
+/** Workspace Settings › Citations & export. */
+/** For one workspace (Workspace Settings keys it by workspace, so state starts fresh). */
+export function CitationKeySettings({ invoke, workspaceId }: { invoke: Invoke; workspaceId?: string }) {
   const [pattern, setPattern] = useState("");
   const [saved, setSaved] = useState("");
   const [fallback, setFallback] = useState("auth.lower + year");
@@ -141,19 +141,6 @@ export function CitationKeySettings({ invoke, workspaces }: { invoke: Invoke; wo
   const names = new Map(collections.map((c) => [c.id, c.name]));
   return (
     <>
-      {workspaces.length > 1 && (
-        <Group>
-          <Row label="Library">
-            <select className="kx-settings-select" value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="Library">
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </Row>
-        </Group>
-      )}
       <Group
         title="Citation keys"
         footer={

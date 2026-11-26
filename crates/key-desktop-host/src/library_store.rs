@@ -97,6 +97,7 @@ impl Library {
         indexer.set_layout_model(std::env::var("KEY_LAYOUT_MODEL_ENABLED").map_or(true, |v| v != "0"));
         let references = super::reference_worker::ReferenceWorker::start(store.clone(), native, cache);
         let openalex = super::openalex::OpenAlex::start(store.clone());
+        openalex.set_own_auto(super::workspace_settings::own(&store).lookups);
         // Older PDFs are looked up only while indexing is idle, and not while it is paused.
         let gate = indexer.clone();
         openalex.set_backfill_gate(move || !gate.is_paused() && !gate.is_busy());
@@ -544,7 +545,8 @@ impl Library {
                     .or_else(|| super::cite_commands::dispatch(self, command, args))
                     .or_else(|| super::cite_check::dispatch(self, command, args))
                     .or_else(|| super::biblio_commands::dispatch(self, command, args, root))
-                    .or_else(|| super::export_commands::dispatch(self, command, args, root));
+                    .or_else(|| super::export_commands::dispatch(self, command, args, root))
+                    .or_else(|| super::workspace_settings::dispatch(self, command, args));
             }
         };
         Some(result)

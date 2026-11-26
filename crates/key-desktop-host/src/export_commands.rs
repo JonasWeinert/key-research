@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 const POLL: Duration = Duration::from_millis(2000);
 const SETTLE: Duration = Duration::from_millis(1500);
 
-fn cite(source: &key_store::Source) -> Option<String> {
-    super::cite_commands::reference_markdown(source)
+fn cite(store: &Store) -> impl Fn(&key_store::Source) -> Option<String> + '_ {
+    move |source| super::cite_commands::reference_markdown(store, source)
 }
 
 fn status(store: &Store) -> Result<Json, String> {
@@ -69,18 +69,18 @@ pub fn dispatch(library: &Library, command: &str, args: &Json, root: &Path) -> O
         "store_md_export_preview" => (|| {
             let config = arg::<Option<Config>>(args, "config")?.map_or_else(|| md_export::config(store), Ok)?;
             let id: Option<String> = arg(args, "sourceId")?;
-            json_output(md_export::preview(store, &config, id.as_deref(), &cite)?)
+            json_output(md_export::preview(store, &config, id.as_deref(), &cite(store))?)
         })(),
         // To the folder: { ids?, collectionId?, force?, notes?, changedOnly? } -> summary.
         "store_md_export_run" => (|| {
             let request: Request = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
-            json_output(md_export::sync(store, &request, &cite)?)
+            json_output(md_export::sync(store, &request, &cite(store))?)
         })(),
         // One-shot: the highlights of a selection or collection as text, or into `path`.
         "store_md_export_render" => (|| {
             let scope = Scope { ids: arg(args, "ids")?, collection_id: arg(args, "collectionId")? };
             let config = md_export::config(store)?;
-            let (text, count) = md_export::render_text(store, &scope, &config, &cite)?;
+            let (text, count) = md_export::render_text(store, &scope, &config, &cite(store))?;
             if count == 0 {
                 return Err("No highlights to export".into());
             }
@@ -169,7 +169,7 @@ pub fn start_watcher(store: Store) {
             }
             if changed_at[0].is_some_and(|at| at.elapsed() >= SETTLE) && markdown.is_some() {
                 changed_at[0] = None;
-                let _ = md_export::sync(&store, &Request { changed_only: true, notes: true, ..Default::default() }, &cite);
+                let _ = md_export::sync(&store, &Request { changed_only: true, notes: true, ..Default::default() }, &cite(&store));
                 seen.0 = md_export::change_digest(&store).ok();
             }
             if changed_at[1].is_some_and(|at| at.elapsed() >= SETTLE) && mirror.is_some() {

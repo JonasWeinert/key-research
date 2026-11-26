@@ -1,7 +1,8 @@
 // Adding a work to the library from another source's context: its references or related
 // works, a citation card in its PDF, a web result opened from it. A small chooser asks which
 // collections (the origin source's by default, several allowed) unless "Don't ask again" was
-// chosen; Settings › Libraries turns asking back on or picks the silent default.
+// chosen; Workspace Settings › General turns asking back on or picks the silent default
+// (per workspace: its collections are its own).
 //
 // One entry point for every caller:
 //   - in the shell renderer: `addFromSource(invoke, { workspaceId, sourceId }, work, anchor?)`
@@ -17,6 +18,7 @@ import { toast } from "./item-actions";
 import { bridge, type AppSettings, type Collection, type Invoke, type Source } from "./library-api";
 import { libraryChanged } from "./library-nav";
 import { findPdfAfterAdd } from "./find-pdf";
+import { workspaceSettings } from "./workspace-settings-api";
 import "./add-from-source.css";
 
 /** What is added: whatever the context knows of the work. */
@@ -69,9 +71,8 @@ export async function addFromSource(invoke: Invoke, origin: AddOrigin, work: Add
   }
   const { workspaceId } = origin;
   const [settings, collections, from] = await Promise.all([
-    bridge()
-      .appSettings()
-      .then((r) => r.settings)
+    workspaceSettings(invoke, workspaceId)
+      .then((r) => r.effective)
       .catch(() => undefined),
     invoke<Collection[]>("store_collections", {}, workspaceId).catch(() => [] as Collection[]),
     origin.sourceId ? invoke<Source | null>("store_source", { id: origin.sourceId }, workspaceId).catch(() => null) : Promise.resolve(null),
@@ -86,7 +87,7 @@ export async function addFromSource(invoke: Invoke, origin: AddOrigin, work: Add
     );
     if (!choice) return null;
     chosen = choice.collections;
-    if (choice.dontAsk) void bridge().setAppSettings({ addFromSource: "origin" });
+    if (choice.dontAsk) void workspaceSettings(invoke, workspaceId, { addFromSource: "origin" }).catch(() => {});
   }
   const source = await insertWork(invoke, workspaceId, work, chosen);
   libraryChanged();

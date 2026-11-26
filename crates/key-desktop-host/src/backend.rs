@@ -21,6 +21,8 @@ mod export_commands;
 mod openalex;
 #[path = "hygiene.rs"]
 mod hygiene;
+#[path = "workspace_settings.rs"]
+mod workspace_settings;
 #[path = "reference_worker.rs"]
 mod reference_worker;
 #[path = "web_search/mod.rs"]
@@ -3448,6 +3450,7 @@ impl Host {
                 &arg::<PathBuf>(args, "workspaceRoot")?,
             )?),
             "workspace_set_appearance" => json_output(self.search.library().set_workspace_appearance(&arg::<String>(args,"icon")?,&arg::<String>(args,"color")?)?),
+            "workspace_rename" => json_output(self.search.library().rename_workspace(&arg::<String>(args,"name")?)?),
             "workspace_info" => json_output(self.search.library().workspace_info()?),
             "workspace_projects" => json_output(self.search.library().projects()?),
             "workspace_create_project" => json_output(

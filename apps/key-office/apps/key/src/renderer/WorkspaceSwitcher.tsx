@@ -10,7 +10,7 @@ export interface WorkspaceAppearance {
   icon?: string;
   color?: string;
 }
-const icons = [
+export const WORKSPACE_ICONS = [
   "📚",
   "🔬",
   "🧠",
@@ -36,6 +36,7 @@ export const WORKSPACE_COLORS = [
   "#0891b2",
 ];
 const colors = WORKSPACE_COLORS;
+const icons = WORKSPACE_ICONS;
 export default function WorkspaceSwitcher({
   workspaces,
   selectedId,

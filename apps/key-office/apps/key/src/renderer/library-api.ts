@@ -413,6 +413,8 @@ export interface Bridge {
   setAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   workspaces(): Promise<WorkspaceSummary[]>;
   addWorkspace(): Promise<WorkspaceSummary | null>;
+  /** Forgets a workspace (its folder stays); answers with the workspace this window now shows. */
+  removeWorkspace?(workspaceId: string): Promise<{ workspaceId: string }>;
   tabAction(action: string, payload?: unknown): Promise<unknown>;
   addFiles(workspaceId: string, collectionId?: string): Promise<unknown[]>;
   importPaths(workspaceId: string, paths: string[], collectionId?: string): Promise<unknown[]>;

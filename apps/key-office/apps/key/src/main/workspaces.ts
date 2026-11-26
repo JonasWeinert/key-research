@@ -127,6 +127,42 @@ export class Registry {
     this.mutations = result.catch(() => undefined);
     return result;
   }
+  async rename(id: string, name: string): Promise<WorkspaceInfo> {
+    const action = async () => {
+      await this.ready
+      const workspace = this.entries.find((w) => w.id === id)
+      if (!workspace) throw Error('Choose a workspace')
+      const updated = await this.host(workspace).invoke<WorkspaceInfo>('workspace_rename', { name })
+      workspace.name = updated.name
+      await this.persist()
+      return { ...workspace }
+    }
+    const result = this.mutations.then(action, action)
+    this.mutations = result.catch(() => undefined)
+    return result
+  }
+  /** Forgets a workspace: its host stops and it leaves the list. Its folder and files stay. */
+  async remove(id: string): Promise<void> {
+    const action = async () => {
+      await this.ready
+      const index = this.entries.findIndex((w) => w.id === id)
+      if (index < 0) throw Error('Choose a workspace')
+      if (this.entries.length === 1) throw Error('Key needs at least one workspace')
+      const [removed] = this.entries.splice(index, 1)
+      try {
+        await this.persist()
+      } catch (error) {
+        this.entries.splice(index, 0, removed)
+        throw error
+      }
+      this.hosts.get(id)?.close()
+      this.hosts.delete(id)
+      this.lastUsed.delete(id)
+    }
+    const result = this.mutations.then(action, action)
+    this.mutations = result.catch(() => undefined)
+    return result
+  }
   async add(root: string, name: string): Promise<WorkspaceInfo> {
     const action = async (): Promise<WorkspaceInfo> => {
       await this.ready

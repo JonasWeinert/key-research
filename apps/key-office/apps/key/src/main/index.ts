@@ -2094,6 +2094,7 @@ function baseMenu() {
           { role: "about" },
           { type: "separator" },
           { label: "Settings…", accelerator: "CmdOrCtrl+,", click: () => emitTo(focusedShell(), "open-settings") },
+          { label: "Workspace Settings…", accelerator: "CmdOrCtrl+Alt+,", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           { type: "separator" },
           { role: "services" },
           { type: "separator" },
@@ -2113,6 +2114,7 @@ function baseMenu() {
           { label: "Switch Workspace…", accelerator: "CmdOrCtrl+Shift+O", click: () => emitTo(focusedShell(), "open-workspace-switcher") },
           { label: "Switch to Workspace", submenu: workspaceItems(false) },
           { label: "Open Workspace in New Window", submenu: workspaceItems(true) },
+          { label: "Workspace Settings…", click: () => emitTo(focusedShell(), "open-workspace-settings") },
           { type: "separator" },
           {
             label: "Open…",
@@ -2478,6 +2480,12 @@ else
             shell(event.sender.id);
             return registry.setAppearance(workspaceId, args.icon, args.color);
           }
+          if (command === "workspace_rename") {
+            shell(event.sender.id);
+            const renamed = await registry.rename(workspaceId, args.name);
+            await refreshWorkspaces();
+            return renamed;
+          }
           if (command === "agent_fill_status") return agentFill.status();
           if (command === "agent_fill_configure")
             return agentFill.configure(args);
@@ -2638,6 +2646,25 @@ else
         const added = await registry.add(result.filePaths[0], basename(result.filePaths[0]));
         await refreshWorkspaces();
         return added;
+      });
+      // Workspace Settings › Remove from Key: the folder and its files stay where they are.
+      // The asking window moves to another workspace first; another window showing it stops it.
+      ipcMain.handle("key:remove-workspace", async (event, workspaceId: string) => {
+        const w = shell(event.sender.id);
+        const list = await registry.list();
+        if (!list.some((k) => k.id === workspaceId)) throw Error("This workspace is no longer available");
+        if (liveShells().some((s) => s !== w && s.workspaceId === workspaceId)) throw Error("Close the other window showing this workspace first");
+        const other = list.find((k) => k.id !== workspaceId);
+        if (!other) throw Error("Key needs at least one workspace");
+        if (w.workspaceId === workspaceId) {
+          await switchWorkspace(w, other.id);
+          if (w.workspaceId === workspaceId) throw Error("Close the open tabs first");
+        }
+        await registry.remove(workspaceId);
+        windowState.recent = windowState.recent.filter((id) => id !== workspaceId);
+        delete windowState.layouts[workspaceId];
+        await refreshWorkspaces();
+        return { workspaceId: w.workspaceId };
       });
       ipcMain.handle("key:tabs", (event) => snapshot(shell(event.sender.id)));
       ipcMain.handle("key:reader-back", (event) => {
