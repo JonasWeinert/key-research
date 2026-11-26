@@ -460,10 +460,14 @@ impl Library {
                 let id: String = arg(args, "id")?;
                 let meta: key_store::web_pages::PageMeta = arg(args, "meta")?;
                 let captured_at: String = arg(args, "capturedAt")?;
-                let existing = match arg::<Option<String>>(args, "existingId")? {
+                let mut existing = match arg::<Option<String>>(args, "existingId")? {
                     Some(existing) => self.store.source(&existing)?,
                     None => None,
                 };
+                // What it was before the page became its file (attaching makes it a web source).
+                if let (Some(source), Some(kind)) = (existing.as_mut(), arg::<Option<String>>(args, "existingKind")?) {
+                    source.kind = kind;
+                }
                 let had_file = arg::<Option<bool>>(args, "existingHadFile")?.unwrap_or(false);
                 json_output(self.store.apply_web_page(&id, &meta, &captured_at, existing.as_ref(), had_file)?)
             })(),

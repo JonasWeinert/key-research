@@ -329,8 +329,10 @@ pub(crate) fn ensure_schema(db: &Connection) -> Result<()> {
     db.execute_batch(SCHEMA).map_err(e)
 }
 
+/// Keys held by sources in the library. Sources in the Trash (an undone import among them)
+/// give theirs up, so importing the same file again keeps the file's keys.
 fn taken_keys(db: &Connection, except: Option<&str>) -> Result<HashSet<String>> {
-    let mut statement = db.prepare("SELECT lower(citation_key) FROM sources WHERE citation_key IS NOT NULL AND citation_key <> '' AND id IS NOT ?1").map_err(e)?;
+    let mut statement = db.prepare("SELECT lower(citation_key) FROM sources WHERE citation_key IS NOT NULL AND citation_key <> '' AND trashed_at IS NULL AND merged_into IS NULL AND id IS NOT ?1").map_err(e)?;
     let rows = statement.query_map([except], |r| r.get::<_, String>(0)).map_err(e)?;
     rows.collect::<std::result::Result<_, _>>().map_err(e)
 }

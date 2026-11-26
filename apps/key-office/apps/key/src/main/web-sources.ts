@@ -91,7 +91,7 @@ export class WebSources {
       }
       await this.invoke(
         "store_web_page_apply",
-        { id, meta: snapshot.meta, capturedAt: snapshot.capturedAt, existingId: existing?.id ?? null, existingHadFile: !!existing?.filePath },
+        { id, meta: snapshot.meta, capturedAt: snapshot.capturedAt, existingId: existing?.id ?? null, existingKind: existing?.kind ?? null, existingHadFile: !!existing?.filePath },
         workspaceId,
       );
       // The host reads the reference list from the live page and keeps it as an analysis.
