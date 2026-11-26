@@ -21,7 +21,7 @@
   box-shadow: 12px 0 48px #0002;
   border-right: 1px solid var(--border, #e3e6ea);
   overflow: hidden;
-  font: 13px var(--gs-font-sans, Arial, sans-serif);
+  font: 13px var(--key-ui-font, var(--kx-font));
 }
 .key-native-overlay-frame {
   position: fixed;

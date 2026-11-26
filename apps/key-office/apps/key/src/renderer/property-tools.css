@@ -129,7 +129,7 @@
   opacity: 1;
   cursor: default;
 }
-/* Keep dialogs inside their owned pane: native PDF/Office siblings sit above DOM. */
+/* Keep dialogs inside their owned pane: native PDF and web siblings sit above DOM. */
 .key-content-pane .key-property-overlay {
   position: absolute;
 }

@@ -1,60 +1,44 @@
 # CLAUDE.md
 
-Guidance for AI agents and human contributors working in this repo.
+Guidance for AI agents and human contributors working on Key's Electron app
+(`apps/key`, `@key/electron`) and its packages in this npm workspace.
 
 ## Theming rules (mandatory)
 
-The suite supports light / dark / system UI themes. The switching mechanism is a
-`data-theme` attribute on `<html>` plus CSS custom properties defined once in
-`packages/ui/src/tokens.css` (light defaults in `:root`, overrides in
-`[data-theme='dark']`, and a `prefers-color-scheme` media-query fallback for
-system mode).
+Key supports light, dark and system themes. Colors are CSS custom properties
+defined once in `apps/key/src/renderer/native.css`: the `--kx-*` tokens, with
+light values in `:root`, dark values in `:root[data-theme="dark"]` and the same
+dark values under `@media (prefers-color-scheme: dark)` for system mode.
+`chrome-tokens.css` aliases a few short names (`--surface`, `--text`,
+`--danger`, …) to them for older stylesheets; `packages/design-system` maps its
+`--key-ui-*` variables onto them.
 
-1. **UI chrome colors must use semantic tokens.** Never write raw `#hex` /
-   `rgb()` in renderer CSS rules or chrome-related inline styles — reference
-   `var(--surface)`, `var(--text)`, `var(--hover)`, etc. from
-   `packages/ui/src/tokens.css`. Raw values are allowed only on custom-property
-   definition lines (`--x: #...;` — token, accent, or app-scoped variable
-   definitions). CI enforces this for new/changed renderer CSS lines
-   (`tools/check-theme-colors.mjs`).
-2. **Every new token gets both values.** Adding a token means adding it to all
-   three blocks in `tokens.css` (light, dark, system-dark fallback).
-3. **Accent colors stay per-app.** Each app defines `--accent` /
-   `--accent-dark` / `--accent-soft` (and its dark-adjusted values) in its own
-   `styles.css`. Shared rules reference `var(--accent)` and inherit the app's
-   brand color.
-4. **Document content is never re-authored by the theme.** Page surfaces, cell
-   fills, slide content, PDF page bitmaps, export/print stylesheets, chart
-   palettes, highlight color maps, stamps, and WordArt presets are document
-   data: they stay hardcoded, must not reference chrome tokens, and every
-   save/export/print path must produce identical output in both themes. A
-   Word/Excel-style _dark page_ (Sheets via Univer's `darkMode`, Docs via
-   `apps/docs/src/renderer/editor/dark-page.ts`) is a display-time remap only:
-   the authored color stays the real declaration, the remapped twin lives in
-   a screen-only `--dk-*` / `.page-dark` layer, and print/export never see it.
-5. **Canvas-drawn UI affordances go through a constants table.** Konva/canvas
-   editing chrome (selection frames, guides, handles) reads from the app's
-   canvas color table (e.g. `canvas-colors.ts`) keyed by the current theme —
-   no inline hex in draw calls.
+1. **UI colors use tokens.** Never write raw `#hex`, `rgb()`, `hsl()` or
+   `oklch()` values in renderer CSS rules or inline styles: use `var(--kx-…)`.
+   Raw values are allowed only on lines that define a custom property
+   (`--x: #…;`). `npm run check:theme-colors` checks changed renderer CSS.
+2. **A new token gets every value.** Add it to all three blocks in
+   `native.css` (light, dark, system dark).
+3. **Document content is never re-themed.** PDF pages, note and canvas
+   content colors chosen by the user, highlight colors, exports and printed
+   output are document data: they keep their real colors in both themes.
+4. **Canvas-drawn UI reads its colors from the theme** (computed token
+   values), never from inline hex in draw calls.
 
 ## Build gotchas
 
-- App main-process code (`apps/*/src/main`) is compiled into the **shell**
-  build. After changing it, rebuild the shell or the change silently does not
-  run.
-- In dev mode, preload changes require a rebuild — a stale preload leaves the
-  renderer blank.
-- Workspace packages listed in an app's `dependencies` must also be added to
-  the `externalizeDepsPlugin` `exclude` list, or the packaged app crashes on
-  launch.
-- `useI18n()`'s `t` is not referentially stable; never put it in a hook
-  dependency array. Store the key and translate at render time.
+- Main-process and preload code is bundled by electron-vite: after changing it,
+  run `npm run build -w @key/electron` again, or the app runs the old code. A
+  stale preload leaves the renderer blank.
+- The app's main and preload bundles include their dependencies
+  (`externalizeDeps: false`) and the package ships no `node_modules`, so a new
+  runtime dependency must be importable by the bundler; native modules are
+  not supported.
+- `npm run notices` regenerates `apps/key/build/THIRD-PARTY-NOTICES.txt` from
+  what the sources import; packaging (`dist:mac`) runs it.
 
-## UI strings (i18n)
+## Not here
 
-- Large dictionaries are sharded per locale: `i18n/strings-<domain>.ts` is a
-  thin aggregator over `i18n/<domain>/<lang>.ts` (one file per language, `zh`
-  defines the key set). Add a new key to `zh.ts` and to every sibling shard;
-  the `satisfies Record<keyof typeof zh, string>` on each shard turns a
-  missing or extra key into a type error. Never grow the aggregator back into
-  a single 19-locale object.
+Key has no bundled Word, Excel or PowerPoint editors. Such files in a
+workspace are listed and linked, preview with Quick Look and open in their
+default app. Document editing will be reimplemented separately.
