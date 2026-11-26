@@ -12,6 +12,8 @@ import { noteSources } from "./note-sources";
 import "./linked-folders.css";
 
 type Text = { text: string; version: number };
+/** Word, Excel, PowerPoint and OpenDocument files: Key has no editor for them yet. */
+const OFFICE_FILE = /\.(docx?|xlsx?|xlsm|pptx?|odt|ods|odp|rtf|pages|numbers)$/i;
 
 export default function LinkedFileView({ invoke, workspaceId, fileId }: { invoke: Invoke; workspaceId: string; fileId: string }) {
   const [file, setFile] = useState<LinkedFile | null>();
@@ -166,7 +168,10 @@ export default function LinkedFileView({ invoke, workspaceId, fileId }: { invoke
                 Open in default app
               </button>
             </div>
-            <p className="kx-linked-file-note">Files in linked folders stay where they are. Only Markdown can be edited here.</p>
+            <p className="kx-linked-file-note">
+              {OFFICE_FILE.test(file.name) ? "Key can't edit this yet. It opens in its default app. " : ""}
+              Files in linked folders stay where they are. Only Markdown can be edited here.
+            </p>
           </div>
         )}
         <LinkedFrom invoke={invoke} workspaceId={workspaceId} item={{ kind: "file", id: file.id }} />

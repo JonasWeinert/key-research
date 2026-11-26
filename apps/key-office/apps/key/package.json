@@ -19,18 +19,8 @@
     "perf-budget": "node scripts/perf-budget.cjs"
   },
   "dependencies": {
-    "@key/ui": "*",
-    "@key/i18n": "*",
-    "@key/electron-utils": "*",
-    "@key/docs": "*",
-    "@key/sheets": "*",
-    "@key/slides": "*",
-    "@key/docx-engine": "*",
-    "@key/pptx-engine": "*",
-    "@key/pptx-render": "*",
     "@key/agent-core": "*",
     "@key/ai-provider": "*",
-    "@key/ai-search": "*",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "pdfjs-dist": "5.4.624",
@@ -92,53 +82,18 @@
         "to": "backend/libpdfium.dylib"
       },
       {
-        "from": "../docs/out",
-        "to": "modules/docs"
-      },
-      {
-        "from": "../sheets/out",
-        "to": "modules/sheets"
-      },
-      {
-        "from": "../slides/out",
-        "to": "modules/slides"
-      },
-      {
-        "from": "../markdown/out",
-        "to": "modules/markdown"
-      },
-      {
-        "from": "../html/out",
-        "to": "modules/html"
-      },
-      {
         "from": "../../../../integrations/zotero-key-sync/dist/key-sync.xpi",
         "to": "zotero/key-sync.xpi"
       },
       {
         "from": "../../../../data/citation",
         "to": "citation",
-        "filter": ["styles/*.csl", "locales/*.xml", "index.json", "NOTICE"]
-      },
-      {
-        "from": "../sheets/native/xlsx-engine/target/release/xlsx-sidecar",
-        "to": "native/xlsx-sidecar"
-      },
-      {
-        "from": "../../LICENSE",
-        "to": "licenses/GENOFFICE-LICENSE"
-      },
-      {
-        "from": "../../NOTICE",
-        "to": "NOTICE"
-      },
-      {
-        "from": "../../UPSTREAM-CHANGES.txt",
-        "to": "licenses/GENOFFICE-CHANGES.txt"
-      },
-      {
-        "from": "../../LICENSE-UNICODE.txt",
-        "to": "licenses/LICENSE-UNICODE.txt"
+        "filter": [
+          "styles/*.csl",
+          "locales/*.xml",
+          "index.json",
+          "NOTICE"
+        ]
       },
       {
         "from": "../../../../LICENSE",

@@ -342,7 +342,7 @@ export default function WorkspaceContent({
       return;
     }
     if (r.properties?.path && r.properties?.editor) {
-      action("open-office-record", {
+      action("open-record-file", {
         recordId: r.id,
         workspaceId: r.workspaceId || workspaceId,
       });

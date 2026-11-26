@@ -1,8 +1,7 @@
-// A window's shell and its native views (PDF readers, office editors, web pages) are separate
+// A window's shell and its native views (PDF readers, web pages) are separate
 // webContents: a press or scroll in one never reaches the others' DOM. This relays them, so a
 // press anywhere in the window dismisses menus and popovers open in any other webContents, and
-// scrolling elsewhere counts as scrolling away. Renderers receive "dismiss-overlays"; office
-// editors also get their existing "app:chrome-pressed".
+// scrolling elsewhere counts as scrolling away. Renderers receive "dismiss-overlays".
 import { app, type BrowserWindow, type WebContents, type WebContentsView } from "electron";
 
 export type DismissSignal = { reason: "press" } | { reason: "scroll"; dy: number } | { reason: "blur" };
@@ -20,7 +19,6 @@ function send(window: BrowserWindow | undefined, from: WebContents | undefined, 
   for (const contents of contentsOf(window)) {
     if (contents === from || contents.isDestroyed()) continue;
     contents.send("dismiss-overlays", signal);
-    if (signal.reason === "press") contents.send("app:chrome-pressed");
   }
 }
 
