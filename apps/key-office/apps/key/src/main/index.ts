@@ -185,8 +185,8 @@ function shellBySender(sender: number) {
   return liveShells().find((w) => w.window.webContents.id === sender);
 }
 /** What a reader's panel shows: the source's details and note, or the PDF's references. */
-type PanelTab = "details" | "references";
-const panelTab = (value: unknown): PanelTab | undefined => (value === "details" || value === "references" ? value : undefined);
+type PanelTab = "details" | "references" | "highlights";
+const panelTab = (value: unknown): PanelTab | undefined => (value === "details" || value === "references" || value === "highlights" ? value : undefined);
 /** The reader whose panel shows `viewId`, if it is a docked panel. */
 function panelHost(viewId: string) {
   for (const v of views.values()) if (v.panel?.viewId === viewId) return v;
@@ -1107,6 +1107,42 @@ function dockPanel(pdf: OwnedView, page: OwnedView) {
   pdf.view?.webContents.send("reader-notes", "details");
   focus(pdf.id);
 }
+/** A saved web page's reader: its source's details (or its highlights, its references)
+ * docked beside it in the same tab, as a PDF's are. Shows `wanted`, or hides the panel when
+ * it shows that already. Answers what the panel shows then, or false. */
+function toggleWebPanel(w: ShellWindow, reader: OwnedView, wanted?: PanelTab) {
+  const sourceId = reader.content?.sourceId;
+  const workspaceId = reader.content?.workspaceId ?? reader.workspaceId;
+  if (reader.content?.section !== "webpage" || !sourceId || !workspaceId) throw Error("Not a web page reader");
+  if (reader.panel && wanted && (reader.panel.tab ?? "details") !== wanted) {
+    reader.panel.tab = wanted;
+    tabsChanged(w);
+    return wanted;
+  }
+  if (reader.panel) {
+    closePanel(reader);
+    layout(w);
+    return false;
+  }
+  const key = JSON.stringify(["source", workspaceId, null, sourceId]);
+  let page = [...views.values()].find((v) => v.contentKey === key);
+  if (!page) {
+    page = {
+      id: randomUUID(),
+      kind: "home",
+      title: String(reader.title || "Untitled").slice(0, 200),
+      workspaceId,
+      lastUsed: Date.now(),
+      contentKey: key,
+      content: { section: "source", workspaceId, sourceId },
+    };
+    views.set(page.id, page);
+  }
+  dockPanel(reader, page);
+  reader.panel!.tab = wanted ?? "details";
+  layout(w);
+  return reader.panel!.tab;
+}
 /** Hides a reader's panel; its page is let go (the note saves as it is written). */
 function closePanel(pdf: OwnedView) {
   const panel = pdf.panel;
@@ -1846,7 +1882,7 @@ async function restoredView(saved: SavedView): Promise<OwnedView | undefined> {
 async function restoredTab(saved: SavedTab): Promise<WorkspaceTab | undefined> {
   const view = await restoredView(saved.view);
   if (!view) return undefined;
-  if (saved.panel && view.kind === "pdf") {
+  if (saved.panel && (view.kind === "pdf" || view.content?.section === "webpage")) {
     const panel = await restoredView(saved.panel.view);
     if (panel) view.panel = { viewId: panel.id, ratio: Math.min(0.8, Math.max(0.2, saved.panel.ratio)) };
   }
@@ -2233,6 +2269,7 @@ else
           return v?.kind === "web" && v.view && !v.view.webContents.isDestroyed() ? v.view.webContents : undefined;
         },
         () => emit("library-changed"),
+        (url, work) => browserService.withLoadedPage(url, work),
       );
       const webSearch = (webSearchService = new WebSearch({ settings: () => appSettings.get(), invoke: (c, a, w) => registry.invoke(c, a, w), emit }));
       routeEmbeddedMedia();
@@ -3049,6 +3086,11 @@ else
             }
             tabsChanged(w);
             return snapshot(w);
+          }
+          case "web-panel": {
+            const reader = views.get(tabViewId(String(p.viewId)));
+            if (!reader) return false;
+            return toggleWebPanel(w, reader, panelTab(p.tab));
           }
           case "panel-close": {
             const pdf = views.get(tabViewId(String(p.viewId)));

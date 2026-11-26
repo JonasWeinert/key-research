@@ -29,6 +29,7 @@ const ENGINES: Record<string, string> = {
   "layout-onnx": "Layout analysis with the layout model",
   layout: "Layout analysis",
   pdfium: "Plain PDF text",
+  html: "Read from the page",
 };
 export const working = (report: AnalysisReport | null | undefined) =>
   !!report &&
@@ -36,14 +37,15 @@ export const working = (report: AnalysisReport | null | undefined) =>
     ["pending", "detecting", "resolving"].includes(report.analysis?.referencesStatus ?? ""));
 
 /** How far analysis has got, and a way to run it again. */
-export function AnalysisStatus({ report, onRerun }: { report: AnalysisReport | null | undefined; onRerun: () => void }) {
+export function AnalysisStatus({ report, onRerun, subject = "pdf" }: { report: AnalysisReport | null | undefined; onRerun: () => void; subject?: "pdf" | "page" }) {
+  const it = subject === "page" ? "page" : "PDF";
   if (report === undefined) return null;
   const a = report?.analysis;
   const indexing = ["pending", "indexing"].includes(report?.indexStatus ?? "");
   let line: string;
   let progress: number | undefined;
-  if (!report) line = "This PDF is not in a library, so it is analysed only while open.";
-  else if (indexing) line = report.layoutModel ? "Analysing the layout of this PDF…" : "Reading this PDF…";
+  if (!report) line = `This ${it} is not in a library, so it is analysed only while open.`;
+  else if (indexing) line = subject === "page" ? "Reading this page…" : report.layoutModel ? "Analysing the layout of this PDF…" : "Reading this PDF…";
   else if (!a) line = "Not analysed with the current method yet.";
   else if (a.referencesStatus === "detecting" || a.referencesStatus === "pending") line = "Finding references…";
   else if (a.referencesStatus === "resolving") {
@@ -64,7 +66,7 @@ export function AnalysisStatus({ report, onRerun }: { report: AnalysisReport | n
         {a && !indexing && <small>{ENGINES[a.engine] ?? a.engine} · {new Date(a.analyzedAt).toLocaleDateString()}</small>}
       </div>
       {report && !indexing && (
-        <button type="button" onClick={onRerun} title="Read this PDF again and look up its references">
+        <button type="button" onClick={onRerun} title={`Read this ${it} again and look up its references`}>
           {a ? "Re-run" : "Analyse"}
         </button>
       )}

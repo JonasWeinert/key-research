@@ -20,6 +20,7 @@ import LinkedFrom from "./LinkedFrom";
 import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
+import { SavePageOffer, saveSourceWebPage } from "./source-web-page";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
 
@@ -278,6 +279,24 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
       side?.onChanged(next);
     } catch (e) {
       setError(String(e).replace(/^Error: /, ""));
+      setPdfMissing(true);
+    }
+  };
+  // No PDF to be had: the reference's web page, saved offline as its file instead.
+  const [pdfMissing, setPdfMissing] = useState(false);
+  const [savingPage, setSavingPage] = useState(false);
+  const saveWebPage = async () => {
+    setError("");
+    setSavingPage(true);
+    try {
+      const next = await saveSourceWebPage(invoke, workspaceId, sourceId);
+      setPdfMissing(false);
+      setSource(next);
+      side?.onChanged(next);
+    } catch (e) {
+      setError(String(e).replace(/^Error: /, ""));
+    } finally {
+      setSavingPage(false);
     }
   };
   const enrich = async () => {
@@ -545,6 +564,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <button onClick={() => void copy("BibTeX", bibtex(source))}>Copy BibTeX</button>
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void findPdf()}>Find PDF</button>}
+              {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
               <button onClick={() => void invoke("store_index_control", { action: "reindex", ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Re-index</button>
@@ -592,6 +612,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
           </figure>
         )}
         {error && <p className="kx-inline-error">{error}</p>}
+        {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (
+          <SavePageOffer busy={savingPage} onSave={() => void saveWebPage()} />
+        )}
 
         {highlights.length > 0 && (
           <section className="kx-page-section" data-part-of="highlights">

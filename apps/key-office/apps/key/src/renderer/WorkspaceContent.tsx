@@ -49,6 +49,8 @@ interface TabState {
     id: string;
     title: string;
     views: { id: string; title: string; kind: string }[];
+    /** A reader's docked panel, and what it shows. */
+    panel?: { tab?: string };
   }[];
   activeTabId: string;
   activeViewId: string;
@@ -732,7 +734,7 @@ export default function WorkspaceContent({
       {section === "source" && workspaceId && spec.sourceId && (
         <SourcePage invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} docked={docked} />
       )}
-      {section === "webpage" && workspaceId && spec.sourceId && <WebPageReader invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} />}
+      {section === "webpage" && workspaceId && spec.sourceId && <WebPageReader invoke={invoke} workspaceId={workspaceId} sourceId={spec.sourceId} viewId={viewId} panelTab={tabs.tabs.find((t) => t.views[0]?.id === viewId)?.panel?.tab as "details" | undefined} />}
       {section === "canvas" && workspaceId && spec.canvasId && (
         <CanvasPage invoke={invoke} workspaceId={workspaceId} canvasId={spec.canvasId} viewId={viewId} />
       )}

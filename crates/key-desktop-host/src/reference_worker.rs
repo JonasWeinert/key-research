@@ -84,6 +84,10 @@ impl ReferenceWorker {
 
 fn process(store: &Store, native: &NativePdfService, cache: &key_library::Library, id: &str) -> Result<(), String> {
     let Some(analysis) = store.analysis(id)? else { return Ok(()) };
+    // A saved web page's references were found in its HTML: only their lookups are left.
+    if analysis.engine == "html" {
+        return look_up_stored(store, cache, id, analysis.analyzed_at, &analysis.references_status);
+    }
     // References already done: only the in-text citations are missing (or outdated).
     let refresh = matches!(analysis.references_status.as_str(), "done" | "none");
     match detect(store, native, cache, id, analysis.analyzed_at, refresh) {
@@ -126,6 +130,37 @@ fn detect(store: &Store, native: &NativePdfService, cache: &key_library::Library
         return store.set_references_status(id, "none", None, 0, 0);
     }
     store.replace_references(id, &references.iter().map(input).collect::<Vec<_>>())?;
+    let entries = references.iter().map(|r| (r.text.clone(), r.metadata.clone())).collect::<Vec<_>>();
+    look_up(store, cache, id, &entries, &current)
+}
+
+/// Looks up the references stored for a web page (see `store_web_references`), each by its
+/// DOI when the page gave one, else by the reference as printed.
+fn look_up_stored(store: &Store, cache: &key_library::Library, id: &str, started: i64, status: &str) -> Result<(), String> {
+    let current = || store.analysis(id).ok().flatten().is_some_and(|a| a.analyzed_at == started);
+    let entries = store
+        .references(id)?
+        .into_iter()
+        .map(|r| {
+            let doi = r.metadata.as_ref().and_then(|m| m.get("doi")).and_then(|d| d.as_str()).filter(|d| !d.is_empty()).map(str::to_string);
+            (doi.unwrap_or(r.text), None)
+        })
+        .collect::<Vec<_>>();
+    if entries.is_empty() || !matches!(status, "pending" | "detecting" | "resolving") {
+        return store.replace_citations(id, CITATIONS_VERSION, !entries.is_empty(), None, &[]).map_err(|e| e.to_string());
+    }
+    look_up(store, cache, id, &entries, &current)
+}
+
+/// Looks each reference up (a few at once), storing what it resolved to as it comes. A
+/// reference may carry what the analyser read already, which seeds the cache.
+fn look_up(
+    store: &Store,
+    cache: &key_library::Library,
+    id: &str,
+    references: &[(String, Option<super::ScholarlyMetadataDto>)],
+    current: &(dyn Fn() -> bool + Sync),
+) -> Result<(), String> {
     let total = references.len() as i64;
     store.set_references_status(id, "resolving", None, 0, total)?;
     let next = AtomicUsize::new(0);
@@ -135,14 +170,14 @@ fn detect(store: &Store, native: &NativePdfService, cache: &key_library::Library
             scope.spawn(|| {
                 loop {
                     let seq = next.fetch_add(1, Ordering::Relaxed);
-                    let Some(reference) = references.get(seq) else { break };
+                    let Some((text, seeded)) = references.get(seq) else { break };
                     if !current() {
                         break;
                     }
-                    if let Some(metadata) = &reference.metadata {
-                        let _ = scholarly_resolver::seed(cache, &reference.text, metadata);
+                    if let Some(metadata) = seeded {
+                        let _ = scholarly_resolver::seed(cache, text, metadata);
                     }
-                    let (metadata, error) = match scholarly_resolver::resolve(cache, &reference.text, false) {
+                    let (metadata, error) = match scholarly_resolver::resolve(cache, text, false) {
                         Ok(metadata) => (serde_json::to_value(metadata).ok(), None),
                         Err(error) => (None, Some(error)),
                     };
