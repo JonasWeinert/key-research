@@ -12,6 +12,11 @@ mod properties;
 mod relations;
 mod search;
 mod tag_ops;
+pub mod tag_analysis;
+pub mod tag_plan;
+pub mod smart_query;
+pub mod web_references;
+mod html_dom;
 pub use analysis::{CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -1713,3 +1718,5 @@ fn vector_blob(vector: &[f32]) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tag_analysis_tests;

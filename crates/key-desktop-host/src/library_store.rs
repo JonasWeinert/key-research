@@ -351,9 +351,28 @@ impl Library {
                 let configure: key_zotero::plugin::Configure = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
                 json_output(key_zotero::plugin::configure(&self.store, configure)?)
             })(),
+            // `schedule`: the app's timer asks, and is told when to ask again (`nextMs`);
+            // a failure is then an outcome too, so the pace backs off.
             "store_zotero_plugin_sync" => (|| {
                 let force = arg::<Option<bool>>(args, "force")?.unwrap_or(false);
-                json_output(self.zotero_plugin_sync(force)?)
+                let schedule = arg::<Option<bool>>(args, "schedule")?.unwrap_or(false);
+                let root = self.store.root().to_path_buf();
+                if force {
+                    key_zotero::plugin::reset_delay(&root);
+                }
+                match self.zotero_plugin_sync(force) {
+                    Ok(mut outcome) => {
+                        outcome.next_ms = Some(key_zotero::plugin::next_delay(&root, outcome.connection.as_ref(), false));
+                        json_output(outcome)
+                    }
+                    Err(error) => {
+                        let next = key_zotero::plugin::next_delay(&root, None, true);
+                        if !schedule {
+                            return Err(error);
+                        }
+                        json_output(json!({ "ran": false, "connection": "error", "message": error, "nextMs": next }))
+                    }
+                }
             })(),
             "store_zotero_plugin_status" => key_zotero::plugin::status(&self.store).and_then(json_output),
             "store_zotero_progress" => self.zotero_progress.lock().map_err(|e| e.to_string()).and_then(|p| json_output(p.clone())),
@@ -434,7 +453,11 @@ impl Library {
                 json_output(json!({ "layoutModel": self.indexer.layout_model(), "outdated": self.store.outdated_analyses(engine)? }))
             })(),
             "store_provenance" => arg::<String>(args, "id").and_then(|id| json_output(self.store.property_provenance(&id)?)),
-            _ => return super::openalex::dispatch(self, command, args).or_else(|| super::linked_folders::dispatch(self, command, args, root)),
+            _ => {
+                return super::openalex::dispatch(self, command, args)
+                    .or_else(|| super::linked_folders::dispatch(self, command, args, root))
+                    .or_else(|| super::core_commands::dispatch(self, command, args));
+            }
         };
         Some(result)
     }

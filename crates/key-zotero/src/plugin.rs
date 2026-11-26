@@ -620,6 +620,42 @@ pub struct Outcome {
     pub connection: Option<Connection>,
     pub message: Option<String>,
     pub report: Option<ImportReport>,
+    /// When the app should ask again (milliseconds): see `next_delay`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_ms: Option<u64>,
+}
+
+/// How often the app asks for a sync while Zotero answers.
+pub const SYNC_EVERY_MS: u64 = 15_000;
+/// The longest wait while Zotero is not running or the plugin is missing.
+pub const SYNC_BACKOFF_MAX_MS: u64 = 5 * 60_000;
+/// Without a sync set up (or paused) the app asks rarely; setting one up wakes it.
+pub const SYNC_IDLE_MS: u64 = 5 * 60_000;
+
+static DELAYS: Mutex<Option<HashMap<PathBuf, u64>>> = Mutex::new(None);
+
+/// The wait before the next sync of this library: steady while Zotero answers, rare while
+/// sync is off or paused, doubling (to a ceiling) while Zotero is closed, the plugin is
+/// missing or the sync fails. `connection: None` with `failed` is a sync that errored.
+pub fn next_delay(root: &Path, connection: Option<&Connection>, failed: bool) -> u64 {
+    let Ok(mut map) = DELAYS.lock() else { return SYNC_EVERY_MS };
+    let delays = map.get_or_insert_with(HashMap::new);
+    let previous = delays.get(root).copied().unwrap_or(SYNC_EVERY_MS);
+    let next = match connection {
+        _ if failed => SYNC_BACKOFF_MAX_MS.min(SYNC_EVERY_MS.max(previous * 2)),
+        None | Some(Connection::Ok) => SYNC_EVERY_MS,
+        Some(Connection::Off) | Some(Connection::Paused) => SYNC_IDLE_MS,
+        Some(_) => SYNC_BACKOFF_MAX_MS.min(SYNC_EVERY_MS.max(previous * 2)),
+    };
+    delays.insert(root.to_path_buf(), next);
+    next
+}
+
+/// A forced sync (the user asked, or set sync up) starts the steady pace again.
+pub fn reset_delay(root: &Path) {
+    if let Ok(mut map) = DELAYS.lock() {
+        map.get_or_insert_with(HashMap::new).remove(root);
+    }
 }
 
 static RECONCILED: Mutex<Option<HashMap<PathBuf, Instant>>> = Mutex::new(None);
@@ -791,7 +827,7 @@ pub fn sync_with(store: &Store, t: &dyn Transport, force: bool, reconcile: bool,
     }
     status.report = Some(report.clone());
     save_status(&state, &status)?;
-    Ok(Outcome { ran: true, connection: Some(Connection::Ok), message: None, report: Some(report) })
+    Ok(Outcome { ran: true, connection: Some(Connection::Ok), message: None, report: Some(report), next_ms: None })
 }
 
 fn fetch_collections(t: &dyn Transport, library: i64) -> std::result::Result<Vec<PCollection>, Failure> {

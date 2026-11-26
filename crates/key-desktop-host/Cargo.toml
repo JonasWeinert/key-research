@@ -33,6 +33,9 @@ pdfium-render = { path = "../../vendor/pdfium-render-tile" }
 
 # The bundled SQLite (and its vector extension) does all library filtering, counting and
 # search; compile it optimised even in debug builds, which the desktop app ships today.
+# The tag manager's analysis and the HTML reference scan run per request.
+[profile.dev.package.key-store]
+opt-level = 3
 [profile.dev.package.libsqlite3-sys]
 opt-level = 3
 [profile.dev.package.sqlite-vec]
