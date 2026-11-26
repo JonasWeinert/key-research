@@ -95,12 +95,32 @@ fn inline_links(line: &str) -> Vec<(String, ItemRef)> {
         let href_start = at + 2;
         let Some(href_end) = line[href_start..].find([')', ' ']).map(|i| href_start + i) else { break };
         let label_start = line[..at].rfind('[').map(|i| i + 1).unwrap_or(at);
-        if let Some(item) = parse_href(&line[href_start..href_end]) {
-            found.push((inline(&line[label_start..at].replace("\\[", "[").replace("\\]", "]")), item));
+        let href = &line[href_start..href_end];
+        if let Some(item) = parse_href(href) {
+            let label = inline(&line[label_start..at].replace("\\[", "[").replace("\\]", "]"));
+            // A citation of several works names the others in its `cite` parameter.
+            let others: Vec<ItemRef> = cited_ids(href).into_iter().filter(|id| *id != item.id).map(|id| ItemRef::new("source", &id, None)).collect();
+            found.push((label.clone(), item));
+            found.extend(others.into_iter().map(|other| (label.clone(), other)));
         }
         from = href_end;
     }
     found
+}
+
+/// The works a citation link names in its `cite` parameter
+/// (`key://source/a?cite=[{"id":"a","locator":"4"},{"id":"b"}]`, percent-encoded).
+pub fn cited_ids(href: &str) -> Vec<String> {
+    let Some(query) = href.split('#').next().and_then(|h| h.split_once('?')).map(|(_, q)| q) else { return Vec::new() };
+    let Some(value) = query.split('&').find_map(|pair| pair.strip_prefix("cite=")) else { return Vec::new() };
+    let Ok(items) = serde_json::from_str::<Vec<serde_json::Value>>(&percent_decode(value)) else { return Vec::new() };
+    let mut ids: Vec<String> = Vec::new();
+    for id in items.iter().filter_map(|i| i.get("id").and_then(serde_json::Value::as_str)) {
+        if !id.is_empty() && !ids.iter().any(|x| x == id) {
+            ids.push(id.to_string());
+        }
+    }
+    ids
 }
 
 fn percent_decode(text: &str) -> String {
@@ -165,5 +185,16 @@ mod tests {
         assert_eq!(parse_href("key://record/r%201"), Some(ItemRef::new("record", "r 1", None)));
         assert_eq!(parse_href("key://unknown/x"), None);
         assert_eq!(parse_href("https://x.org"), None);
+        let cite = "key://source/a?cite=%5B%7B%22id%22%3A%22a%22%2C%22locator%22%3A%224%22%7D%2C%7B%22id%22%3A%22b%22%7D%5D";
+        assert_eq!(parse_href(cite), Some(ItemRef::new("source", "a", None)));
+        assert_eq!(cited_ids(cite), vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[test]
+    fn citations_of_several_works_link_each() {
+        let md = "As shown [(Doe, 2020; Roe, 2021)](key://source/a?cite=%5B%7B%22id%22%3A%22a%22%7D%2C%7B%22id%22%3A%22b%22%7D%5D).";
+        let links = note_links("n1", md);
+        assert_eq!(targets(&links), vec![("source".into(), "a".into(), None), ("source".into(), "b".into(), None)]);
+        assert_eq!(links[1].label.as_deref(), Some("(Doe, 2020; Roe, 2021)"));
     }
 }
