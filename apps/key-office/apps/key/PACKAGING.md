@@ -1,15 +1,20 @@
 # Key desktop packaging
 
 From `apps/key-office`, build all office modules and the Key shell with
-`npm run build:all`. Build the shared PDF/search host with
-`npm run build:backend -w @key/electron`. Then run
-`npm run dist:mac -w @key/electron`.
+`npm run build:all`. Then run `npm run dist:mac -w @key/electron`: it builds
+the shared PDF/search host with the release profile first
+(`npm run build:backend:release`, about 5 minutes from clean on an M-series Mac,
+seconds when nothing changed) into `apps/key/src-tauri/target/release`.
+Development runs keep using the debug host (`npm run build:backend`).
+
+The release host is 55 MB instead of 145 MB and much faster: on a 1,000-source
+library, source pages 21 → 3 ms, tag index 26 → 3 ms, search 9 → 3 ms; indexing
+three PDFs 29 s → 13 s (`node scripts/bench-host.cjs <debug host> <release host>`).
 
 The current macOS artifact is an **unsigned development build**, using the
-unoptimized Rust host and the optimized spreadsheet worker. Signing,
-notarization, release Rust profiling, installer updates and cross-platform
-qualification remain separate release work. Do not describe this as a signed
-production release.
+optimized Rust host and the optimized spreadsheet worker. Signing,
+notarization, installer updates and cross-platform qualification remain
+separate release work. Do not describe this as a signed production release.
 
 The package includes:
 

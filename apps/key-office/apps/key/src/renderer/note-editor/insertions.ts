@@ -7,10 +7,8 @@ import { insertSource } from "./menus";
 import { insertDroppedItems } from "./mediaBehaviors";
 import { readItemDrag, type QuoteInsert, type SourceRef } from "./types";
 
-/** Marks an item drag whose sources should land as citations (the library panel's rows). */
-export const CITE_DRAG_TYPE = "application/x-key-cite";
-/** A passage dragged out of the library panel, as JSON `QuoteInsert`. */
-export const QUOTE_DRAG_TYPE = "application/x-key-quote";
+import { CITE_DRAG_TYPE, QUOTE_DRAG_TYPE } from "./types";
+export { CITE_DRAG_TYPE, QUOTE_DRAG_TYPE };
 
 /** A citation or link at the selection, spaced off the word before it. */
 export function insertReferenceAt(editor: Editor, ref: SourceRef, mode: "cite" | "link") {

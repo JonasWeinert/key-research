@@ -26,5 +26,5 @@ for (const path of paths)
       `Packaging input missing: ${path}. Build the Key shell, office modules, and Rust host first.`,
     );
 console.log(
-  "Packaging an unsigned development Key.app with the debug Rust host and release spreadsheet worker.",
+  "Packaging an unsigned development Key.app with the release Rust host and release spreadsheet worker.",
 );

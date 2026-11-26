@@ -1,3 +1,4 @@
+import { startupMark } from "./startup-marks";
 import { placeSearchResultBeside, placeSearchResultTab } from "../shared/search-preview-model";
 import {
   app,
@@ -52,6 +53,8 @@ import {
   closeOfficeView,
   canCloseOfficeView,
   activateOfficeView,
+  loadOffice,
+  officeLoaded,
   type OfficeKind,
 } from "./office-editors";
 import {
@@ -564,6 +567,8 @@ function focusShown(w: ShellWindow) {
  * are drawn by the shell's renderer. A new kind adds itself to `OwnedView["kind"]`, registers
  * here, and opens as a tab of the focused group with `add(record, w)`. */
 interface NativeKind {
+  /** False while the kind's code is still loading: the view is created on the next layout. */
+  ready?(): boolean;
   create(record: OwnedView): WebContentsView;
   /** Asked before the tab closes; false keeps it open. */
   canClose?(record: OwnedView): Promise<boolean>;
@@ -596,6 +601,15 @@ registerNativeKind("pdf", {
 });
 for (const kind of OFFICE_KINDS)
   registerNativeKind(kind, {
+    // The editors load with the first Office tab shown, then every window lays out again.
+    ready: () => {
+      if (officeLoaded()) return true;
+      void loadOffice().then(
+        () => liveShells().forEach((w) => layout(w)),
+        (error) => emit("operation-error", String(error)),
+      );
+      return false;
+    },
     create: (record) => createOfficeView(kind, record.path, { newBlank: !record.path }),
     canClose: (record) => (record.view ? canCloseOfficeView({ kind, view: record.view }) : Promise.resolve(true)),
     async dispose(record) {
@@ -847,6 +861,7 @@ function attach(record: OwnedView, w: ShellWindow) {
     }
     return;
   }
+  if (kind.ready && !kind.ready()) return;
   const view = kind.create(record);
   record.view = view;
   relayDismiss(view.webContents, () => record.host?.window);
@@ -2193,6 +2208,7 @@ function baseMenu() {
     ]),
   );
 }
+startupMark("main-evaluated");
 app.setName("Key");
 registerMediaScheme();
 if (process.env.KEY_USER_DATA)
@@ -2216,6 +2232,7 @@ else
   app
     .whenReady()
     .then(async () => {
+      startupMark("ready");
       setUiLang(normalizeLang(app.getLocale()));
       const root = resolve(app.getAppPath(), "../../../..");
       workspaceParent =
@@ -2290,7 +2307,9 @@ else
       );
       appSettings = new AppSettingsStore(join(app.getPath("userData"), "app-settings.json"));
       await appSettings.load();
+      startupMark("settings-loaded");
       keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
+      startupMark("keys-loaded");
       // The bundled layout model, for packaged builds (development finds it in the crate).
       if (app.isPackaged) process.env.KEY_LAYOUT_MODEL ??= join(process.resourcesPath, "models/layout/model_fp16.onnx");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
@@ -2300,7 +2319,9 @@ else
       const restoring = process.env.KEY_NO_WINDOW_RESTORE
         ? []
         : windowState.windows.filter((saved) => knownWorkspaces.some((k) => k.id === saved.workspaceId));
+      startupMark("state-loaded");
       const first = createShell({ load: false, workspaceId: knownWorkspaces[0]?.id, saved: restoring[0] });
+      startupMark("window-created");
       configureOfficeEditors(first.window, {
         extractPdfText: async (bytes) => {
           if (bytes.byteLength > 32 * 1024 * 1024)
@@ -3336,7 +3357,9 @@ else
       // Tabs exist before the page loads, so nothing opened early lands in front of them.
       if (restoring[0]) await restoreTabs(first, restoring[0].tabs);
       if (!allTabs(first.state).length) home(first);
+      startupMark("shell-load");
       await loadShell(first);
+      startupMark("shell-loaded");
       layout(first);
       for (const saved of restoring.slice(1)) createShell({ saved });
       if (restoring.length > 1) first.window.focus();

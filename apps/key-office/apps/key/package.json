@@ -12,8 +12,11 @@
     "start": "electron .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "dist:mac": "node scripts/prepare-package.mjs && electron-builder --mac dir",
-    "build:backend": "node scripts/build-backend.mjs"
+    "dist:mac": "node scripts/build-backend.mjs --release && node scripts/prepare-package.mjs && electron-builder --mac dir",
+    "build:backend": "node scripts/build-backend.mjs",
+    "build:backend:release": "node scripts/build-backend.mjs --release",
+    "bench": "node scripts/bench-electron.cjs",
+    "perf-budget": "node scripts/perf-budget.cjs"
   },
   "dependencies": {
     "@key/ui": "*",
@@ -77,11 +80,11 @@
     "npmRebuild": false,
     "extraResources": [
       {
-        "from": "../../../key/src-tauri/target/debug/key-desktop-host",
+        "from": "../../../key/src-tauri/target/release/key-desktop-host",
         "to": "backend/key-desktop-host"
       },
       {
-        "from": "../../../key/src-tauri/target/debug/llama",
+        "from": "../../../key/src-tauri/target/release/llama",
         "to": "backend/llama"
       },
       {

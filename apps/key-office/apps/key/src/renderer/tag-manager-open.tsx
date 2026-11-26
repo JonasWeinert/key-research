@@ -4,7 +4,10 @@ import { useEffect, useState } from "react";
 import { toast } from "./item-actions";
 import type { Invoke } from "./library-api";
 import { plural, type Suggestion, type TagIndex } from "./tag-analysis";
-import TagManager from "./TagManager";
+import { lazyComponent } from "./lazy";
+
+// The manager loads when first opened.
+export const TagManager = lazyComponent(() => import("./TagManager").then((m) => m.default));
 
 const EVENT = "key:open-tag-manager";
 
