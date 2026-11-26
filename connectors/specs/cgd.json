@@ -1,0 +1,130 @@
+{
+  "format": 1,
+  "id": "cgd",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "Center for Global Development",
+  "description": "Working papers, policy papers and briefs of the Center for Global Development (CGD), Washington and London.",
+  "homepage": "https://www.cgdev.org/section/publications",
+  "category": "grey-literature",
+  "coverage": "About 3,000 publications from 2001 onwards on aid, global health, migration, trade and development finance.",
+  "terms": "Manual. cgdev.org returns a bot challenge to programs, and its robots.txt closes the filtered publication listings to crawlers. Key writes the search and opens the CGD site in its browser. CGD working papers are also in RePEc (repec:cgd:wpaper).",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 100000,
+    "chunk": "none"
+  },
+  "manual": {
+    "url": "https://www.cgdev.org/section/publications?search_api_fulltext={query}",
+    "steps": [
+      "Key opens CGD's publication search with your words; keep it to a few words.",
+      "Filter by type (Working Paper, Policy Paper) on the page.",
+      "CGD has no export. Collect the papers you want by their DOI or find them in RePEc (IDEAS) and export them there.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [],
+    "importHint": "CGD has no export file. Paste DOIs or titles into Key's Add by identifier, or export the same papers from IDEAS (RIS) and import that."
+  },
+  "guide": {
+    "summary": "CGD publishes policy-oriented research on development. Key cannot search the site itself, so it opens it for you.",
+    "coverage": "About 3,000 publications since 2001.",
+    "fields": "CGD's site search reads the whole page; no boolean operators.",
+    "limits": [
+      "No export.",
+      "Many CGD working papers also appear in RePEc and SSRN."
+    ],
+    "credentials": "No account needed.",
+    "tips": []
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

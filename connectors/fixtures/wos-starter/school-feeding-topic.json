@@ -1,0 +1,17 @@
+{
+  "recorded": "2026-11-26",
+  "note": "Synthetic answer in the documented response shape (no key was available when this connector was written). Replace with a real recording: see the connector's guide and connectors/README.",
+  "synthetic": true,
+  "exchanges": [
+    {
+      "method": "GET",
+      "url": "https://api.clarivate.com/apis/wos-starter/v1/documents?db=WOS&limit=5&page=1&q=TS%3D%22school+feeding%22+AND+PY%3D%282015-2020%29",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "x-ratelimit-remaining-day": "48"
+      },
+      "body": "{\"metadata\": {\"total\": 2, \"page\": 1, \"limit\": 50}, \"hits\": [{\"uid\": \"WOS:000555555000001\", \"title\": \"School feeding and attendance: evidence from a cluster randomised trial\", \"types\": [\"Article\"], \"sourceTypes\": [\"Article\"], \"source\": {\"sourceTitle\": \"JOURNAL OF EXAMPLE STUDIES\", \"publishYear\": 2017, \"volume\": \"8\", \"issue\": \"2\", \"pages\": {\"range\": \"10-30\", \"begin\": \"10\", \"end\": \"30\", \"count\": 21}}, \"names\": {\"authors\": [{\"displayName\": \"Example, Ada\", \"wosStandard\": \"Example, A\", \"researcherId\": \"AAA-0000-2000\"}, {\"displayName\": \"Sample, Ben\", \"wosStandard\": \"Sample, B\"}]}, \"links\": {\"record\": \"https://www.webofscience.com/api/gateway?GWVersion=2&SrcApp=example&SrcAuth=WosAPI&KeyUT=WOS:000555555000001&DestLinkType=FullRecord&DestApp=WOS_CPL\", \"citingArticles\": \"\", \"references\": \"\", \"related\": \"\"}, \"citations\": [{\"db\": \"WOS\", \"count\": 4}], \"identifiers\": {\"doi\": \"10.5555/example.school.1\", \"issn\": \"0555-0555\", \"eissn\": \"0555-0556\"}, \"keywords\": {\"authorKeywords\": [\"School feeding\", \"Attendance\"]}}, {\"uid\": \"WOS:000555555000002\", \"title\": \"Take-home rations, school meals and child nutrition\", \"types\": [\"Article\"], \"sourceTypes\": [\"Article\"], \"source\": {\"sourceTitle\": \"JOURNAL OF EXAMPLE STUDIES\", \"publishYear\": 2019, \"volume\": \"8\", \"issue\": \"2\", \"pages\": {\"range\": \"10-30\", \"begin\": \"10\", \"end\": \"30\", \"count\": 21}}, \"names\": {\"authors\": [{\"displayName\": \"Example, Ada\", \"wosStandard\": \"Example, A\", \"researcherId\": \"AAA-0000-2000\"}, {\"displayName\": \"Sample, Ben\", \"wosStandard\": \"Sample, B\"}]}, \"links\": {\"record\": \"https://www.webofscience.com/api/gateway?GWVersion=2&SrcApp=example&SrcAuth=WosAPI&KeyUT=WOS:000555555000002&DestLinkType=FullRecord&DestApp=WOS_CPL\", \"citingArticles\": \"\", \"references\": \"\", \"related\": \"\"}, \"citations\": [{\"db\": \"WOS\", \"count\": 4}], \"identifiers\": {\"doi\": \"10.5555/example.school.2\", \"issn\": \"0555-0555\", \"eissn\": \"0555-0556\"}, \"keywords\": {\"authorKeywords\": [\"School feeding\", \"Attendance\"]}}]}"
+    }
+  ]
+}

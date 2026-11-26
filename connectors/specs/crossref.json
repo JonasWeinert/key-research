@@ -1,0 +1,330 @@
+{
+  "format": 1,
+  "id": "crossref",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "Crossref",
+  "description": "Metadata for everything that has a DOI: journal articles, books, reports, working papers and preprints from more than 20,000 publishers.",
+  "homepage": "https://www.crossref.org/",
+  "category": "multidisciplinary",
+  "coverage": "About 170 million DOI records, all fields. Abstracts only where the publisher deposits them (many do not).",
+  "terms": "Free, no key; metadata is open (facts, CC0). Key uses the public pool at 1 request per second and adds your contact address when you set one (Crossref's 'polite' pool). Crossref's search is a relevance ranking, not a boolean search, so Key filters the results itself.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "api.crossref.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1050,
+    "retries": 4,
+    "backoffMs": 3000,
+    "maxPages": 20,
+    "mailtoParam": "mailto"
+  },
+  "options": [
+    {
+      "id": "scope",
+      "label": "Limit to",
+      "default": "",
+      "choices": [
+        {
+          "value": "",
+          "label": "Everything with a DOI"
+        },
+        {
+          "value": "type:journal-article",
+          "label": "Journal articles"
+        },
+        {
+          "value": "type:posted-content",
+          "label": "Preprints (posted content)"
+        },
+        {
+          "value": "type:report",
+          "label": "Reports and working papers"
+        },
+        {
+          "value": "type:book,type:book-chapter",
+          "label": "Books and chapters"
+        }
+      ]
+    },
+    {
+      "id": "issn",
+      "label": "One journal (ISSN)",
+      "default": "",
+      "free": true,
+      "pattern": "^$|^\\d{4}-\\d{3}[\\dXx]$",
+      "choices": [
+        {
+          "value": "",
+          "label": "Any journal"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "abstract",
+      "author",
+      "journal",
+      "affiliation"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": false,
+    "dates": "day",
+    "filters": [
+      "types"
+    ],
+    "maxResults": 10000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "issn",
+      "publisher",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "all": "{q}",
+      "title": "{q}",
+      "title_abstract": "{q}",
+      "abstract": "{q}",
+      "author": "{q}",
+      "journal": "{q}",
+      "affiliation": "{q}"
+    },
+    "defaultField": "all",
+    "phrase": "{text}",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "*",
+        "replace": ""
+      }
+    ],
+    "vars": {
+      "dateFrom": {
+        "template": "from-pub-date:{yearFrom}"
+      },
+      "dateTo": {
+        "template": "until-pub-date:{yearTo}"
+      },
+      "issnFilter": {
+        "template": "issn:{opt.issn}"
+      }
+    },
+    "maxLength": 1000,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://api.crossref.org/works",
+      "params": {
+        "query.bibliographic": "{query}",
+        "filter": {
+          "join": ",",
+          "parts": [
+            "{dateFrom?}",
+            "{dateTo?}",
+            "{opt.scope?}",
+            "{issnFilter?}"
+          ]
+        },
+        "rows": "{pageSize}",
+        "cursor": "{cursor}",
+        "sort": "score",
+        "order": "desc",
+        "select": "DOI,title,author,issued,published,abstract,type,container-title,URL,publisher,ISSN,subject",
+        "mailto": "{mailto?}"
+      },
+      "format": "json"
+    },
+    "pageSize": 200,
+    "paging": {
+      "style": "cursor",
+      "firstCursor": "*",
+      "next": "$.message.next-cursor",
+      "stopWhenFewer": true,
+      "stopWhenNoLocalMatch": true
+    },
+    "total": "$.message.total-results",
+    "items": "$.message.items[*]",
+    "itemsWhere": "$.title[0]",
+    "record": {
+      "sourceId": {
+        "path": "$.DOI",
+        "type": "doi"
+      },
+      "doi": {
+        "path": "$.DOI",
+        "type": "doi"
+      },
+      "title": {
+        "path": "$.title[0]",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.author[*]",
+        "all": true,
+        "name": {
+          "family": "$.family",
+          "given": "$.given",
+          "literal": "$.name"
+        }
+      },
+      "year": {
+        "first": [
+          "$.published.date-parts[0][0]",
+          "$.issued.date-parts[0][0]"
+        ],
+        "type": "year"
+      },
+      "date": {
+        "first": [
+          "$.published.date-parts[0]",
+          "$.issued.date-parts[0]"
+        ],
+        "type": "date"
+      },
+      "venue": "$.container-title[0]",
+      "publisher": "$.publisher",
+      "abstract": {
+        "path": "$.abstract",
+        "type": "text"
+      },
+      "issn": "$.ISSN[0]",
+      "keywords": {
+        "path": "$.subject[*]",
+        "all": true
+      },
+      "url": {
+        "path": "$.DOI",
+        "template": "https://doi.org/{value}"
+      },
+      "type": {
+        "path": "$.type",
+        "map": {
+          "journal-article": "article",
+          "posted-content": "preprint",
+          "report": "report",
+          "report-series": "report",
+          "book": "book",
+          "monograph": "book",
+          "edited-book": "book",
+          "book-chapter": "chapter",
+          "dataset": "dataset",
+          "dissertation": "thesis",
+          "proceedings-article": "article"
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "Crossref holds the publisher metadata behind every DOI. It is the widest list of journal articles, books and reports, and useful to sweep one journal or to catch records the subject databases miss.",
+    "coverage": "About 170 million records from more than 20,000 publishers, all fields, all years. Abstracts are only there when the publisher sends them; many large publishers do not.",
+    "fields": "Crossref has a single relevance search over titles, authors, journal names and dates. Key sends each search word or phrase on its own, then keeps only the records that really match your full search (title, abstract, author and journal as you set them).",
+    "limits": [
+      "Not a boolean search: Key does the boolean part itself, so very common words return many records to check and take longer.",
+      "Records without an abstract can only match title words.",
+      "No wildcards; write out the word forms you need."
+    ],
+    "credentials": "No key needed. Setting your e-mail address under Key Settings lets Key use Crossref's faster 'polite' pool.",
+    "tips": [
+      "To sweep one journal, type its ISSN under 'One journal (ISSN)' and search a broad word or a date range.",
+      "Combine with OpenAlex: OpenAlex has more abstracts, Crossref is more complete for DOIs."
+    ]
+  },
+  "tests": [
+    {
+      "name": "school-feeding-reports",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase",
+                "field": "title"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2018,
+          "yearTo": 2022
+        }
+      },
+      "minTotal": 100,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "doi"
+      ],
+      "fixture": "school-feeding-reports",
+      "pageSize": 20
+    },
+    {
+      "name": "journal-sweep-by-issn",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "development",
+                "mode": "words",
+                "field": "all"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2021,
+          "yearTo": 2021
+        }
+      },
+      "options": {
+        "issn": "0304-3878"
+      },
+      "minTotal": 20,
+      "minResults": 5,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "doi",
+        "venue"
+      ],
+      "fixture": "journal-sweep-by-issn",
+      "pageSize": 20
+    }
+  ]
+}

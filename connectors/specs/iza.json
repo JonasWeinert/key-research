@@ -1,0 +1,182 @@
+{
+  "format": 1,
+  "id": "iza",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "IZA discussion papers",
+  "description": "Discussion papers of IZA, the Institute of Labor Economics: labour, education, health, migration and development economics.",
+  "homepage": "https://www.iza.org/publications/dp",
+  "category": "economics",
+  "coverage": "About 18,000 discussion papers from 1998 onwards.",
+  "terms": "Free. IZA has no API; Key reads the public discussion-paper listing with its title filter (www.iza.org/publications/dp?search=title&term=...; robots.txt allows everything) at one request every 1.5 seconds. The listing has no abstracts or dates. The page layout may change, which would stop this connector until it is updated.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.iza.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1500,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 20
+  },
+  "capabilities": {
+    "fields": [
+      "title"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 2000,
+    "sort": [
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "number"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "title": "{q}"
+    },
+    "fallback": {
+      "all": "title",
+      "title_abstract": "title",
+      "abstract": "title",
+      "keywords": "title",
+      "subject": "title",
+      "author": "title",
+      "journal": "title",
+      "affiliation": "title",
+      "fulltext": "title",
+      "identifier": "title"
+    },
+    "defaultField": "title",
+    "phrase": "{text}",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 200,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://www.iza.org/publications/dp",
+      "params": {
+        "search": "title",
+        "term": "{query}",
+        "limit": "{pageSize}",
+        "page": "{page}"
+      },
+      "format": "html"
+    },
+    "pageSize": 100,
+    "paging": {
+      "style": "page",
+      "start": 1,
+      "stopWhenFewer": true,
+      "stopWhenNoNew": true
+    },
+    "items": "article:contains(IZA Discussion Paper No)",
+    "record": {
+      "sourceId": {
+        "path": ":scope",
+        "regex": "Discussion Paper No\\.\\s*(\\d+)",
+        "template": "IZA-DP{value}"
+      },
+      "number": {
+        "path": ":scope",
+        "regex": "Discussion Paper No\\.\\s*(\\d+)"
+      },
+      "title": {
+        "path": "a:first-child",
+        "type": "text"
+      },
+      "url": {
+        "path": "a:first-child@href",
+        "type": "url"
+      },
+      "authors": {
+        "path": "div:nth-of-type(3)",
+        "type": "text",
+        "split": "re:\\s*,\\s*",
+        "all": true,
+        "name": {
+          "literal": "$"
+        }
+      },
+      "series": {
+        "path": ":scope",
+        "template": "IZA Discussion Paper"
+      },
+      "publisher": {
+        "path": ":scope",
+        "template": "IZA Institute of Labor Economics"
+      },
+      "type": {
+        "path": ":scope",
+        "template": "working-paper"
+      }
+    }
+  },
+  "guide": {
+    "summary": "IZA's discussion-paper series is one of the largest in labour economics and also covers education, health, migration, gender and development.",
+    "coverage": "About 18,000 papers since 1998. Many also appear in RePEc and EconStor, which have abstracts.",
+    "fields": "IZA's listing can only filter by words in the title, so every term is searched in titles. The listing shows title, authors and the paper number, not the abstract or date.",
+    "limits": [
+      "Title search only, no abstracts: use EconStor or OpenAlex as well to find IZA papers by their abstracts.",
+      "No year filter.",
+      "This connector reads IZA's web pages; if IZA redesigns its site it may stop working until Key updates it."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Keep IZA searches short (one or two title words per term); Key combines the rest of your search afterwards."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance-title",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words",
+                "field": "title"
+              }
+            ]
+          }
+        ]
+      },
+      "minResults": 3,
+      "pages": 1,
+      "fields": [
+        "title",
+        "authors",
+        "number",
+        "url"
+      ],
+      "fixture": "microfinance-title",
+      "pageSize": 10
+    }
+  ]
+}
