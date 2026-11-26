@@ -117,14 +117,26 @@ const cpu = (pid) => {
     r.rssIdleMiB = rss(h.child.pid);
     // Import three PDFs and time until they are read and indexed; peak RSS of the host and its workers.
     const pdfs = ["interaction.pdf", "scientific-unlinked.pdf", "PUBMED_33599681.pdf"].map((n) => path.resolve(__dirname, "../../../../../tests/fixtures", n));
+    const workers = {};
     const treeRss = () => {
-      const rows = execFileSync("ps", ["-axo", "pid=,ppid=,rss="], { encoding: "utf8" }).trim().split("\n").map((l) => l.trim().split(/\s+/).map(Number));
+      const rows = execFileSync("ps", ["-axo", "pid=,ppid=,rss=,command="], { encoding: "utf8" })
+        .trim()
+        .split("\n")
+        .map((l) => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/))
+        .filter(Boolean)
+        .map((m) => [Number(m[1]), Number(m[2]), Number(m[3]), m[4]]);
       const pids = new Set([h.child.pid]);
       for (let grew = true; grew; ) {
         grew = false;
         for (const [pid, ppid] of rows) if (pids.has(ppid) && !pids.has(pid)) pids.add(pid), (grew = true);
       }
-      return rows.filter(([pid]) => pids.has(pid)).reduce((s, [, , kb]) => s + kb, 0) / 1024;
+      const tree = rows.filter(([pid]) => pids.has(pid));
+      // Peak per worker kind (the host's own flags name them).
+      for (const [pid, , kb, command] of tree) {
+        const kind = pid === h.child.pid ? "host" : (command.match(/\s(--[a-z-]+)/)?.[1] ?? path.basename(command.split(" ")[0]));
+        workers[kind] = Math.max(workers[kind] ?? 0, Math.round(kb / 1024));
+      }
+      return tree.reduce((s, [, , kb]) => s + kb, 0) / 1024;
     };
     let peak = 0;
     const [indexMs] = await time(async () => {
@@ -138,6 +150,7 @@ const cpu = (pid) => {
     });
     r.indexThreePdfsMs = Math.round(indexMs);
     r.indexPeakTreeRssMiB = Math.round(peak);
+    r.indexPeakByWorkerMiB = JSON.stringify(workers);
     h.child.kill();
     results.push(r);
     console.error(JSON.stringify(r));

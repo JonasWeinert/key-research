@@ -83,8 +83,13 @@ impl Engine {
         // Core ML provider currently rejects this graph on some macOS/ORT
         // combinations during model compilation; CPU EP is available on all
         // supported desktop targets and is the benchmarked baseline.
+        // No CPU arena and no memory-pattern planning: the helper's peak drops from ~1.36 GB
+        // to ~0.98 GB at the same speed (scripts/bench-host.cjs), which matters on 8 GB
+        // machines indexing in the background.
         builder = builder
-            .with_execution_providers([ort::ep::CPU::default().build()])
+            .with_execution_providers([ort::ep::CPU::default().with_arena_allocator(false).build()])
+            .map_err(ort_error)?
+            .with_memory_pattern(false)
             .map_err(ort_error)?;
         builder = builder
             .with_optimization_level(GraphOptimizationLevel::Level3)
