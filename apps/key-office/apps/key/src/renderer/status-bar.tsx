@@ -1,6 +1,7 @@
 // The window's status bar (contract in shared/status-items.ts). Left: Zotero sync, background
 // work and the workspace, plus the latest error notice (main/app-notices.ts). Right: the
 // focused view's items, from native views over IPC or from DOM views via useStatusItems.
+import { openWorkspaceSettings } from "./settings-catalog";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "@key-reader/ui/dismiss";
@@ -378,9 +379,9 @@ export function StatusBar({
               item.id === "zotero"
                 ? onOpenZotero()
                 : item.id === "autoexport"
-                  ? window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "export" }))
+                  ? openWorkspaceSettings("citations", workspaceId)
                 : item.id === "md-export"
-                  ? window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "markdown" }))
+                  ? openWorkspaceSettings("markdown", workspaceId)
                 : item.id === "inbox"
                   ? openInbox(workspaceId)
                 : item.id === "workspace"

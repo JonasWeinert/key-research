@@ -134,7 +134,7 @@ async function filesUnder(dir) {
     assert.ok(log.some((l) => l.startsWith("/account.json")), "the key was tested against the account endpoint");
     assert.ok(!log.some((l) => l.startsWith("/search.json")), "testing a key does not spend a search");
     await shot(page, "services-saved-light");
-    await settings.getByRole("button", { name: "Close settings" }).click();
+    await settings.getByRole("button", { name: "Close Key Settings" }).click();
 
     // Web search: OpenAlex is limited without a key (429) → asked again with it → results.
     // Semantic Scholar is down → Google Scholar answers in its place, once.

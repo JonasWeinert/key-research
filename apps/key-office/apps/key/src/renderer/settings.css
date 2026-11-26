@@ -588,6 +588,138 @@ input.kx-settings-select::placeholder {
   font-weight: 600;
 }
 
+/* The window's head in the sidebar: its name (or, in Workspace Settings, the workspace being
+   edited, with a picker) and who its settings apply to. */
+.kx-settings-scope {
+  display: grid;
+  gap: 2px;
+  padding: 0 6px 2px;
+}
+.kx-settings-scope > small {
+  overflow: hidden;
+  color: var(--kx-text-3);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-settings-title,
+.kx-settings-picker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 24px;
+  color: var(--kx-text);
+  font: 600 13px var(--kx-font);
+}
+.kx-settings-title svg {
+  color: var(--kx-text-2);
+}
+.kx-settings-picker {
+  position: relative;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border-radius: 6px;
+}
+.kx-settings-picker:has(select):hover {
+  background: var(--kx-fill);
+}
+.kx-settings-picker:focus-within {
+  box-shadow: 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-settings-picker > strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-settings-picker > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-settings-picker > select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+}
+/* A search's matches in the other settings window. */
+.kx-settings-elsewhere > h4 {
+  margin: 4px 6px;
+  color: var(--kx-text-3);
+  font-size: 11px;
+  font-weight: 500;
+}
+.kx-settings-nav .kx-settings-elsewhere button {
+  color: var(--kx-text-2);
+}
+.kx-settings-elsewhere button > svg:last-child {
+  margin-left: auto;
+  color: var(--kx-text-3);
+}
+/* "Using app default · APA" with Change, or the workspace's own control and a way back. */
+.kx-settings-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-settings-reset {
+  font-size: 12px;
+}
+.kx-settings-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+.kx-settings-swatches > button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 13px;
+}
+.kx-settings-swatches > button:hover {
+  background: var(--kx-fill-2);
+}
+.kx-settings-swatches > button[aria-checked="true"] {
+  background: var(--kx-accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--kx-accent);
+}
+.kx-settings-swatches > .kx-settings-colour {
+  width: 18px;
+  height: 18px;
+  margin: 2px;
+  border-radius: 50%;
+}
+.kx-settings-swatches > .kx-settings-colour[aria-checked="true"] {
+  box-shadow: 0 0 0 2px var(--kx-bg), 0 0 0 3.5px var(--kx-accent);
+}
+.kx-settings-button.kx-settings-danger {
+  color: var(--kx-red);
+}
+.kx-settings-glyph[data-section="workspaces"],
+.kx-settings-glyph[data-section="workspace"] {
+  --glyph: var(--kx-accent);
+}
+.kx-settings-glyph[data-section="indexing"] {
+  --glyph: var(--kx-indigo);
+}
+.kx-settings-glyph[data-section="privacy"] {
+  --glyph: var(--kx-text-2);
+}
+.kx-settings-glyph[data-section="feeds"] {
+  --glyph: var(--kx-amber);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kx-settings-scroll {
     animation: none;

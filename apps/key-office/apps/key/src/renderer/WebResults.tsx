@@ -148,7 +148,7 @@ export default function WebResults({
       {!web.online ? (
         <p className="kx-web-note">You're offline. Web results come back when you reconnect.</p>
       ) : web.none ? (
-        <p className="kx-web-note">Every web source is turned off in Settings.</p>
+        <p className="kx-web-note">Every web source is turned off in Key Settings › Web & browser.</p>
       ) : query.trim().length < 2 && !web.filtered ? (
         <p className="kx-web-note">Type to search {names || "the web"}.</p>
       ) : (

@@ -18,18 +18,19 @@ pub(super) fn styles() -> &'static Styles {
     STYLES.get_or_init(|| Styles::new(std::env::var_os("KEY_CITATION_STYLES_DIR").map(Into::into)))
 }
 
-/// The style and locale asked for, else the ones chosen in Settings (the app's settings
-/// file, KEY_APP_SETTINGS_FILE, read each time so a change applies at once), else APA.
-pub(super) fn chosen(args: &Json) -> Result<(String, Option<String>), String> {
+/// The style and locale asked for, else this workspace's own (Workspace Settings), else the
+/// app's default (the app's settings file, KEY_APP_SETTINGS_FILE, read each time so a change
+/// applies at once), else APA.
+pub(super) fn chosen(store: &key_store::Store, args: &Json) -> Result<(String, Option<String>), String> {
     let style: Option<String> = arg::<Option<String>>(args, "style")?.filter(|s| !s.trim().is_empty());
     let locale: Option<String> = arg::<Option<String>>(args, "locale")?.filter(|s| !s.trim().is_empty());
     if style.is_some() && locale.is_some() {
         return Ok((style.unwrap_or_default(), locale));
     }
-    let settings: Json = std::env::var_os("KEY_APP_SETTINGS_FILE")
-        .and_then(|path| std::fs::read(path).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or(Json::Null);
+    let (own_style, own_locale) = super::workspace_settings::citation_override(store);
+    let style = style.or(own_style);
+    let locale = locale.or(own_locale);
+    let settings = super::workspace_settings::app_file();
     let saved = |key: &str| settings.get(key).and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from);
     let mut style = style.or_else(|| saved("citationStyle")).unwrap_or_else(|| key_cite::DEFAULT_STYLE.into());
     // A removed style falls back to the default rather than failing every citation.
@@ -44,7 +45,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         // Where a quotation is from in the chosen style: { id, page? (1-based text), label? }
         // -> { text, html, rtf }.
         "store_cite_attribution" => (|| {
-            let (style_id, locale) = chosen(args)?;
+            let (style_id, locale) = chosen(&library.store, args)?;
             let id: String = arg(args, "id")?;
             let page: Option<String> = arg(args, "page")?;
             let label: Option<String> = arg(args, "label")?;
@@ -56,7 +57,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         // -> { citations: [{text, html, rtf}], bibliography?: { entries, text, html, rtf, … },
         //      noteStyle, missing, style }. `ids` alone renders a bibliography of them.
         "store_cite_render" => (|| {
-            let (style_id, locale) = chosen(args)?;
+            let (style_id, locale) = chosen(&library.store, args)?;
             let citations: Vec<CitationInput> = arg::<Option<Vec<CitationInput>>>(args, "citations")?.unwrap_or_default();
             let ids: Vec<String> = arg::<Option<Vec<String>>>(args, "ids")?.unwrap_or_default();
             let bibliography = arg::<Option<bool>>(args, "bibliography")?.unwrap_or(citations.is_empty());
@@ -80,7 +81,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         })(),
         // CSL-JSON for sources (export, the Word add-in): { ids } -> [item].
         "store_cite_items" => arg::<Vec<String>>(args, "ids").and_then(|ids| json_output(csl_items(library, &ids)?)),
-        "store_cite_styles" => chosen(&Json::Null).and_then(|(style, locale)| {
+        "store_cite_styles" => chosen(&library.store, &Json::Null).and_then(|(style, locale)| {
             json_output(json!({ "styles": styles().list(), "locales": key_cite::styles::locale_list(), "folder": styles().dir(), "style": style, "locale": locale }))
         }),
         // { xml } (a file's contents) or { url } (a style id, or a zotero.org/styles or
@@ -102,8 +103,8 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
 }
 
 /// A source's bibliography entry in the chosen style, as Markdown (the Markdown export).
-pub fn reference_markdown(source: &key_store::Source) -> Option<String> {
-    let (style_id, locale) = chosen(&Json::Null).ok()?;
+pub fn reference_markdown(store: &key_store::Store, source: &key_store::Source) -> Option<String> {
+    let (style_id, locale) = chosen(store, &Json::Null).ok()?;
     let style = styles().style(&style_id).ok()?;
     let request = RenderRequest { citations: Vec::new(), bibliography: true, uncited: vec![source.id.clone()] };
     let out = key_cite::render(&style, locale.as_deref(), &[csl_json::from_source(source)], &request).ok()?;
