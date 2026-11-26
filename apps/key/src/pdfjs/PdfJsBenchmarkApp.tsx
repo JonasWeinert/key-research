@@ -33,6 +33,7 @@ import type {
 import { Icon } from '../ui/Icon';
 import { MarkdownEditor, MarkdownContent } from '../ui/MarkdownEditor';
 import { EmptyState, IconButton, PanelShell } from '../ui/primitives';
+import { useReaderOverlay } from './reader-dismiss';
 import {
   annotationId,
   boundsForRange,
@@ -2601,6 +2602,10 @@ function PdfJsBenchmarkApp({
   }, []);
 
   const context = selection || activeAnnotation ? contextRect : null;
+  useReaderOverlay(!!context && !commentDraft, '.pdfjs-selection-toolbar', () => setContextRect(null));
+  useReaderOverlay(!!hoveredLink && !context, '.pdfjs-link-card', () => setHoveredLink(null));
+  useReaderOverlay(!!citationFocus && !context, '.pdfjs-citation-card:not(.pdfjs-external-citation-card)', () => (setSelectedCitation(null), setHoveredCitation(null)));
+  useReaderOverlay(!!externalCitation && !context, '.pdfjs-external-citation-card', () => setExternalCitation(null));
   const comments = useMemo(
     () => annotations.filter(annotation => annotation.comment),
     [annotations],
