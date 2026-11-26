@@ -57,7 +57,7 @@ const term = (name: string, text: string): TermEntry => ({ kind: "term", term: n
 export const HELP = {
   // ── Settings: General ────────────────────────────────────────────────────────────────
   "settings.general.appearance": hint("Light, dark, or follow your Mac. PDFs, notes and web pages keep their own colours."),
-  "settings.general.tips": hint("Short tips point out features that are easy to miss, once each. Turn this on to see them again."),
+  "settings.general.tips": hint("Short tips point out features that are easy to miss, once each. Show again brings back the ones you closed."),
   "settings.general.glossary": hint("Words Key uses, in plain terms."),
 
   // ── Settings: Libraries ──────────────────────────────────────────────────────────────
@@ -463,10 +463,10 @@ export const HELP = {
   "model.download": explain(
     "Model download",
     [
-      "Some features use small AI models that run on this Mac: one to search by meaning, one to understand PDF layouts. Each is downloaded once from Hugging Face, a public site that hosts models, and kept in Key’s model folder.",
-      "After the download they work without the internet. You can delete them from the model folder; Key will offer to download them again.",
+      "Some features use small AI models that run on this Mac: one to search by meaning (about 310 MB), one to understand PDF layouts (about 66 MB) and one for search inside the reader (about 24 MB). Each is downloaded once, the first time it is needed, from Hugging Face, a public site that hosts models, and checked before use.",
+      "After that they work without the internet. Remove deletes them; Key downloads them again when needed. On a Mac without internet, add a model from a file.",
     ],
-    { privacy: "Downloading sends nothing about you or your library. The models never send anything." },
+    { privacy: "Downloading is a plain file download. Nothing about you or your library is sent, and the models never send anything." },
   ),
 
   // ── Onboarding ──────────────────────────────────────────────────────────────────────

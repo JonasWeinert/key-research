@@ -54,6 +54,8 @@ export function Explain({ help, label, className }: { help: ExplainId; label?: b
         data-help={help}
         onClick={(e) => {
           e.stopPropagation();
+          // macOS does not focus a clicked button; Escape gives focus back to it.
+          e.currentTarget.focus({ preventScroll: true });
           setOpen((v) => !v);
         }}
       >
@@ -88,10 +90,13 @@ function ExplainPopover({ id, entry, help, anchor, onClose }: { id: string; entr
     window.addEventListener("resize", position);
     return () => window.removeEventListener("resize", position);
   }, [anchor]);
+  // Focus moves in once it is placed (a hidden element takes no focus), so screen readers
+  // read it; the dismiss layer gives focus back to the trigger on Escape.
+  const placed = !!place;
   useEffect(() => {
-    ref.current?.focus({ preventScroll: true });
-  }, []);
-  useDismiss(true, { refs: [ref, anchor], anchor, onDismiss: onClose });
+    if (placed) ref.current?.focus({ preventScroll: true });
+  }, [placed]);
+  useDismiss(placed, { refs: [ref, anchor], anchor, onDismiss: onClose });
   return createPortal(
     <div
       ref={ref}
