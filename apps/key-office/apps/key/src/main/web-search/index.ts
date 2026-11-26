@@ -233,7 +233,7 @@ export class WebSearch {
       this.fallbacks.set(key, running);
     }
     const page = await running;
-    return page?.results.length ? { ...page, cursor: undefined } : undefined;
+    return page?.results.length ? { ...page, results: page.results.map((r) => ({ ...r, fallbackFor: failed.id })), cursor: undefined } : undefined;
   }
 
   /** Which of these works the library already has: key → source id. */

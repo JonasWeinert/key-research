@@ -13,12 +13,14 @@ import type { Mode as ZoteroMode } from "./zotero-sheet-model";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
+import ServiceKeys from "./ServiceKeys";
 
-export type SettingsSection = "general" | "libraries" | "search" | "ai" | "about";
+export type SettingsSection = "general" | "libraries" | "search" | "services" | "ai" | "about";
 const SECTIONS: [SettingsSection, string, IconName][] = [
   ["general", "General", "gear"],
   ["libraries", "Libraries", "books"],
   ["search", "Search & indexing", "search"],
+  ["services", "Services & API keys", "key"],
   ["ai", "AI assistant", "sparkle"],
   ["about", "About Key", "info"],
 ];
@@ -74,6 +76,7 @@ export default function Settings({
               <Libraries invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} onOpenLibrary={onOpenLibrary} onChanged={onWorkspacesChanged} />
             )}
             {section === "search" && <SearchSettings invoke={invoke} workspaces={workspaces} info={info} settings={settings} onSettings={onSettings} />}
+            {section === "services" && <ServiceKeys invoke={invoke} />}
             {section === "ai" && <AiSettings invoke={invoke} workspaceId={workspaces[0]?.id} />}
             {section === "about" && <About info={info} />}
           </div>
@@ -426,15 +429,7 @@ function SearchSettings({
             onBlur={(e) => e.target.value.trim() !== settings.openalexMailto && onSettings({ openalexMailto: e.target.value.trim() })}
           />
         </Row>
-        <Row label="API key" detail="Optional. A free key gives you a daily budget of your own.">
-          <input
-            className="kx-settings-select"
-            type="password"
-            aria-label="OpenAlex API key"
-            defaultValue={settings.openalexApiKey}
-            onBlur={(e) => e.target.value.trim() !== settings.openalexApiKey && onSettings({ openalexApiKey: e.target.value.trim() })}
-          />
-        </Row>
+        <Row label="API key" detail="Optional, used when requests without it are limited. Set it under Services & API keys." />
         <PossibleDuplicates invoke={invoke} workspaceId={workspaceId} />
       </Group>
       <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />

@@ -176,6 +176,8 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     noted: (key: string, sourceId: string) => setInLibrary((m) => ({ ...m, [key]: sourceId })),
     loadMore,
     retry: (id: string) => run(id),
+    /** Every provider, on or not: a fallback (Google Scholar) may answer in another's place. */
+    infos: infos ?? [],
     /** No provider is on (all turned off in Settings). */
     none: !!infos && !enabled.length,
     canLoadMore: providers.some((p) => p.status === "done" && p.cursor),

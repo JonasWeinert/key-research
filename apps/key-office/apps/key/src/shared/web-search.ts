@@ -22,6 +22,8 @@ export interface WebProviderInfo {
 export interface WebResult {
   /** The provider that found it, and its id there. */
   provider: string;
+  /** Found by this (keyed) provider in the place of the one asked, which failed. */
+  fallbackFor?: string;
   providerId: string;
   title: string;
   authors: string[];
@@ -95,8 +97,10 @@ export function mergeWeb(lists: { provider: string; results: WebResult[] }[]): W
   const byArxiv = new Map<string, WebHit>();
   const byTitle = new Map<string, WebHit[]>();
   const order = lists.map((l) => l.provider);
-  lists.forEach(({ provider, results }) => {
+  lists.forEach(({ provider: asked, results }) => {
     results.forEach((result, rank) => {
+      // A fallback provider can answer in the place of the one asked (Google Scholar).
+      const provider = result.fallbackFor ? result.provider : asked;
       const title = titleKey(result.title);
       const arxiv = result.ids.arxiv?.toLowerCase();
       let hit = result.doi ? byDoi.get(result.doi) : undefined;

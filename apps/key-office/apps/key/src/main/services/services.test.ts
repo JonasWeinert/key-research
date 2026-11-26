@@ -128,10 +128,10 @@ describe("Google Scholar via SerpApi", () => {
 });
 
 describe("web search with keys", () => {
-  const keysOf = (keys: Record<string, string>, mode: "fallback" | "always" = "fallback"): ServiceKeys & { record: ReturnType<typeof vi.fn> } => ({
-    key: (s) => keys[s],
+  const keysOf = (keys: Record<string, string>, mode: "fallback" | "always" = "fallback") => ({
+    key: (s: string) => keys[s],
     mode: () => mode,
-    record: vi.fn(),
+    record: vi.fn<ServiceKeys["record"]>(),
   });
   it("retries a rate-limited OpenAlex search with the key", async () => {
     const urls: string[] = [];

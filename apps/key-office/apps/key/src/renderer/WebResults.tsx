@@ -65,7 +65,7 @@ export default function WebResults({
   query: string;
 }) {
   const [adding, setAdding] = useState<Record<string, Adding>>({});
-  const label = (id: string) => web.providers.find((p) => p.info.id === id)?.info.label ?? id;
+  const label = (id: string) => (web.providers.find((p) => p.info.id === id)?.info ?? web.infos.find((p) => p.id === id))?.label ?? id;
   const names = web.providers.map((p) => p.info.label).join(" and ");
 
   const add = async (hit: WebHit) => {

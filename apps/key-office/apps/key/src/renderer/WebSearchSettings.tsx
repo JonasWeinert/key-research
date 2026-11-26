@@ -24,7 +24,7 @@ export default function WebSearchSettings({ invoke, settings, onSettings }: { in
         const entry = entries[p.id] ?? {};
         return (
           <Fragment key={p.id}>
-            <Row label={p.label} detail={p.id === "openalex" ? "Uses the contact email and API key above." : undefined}>
+            <Row label={p.label} detail={p.id === "openalex" ? "Uses the contact email and API key above." : p.keyRequired && !p.apiKey ? p.keyHelp : undefined}>
               <input
                 type="checkbox"
                 className="kx-switch"
