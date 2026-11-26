@@ -11,6 +11,7 @@ import { Icon, type IconName } from "./icons";
 import { openItemAt } from "./item-actions";
 import { showMenu } from "./item-ui";
 import { bridge, type Invoke, type MapKind, type MapNode, type RelationMapData } from "./library-api";
+import { RelationMapLegend, Shape } from "./relation-map-legend";
 import { MAP_LABEL, MAP_ORDER, arc, labelAnchor, layoutMap, nodeKey, truncate, type PlacedNode } from "./relation-map-layout";
 import "./relation-map.css";
 
@@ -31,10 +32,32 @@ type Variant = "page" | "paper" | "embed";
 
 const HEIGHT: Record<Variant, number> = { page: 440, paper: 300, embed: 380 };
 const CAPS = [5, 8, 14];
+// Listed in every legend (others only when the map has them); a source's map has sources too.
+const LEGEND_KINDS: MapKind[] = ["topic", "person", "venue", "tag", "collection"];
 const KIND_ICON: Record<MapKind, IconName> = { topic: "topic", field: "topic", person: "person", venue: "journal", tag: "tag", collection: "collection", source: "doc" };
 
 // Answers are kept while the library is unchanged, so re-centring back is instant.
 const cache = new Map<string, Promise<RelationMapData | null>>();
+/** Where a map's filter is remembered: per entity kind on overview pages, once for source pages. */
+const memoryKey = (variant: Variant, kind: MapKind) => (variant === "page" ? `key.relation-map.kinds.${kind === "field" ? "topic" : kind}` : variant === "paper" ? "key.relation-map.kinds.paper" : undefined);
+function remembered(key: string | undefined): MapKind[] | undefined {
+  if (!key) return undefined;
+  try {
+    const list = JSON.parse(localStorage.getItem(key) ?? "null");
+    return Array.isArray(list) ? MAP_ORDER.filter((k) => list.includes(k)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function remember(key: string | undefined, kinds: MapKind[]) {
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify(kinds));
+  } catch {
+    // Not remembered; the map opens showing every kind.
+  }
+}
+
 function load(invoke: Invoke, workspaceId: string, center: MapCenter, cap: number) {
   const kind = center.kind === "field" ? "topic" : center.kind;
   const key = `${workspaceId}|${kind}:${center.id}|${cap}`;
@@ -44,25 +67,6 @@ function load(invoke: Invoke, workspaceId: string, center: MapCenter, cap: numbe
     cache.set(key, answer);
   }
   return cache.get(key)!;
-}
-
-function Shape({ kind, r }: { kind: MapKind; r: number }) {
-  switch (kind) {
-    case "topic":
-    case "field": {
-      const d = r * 1.18;
-      return <rect className="kx-map-shape" x={-d / 2} y={-d / 2} width={d} height={d} rx={d * 0.22} transform="rotate(45)" data-hollow={kind === "field" || undefined} />;
-    }
-    case "venue":
-    case "collection":
-      return <rect className="kx-map-shape" x={-r * 0.92} y={-r * 0.92} width={r * 1.84} height={r * 1.84} rx={r * 0.42} data-hollow={kind === "collection" || undefined} />;
-    case "tag":
-      return <rect className="kx-map-shape" x={-r * 1.25} y={-r * 0.72} width={r * 2.5} height={r * 1.44} rx={r * 0.72} />;
-    case "source":
-      return <rect className="kx-map-shape" x={-r * 0.72} y={-r * 0.95} width={r * 1.44} height={r * 1.9} rx={r * 0.3} />;
-    default:
-      return <circle className="kx-map-shape" r={r} />;
-  }
 }
 
 export default function RelationMap({
@@ -91,12 +95,17 @@ export default function RelationMap({
   const center = trail.at(-1) ?? origin;
   const [data, setData] = useState<RelationMapData | null>();
   const [cap, setCap] = useState(options?.cap ?? (variant === "paper" ? 5 : 8));
-  const [hidden, setHidden] = useState<Set<MapKind>>(() => new Set(options?.kinds ? MAP_ORDER.filter((k) => !options.kinds!.includes(k)) : []));
+  const memory = memoryKey(variant, origin.kind);
+  // The kinds the legend filters to (none: all of them).
+  const [selected, setSelected] = useState<MapKind[]>(() => options?.kinds ?? remembered(memory) ?? []);
+  const [hoverKind, setHoverKind] = useState<MapKind>();
   const [minCount, setMinCount] = useState(options?.minCount ?? 1);
   const [hover, setHover] = useState<string>();
   const [choice, setChoice] = useState<{ node: PlacedNode; el: Element }>();
 
   useEffect(() => setTrail([]), [origin.kind, origin.id]);
+  // A filter to one or two kinds uses the room the others leave: the next cap up.
+  const limit = selected.length && selected.length <= 2 ? (CAPS[Math.min(CAPS.length - 1, CAPS.indexOf(cap) + 1)] ?? cap) : cap;
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -113,13 +122,13 @@ export default function RelationMap({
   }, []);
   const reload = useCallback(() => {
     let live = true;
-    void load(invoke, workspaceId, center, cap)
+    void load(invoke, workspaceId, center, limit)
       .then((answer) => live && setData(answer))
       .catch(() => live && setData(null));
     return () => {
       live = false;
     };
-  }, [invoke, workspaceId, center.kind, center.id, cap]);
+  }, [invoke, workspaceId, center.kind, center.id, limit]);
   const [stamp, setStamp] = useState(0);
   useEffect(
     () =>
@@ -131,7 +140,18 @@ export default function RelationMap({
   );
   useEffect(() => (visible ? reload() : undefined), [visible, reload, stamp]);
 
-  const kinds = useMemo(() => new Set(MAP_ORDER.filter((k) => !hidden.has(k))), [hidden]);
+  // What each kind shows at this strength; a filter only to kinds the map lacks shows all.
+  const counts = useMemo(() => {
+    const out = new Map<MapKind, number>();
+    for (const n of data?.nodes ?? []) if (n.kind === "source" || n.count >= minCount) out.set(n.kind, (out.get(n.kind) ?? 0) + 1);
+    return out;
+  }, [data, minCount]);
+  const active = useMemo(() => {
+    const present = selected.filter((k) => counts.get(k));
+    return present.length && MAP_ORDER.some((k) => counts.get(k) && !present.includes(k)) ? present : [];
+  }, [selected, counts]);
+  const kinds = useMemo(() => new Set(active.length ? active : MAP_ORDER), [active]);
+  const legendKinds = useMemo(() => MAP_ORDER.filter((k) => LEGEND_KINDS.includes(k) || (k === "source" && origin.kind === "source") || data?.nodes.some((n) => n.kind === k)), [data, origin.kind]);
   const summaryRef = useRef(onSummary);
   summaryRef.current = onSummary;
   useEffect(() => {
@@ -144,9 +164,15 @@ export default function RelationMap({
   const compact = variant === "paper" || width < 560;
   const height = width < 560 ? Math.min(HEIGHT[variant], 340) : HEIGHT[variant];
   const layout = useMemo(() => (data && width ? layoutMap(data, { width, height, kinds, minCount, compact }) : undefined), [data, width, height, kinds, minCount, compact]);
-  const save = (next: Partial<MapOptions>) => onOptions?.({ kinds: MAP_ORDER.filter((k) => !hidden.has(k)), cap, minCount, ...next });
+  const save = (next: Partial<MapOptions>) => onOptions?.({ kinds: selected.length ? selected : undefined, cap, minCount, ...next });
+  const select = (next: MapKind[]) => {
+    setSelected(next);
+    remember(memory, next);
+    save({ kinds: next.length ? next : undefined });
+  };
 
   const neighbours = useMemo(() => {
+    if (hoverKind && kinds.has(hoverKind) && layout && !hover) return new Set(layout.nodes.filter((n) => n.kind === hoverKind).map((n) => n.key));
     if (!hover || !layout) return undefined;
     const set = new Set([hover]);
     for (const l of layout.links) {
@@ -154,7 +180,7 @@ export default function RelationMap({
       if (l.b === hover) set.add(l.a);
     }
     return set;
-  }, [hover, layout]);
+  }, [hover, hoverKind, kinds, layout]);
   const byKey = useMemo(() => new Map(layout?.nodes.map((n) => [n.key, n]) ?? []), [layout]);
   // Ties between the shown nodes appear only for the one hovered: calm until asked.
   const hoverLinks = useMemo(() => (layout && hover ? layout.links.filter((l) => l.a === hover || l.b === hover) : []), [layout, hover]);
@@ -185,15 +211,15 @@ export default function RelationMap({
       });
   };
 
-  const counts = useMemo(() => {
-    const out = new Map<MapKind, number>();
-    for (const n of data?.nodes ?? []) out.set(n.kind, (out.get(n.kind) ?? 0) + 1);
-    return out;
-  }, [data]);
   const maxCount = Math.max(1, ...(data?.nodes.filter((n) => n.kind !== "source").map((n) => n.count) ?? [1]));
   const hovered = hover ? byKey.get(hover) : undefined;
   const caption = (() => {
     if (!data) return "";
+    if (!hovered && hoverKind) {
+      const n = counts.get(hoverKind) ?? 0;
+      const name = MAP_LABEL[hoverKind][n === 1 ? 0 : 1].toLowerCase();
+      return `${n} ${name} · ${active.length === 1 && active[0] === hoverKind ? "click to show every kind" : "click to show only these, ⌘-click to add or remove"}`;
+    }
     if (!hovered) {
       if (variant === "paper") return "Its topics, people and journal, and the library sources closest to it";
       return `${data.center.count} ${data.center.count === 1 ? "source" : "sources"} · nearer and larger means more in common`;
@@ -245,31 +271,7 @@ export default function RelationMap({
     <div className="kx-map" data-variant={variant} data-compact={compact || undefined} ref={box}>
       {variant !== "paper" && data && (
         <div className="kx-map-bar">
-          <div className="kx-map-legend" role="group" aria-label="Kinds shown">
-            {MAP_ORDER.filter((k) => counts.get(k)).map((k) => (
-              <button
-                key={k}
-                className="kx-map-kind"
-                data-kind={k}
-                aria-pressed={!hidden.has(k)}
-                title={hidden.has(k) ? `Show ${MAP_LABEL[k][1].toLowerCase()}` : `Hide ${MAP_LABEL[k][1].toLowerCase()}`}
-                onClick={() => {
-                  const next = new Set(hidden);
-                  if (next.has(k)) next.delete(k);
-                  else next.add(k);
-                  setHidden(next);
-                  save({ kinds: MAP_ORDER.filter((x) => !next.has(x)) });
-                }}
-              >
-                <svg width="12" height="12" viewBox="-6 -6 12 12" aria-hidden>
-                  <Shape kind={k} r={4} />
-                </svg>
-                {MAP_LABEL[k][1]}
-                {!!data.more[k] && <small>+{data.more[k]}</small>}
-              </button>
-            ))}
-          </div>
-          <span className="kx-spacer" />
+          <RelationMapLegend kinds={legendKinds} counts={counts} more={data.more} selected={active} onSelect={select} onHover={setHoverKind} />
           {maxCount > 1 && (
             <label className="kx-map-strength" title="Only what shares at least this many sources">
               <span>At least</span>
@@ -314,7 +316,7 @@ export default function RelationMap({
         {data === null && <p className="kx-map-empty">This is no longer in the library.</p>}
         {data && !data.nodes.length && <p className="kx-map-empty">Nothing in the library relates to it yet. Topics, people and journals appear as sources are looked up.</p>}
         {layout && data && !!data.nodes.length && (
-          <svg className="kx-map-svg" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} role="group" aria-label={`How ${data.center.name} relates to the rest of the library`} data-hovering={hover ? "" : undefined}>
+          <svg className="kx-map-svg" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} role="group" aria-label={`How ${data.center.name} relates to the rest of the library`} data-hovering={hover || hoverKind ? "" : undefined}>
             <g className="kx-map-spokes">
               {spokes.map((n) => (
                 <path
@@ -388,6 +390,11 @@ export default function RelationMap({
         )}
         {data === undefined && visible && <div className="kx-map-loading" aria-busy="true" />}
       </div>
+      {variant === "paper" && data && !!data.nodes.length && (
+        <div className="kx-map-foot">
+          <RelationMapLegend kinds={legendKinds} counts={counts} more={data.more} selected={active} onSelect={select} onHover={setHoverKind} compact />
+        </div>
+      )}
       {data && !!data.nodes.length && (
         <p className="kx-map-caption" aria-live="polite">
           {caption}
