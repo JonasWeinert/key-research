@@ -79,7 +79,7 @@ function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId:
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => {
     if (!working(report)) return;
-    const timer = setTimeout(() => void refresh(), 2000);
+    const timer = setTimeout(() => void refresh(), 1000);
     return () => clearTimeout(timer);
   }, [report, refresh]);
   const references = report
