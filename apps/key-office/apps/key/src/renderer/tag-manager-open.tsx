@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "./item-actions";
 import type { Invoke } from "./library-api";
-import { analyzeTagsAsync, plural, type TagIndex } from "./tag-analysis";
-import TagManager from "./TagManager";
+import type { TagIndex } from "./tag-analysis";
+import { lazyComponent } from "./lazy";
+
+// The manager and its analysis load when first opened.
+export const TagManager = lazyComponent(() => import("./TagManager").then((m) => m.default));
 
 const EVENT = "key:open-tag-manager";
 
@@ -31,6 +34,7 @@ export function TagManagerHost({ invoke }: { invoke: Invoke }) {
 export async function offerTagCleanup(invoke: Invoke, workspaceId: string) {
   const index = await invoke<TagIndex>("store_tag_index", {}, workspaceId);
   if (index.tags.length < 8) return;
+  const { analyzeTagsAsync, plural } = await import("./tag-analysis");
   const dismissed = await invoke<string[] | null>("store_ui_get", { key: "tagManager.dismissed" }, workspaceId).catch(() => null);
   const suggestions = await analyzeTagsAsync(index, { dismissed: new Set(dismissed ?? []) });
   if (suggestions.length < 3) return;

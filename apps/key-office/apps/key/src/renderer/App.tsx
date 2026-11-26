@@ -1,10 +1,10 @@
 import { Button, Input } from "@key/design-system";
 import { Icon, type IconName } from "./icons";
 import { ModelProgressPill, useModelProgress } from "./model-progress";
-import Onboarding from "./Onboarding";
-import { notesChanged } from "./NotePage";
+import { lazyComponent } from "./lazy";
+import { notesChanged } from "./note-events";
 import { markdownToPlainText } from "./note-editor";
-import Settings, { type SettingsSection } from "./Settings";
+import type { SettingsSection } from "./Settings";
 import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api";
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
 import { AddFromSourceHost } from "./add-from-source";
@@ -29,13 +29,16 @@ import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
-import { ZoteroImportSheet } from "./ZoteroImport";
 import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
 import { StatusBar } from "./status-bar";
-import { zoteroWorkspaceOf } from "./ZoteroSyncSettings";
+import { zoteroWorkspaceOf } from "./zotero-workspace";
+// Loaded on first use: most sessions never open these.
+const Settings = lazyComponent(() => import("./Settings").then((m) => m.default));
+const Onboarding = lazyComponent(() => import("./Onboarding").then((m) => m.default));
+const ZoteroImportSheet = lazyComponent(() => import("./ZoteroImport").then((m) => m.ZoteroImportSheet));
 interface Workspace {
   id: string;
   name: string;

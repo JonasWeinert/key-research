@@ -9,7 +9,7 @@ import { bridge, type Invoke, type Note } from "./library-api";
 import Palette, { type Command } from "./Palette";
 import { openSearchTab } from "./global-search";
 import type { DraggedItem } from "./note-editor";
-import { notesChanged } from "./NotePage";
+import { notesChanged } from "./note-events";
 
 type Open = { mode: "open" } | { mode: "search" } | { mode: "commands" } | { mode: "send"; items: DraggedItem[] } | { mode: "shortcuts" };
 

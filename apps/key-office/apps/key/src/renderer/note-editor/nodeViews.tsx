@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useReducer, useRef, useState } from "react";
+import { useContext, useEffect, useReducer, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { NodeViewContent, NodeViewWrapper } from "@tiptap/react";
@@ -205,30 +205,8 @@ export function SourceEmbedView({ node, editor, selected }: ReactNodeViewProps) 
 
 // ── Item embed ─────────────────────────────────────────────────────────────
 
-/** An embed's own view of its item: a relation map with the options it was saved with. */
-export interface EmbedView {
-  view: string;
-  kinds?: string[];
-  cap?: number;
-  minCount?: number;
-  editable: boolean;
-  /** Keeps changed options (and the Markdown fallback line) in the note. */
-  update(attrs: { kinds?: string[]; cap?: number; minCount?: number; label?: string }): void;
-}
-/** How an embedded item shows (set by the app); `depth` counts embeds within embeds. */
-export type EmbedRenderer = (item: ItemLink, depth: number, label: string, view?: EmbedView) => ReactNode;
-let embedRenderer: EmbedRenderer | null = null;
-export function setEmbedRenderer(render: EmbedRenderer) {
-  embedRenderer = render;
-}
-/** Where the "Relation map" block finds what to centre on, when the editor's props don't say. */
-let mapCenterSearch: ((query: string) => Promise<SourceRef[]>) | null = null;
-export function setMapCenterSearch(search: (query: string) => Promise<SourceRef[]>) {
-  mapCenterSearch = search;
-}
-export const defaultMapCenterSearch = (query: string) => mapCenterSearch?.(query) ?? Promise.resolve([]);
-/** How deep the embed being drawn is: a note embedded in a note that embeds it stops there. */
-export const EmbedDepth = createContext(0);
+export { EmbedDepth, defaultMapCenterSearch, setEmbedRenderer, setMapCenterSearch, type EmbedRenderer, type EmbedView } from "./embeds";
+import { EmbedDepth, getEmbedRenderer, type EmbedView } from "./embeds";
 
 export function ItemEmbedView({ node, editor, selected, updateAttributes }: ReactNodeViewProps) {
   const href = String(node.attrs.href ?? "");
@@ -263,7 +241,7 @@ export function ItemEmbedView({ node, editor, selected, updateAttributes }: Reac
         data-item-title={label}
         onDoubleClick={() => !view && item && getRuntime(editor)?.openItem(item)}
       >
-        <EmbedDepth.Provider value={depth + 1}>{item && embedRenderer ? embedRenderer(item, depth + 1, label, options) : <span className="ne-item-embed-missing">{label}</span>}</EmbedDepth.Provider>
+        <EmbedDepth.Provider value={depth + 1}>{item && getEmbedRenderer() ? getEmbedRenderer()!(item, depth + 1, label, options) : <span className="ne-item-embed-missing">{label}</span>}</EmbedDepth.Provider>
       </div>
     </NodeViewWrapper>
   );

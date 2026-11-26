@@ -1,5 +1,5 @@
 // The library's "Manage tags" entry points open the tag manager.
-import TagManager from "./TagManager";
+import { TagManager } from "./tag-manager-open";
 import type { Invoke } from "./library-api";
 
 export default function TagManagerDialog({ invoke, workspaceId, onClose, onSaved, focus }: { invoke: Invoke; workspaceId?: string; onClose: () => void; onSaved: () => void; focus?: string }) {
