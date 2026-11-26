@@ -106,7 +106,7 @@ type OwnedView = {
   /** The address of that page. */
   referrerUrl?: string;
   /** A browser tab on an article page: the library source it is (once looked up), and an add in progress. */
-  articleState?: { key: string; sourceId?: string; busy?: boolean };
+  articleState?: { key: string; sourceId?: string; busy?: boolean; possible?: boolean };
   /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library.
    * `referrer` is the page that led to it. */
   temp?: { url: string; hash: string; referrer?: string };
@@ -452,7 +452,7 @@ function viewSummary(id: string) {
       canGoBack: v.web.canGoBack,
       canGoForward: v.web.canGoForward,
       stalled: v.web.stalled || undefined,
-      article: v.web.article && { title: v.web.article.title, doi: v.web.article.doi, inLibrary: !!v.articleState?.sourceId, busy: !!v.articleState?.busy },
+      article: v.web.article && { title: v.web.article.title, doi: v.web.article.doi, inLibrary: !!v.articleState?.sourceId && !v.articleState.possible, possiblyInLibrary: !!v.articleState?.possible, busy: !!v.articleState?.busy },
     },
     temp: v?.temp ? true : undefined,
   };

@@ -14,7 +14,7 @@ export interface WebBarState {
   /** A bot check that has not moved on for a while. */
   stalled?: boolean;
   /** The page is a scholarly article. */
-  article?: { title?: string; doi?: string; inLibrary?: boolean; busy?: boolean };
+  article?: { title?: string; doi?: string; inLibrary?: boolean; possiblyInLibrary?: boolean; busy?: boolean };
   /** Library proxies: the page came through one (just sent by Key: Undo is offered), or one was noticed. */
   proxy?: { via?: { name: string; host: string; redirected?: boolean }; offer?: { name: string; host: string } };
 }
@@ -95,6 +95,12 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
               In library
             </button>
           ) : (
+            <>
+            {article.possiblyInLibrary && !article.busy && (
+              <button type="button" className="key-web-article" data-possible title="A source with this title is in your library: open it" onClick={() => onPage?.("open-article")}>
+                Possibly in library
+              </button>
+            )}
             <button
               type="button"
               className="key-web-article"
@@ -103,8 +109,9 @@ export function BrowserBar({ state, style, onStep, onPage, viewId }: { state: We
               onClick={() => onPage?.("add-article")}
             >
               <Icon name="plus" size={12} />
-              {article.busy ? "Adding…" : "Add to library"}
+              {article.busy ? "Adding…" : article.possiblyInLibrary ? "Add anyway" : "Add to library"}
             </button>
+            </>
           )
         ) : null}
       </span>

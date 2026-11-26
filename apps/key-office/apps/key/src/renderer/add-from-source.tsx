@@ -27,6 +27,8 @@ export interface AddWork {
   url?: string | null;
   byline?: string | null;
   container?: string | null;
+  /** Its authors' names, as the context lists them. */
+  authors?: string[] | null;
 }
 /** Where it is added from: the source whose references, card or result it came from. */
 export interface AddOrigin {
@@ -92,9 +94,29 @@ export async function addFromSource(invoke: Invoke, origin: AddOrigin, work: Add
   return source;
 }
 
+/** "Ada Lovelace" → given Ada, family Lovelace; "Lovelace, Ada" too; one word stays literal. */
+function creatorOf(name: string) {
+  if (name.includes(",")) {
+    const [family, given] = name.split(",", 2);
+    return { family: family.trim(), given: given.trim(), role: "author" };
+  }
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? { family: parts.at(-1), given: parts.slice(0, -1).join(" "), role: "author" } : { literal: name.trim(), role: "author" };
+}
+
 async function insertWork(invoke: Invoke, workspaceId: string, work: AddWork, collections: string[]) {
   let source: Source;
-  if (work.openalexId) {
+  // Already in the library (by an identifier or its link): that source is filed, not a copy made.
+  const known = await invoke<{ sourceId: string; certain: boolean }[]>(
+    "store_match_identifiers",
+    { works: [{ key: "work", doi: work.doi, url: work.url, openalex: work.openalexId, title: work.title, year: work.year }] },
+    workspaceId,
+  ).catch(() => []);
+  const existing = known?.find((m) => m.certain);
+  const found = existing && (await invoke<Source | null>("store_source", { id: existing.sourceId }, workspaceId).catch(() => null));
+  if (found) {
+    source = found;
+  } else if (work.openalexId) {
     source = await invoke<Source>("store_add_work", { openalexId: work.openalexId, title: work.title, doi: work.doi, year: work.year, collectionId: collections[0] ?? null }, workspaceId);
   } else {
     const web = !work.doi && !!work.url;
@@ -109,6 +131,7 @@ async function insertWork(invoke: Invoke, workspaceId: string, work: AddWork, co
           ...(work.year ? { year: work.year } : {}),
           ...(work.url ? { url: work.url } : {}),
           ...(work.container ? { containerTitle: work.container } : {}),
+          ...(work.authors?.length ? { creators: work.authors.slice(0, 100).map(creatorOf) } : {}),
           collections,
           ...(web ? {} : { indexStatus: "skipped" }),
         },
