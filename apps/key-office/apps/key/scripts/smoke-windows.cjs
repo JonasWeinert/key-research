@@ -3,7 +3,7 @@
 // events reach every window, a tab moves back and the emptied window closes, and
 // File › New Window opens a window that can close without quitting the app.
 // Each window shows one workspace: switching replaces it in place and brings its
-// arrangement (nested splits and ratios) back on return; Cmd-click opens another
+// arrangement (groups and their sizes) back on return; Cmd-click opens another
 // workspace in a window of its own; a window already showing a workspace comes forward
 // instead of opening it twice; a tab dragged out of the window tears off; and after a
 // relaunch every window returns on its workspace, frame and layout.
@@ -138,29 +138,21 @@ const assert = require("node:assert/strict");
     assert.equal((await tabs()).workspaceId, ws.id);
     assert.deepEqual(await titles(), [ws.name]);
 
-    // Arrange: PDF | (Sources over Home), with ratios that must survive.
+    // Arrange: (Home, Sources) | PDF, in two groups whose sizes must survive.
     let state = await tabs();
-    const sourcesView = state.tabs.flatMap((t) => t.views).find((v) => v.kind === "library");
-    assert(sourcesView, JSON.stringify(state.tabs));
-    await page.evaluate((tabId) => window.key.tabAction("activate", { tabId }), pdfTab);
-    await page.evaluate((viewId) => window.key.tabAction("split", { viewId }), sourcesView.id);
-    await page.evaluate((viewId) => window.key.tabAction("focus", { viewId }), sourcesView.id);
-    await page.evaluate(() => window.key.tabAction("split-pane", { edge: "bottom" }));
-    await page.evaluate(() => window.key.tabAction("resize-split", { ratio: 0.35 }));
-    await page.evaluate(() => window.key.tabAction("resize-split", { ratio: 0.6, path: "b" }));
+    assert(state.tabs.some((t) => t.views[0].kind === "library"), JSON.stringify(state.tabs));
+    await page.evaluate((tabId) => window.key.tabAction("split-right", { tabId }), pdfTab);
+    await page.evaluate(() => window.key.tabAction("resize-groups", { sizes: [0.35, 0.65], done: true }));
+    // Each group's size and its tabs' kinds, the focused group's active tab marked.
+    const shape = (s) =>
+      s.groups.map((g) => [Math.round(g.size * 100), g.tabIds.map((id) => s.tabs.find((t) => t.id === id).views[0].kind + (id === g.activeTabId ? "*" : ""))]);
     state = await tabs();
-    const arranged = state.tabs.find((t) => t.id === state.activeTabId);
-    const shape = (layout, kinds) =>
-      "view" in layout ? kinds[layout.view] : { split: layout.split, ratio: layout.ratio, a: shape(layout.a, kinds), b: shape(layout.b, kinds) };
-    const kindsOf = (s) => Object.fromEntries(s.tabs.flatMap((t) => t.views).map((v) => [v.id, v.kind]));
-    const arrangement = shape(arranged.layout, kindsOf(state));
-    assert.deepEqual(arrangement, {
-      split: "row",
-      ratio: 0.35,
-      a: "pdf",
-      b: { split: "column", ratio: 0.6, a: "library", b: "home" },
-    });
-    await page.locator(".key-split-divider-column").waitFor();
+    const arrangement = shape(state);
+    assert.deepEqual(arrangement, [
+      [35, ["home", "library*"]],
+      [65, ["pdf*"]],
+    ]);
+    await page.locator(".key-group-sash").waitFor();
     await page.screenshot({ path: path.join(temp, "arranged.png") });
 
     // Add a workspace from the switcher: this window switches to it in place.
@@ -191,9 +183,7 @@ const assert = require("node:assert/strict");
     await page.getByRole("menuitem", { name: /^Replace/ }).click();
     await until(async () => (await tabs()).workspaceId === ws.id && (await tabs()).tabs.length > 1, "switched back");
     state = await tabs();
-    const back = state.tabs.find((t) => t.id === state.activeTabId);
-    assert.deepEqual(shape(back.layout, kindsOf(state)), arrangement);
-    assert.deepEqual(state.tabs.map((t) => t.views.length).sort(), [1, 3]);
+    assert.deepEqual(shape(state), arrangement);
     for (let i = 0; i < 100 && !app.windows().some((p) => p.url().endsWith("/pdf.html")); i++) await page.waitForTimeout(100);
     assert(app.windows().some((p) => p.url().endsWith("/pdf.html")), "the reader reopens");
 
@@ -246,6 +236,8 @@ const assert = require("node:assert/strict");
       BrowserWindow.getAllWindows().find((w) => w.getTitle() === title).setBounds(frame);
     }, { frame, title: ws.name });
     assert.deepEqual(errors, []);
+    const leaving = shape(await tabs());
+    assert.equal(leaving.length, 2, "two groups are left to restore");
     const closed = app.waitForEvent("close");
     await app.evaluate(({ app }) => app.quit());
     await closed;
@@ -266,22 +258,19 @@ const assert = require("node:assert/strict");
     }
     assert(restoredPage, "the first workspace's window returns");
     const restored = await restoredPage.evaluate(() => window.key.tabs());
-    const again = restored.tabs.find((t) => t.views.length === 3);
-    assert(again, JSON.stringify(restored.tabs));
-    assert.deepEqual(shape(again.layout, kindsOf(restored)), arrangement);
-    assert.equal(restored.activeTabId, again.id, "the active tab is restored");
+    assert.deepEqual(shape(restored), leaving, "groups, sizes and active tabs are restored");
     const restoredFrame = await app.evaluate(({ BrowserWindow }, title) => BrowserWindow.getAllWindows().find((w) => w.getTitle() === title).getBounds(), ws.name);
     assert.deepEqual(restoredFrame, frame);
-    // Its native reader is placed by the restored layout.
-    await restoredPage.locator(".key-split-divider-column").waitFor();
+    // Its native reader is placed by the restored groups: right of the sash.
+    await restoredPage.locator(".key-group-sash").waitFor();
     for (let i = 0; i < 100 && !app.windows().some((p) => p.url().endsWith("/pdf.html")); i++) await relaunched.waitForTimeout(100);
     const readerBounds = await app.evaluate(({ BrowserWindow }, title) => {
       const w = BrowserWindow.getAllWindows().find((w) => w.getTitle() === title);
       return w.contentView.children.filter((v) => v.webContents?.getURL().endsWith("/pdf.html")).map((v) => v.getBounds());
     }, ws.name);
-    const divider = await restoredPage.locator('.key-split-divider[data-split-path=""]').boundingBox();
+    const divider = await restoredPage.locator(".key-group-sash").boundingBox();
     assert.equal(readerBounds.length, 1);
-    assert(Math.abs(readerBounds[0].x + readerBounds[0].width - divider.x) <= 1, JSON.stringify({ readerBounds, divider }));
+    assert(Math.abs(readerBounds[0].x - (divider.x + divider.width)) <= 1, JSON.stringify({ readerBounds, divider }));
     await restoredPage.screenshot({ path: path.join(temp, "restored.png") });
 
     console.log(JSON.stringify({ ok: true, temp, poppedOut: true, sameView: true, sharedCore: true, movedBack: true, newWindow: true, boundWorkspace: true, switchedAndRestored: true, openedBeside: true, focusedExisting: true, toreOff: true, relaunchRestored: true }));

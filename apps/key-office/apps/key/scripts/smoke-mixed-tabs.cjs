@@ -112,9 +112,18 @@ const assert = require("node:assert/strict");
       count,
       "saved draft has a single owner",
     );
-    await page
-      .getByRole("button", { name: "Separate panes", exact: true })
-      .click();
+    // The note goes back into the library's group, as a tab beside it.
+    const tabOf = async (viewId) => {
+      const s = await page.evaluate(() => window.key.tabs());
+      const tab = s.tabs.find((t) => t.views[0].id === viewId);
+      return { tabId: tab.id, groupId: tab.groupId, state: s };
+    };
+    {
+      const { tabId, state } = await tabOf(note);
+      const home = state.tabs.find((t) => t.views[0].id === library).groupId;
+      await page.evaluate((drop) => window.key.tabAction("drop-tab", drop), { kind: "move", tabId, groupId: home, index: 99 });
+      assert.equal((await page.evaluate(() => window.key.tabs())).groups.length, 1, "the emptied group closed");
+    }
     const pdf = path.resolve(
       __dirname,
       "../../../../../tests/fixtures/interaction.pdf",
@@ -160,11 +169,16 @@ const assert = require("node:assert/strict");
     let geometry = await getGeometry();
     assert(geometry.native.length >= 1, JSON.stringify(geometry));
     assert(geometry.dom.width > 300);
-    // A pane in a split sits under its 26px header (the tab bar is 40px).
-    assert.equal(Math.round(geometry.dom.y), 40 + 26);
-    await page.getByRole("button", { name: "Swap panes", exact: true }).click();
+    // A content group sits right below its strip, like a native one.
+    assert.equal(Math.round(geometry.dom.y), 40);
+    // The note's group moves to the left of the reader's, then takes 40% of the width.
+    {
+      const { tabId, state } = await tabOf(note);
+      const readerGroup = state.groups.find((g) => !g.tabIds.includes(tabId)).id;
+      await page.evaluate((drop) => window.key.tabAction("drop-tab", drop), { kind: "split", tabId, groupId: readerGroup, side: "left" });
+    }
     await page.evaluate(() =>
-      window.key.tabAction("resize-split", { ratio: 0.4 }),
+      window.key.tabAction("resize-groups", { sizes: [0.4, 0.6], done: true }),
     );
     await page
       .getByRole("button", { name: "Collapse sidebar", exact: true })

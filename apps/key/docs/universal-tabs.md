@@ -14,15 +14,15 @@ The main process's `home` renderer category means shell-rendered content; snapsh
 
 ## Saving and closing
 
-Record tabs use revision-checked canonical saves; source entries keep their specialized metadata and indexing commands. Save and Cmd/Ctrl+S act on the focused record. Dirty state is tracked per owned view. Closing a group checks every pane before disposing any, so cancellation preserves its other view. Office saves continue to use their native editor guards.
+Record tabs use revision-checked canonical saves; source entries keep their specialized metadata and indexing commands. Save and Cmd/Ctrl+S act on the focused record. Dirty state is tracked per owned view. Closing several tabs (a group, Close Other Tabs, a window) checks each before disposing it, and stops at the first one the user keeps. Office saves continue to use their native editor guards.
 
 ## Verification
 
-- `smoke-mixed-tabs.cjs`: library/note split, unsaved draft retention, saved-record ownership, shared renderer count, note/PDF split, pane focus, swap/resize/sidebar bounds and cancel/discard close paths.
+- `smoke-mixed-tabs.cjs`: library and note in side-by-side groups, unsaved draft retention, saved-record ownership, shared renderer count, note and PDF groups, group sizes and sidebar bounds, and cancel/discard close paths.
 - `smoke-office.cjs`: all five Office editor types alongside the library.
 - `smoke-ui.cjs`: canonical note/database saves and reload.
 - `smoke-source-entries.cjs`: typed source metadata and entry tabs.
-- `smoke-tabs.cjs`: PDF group dragging and native view geometry.
+- `smoke-tabs.cjs`: tab dragging within a group and native view geometry; `smoke-tab-groups.cjs`: editor groups.
 - Existing library and Office-close smoke tests cover search navigation and native save guards.
 
 Run GUI smoke tests serially with an isolated KEY_USER_DATA and KEY_WORKSPACE_PARENT (the scripts provide these). `smoke-mixed-tabs.cjs`, `smoke-office.cjs` and `smoke-tabs.cjs` also accept KEY_ELECTRON_EXECUTABLE for the packaged app.

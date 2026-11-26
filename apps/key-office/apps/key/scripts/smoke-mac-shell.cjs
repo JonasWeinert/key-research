@@ -44,13 +44,11 @@ const assert = require("node:assert/strict");
     await page
       .getByRole("heading", { name: "All sources", exact: true })
       .waitFor();
-    await page.getByRole("button", { name: "Workspace", exact: true }).click();
-    await page.locator(`[data-workspace-id="${ws.id}"]`).click();
     await page.locator(".kx-row").first().waitFor();
     await page.screenshot({ path: path.join(temp, "sources.png") });
     await page
       .locator(".key-sidebar")
-      .getByRole("button", { name: "Home", exact: true })
+      .getByRole("button", { name: /Home$/ })
       .click();
     await page.locator(".kx-cover-grid li").waitFor();
     await page.screenshot({ path: path.join(temp, "home.png") });
@@ -68,7 +66,7 @@ const assert = require("node:assert/strict");
       .click();
     await page
       .locator(".key-sidebar")
-      .getByRole("button", { name: "Home", exact: true })
+      .getByRole("button", { name: /Home$/ })
       .waitFor();
     await page.emulateMedia({ colorScheme: "dark" });
     await page.screenshot({ path: path.join(temp, "home-dark.png") });
