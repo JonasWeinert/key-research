@@ -132,8 +132,13 @@ impl Progress {
     }
 }
 
-/// The Zotero data directory: Zotero's `extensions.zotero.dataDir` pref, else ~/Zotero.
+/// The Zotero data directory: KEY_ZOTERO_DATA_DIR, Zotero's `extensions.zotero.dataDir`
+/// pref, else ~/Zotero.
 pub fn default_data_dir() -> Option<PathBuf> {
+    // Automated checks point Key at a fixture library.
+    if let Some(dir) = std::env::var_os("KEY_ZOTERO_DATA_DIR").map(PathBuf::from) {
+        return dir.join("zotero.sqlite").is_file().then_some(dir);
+    }
     if let Some(dir) = pref("extensions.zotero.dataDir").map(PathBuf::from).filter(|d| d.join("zotero.sqlite").is_file()) {
         return Some(dir);
     }

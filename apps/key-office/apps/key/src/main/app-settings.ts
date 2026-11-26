@@ -75,7 +75,8 @@ function apply(settings: AppSettings) {
 
 /** Versions, data locations and whether a Zotero library is present on this Mac. */
 export async function appInfo(workspaceParent: string) {
-  const zoteroDir = join(homedir(), 'Zotero')
+  // KEY_ZOTERO_DATA_DIR points automated checks at a fixture library.
+  const zoteroDir = process.env.KEY_ZOTERO_DATA_DIR ?? join(homedir(), 'Zotero')
   const zoteroFound = await access(join(zoteroDir, 'zotero.sqlite')).then(
     () => true,
     () => false,

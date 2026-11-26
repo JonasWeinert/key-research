@@ -75,6 +75,13 @@
   align-items: center;
   justify-content: space-between;
 }
+.kx-zotero-scope-head h3 {
+  margin: 0 0 6px 2px;
+  padding: 0;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
 .kx-zotero-library {
   margin-bottom: 6px;
   font: inherit;
@@ -194,7 +201,11 @@
   box-shadow: inset 0 -1px 0 var(--kx-line);
   color: var(--kx-text-3);
 }
+.kx-zotero-search:focus-within {
+  color: var(--kx-accent);
+}
 .kx-zotero-search input {
+  outline: none !important;
   flex: 1;
   min-width: 0;
   padding: 2px 0;
@@ -387,4 +398,10 @@
 }
 .kx-zotero-conflicts small {
   color: var(--kx-text-3);
+}
+.kx-zotero-summary small {
+  max-width: 380px;
+  color: var(--kx-text-3);
+  font-size: 12px;
+  line-height: 1.45;
 }
