@@ -4,7 +4,7 @@
  * focused view contributes. A view replaces its whole list each time it sets it; an empty
  * list clears it. Items go away with the view.
  *
- * Native views (PDF reader, office editors, browser pages) use the preload bridge:
+ * Native views (PDF reader, browser pages) use the preload bridge:
  *
  *   window.key.setStatusItems([{ id: "refs", label: "12 references", icon: "quote", title: "Show references" }]);
  *   const off = window.key.onStatusItem((id) => { if (id === "refs") openReferences(); });
