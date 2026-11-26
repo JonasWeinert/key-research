@@ -12,7 +12,7 @@
  * LICENSES.chromium.html separately, referenced from the body text.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
-import { join, dirname, relative } from 'node:path'
+import { join, dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { builtinModules, createRequire } from 'node:module'
@@ -183,7 +183,72 @@ function closure(seed) {
   return { resolved: [...seen].filter(([, v]) => v !== null), missing }
 }
 
-const LICENSE_FILE = /^(LICENSE|LICENCE|COPYING)(\.|$)/i
+const LICENSE_FILE = /^(LICENSE|LICENCE|COPYING)([._-]|$)/i
+
+/** platform binary packages that publish no licence file of their own: their parent's applies */
+const LICENSE_FROM = {
+  '@esbuild/darwin-arm64': 'esbuild',
+  '@rollup/rollup-darwin-arm64': 'rollup',
+  '@napi-rs/canvas-darwin-arm64': '@napi-rs/canvas',
+}
+
+const SKIA_NOTE =
+  'The native module embeds Skia (https://skia.org), Copyright (c) 2011 Google Inc.,\n' +
+  'BSD-3-Clause: https://skia.googlesource.com/skia/+/main/LICENSE'
+
+/**
+ * For packages that declare a permissive SPDX identifier but publish no licence file,
+ * reproduce the standard text of that licence with the package's declared author.
+ */
+function standardText(spdx, pkg) {
+  const author = typeof pkg.author === 'string' ? pkg.author : pkg.author?.name
+  const holder = (author ?? `the ${pkg.name} authors`).replace(/\s*<[^>]*>/, '').replace(/\s*\([^)]*\)/, '')
+  const intro = `[${pkg.name} publishes no licence file; below is the standard ${spdx} text with the copyright holder its package.json names.]\n\n`
+  if (spdx === 'MIT') {
+    const body = readFileSync(join(REPO, 'LICENSE'), 'utf8').trim().replace(/^Copyright .*$/m, `Copyright (c) ${holder}`)
+    return intro + body
+  }
+  if (spdx === 'ISC') {
+    return intro + `ISC License\n\nCopyright (c) ${holder}\n\nPermission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.`
+  }
+  if (spdx === 'BSD-2-Clause') {
+    return intro + `BSD 2-Clause License\n\nCopyright (c) ${holder}\n\nRedistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.`
+  }
+  if (spdx === 'Apache-2.0') {
+    return intro.replace('below is the standard Apache-2.0 text with the copyright holder its package.json names', `licensed under Apache-2.0 by ${holder.replace(/\.$/, '')}`) +
+      readFileSync(join(ROOT, 'LICENSE'), 'utf8').trim()
+  }
+  return null
+}
 
 function licenseText(name, dir) {
   const override = LICENSE_PATH[name]
@@ -217,9 +282,19 @@ function repoOf(pkg) {
   return url ? url.replace(/^git\+/, '').replace(/\.git$/, '') : null
 }
 
+/** Repository root (Key's own MIT code, vendored trees, models, CSL data). */
+const REPO = join(ROOT, '../..')
+
+/**
+ * Key's own crates (MIT, covered by Key's licence in section 0). Vendored third-party
+ * path crates (hayagriva, pdfium-render, gpui, opendataloader-pdf) are not listed here
+ * and stay in the crate list with their own terms.
+ */
+const firstPartyCrate = (p) => p.source == null && (p.name.startsWith('key-') || p.name === 'key')
+
 /** Rust crates linked into both Key native services. */
 function rustCrates() {
-  const targets = [join(ROOT, 'apps/sheets/native/xlsx-engine/Cargo.toml'), join(ROOT, '../../crates/key-desktop-host/Cargo.toml')]
+  const targets = [join(ROOT, 'apps/sheets/native/xlsx-engine/Cargo.toml'), join(REPO, 'crates/key-desktop-host/Cargo.toml')]
   try {
     const packages = targets.flatMap(target => JSON.parse(execFileSync(
       'cargo',
@@ -227,7 +302,7 @@ function rustCrates() {
       { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] },
     )).packages)
     return [...new Map(packages.map(p => [p.name + '@' + p.version, p])).values()]
-      .filter((p) => p.name !== 'xlsx-sidecar' && p.name !== 'key-desktop-host')
+      .filter((p) => p.name !== 'xlsx-sidecar' && !firstPartyCrate(p))
       .map((p) => ({
         name: p.name,
         version: p.version,
@@ -251,17 +326,38 @@ resolved.sort(([a], [b]) => a.localeCompare(b))
 let out = `Key — Third-Party Software Notices
 
 This application includes third-party software components under the licenses
-reproduced below.
+reproduced below. Key's own code is MIT licensed (section 0). Third-party
+components keep their own licences; combining them with Key does not relicense
+them. LICENSES.md in Key's source repository maps every component to its licence.
 
 Chromium (bundled via Electron) is licensed under BSD-style and other
 licenses — see LICENSES.chromium.html next to this file.
+`
+
+const readRepo = (path) => readFileSync(join(REPO, path), 'utf8').trim()
+
+out += hr('0. Key and the GenOffice editors')
+out += sub('Key — MIT') + readRepo('LICENSE') + '\n'
+out += sub('GenOffice (Docs, Sheets, Slides, Markdown and HTML editors and shared packages) — Apache-2.0')
+out += `Key's Office editors and their packages are derived from GenOffice
+(https://github.com/genspark-ai/genoffice, commit de139a061537bea40f0cc81ef8f09a95f77ac52a)
+and remain under the Apache License 2.0. Key modified them (product branding,
+shell integration, theming, fixes); see UPSTREAM.md in the source. Key's tab
+strip (TabBar.tsx, tabbar.css) also derives from GenOffice's shell and stays
+Apache-2.0. The licence text ships as licenses/GENOFFICE-LICENSE.
+
+NOTICE:
+${readFileSync(join(ROOT, 'NOTICE'), 'utf8').trim()}
 `
 
 out += hr(`1. npm packages (${resolved.length})`)
 const noText = []
 for (const [name, { dir, pkg }] of resolved) {
   out += sub(`${name} v${pkg.version} — ${spdxOf(name, pkg)}`)
-  const text = licenseText(name, dir) ?? NOTE[name]
+  const parent = LICENSE_FROM[name] && pkgDir(LICENSE_FROM[name])
+  let text = licenseText(name, dir) ?? NOTE[name] ?? (parent ? licenseText(LICENSE_FROM[name], parent) : null)
+  text ??= standardText(spdxOf(name, pkg), pkg)
+  if (text && name.startsWith('@napi-rs/canvas')) text += '\n\n' + SKIA_NOTE
   if (text) {
     out += text + '\n'
   } else {
@@ -289,6 +385,12 @@ if (crates === null) {
   }
   out += sub('Crate license texts (deduplicated)')
   for (const [text, first] of texts) out += `\n[first seen in ${first}]\n${text}\n`
+  // Apache-2.0 section 4(d): NOTICE files of the crates travel with the binary
+  const notices = crates.filter((c) => c.dir && noticeText(c.dir))
+  if (notices.length > 0) {
+    out += sub('Crate NOTICE files')
+    for (const c of notices) out += `\n[${c.name} ${c.version}]\n${noticeText(c.dir)}\n`
+  }
 }
 
 const GOTHIC_KR_COPYRIGHT = [
@@ -359,6 +461,16 @@ const FONTS = [
     '© The Noto Project Authors, original Reserved Font Name "Noto". Modified advance widths;\nrenamed per OFL 1.1.',
   ],
   [
+    'Key UI Kana JP (Noto Sans JP derivative)',
+    'SIL OFL 1.1',
+    'Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name "Source".\nSubset to kana/JP punctuation, instanced at wght 400/700 with modified advances and horizontally\ncondensed outlines; renamed per OFL 1.1.',
+  ],
+  [
+    'Key PUA Blank',
+    'Apache-2.0 (part of GenOffice)',
+    'Generated from scratch by GenOffice (two empty glyphs, no upstream font outlines).',
+  ],
+  [
     'KaTeX webfonts',
     'SIL OFL 1.1',
     'Copyright (c) 2009-2010, Design Science, Inc. (<www.mathjax.org>)\n' +
@@ -377,7 +489,8 @@ out +=
 
 out += hr('4. Unicode Character Database data')
 out += `
-apps/pdf/src/shared/radicals.ts contains a generated mapping derived from
+Retained from GenOffice's NOTICE. In GenOffice, apps/pdf/src/shared/radicals.ts
+(not part of Key) contains a generated mapping derived from
 Unicode Character Database 17.0.0, EquivalentUnifiedIdeograph.txt
 (2025-08-01):
 https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
@@ -385,8 +498,96 @@ https://www.unicode.org/Public/17.0.0/ucd/EquivalentUnifiedIdeograph.txt
 `
 out += readFileSync(join(ROOT, 'LICENSE-UNICODE.txt'), 'utf8').trim() + '\n'
 
-out += '\n\nbeUI motion drawer and table (adapted)\nhttps://beui.dev\n' + readFileSync(join(ROOT, 'apps/key/src/renderer/motion/BEUI-LICENSE.txt'), 'utf8')
-const dest = join(ROOT, 'apps/key/build/THIRD-PARTY-NOTICES.txt')
+out += hr('5. Third-party source code adapted inside Key and GenOffice')
+out += sub('beUI (motion drawer, table, design-system primitives; adapted by Key) — MIT') + 'https://beui.dev\n' +
+  readFileSync(join(ROOT, 'apps/key/src/renderer/motion/BEUI-LICENSE.txt'), 'utf8').trim() + '\n'
+out += sub('libeot MicroType Express decoder (TypeScript port in GenOffice pptx-engine) — MPL-2.0')
+out += `https://github.com/umanwizard/libeot
+The ported files (packages/pptx-engine/src/vendor/mtx/*.ts) remain under the
+Mozilla Public License 2.0; their source form is available in Key's source
+repository at that path.
+
+${readFileSync(join(ROOT, 'packages/pptx-engine/src/vendor/mtx/LICENSE'), 'utf8').trim()}
+`
+out += sub('emf-converter 2.0.2 (modified copy in GenOffice docx-engine) — Apache-2.0')
+out += `https://github.com/ChristopherVR/emf-converter
+Modified (WMF font, escapement, alignment and symbol-font fixes); the changes are
+listed in packages/docx-engine/src/vendor/emf-converter/README.md. The Apache
+License 2.0 text is reproduced in section 0 (licenses/GENOFFICE-LICENSE).
+`
+
+out += hr('6. Native binaries')
+out += sub('PDFium (Chromium build 7763, via bblanchon/pdfium-binaries)')
+out += readRepo('vendor/pdfium/LICENSE') + '\n'
+const pdfiumLicenses = join(REPO, 'vendor/pdfium/licenses')
+for (const f of readdirSync(pdfiumLicenses).sort()) {
+  out += `\n--- PDFium bundled component: ${f}\n` + readFileSync(join(pdfiumLicenses, f), 'utf8').trim() + '\n'
+}
+out += sub('llama.cpp server (ggml-org/llama.cpp release build) — MIT')
+const llamaLicense = ['release', 'debug']
+  .map((p) => join(REPO, 'apps/key/src-tauri/target', p, 'llama/LICENSE'))
+  .find((p) => existsSync(p))
+out += 'https://github.com/ggml-org/llama.cpp\n'
+out += llamaLicense
+  ? readFileSync(llamaLicense, 'utf8').trim() + '\n'
+  : 'MIT License, Copyright (c) 2023-2026 The ggml authors (fetch the release to include its LICENSE).\n'
+
+out += sub('ONNX Runtime (statically linked into the Key host by the ort crate) — MIT')
+out += `https://github.com/microsoft/onnxruntime
+ONNX Runtime's own third-party notices:
+https://github.com/microsoft/onnxruntime/blob/main/ThirdPartyNotices.txt
+
+${readRepo('LICENSE').replace(/^Copyright .*$/m, 'Copyright (c) Microsoft Corporation')}
+`
+
+out += hr('7. Machine-learning models')
+const MODELS = [
+  [
+    'PP-DocLayoutV3 layout model (ONNX fp16 export) — Apache-2.0',
+    'models/layout/model_fp16.onnx. Upstream: https://huggingface.co/PaddlePaddle/PP-DocLayoutV3\n' +
+      'ONNX export obtained from https://huggingface.co/datasets/embedpdf/embed-pdf-viewer\n' +
+      '(SHA-256 e549a04370b88c3f26fe8a975d7f15d76cb15876b54588270c977426793445ad).',
+  ],
+  [
+    'Snowflake Arctic Embed XS (quantized ONNX) — Apache-2.0',
+    'models/snowflake-arctic-embed-xs-q. Upstream: https://huggingface.co/Snowflake/snowflake-arctic-embed-xs\n' +
+      'revision d8c86521100d3556476a063fc2342036d45c106f. Copyright Snowflake Inc.',
+  ],
+]
+for (const [name, text] of MODELS) out += sub(name) + text + '\nThe Apache License 2.0 text is reproduced in section 0.\n'
+
+out += hr('8. Citation Style Language styles and locales — CC BY-SA 3.0')
+out += readRepo('crates/key-cite/NOTICE') + '\n'
+out += `
+Licence: Creative Commons Attribution-ShareAlike 3.0 Unported,
+https://creativecommons.org/licenses/by-sa/3.0/legalcode
+These data files are embedded unmodified in the Key host binary; the same
+files are available from the source URLs above and in Key's source repository
+(crates/key-cite/styles, crates/key-cite/locales). The CC BY-SA licence applies
+to these files only, not to Key's program code.
+`
+const xmlText = (s) => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&quot;/g, '"').trim()
+const people = (info, tag) => [...info.matchAll(new RegExp(`<${tag}>[\\s\\S]*?<name>([^<]*)</name>[\\s\\S]*?</${tag}>`, 'g'))].map((m) => xmlText(m[1]))
+const credit = (dir, title) => {
+  const lines = []
+  for (const f of readdirSync(join(REPO, dir)).filter((f) => /\.(csl|xml)$/.test(f)).sort()) {
+    const info = /<info>([\s\S]*?)<\/info>/.exec(readFileSync(join(REPO, dir, f), 'utf8'))?.[1] ?? ''
+    const name = xmlText(/<title>([^<]*)<\/title>/.exec(info)?.[1] ?? f)
+    const authors = [...people(info, 'author'), ...people(info, 'translator')]
+    const contributors = people(info, 'contributor')
+    let line = `${f} — ${name}`
+    if (authors.length) line += `\n    by ${authors.join(', ')}`
+    if (contributors.length) line += `\n    contributors: ${contributors.join(', ')}`
+    lines.push(line)
+  }
+  return sub(title) + lines.join('\n') + '\n'
+}
+out += credit('crates/key-cite/styles', 'Styles (https://github.com/citation-style-language/styles)')
+out += credit('crates/key-cite/locales', 'Locales (https://github.com/citation-style-language/locales)')
+
+// `--out <file>` writes elsewhere (checks); the default is the file packaging ships
+const outArg = process.argv.indexOf('--out')
+const dest = outArg > 0 ? resolve(process.argv[outArg + 1]) : join(ROOT, 'apps/key/build/THIRD-PARTY-NOTICES.txt')
 mkdirSync(dirname(dest), { recursive: true })
 writeFileSync(dest, out)
 console.log(
