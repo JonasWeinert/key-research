@@ -80,12 +80,12 @@
   background: var(--kx-fill-2);
   color: var(--kx-text);
 }
-.key-web-actions > .key-web-article:not([data-done]) {
+.key-web-actions > .key-web-article:not([data-done], [data-possible]) {
   background: var(--kx-accent);
   color: var(--kx-accent-ink);
   font-weight: 500;
 }
-.key-web-actions > .key-web-article:not([data-done]):hover:not(:disabled) {
+.key-web-actions > .key-web-article:not([data-done], [data-possible]):hover:not(:disabled) {
   background: var(--kx-accent);
   color: var(--kx-accent-ink);
   filter: brightness(1.06);

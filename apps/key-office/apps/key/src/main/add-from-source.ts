@@ -33,6 +33,7 @@ export function registerAddFromSource(deps: AddFromSourceDeps) {
       url: text(w.url),
       byline: text(w.byline, 500),
       container: text(w.container, 500),
+      authors: Array.isArray(w.authors) ? w.authors.map((a) => text(a, 300)).filter(Boolean).slice(0, 100) : undefined,
     };
     if (!work.openalexId && !work.doi && !work.title && !work.url) throw Error("Nothing to add");
     const requestId = randomUUID();

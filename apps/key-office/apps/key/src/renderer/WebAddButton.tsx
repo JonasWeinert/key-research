@@ -7,6 +7,7 @@ import { Icon } from "./icons";
 import { openItemAt, toast } from "./item-actions";
 import type { Invoke, Source } from "./library-api";
 import { errorText, type WebSearchState } from "./web-search";
+import { findPdfAfterAdd } from "./find-pdf";
 
 export type Adding = "adding" | "pdf";
 
@@ -23,6 +24,7 @@ export function useWebAdd(web: WebSearchState, invoke: Invoke, workspaceId: stri
           setAdding((a) => ({ ...a, [hit.key]: "pdf" }));
           await invoke("library_download_pdf", { url: hit.pdfUrl, sourceId: source.id }, workspaceId).catch((e) => toast(`Added without the PDF: ${errorText(e)}`));
         } else if (existed) toast("Already in your library");
+        else void findPdfAfterAdd(invoke, workspaceId, source.id);
       } catch (e) {
         toast(`Couldn't add it: ${errorText(e)}`);
       } finally {
@@ -33,8 +35,8 @@ export function useWebAdd(web: WebSearchState, invoke: Invoke, workspaceId: stri
     [invoke, workspaceId, collectionId, web.noted],
   );
   const openSource = useCallback(
-    (hit: WebHit, newTab = false) => openItemAt({ kind: "source", id: web.inLibrary[hit.key] }, newTab ? "tab" : "split", hit.title, workspaceId, invoke),
-    [web.inLibrary, workspaceId, invoke],
+    (hit: WebHit, newTab = false) => openItemAt({ kind: "source", id: web.inLibrary[hit.key] ?? web.possible[hit.key] }, newTab ? "tab" : "split", hit.title, workspaceId, invoke),
+    [web.inLibrary, web.possible, workspaceId, invoke],
   );
   return { adding, add, openSource };
 }
@@ -60,10 +62,22 @@ export function WebAddButton({ hit, web, adder, large }: { hit: WebHit; web: Web
         <span className="kx-web-in-open">Open</span>
       </button>
     );
-  return (
+  const add = (
     <button type="button" className="kx-web-add" data-large={large || undefined} onClick={(e) => (e.stopPropagation(), void adder.add(hit))}>
       <Icon name="plus" size={11} />
-      Add to library
+      {web.possible[hit.key] ? "Add anyway" : "Add to library"}
     </button>
   );
+  // Only the title matched: the library's copy is one click away, and adding stays possible.
+  if (web.possible[hit.key])
+    return (
+      <span className="kx-web-possible">
+        <button type="button" className="kx-web-in" data-possible data-large={large || undefined} title="A work with this title is in your library: open it (⌘-click: in a new tab)" onClick={(e) => (e.stopPropagation(), adder.openSource(hit, e.metaKey))}>
+          Possibly in library
+          <span className="kx-web-in-open">Open</span>
+        </button>
+        {add}
+      </span>
+    );
+  return add;
 }

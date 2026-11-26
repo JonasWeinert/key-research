@@ -4,7 +4,8 @@ import "./web-pdf-control.css";
 
 /** What the reader learns about a PDF from the web (main's reader-ready). */
 /** `referrer` is the page that led to the PDF, which the source pill opens in the browser. */
-export type WebPdfInfo = { url: string; host: string; referrer?: string; inLibrary?: boolean } | { notice: "added" | "exists" };
+/** `attachTo`: Find PDF opened the page for this source, so the PDF becomes its file. */
+export type WebPdfInfo = { url: string; host: string; referrer?: string; inLibrary?: boolean; attachTo?: string } | { notice: "added" | "exists" };
 interface WebPdfBridge {
   readerAddToLibrary?(): Promise<{ status: string }>;
   readerOpenInLibrary?(): Promise<void>;
@@ -69,11 +70,11 @@ export function WebPdfControl({ info }: { info?: WebPdfInfo }) {
           type="button"
           className="key-web-pdf-action"
           disabled={busy}
-          title="Add this PDF to the library, with the page it came from"
+          title={info.attachTo ? `Make this PDF the file of “${info.attachTo}”` : "Add this PDF to the library, with the page it came from"}
           onClick={() => run(() => bridge().readerAddToLibrary?.())}
         >
-          <Icon name="plus" size={12} />
-          {busy ? "Adding…" : "Add to library"}
+          <Icon name={info.attachTo ? "filePdf" : "plus"} size={12} />
+          {busy ? (info.attachTo ? "Attaching…" : "Adding…") : info.attachTo ? "Attach to source" : "Add to library"}
         </button>
       )}
     </div>

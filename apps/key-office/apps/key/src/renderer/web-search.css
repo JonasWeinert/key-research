@@ -139,6 +139,17 @@
 .kx-web-in:hover .kx-web-in-open {
   color: var(--kx-accent);
 }
+/* A title-only match: quieter than In library, with Add anyway beside it. */
+.kx-web-in[data-possible] {
+  background: var(--kx-fill, color-mix(in srgb, var(--kx-text) 6%, transparent));
+  color: var(--kx-text-2);
+}
+.kx-web-possible {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
 .kx-web-progress {
   display: inline-flex;
   align-items: center;

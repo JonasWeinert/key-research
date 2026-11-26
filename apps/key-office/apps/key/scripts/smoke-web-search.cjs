@@ -91,6 +91,8 @@ const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host
 
     // BERT is already in the library (by its DOI, written differently).
     await call("store_create", { source: { kind: "reference", itemType: "article", title: "BERT (my copy)", doi: "https://doi.org/10.18653/V1/N19-1423", year: 2019 } });
+    // GPT-3 by its title only (no identifier): "Possibly in library", and adding stays open.
+    await call("store_create", { source: { kind: "reference", itemType: "article", title: "Language models are few-shot learners.", year: 2020, creators: [{ given: "Tom", family: "Brown" }] } });
 
     await page.evaluate((id) => window.key.tabAction("open-content", { section: "search", workspaceId: id }), ws.id);
     const tab = page.locator(".kx-search-page");
@@ -124,7 +126,12 @@ const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host
     // Already in the library, by DOI.
     const bert = web.locator(".kx-web-hit", { hasText: "BERT: Pre-training" });
     await bert.locator(".kx-web-in").waitFor();
-    await shot(page, "web-results-light");
+    assert.equal(await bert.locator(".kx-web-in[data-possible]").count(), 0, "a DOI match is certain");
+    const gpt = web.locator(".kx-web-hit", { hasText: "Language Models are Few-Shot Learners" });
+    await gpt.locator(".kx-web-in[data-possible]", { hasText: "Possibly in library" }).waitFor();
+    assert.equal(await gpt.locator(".kx-web-add").textContent(), "Add anyway", "a title match never blocks adding");
+    await gpt.scrollIntoViewIfNeeded();
+    await shot(page, "web-possibly-light");
 
     // The query's words are marked in each result's details, as in passages.
     assert.equal(await attention.locator(".kx-hit-title mark").first().textContent(), "Attention", "title match marked");

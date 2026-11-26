@@ -364,6 +364,8 @@ export interface AppSettings {
   webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
   /** A work added from another source's context: ask, use the origin's collections, or the library only. */
   addFromSource: "ask" | "origin" | "library";
+  /** Find PDF for references as they are added (off by default). */
+  findPdfOnAdd?: boolean;
 }
 export interface AppInfo {
   version: string;

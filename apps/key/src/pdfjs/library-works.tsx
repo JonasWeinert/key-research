@@ -15,10 +15,15 @@ export interface CitedWork {
   url?: string;
 }
 
+/** A library match: the source, and whether it is certain (an identifier or link) or only a
+ *  title match ("Possibly in library", which never stops adding). */
+export type LibraryMatch = string | { sourceId: string; certain?: boolean };
+
 export interface LibraryWorksHost {
-  /** Which of these works the library has already: key → source id. */
-  match(works: Array<CitedWork & { key: string }>): Promise<Record<string, string>>;
-  add(work: CitedWork): Promise<{ sourceId: string; existed?: boolean }>;
+  /** Which of these works the library has already: key → source id (or match). */
+  match(works: Array<CitedWork & { key: string }>): Promise<Record<string, LibraryMatch>>;
+  /** Adds the work; null when the person cancelled (the collection chooser). */
+  add(work: CitedWork): Promise<{ sourceId: string; existed?: boolean } | null>;
   open(sourceId: string): void;
 }
 
@@ -27,6 +32,7 @@ export type LibraryWorkState =
   | { status: 'absent' }
   | { status: 'adding' }
   | { status: 'present'; sourceId: string }
+  | { status: 'possible'; sourceId: string }
   | { status: 'failed'; error: string };
 
 const CHECKING: LibraryWorkState = { status: 'checking' };
@@ -79,7 +85,7 @@ export class LibraryWorks {
     this.timer = undefined;
     const batch = [...this.queue].map(([key, work]) => ({ ...work, key }));
     this.queue.clear();
-    let found: Record<string, string> = {};
+    let found: Record<string, LibraryMatch> = {};
     try {
       found = await this.host.match(batch);
     } catch {
@@ -87,17 +93,22 @@ export class LibraryWorks {
     }
     for (const { key } of batch) {
       if (this.states.has(key)) continue;
-      this.set(key, found[key] ? { status: 'present', sourceId: found[key] } : { status: 'absent' });
+      const match = found[key];
+      if (!match) this.set(key, { status: 'absent' });
+      else if (typeof match === 'string' || match.certain !== false) this.set(key, { status: 'present', sourceId: typeof match === 'string' ? match : match.sourceId });
+      else this.set(key, { status: 'possible', sourceId: match.sourceId });
     }
   }
 
   async add(work: CitedWork) {
     const key = workKey(work);
-    if (this.state(key).status === 'adding') return;
+    const before = this.state(key);
+    if (before.status === 'adding') return;
     this.set(key, { status: 'adding' });
     try {
-      const { sourceId } = await this.host.add(work);
-      this.set(key, { status: 'present', sourceId });
+      const added = await this.host.add(work);
+      if (!added) return this.set(key, before.status === 'checking' ? { status: 'absent' } : before);
+      this.set(key, { status: 'present', sourceId: added.sourceId });
     } catch (error) {
       this.set(key, { status: 'failed', error: String(error).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, '') });
     }
@@ -154,6 +165,38 @@ export function AddToLibraryButton({
         <Icon name="book" />
         In library
       </button>
+    );
+  // Only the title matched: shown as such, and adding stays one click away.
+  if (state.status === 'possible')
+    return (
+      <span className="key-work-possible" data-variant={variant}>
+        <button
+          type="button"
+          className={className}
+          data-state="possible"
+          title="A work with this title is in your library: open it"
+          onClick={event => {
+            event.stopPropagation();
+            works.open(state.sourceId);
+          }}
+        >
+          <Icon name="book" />
+          Possibly in library
+        </button>
+        <button
+          type="button"
+          className={`${className} key-work-add-anyway`}
+          data-state="absent"
+          title="Add this work to your library anyway"
+          aria-label="Add to library anyway"
+          onClick={event => {
+            event.stopPropagation();
+            void works.add(work);
+          }}
+        >
+          <Icon name="add" />
+        </button>
+      </span>
     );
   if (state.status === 'adding')
     return (

@@ -25,12 +25,14 @@ export interface AppSettings {
   /** A work added from another source's context (its references, a citation card): ask which
    *  collections, put it in the origin source's collections, or in the library only. */
   addFromSource: 'ask' | 'origin' | 'library'
+  /** Find PDF (open-access copies) for references as they are added. Off by default. */
+  findPdfOnAdd: boolean
 }
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask' }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', findPdfOnAdd: false }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -71,6 +73,7 @@ function sanitize(input: AppSettings): AppSettings {
     openalexApiKey: typeof input.openalexApiKey === 'string' ? input.openalexApiKey.trim().slice(0, 200) : '',
     webProviders: webProviders(input.webProviders),
     addFromSource: (['ask', 'origin', 'library'] as const).includes(input.addFromSource) ? input.addFromSource : 'ask',
+    findPdfOnAdd: input.findPdfOnAdd === true,
   }
 }
 

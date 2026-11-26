@@ -13,6 +13,7 @@ import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { KIND_ICON, shortCreators, type Invoke, type Source, type WorkReference } from "./library-api";
 import { addFromSource, type AddOrigin } from "./add-from-source";
+import { useLibraryMatch } from "./library-match";
 import "./entity.css";
 
 export type ListWork = Pick<WorkReference, "title" | "byline" | "year" | "container" | "doi" | "openalexId" | "matchedSourceId" | "text">;
@@ -39,7 +40,16 @@ export function SourceListItem({
   /** Says "In library" on works the library has (off where every row is in it). */
   badge?: boolean;
 }) {
-  const id = source?.id ?? work?.matchedSourceId ?? undefined;
+  // A work the host did not match already (related works, cited-by): asked by its identifiers,
+  // with its title only ever "possibly" the library's.
+  const unmatched = !source && work && !work.matchedSourceId;
+  const match = useLibraryMatch(
+    invoke,
+    workspaceId,
+    unmatched ? { doi: work.doi, openalex: work.openalexId, title: work.title, year: work.year, firstAuthor: work.byline?.split(/,|\band\b/)[0]?.trim() } : null,
+  );
+  const id = source?.id ?? work?.matchedSourceId ?? (match?.certain ? match.sourceId : undefined);
+  const possible = !id && match && !match.certain ? match.sourceId : undefined;
   const inLibrary = !!id;
   const title = source ? source.title || "Untitled" : work?.title || work?.text || work?.doi || "Untitled work";
   const container = source ? source.containerShort || source.containerTitle : work?.container;
@@ -113,6 +123,11 @@ export function SourceListItem({
           {detail && <small>{detail}</small>}
         </span>
         {badge && (inLibrary || added) && <span className="kx-work-badge">In library</span>}
+        {badge && possible && !added && (
+          <span className="kx-work-badge" data-possible title="A source with this title is in your library">
+            Possibly in library
+          </span>
+        )}
       </button>
       {open && (
         <div className="kx-work-body">
@@ -166,9 +181,16 @@ export function SourceListItem({
             ) : (
               work &&
               (work.openalexId || work.doi || work.title) && (
-                <button className="kx-page-action" disabled={adding} onClick={add}>
-                  <Icon name="plus" size={12} /> {adding ? "Adding…" : "Add to library"}
-                </button>
+                <>
+                  {possible && (
+                    <button className="kx-page-action" onClick={() => openItemAt({ kind: "source", id: possible }, "split", title)} title="Open the source with this title">
+                      <Icon name="doc" size={12} /> Open the possible match
+                    </button>
+                  )}
+                  <button className="kx-page-action" disabled={adding} onClick={add}>
+                    <Icon name="plus" size={12} /> {adding ? "Adding…" : possible ? "Add anyway" : "Add to library"}
+                  </button>
+                </>
               )
             )}
             {link && (
