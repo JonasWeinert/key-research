@@ -1,9 +1,14 @@
 // Run serially: native windows and focus are shared with other GUI checks.
-// Feeds and alerts against a local mock feed and a mock OpenAlex (no real network): follow a
-// journal's page (its feed is found), its items arrive in the Inbox; a new item arrives on the
+// Feeds and alerts against a local mock feed and a mock OpenAlex (no real network): search
+// "journal of ecology", choose the journal, preview it (its latest works, how often it
+// publishes, and its own feed found from its home page), follow its own feed, and its items
+// arrive in the Inbox; a new item arrives on the
 // next check (asked conditionally); the status bar says so while elsewhere; keyboard triage
 // adds one to the library (through the collection chooser) and dismisses another; following
-// an author asks OpenAlex; OPML exports and imports back the same subscriptions.
+// an author asks OpenAlex; items group by where they came from and say why they are there; a
+// web search result goes to the Inbox with Add to Inbox, shows under Saved with where it was
+// found, and is added to the library from there; OPML exports and imports back the same
+// subscriptions.
 const { _electron: electron } = require("playwright-core");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
@@ -12,6 +17,7 @@ const path = require("node:path");
 const assert = require("node:assert/strict");
 
 const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host/src/web_search/fixtures");
+const feedFixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host/src/feeds/fixtures");
 
 const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</title><link>http://journal.test/articles/${n}</link><description>&lt;p&gt;Summary of work ${n}.&lt;/p&gt;</description><dc:creator>Ada Lovelace</dc:creator><pubDate>Tue, 1${n} Jun 2025 04:00:00 +0000</pubDate>${doi ? `<prism:doi>${doi}</prism:doi>` : ""}</item>`;
 
@@ -20,6 +26,11 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
   const noOpenAlex = path.join(temp, "no-openalex");
   await mkdir(noOpenAlex);
   const openalexPage = JSON.parse(await readFile(path.join(fixtures, "openalex-search.json"), "utf8"));
+  const recorded = Object.fromEntries(
+    await Promise.all(["sources", "authors", "topics"].map(async (name) => [name, JSON.parse(await readFile(path.join(feedFixtures, `openalex-${name}.json`), "utf8"))])),
+  );
+  // A web search's one result, not among the author's works.
+  const webWork = { ...openalexPage.results[0], id: "https://openalex.org/W4999000001", doi: "https://doi.org/10.5555/web-inbox", display_name: "Smoke web result on reef ecology", title: "Smoke web result on reef ecology" };
   let items = [item(1, "10.5555/inbox-1"), item(2, "10.5555/inbox-2")];
   const log = [];
   const server = createServer((req, res) => {
@@ -42,7 +53,14 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     }
     if (url.pathname === "/works") {
       res.writeHead(200, { "content-type": "application/json" });
+      // A web search (words, no alert filter) finds the one web result.
+      if (url.searchParams.get("search") && !url.searchParams.get("filter")) return res.end(JSON.stringify({ meta: { count: 1, next_cursor: null }, results: [webWork] }));
       return res.end(JSON.stringify(openalexPage));
+    }
+    if (["/sources", "/authors", "/topics"].includes(url.pathname)) {
+      res.writeHead(200, { "content-type": "application/json" });
+      // The journal's home page is the mock's, which links to its own feed.
+      return res.end(JSON.stringify(recorded[url.pathname.slice(1)]).replaceAll("http://www.journalofecology.org/", `http://127.0.0.1:${server.address().port}/journal`));
     }
     res.writeHead(404, { "content-type": "application/json" });
     res.end("{}");
@@ -60,6 +78,7 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
       KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
       KEY_OPENALEX_FIXTURES: noOpenAlex,
       KEY_WEB_OPENALEX_URL: mock,
+      KEY_WEB_S2_URL: mock,
       KEY_FEEDS_ALLOW_LOOPBACK: "1",
       KEY_FEEDS_START_DELAY_MS: "500",
       KEY_FEEDS_TICK_MS: "1000",
@@ -87,12 +106,36 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await inbox.getByRole("heading", { name: "Nothing followed yet" }).waitFor();
     await shot(page, "inbox-empty-light");
 
-    // Follow the journal by its page's address: its feed is found and read.
-    await inbox.getByRole("button", { name: "Add a feed…" }).click();
+    // Follow a journal found by its name: suggestions, a preview, then its own feed.
+    await inbox.getByRole("button", { name: "Follow something…" }).click();
     const sheet = page.getByRole("dialog", { name: "Feeds and alerts" });
-    await sheet.getByLabel("Feed or page address").fill(`${mock}/journal`);
-    await sheet.getByRole("button", { name: "Follow", exact: true }).click();
+    await sheet.getByLabel("Follow a journal, author, topic or search").fill("journal of ecology");
+    const journals = sheet.getByRole("region", { name: "Journals" });
+    const option = journals.locator(".kx-follow-option", { hasText: "Journal of Ecology" }).first();
+    await option.waitFor();
+    assert.match(await option.textContent(), /Wiley · ISSN 0022-0477 · 10,970 works/);
+    await sheet.getByRole("region", { name: "People" }).locator(".kx-follow-option", { hasText: "Yoshua Bengio" }).first().waitFor();
+    assert.ok(log.some((l) => l.path.startsWith("/sources") && l.path.includes("search=journal")), "OpenAlex sources search");
+    await shot(page, "feeds-suggestions-light");
+    await option.click();
+    const preview = sheet.getByRole("group", { name: /Preview of Journal of Ecology/ });
+    await preview.getByText("New articles in Journal of Ecology").waitFor();
+    await preview.locator(".kx-follow-items li").first().waitFor();
+    assert.equal(await preview.locator(".kx-follow-items li").count(), 3, "the latest works");
+    assert.match(await preview.locator(".kx-follow-rate").textContent(), /About 3 new articles a year/);
+    assert.match(await preview.locator(".kx-follow-sentence").textContent(), /Key checks about every 12 hours while it is open/);
+    assert.ok(log.some((l) => l.path.startsWith("/works") && l.path.includes("primary_location.source.id%3AS11271929")), "previewed by its OpenAlex id");
+    await shot(page, "feeds-preview-light");
+    // Its home page links to its own feed: offered, previewed, followed.
+    await preview.getByRole("button", { name: "Use the journal’s own feed" }).click();
+    const own = sheet.getByRole("group", { name: /Preview of Journal of Smoke Tests/ });
+    await own.locator(".kx-follow-items li").nth(1).waitFor();
+    await own.getByLabel("How often to check").selectOption("1440");
+    assert.match(await own.locator(".kx-follow-sentence").textContent(), /about once a day/);
+    assert.equal((await call("feeds_subscriptions")).length, 0, "nothing followed before Follow");
+    await own.getByRole("button", { name: "Follow", exact: true }).click();
     await sheet.locator(".kx-feeds-row", { hasText: "Journal of Smoke Tests" }).waitFor();
+    assert.equal((await call("feeds_subscriptions"))[0].intervalMinutes, 1440);
     await shot(page, "feeds-sheet-light");
     await sheet.getByRole("button", { name: "Close" }).click();
     await sheet.waitFor({ state: "detached" });
@@ -156,7 +199,7 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await changed();
     await inbox.locator(".kx-work-title", { hasText: "Attention Is All You Need" }).waitFor();
     // Filter by subscription.
-    await inbox.locator(".kx-inbox-filter").click();
+    await inbox.locator(".kx-inbox-filter").first().click();
     await page.getByRole("menuitemradio", { name: /Ashish Vaswani/ }).click();
     await page.waitForTimeout(400);
     assert.equal(await rows.count(), 3, "only the author's works");
@@ -165,6 +208,63 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await page.waitForTimeout(200);
     await shot(page, "inbox-dark");
     await page.emulateMedia({ colorScheme: "light" });
+
+    // Group by where items came from, and say why each is here.
+    await inbox.locator(".kx-inbox-filter").first().click();
+    await page.getByRole("menuitemradio", { name: /Everything/ }).click();
+    await inbox.getByRole("tab", { name: /^All/ }).click();
+    await inbox.locator(".kx-inbox-filter").nth(1).click();
+    await page.getByRole("menuitemradio", { name: "By where it came from" }).click();
+    await inbox.locator(".kx-inbox-group", { hasText: "Ashish Vaswani" }).waitFor();
+    await inbox.locator(".kx-inbox-group", { hasText: "Journal of Smoke Tests" }).waitFor();
+    await inbox.locator(".kx-work-head", { hasText: "Attention Is All You Need" }).click();
+    await inbox.locator(".kx-inbox-why", { hasText: "new work by Ashish Vaswani, whom you follow" }).waitFor();
+    // Bulk: x picks two, s saves both.
+    await inbox.locator(".kx-inbox-list").focus();
+    await page.keyboard.press("x");
+    await page.keyboard.press("j");
+    await page.keyboard.press("x");
+    await inbox.locator(".kx-inbox-bulk", { hasText: "2 selected" }).waitFor();
+    await shot(page, "inbox-grouped-light");
+    await page.keyboard.press("s");
+    await inbox.locator(".kx-inbox-bulk").waitFor({ state: "detached" });
+    await page.waitForTimeout(300);
+    assert.equal((await call("feeds_items", { view: "saved" })).total, 2, "both saved");
+    await inbox.locator(".kx-inbox-filter").nth(1).click();
+    await page.getByRole("menuitemradio", { name: "No grouping" }).click();
+
+    // A web search result kept for later: Add to Inbox, then Saved, then the library.
+    await page.evaluate((id) => window.key.tabAction("open-content", { section: "search", workspaceId: id }), ws.id);
+    const search = page.locator(".kx-search-page");
+    await search.waitFor();
+    const field = search.getByRole("combobox", { name: "Search everything" });
+    await field.fill("reef ecology");
+    await field.press("Escape");
+    await search.locator('.kx-web-pill button[data-kind="web"]').click();
+    const hit = search.locator(".kx-web-hit", { hasText: "Smoke web result on reef ecology" });
+    await hit.waitFor();
+    const keep = hit.locator(".kx-inbox-save");
+    await keep.waitFor();
+    assert.equal(await keep.getAttribute("data-state"), "none");
+    await keep.click();
+    await hit.locator('.kx-inbox-save[data-state="inbox"]', { hasText: "In Inbox" }).waitFor();
+    await shot(page, "web-add-to-inbox-light");
+    assert.equal((await call("feeds_counts", {})).unread, (await call("feeds_items", { view: "unread" })).total, "saved by you is not unread news");
+    await page.evaluate((id) => window.key.tabAction("open-content", { section: "inbox", workspaceId: id }), ws.id);
+    await inbox.getByRole("tab", { name: /^Saved/ }).click();
+    const kept = rows.filter({ hasText: "Smoke web result on reef ecology" });
+    await kept.waitFor();
+    assert.match(await kept.locator(".kx-inbox-aside").textContent(), /Saved from web search “reef ecology”/);
+    await kept.locator(".kx-work-head").click();
+    await kept.locator(".kx-inbox-why", { hasText: "You saved it from web search" }).waitFor();
+    await shot(page, "inbox-saved-light");
+    await inbox.locator(".kx-inbox-list").focus();
+    await page.keyboard.press("a");
+    await chooser.waitFor();
+    await chooser.getByRole("button", { name: "Add", exact: true }).click();
+    await kept.locator(".kx-work-badge", { hasText: "In library" }).waitFor();
+    assert.equal((await call("store_match_identifiers", { works: [{ key: "w", doi: "10.5555/web-inbox" }] })).length, 1, "added from the Inbox");
+    assert.equal((await call("inbox_state", { works: [{ title: "Smoke web result on reef ecology", doi: "10.5555/web-inbox" }] }))[0].state, "library");
 
     // OPML: out, everything removed, back in.
     const before = await call("feeds_subscriptions");
