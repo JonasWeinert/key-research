@@ -848,7 +848,9 @@ async function addTempToLibrary(temp: OwnedView) {
   try {
     const path = join(directory, `${safeFileName(temp.title || entry.title).replace(/\.pdf$/i, "")}.pdf`);
     await copyFile(entry.file, path);
-    const imported: any = await registry.invoke("library_import_file", { path }, workspaceId);
+    // The scratch library analysed this PDF already: the library takes that analysis over.
+    const scratch = await scratchWorkspace().catch(() => undefined);
+    const imported: any = await registry.invoke("library_import_file", { path, carryFrom: scratch ? join(scratch.root, ".key") : null }, workspaceId);
     if (imported.hash !== entry.hash) throw Error("The PDF changed while it was added");
     if (!imported.existing) await registry.invoke("store_update", { id: imported.id, patch: { url: entry.url } }, workspaceId).catch(() => undefined);
     await carryTempWork(entry, workspaceId, imported.id);

@@ -32,7 +32,7 @@ mod html_dom;
 pub mod feeds;
 pub mod reading;
 pub mod priority;
-pub use analysis::{CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
+pub use analysis::{CarriedAnalysis, CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
     CitingSource, Grant, Institution, Keyword, MergeSuggestion, NamedCount, Person, PersonPage, Publisher, SourceGraph, SourcePerson, SourceTopic, Topic,

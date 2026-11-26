@@ -50,3 +50,15 @@ CREATE TRIGGER sources_match_keys_delete AFTER DELETE ON sources BEGIN
   DELETE FROM source_match_keys WHERE source_id = OLD.id;
   INSERT INTO source_key_changes(source_id) VALUES (OLD.id);
 END;
+
+-- A finished analysis carried over from another library (a web PDF analysed in the browser's
+-- scratch library, then added): the indexer uses it for a PDF with this hash instead of
+-- running layout analysis again, once.
+CREATE TABLE carried_analysis (
+  hash TEXT PRIMARY KEY,
+  engine TEXT NOT NULL,
+  markdown TEXT,
+  page_count INTEGER,
+  chunks TEXT NOT NULL,
+  carried_at INTEGER NOT NULL
+);

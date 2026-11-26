@@ -1039,3 +1039,24 @@ fn long_documents_and_bulk_requests_are_written_in_batches() {
     ids.push(a.id.clone());
     assert_eq!(store.request_enrichment(&ids).unwrap(), 1);
 }
+
+#[test]
+fn a_finished_analysis_is_carried_to_another_library_once() {
+    let scratch_dir = tempfile::tempdir().unwrap();
+    let scratch = Store::open(scratch_dir.path()).unwrap();
+    let web = scratch.insert_source(input(json!({"kind": "pdf", "title": "A web PDF", "fileHash": "h1", "pageCount": 3, "abstract": "An abstract."}))).unwrap();
+    let mut chunks = vec![ChunkInput { text: "An abstract.".into(), ..Default::default() }];
+    chunks.extend((0..3).map(|p| ChunkInput { page: Some(p), text: format!("Page {p} text"), rects: vec![[1, 2, 3, 4]], kind: Some("paragraph".into()), ..Default::default() }));
+    scratch.replace_chunks(&web.id, &chunks).unwrap();
+    scratch.set_analysis(&web.id, "layout-onnx", Some("# A web PDF"), true).unwrap();
+    scratch.set_index_status(&web.id, "ready", None, 4, 4).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    assert!(!store.carry_analysis("other", scratch_dir.path()).unwrap());
+    assert!(store.carry_analysis("h1", scratch_dir.path()).unwrap());
+    let carried = store.take_carried_analysis("h1").unwrap().unwrap();
+    assert_eq!((carried.engine.as_str(), carried.markdown.as_deref(), carried.page_count), ("layout-onnx", Some("# A web PDF"), Some(3)));
+    assert_eq!(carried.chunks.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), ["Page 0 text", "Page 1 text", "Page 2 text"]);
+    assert_eq!(carried.chunks[1].rects, vec![[1, 2, 3, 4]]);
+    assert!(store.take_carried_analysis("h1").unwrap().is_none());
+}
