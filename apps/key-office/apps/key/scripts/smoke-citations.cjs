@@ -177,7 +177,7 @@ const HOUSE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("open-settings")));
     await page.locator(".kx-settings-nav button[data-section=citations]").click();
     await page.locator('input[type=file][aria-label="Style file"]').setInputFiles(styleFile);
-    await page.locator(".kx-settings-row", { hasText: "Key smoke house style" }).getByRole("button", { name: /Remove/ }).waitFor();
+    await page.getByRole("button", { name: "Remove Key smoke house style" }).waitFor();
     await page.locator("[data-preview=citation]", { hasText: "[Narang et al. 2021]" }).waitFor();
     await page.getByRole("button", { name: "Citation style" }).filter({ hasText: "Key smoke house style" }).waitFor();
     await shot(page, "3-installed-style");
@@ -211,7 +211,8 @@ const HOUSE_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("open-settings")));
     await page.locator(".kx-settings-nav button[data-section=citations]").click();
     await page.getByRole("button", { name: "Remove Key smoke house style" }).click();
-    await page.locator(".kx-settings-row", { hasText: "Key smoke house style" }).waitFor({ state: "detached" });
+    // The style picker's own row may still name the style for a moment: watch the installed row.
+    await page.getByRole("button", { name: "Remove Key smoke house style" }).waitFor({ state: "detached" });
     await page.locator("[data-preview=citation]", { hasText: "(Narang et al., 2021, p. 626)" }).waitFor();
     const styles = await call("store_cite_styles");
     assert.ok(!styles.styles.some((s) => s.id === "key-smoke-house"), "the style is gone");
