@@ -112,8 +112,19 @@ function JobRow({ job, activity }: { job: IndexJob; activity: IndexActivity }) {
 }
 
 /** The full picture: overall batch, the two pipeline stages, and the queue. */
-export function ActivityPanel({ activity, modelReady, onPause }: { activity: IndexActivity; modelReady: boolean; onPause: (paused: boolean) => void }) {
+export function ActivityPanel({
+  activity,
+  modelReady,
+  onPause,
+  backfill,
+}: {
+  activity: IndexActivity;
+  modelReady: boolean;
+  onPause: (paused: boolean) => void;
+  backfill?: LibraryStatus["backfill"];
+}) {
   const { left, eta } = remaining(activity);
+  const older = olderSources(backfill);
   const now = [activity.reading, activity.embedding].filter((j): j is IndexJob => !!j);
   const total = activity.batchTotal;
   return (
@@ -125,8 +136,13 @@ export function ActivityPanel({ activity, modelReady, onPause }: { activity: Ind
             {total ? `${activity.batchDone.toLocaleString()} of ${total.toLocaleString()} sources` : "Every source is searchable"}
             {eta && !activity.paused ? ` · ${eta}` : ""}
           </span>
+          {older > 0 && (
+            <span className="kx-activity-backfill">
+              {activity.paused ? "Paused: " : ""}Looking up {older.toLocaleString()} older {older === 1 ? "source" : "sources"} when idle
+            </span>
+          )}
         </div>
-        {(left > 0 || activity.paused) && (
+        {(left > 0 || activity.paused || older > 0) && (
           <button className="kx-activity-pause" onClick={() => onPause(!activity.paused)}>
             <Icon name={activity.paused ? "play" : "pause"} size={12} />
             {activity.paused ? "Resume" : "Pause"}
@@ -167,6 +183,9 @@ export function ActivityPanel({ activity, modelReady, onPause }: { activity: Ind
   );
 }
 
+/** Older PDFs still to identify or look up in the background. */
+export const olderSources = (backfill?: LibraryStatus["backfill"]) => (backfill ? backfill.identify + backfill.lookup : 0);
+
 /** Footer pill with the panel as its popover. */
 export function ActivityPill({ status, onPause }: { status?: LibraryStatus; onPause: (paused: boolean) => void }) {
   const activity = status?.activity;
@@ -194,7 +213,7 @@ export function ActivityPill({ status, onPause }: { status?: LibraryStatus; onPa
       </summary>
       {activity && (
         <div className="kx-menu-popover kx-activity-popover">
-          <ActivityPanel activity={activity} modelReady={status.model.state === "ready"} onPause={onPause} />
+          <ActivityPanel activity={activity} modelReady={status.model.state === "ready"} onPause={onPause} backfill={status.backfill} />
         </div>
       )}
     </details>

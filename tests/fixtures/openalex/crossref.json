@@ -1,0 +1,12 @@
+{
+  "message": {
+    "items": [
+      {
+        "DOI": "10.5555/key-smoke-wandering",
+        "title": ["Night-time wandering in memory care units: a observational cohort"],
+        "issued": { "date-parts": [[2020]] },
+        "author": [{ "given": "Shirley", "family": "Nickels" }]
+      }
+    ]
+  }
+}

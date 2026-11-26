@@ -1274,6 +1274,10 @@ html:not(.kx-vibrancy) .key-sidebar-slot {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+.kx-activity-panel header span.kx-activity-backfill {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
 .kx-activity-panel section {
   display: grid;
   gap: 4px;
