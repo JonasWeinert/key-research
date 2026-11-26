@@ -6,6 +6,7 @@
   --kx-modal-min-height: min(80vh, 860px);
   height: min(80vh, 860px, var(--kx-modal-max-height));
   overflow: hidden;
+  background: var(--kx-bg-raised);
 }
 @media (max-width: 820px) {
   .key-global-drawer.key-modal:has(.kx-spot) {
@@ -240,4 +241,21 @@
   margin: 0;
   font-size: 12.5px;
   line-height: 1.5;
+}
+.kx-spot-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-spot mark {
+  border-radius: 3px;
+  padding: 0 1px;
+  background: color-mix(in srgb, var(--kx-amber) 30%, transparent);
+  color: inherit;
+}
+/* One focus ring: the field's, not the input's inside it. */
+.kx-spot .kx-search .kx-search-input:is(:focus, :focus-visible) {
+  border: 0;
+  outline: none;
+  box-shadow: none;
 }

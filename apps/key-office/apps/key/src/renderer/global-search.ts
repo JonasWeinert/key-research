@@ -73,7 +73,7 @@ export function useFind(invoke: Invoke | undefined, workspaceId: string | undefi
       if (!first?.pending) return;
       const all = await findOnHost(invoke, workspaceId, { ...args, $supersede: `${supersede.current}:full` }).catch(() => undefined);
       if (current() && all) setResult(asResult(all));
-    }, args.text ? 120 : 0);
+    }, args.text ? 50 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoke, workspaceId, searchKey, limit]);

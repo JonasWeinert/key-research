@@ -374,7 +374,7 @@ function RowView({ row, index, selected, onActive, onPick, pattern, query, web, 
       <button type="button" {...common} className="kx-spot-row" onClick={() => onPick(false)}>
         <Icon name="globe" size={14} />
         <span className="kx-spot-title">
-          Search the web for “{query}”
+          <span className="kx-spot-name">Search the web for “{query}”</span>
           <span className="kx-spot-sub"> in scholarly catalogues such as OpenAlex. Only the words and filters are sent.</span>
         </span>
       </button>
@@ -386,7 +386,9 @@ function RowView({ row, index, selected, onActive, onPick, pattern, query, web, 
     <div {...common} className="kx-spot-row kx-spot-row--web" data-web-key={hit.key} onClick={(e) => (e.target as HTMLElement).closest("button") || onPick(e.altKey)}>
       <Icon name="globe" size={14} />
       <span className="kx-spot-title">
-        <Highlight text={hit.title} pattern={pattern} />
+        <span className="kx-spot-name">
+          <Highlight text={hit.title} pattern={pattern} />
+        </span>
         <span className="kx-spot-sub">{[shortAuthors(hit.authors), hit.venue, hit.year].filter(Boolean).join(" · ")}</span>
       </span>
       {inLibrary ? <span className="kx-spot-badge" data-state="in">In library</span> : possible ? <span className="kx-spot-badge" data-state="possible">Possibly in library</span> : null}
