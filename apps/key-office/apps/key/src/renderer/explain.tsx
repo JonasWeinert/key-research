@@ -208,8 +208,10 @@ export function EmptyState({
 }
 
 // ── First-use tips ────────────────────────────────────────────────────────────────────────
-// Which tips were seen, remembered for the whole app (every view shares this origin's
-// storage; other views hear the `storage` event). Automated runs see none unless asked.
+// Which tips were seen, remembered for the whole app in its settings (main keeps them, so
+// they survive a cleared profile storage and every view agrees; views hear `tips-changed`).
+// Local storage is only this view's quick copy until the settings answer. Automated runs
+// see none unless asked.
 const TIPS_KEY = "key.tips";
 interface TipsState {
   seen: string[];
@@ -227,15 +229,47 @@ function readTips(): TipsState {
   }
   return tipsCache;
 }
-function writeTips(next: TipsState) {
+type TipsBridge = {
+  appSettings?: () => Promise<{ settings?: { tips?: TipsState } } | undefined>;
+  setAppSettings?: (patch: { tips: TipsState }) => Promise<unknown>;
+  on?: (event: string, listener: (value: unknown) => void) => () => void;
+};
+const tipsBridge = () => (typeof window === "undefined" ? undefined : (window as unknown as { key?: TipsBridge }).key);
+function keepTips(next: TipsState) {
   tipsCache = next;
   try {
     localStorage.setItem(TIPS_KEY, JSON.stringify(next));
   } catch {
-    /* tips are a convenience */
+    /* only the quick copy */
   }
   tipListeners.forEach((fn) => fn());
 }
+function writeTips(next: TipsState) {
+  keepTips(next);
+  void tipsBridge()?.setAppSettings?.({ tips: next })?.catch(() => {});
+}
+// The app's settings are the record: take them (with anything this view saw meanwhile).
+const loadTips = () => {
+  const bridge = tipsBridge();
+  if (!bridge?.appSettings) return;
+  void bridge
+    .appSettings()
+    .then((settings) => {
+      const stored = settings?.settings?.tips;
+      if (!stored) return;
+      const local = readTips();
+      const seen = [...new Set([...stored.seen, ...local.seen])];
+      const merged = { seen, off: stored.off };
+      keepTips(merged);
+      if (seen.length !== stored.seen.length) writeTips(merged);
+    })
+    .catch(() => {});
+  bridge.on?.("tips-changed", (value) => {
+    const next = value as TipsState | undefined;
+    if (next && Array.isArray(next.seen)) keepTips({ seen: next.seen, off: next.off === true });
+  });
+};
+if (typeof window !== "undefined") loadTips();
 if (typeof window !== "undefined")
   window.addEventListener("storage", (e) => {
     if (e.key !== TIPS_KEY) return;

@@ -40,13 +40,20 @@ export interface AppSettings {
   citationLocale: string
   /** What Key shows when it opens: the workspaces window, last time's windows, or the last workspace. */
   openAtLaunch: OpenAtLaunch
+  /** First-use tips: which were seen, and whether they show at all (kept here, not in a
+   *  view's storage, so every view agrees and clearing a profile's storage keeps them). */
+  tips: TipsSetting
+}
+export interface TipsSetting {
+  seen: string[]
+  off: boolean
 }
 export type OpenAtLaunch = 'workspaces' | 'restore' | 'last'
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces' }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', tips: { seen: [], off: false } }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -92,7 +99,14 @@ function sanitize(input: AppSettings): AppSettings {
     citationStyle: typeof input.citationStyle === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(input.citationStyle) ? input.citationStyle : 'apa',
     openAtLaunch: (['workspaces', 'restore', 'last'] as const).includes(input.openAtLaunch) ? input.openAtLaunch : 'workspaces',
     citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
+    tips: tips(input.tips),
   }
+}
+
+function tips(input: unknown): TipsSetting {
+  const value = (input && typeof input === 'object' ? input : {}) as Partial<TipsSetting>
+  const seen = Array.isArray(value.seen) ? [...new Set(value.seen.filter((s): s is string => typeof s === 'string' && /^[a-z0-9.-]{1,64}$/.test(s)))].slice(0, 300) : []
+  return { seen, off: value.off === true }
 }
 
 function webProviders(input: unknown): Record<string, WebProviderSetting> {

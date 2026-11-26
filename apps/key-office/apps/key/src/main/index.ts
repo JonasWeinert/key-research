@@ -2615,6 +2615,8 @@ else
         }
         if (patch?.webProviders) for (const entry of Object.values(patch.webProviders as Record<string, { apiKey?: string }>)) delete entry.apiKey;
         const next = await appSettings.update(patch ?? {});
+        // Every view shows the same tips (explain.tsx keeps a copy).
+        if (JSON.stringify(before.tips) !== JSON.stringify(next.tips)) emit("tips-changed", next.tips);
         if (!before.zoteroSync && next.zoteroSync) void syncZotero(true);
         // Running library hosts pick up the layout setting at once.
         if (before.layoutModel !== next.layoutModel)

@@ -109,6 +109,7 @@ contextBridge.exposeInMainWorld("key", {
         "full-screen",
         "open-item-link",
         "library-sources-changed",
+        "tips-changed",
         "launcher-changed",
         "workspaces-changed",
         "launcher-command",
