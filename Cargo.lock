@@ -4518,6 +4518,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "key-models"
+version = "0.1.0"
+dependencies = [
+ "key-safe-http",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "url",
+]
+
+[[package]]
 name = "key-pdf-core"
 version = "0.1.0"
 dependencies = [
