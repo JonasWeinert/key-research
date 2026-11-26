@@ -290,7 +290,55 @@ const want = (name) => !only.length || only.includes(name);
       await pdf.waitForTimeout(450);
       const wide = await ticks.boundingBox();
       if (wide.width < rest.width * 2) throw Error(`The rail did not widen on hover: ${rest.width} → ${wide.width}`);
-      await shot(pdf, "rail-hover-light");
+      // Dock-style: the tick under the pointer is longest, its neighbours less, far ones least;
+      // the open rail sits on its own plate so it reads over any page.
+      const dock = () =>
+        pdf.evaluate((y) => {
+          const buttons = [...document.querySelectorAll(".key-pdf-rail .key-preview-rail-ticks > button")];
+          const scale = (b) => new DOMMatrix(getComputedStyle(b.querySelector(".key-preview-rail-tick")).transform).a;
+          const at = buttons.findIndex((b) => {
+            const r = b.getBoundingClientRect();
+            return y >= r.top && y < r.bottom;
+          });
+          const nav = document.querySelector(".key-pdf-rail .key-preview-rail-ticks");
+          const style = getComputedStyle(nav);
+          return {
+            at,
+            count: buttons.length,
+            pitch: buttons[0]?.getBoundingClientRect().height,
+            hovered: scale(buttons[at]),
+            near: Math.max(scale(buttons[at - 1] ?? buttons[at + 1]), scale(buttons[at + 1] ?? buttons[at - 1])),
+            next: scale(buttons[at + 2] ?? buttons[at - 2]),
+            far: Math.min(...buttons.filter((_, i) => Math.abs(i - at) >= 4).map(scale), 2),
+            plate: style.backgroundColor,
+            blur: style.backdropFilter,
+          };
+        }, rest.y + rest.height / 2);
+      const magnified = await dock();
+      if (magnified.at < 0 || magnified.count < 8) throw Error(`The rail has too few ticks to check: ${JSON.stringify(magnified)}`);
+      if (!(magnified.hovered > magnified.near && magnified.near > magnified.next && magnified.next > magnified.far))
+        throw Error(`The rail does not magnify around the pointer: ${JSON.stringify(magnified)}`);
+      if (/rgba\(0, 0, 0, 0\)|transparent/.test(magnified.plate) || !/blur/.test(magnified.blur))
+        throw Error(`The open rail has no backing: ${magnified.plate} ${magnified.blur}`);
+      result.railDock = magnified;
+      await themes("rail-hover", async () => {
+        await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2 + 1);
+        await pdf.waitForTimeout(450);
+      });
+      // Over a dark page: the plate keeps the ticks legible.
+      await pdf.addStyleTag({ content: ".pdfjs-scroll{background:#15161a!important}.pdfjs-page{filter:invert(1) hue-rotate(180deg)}" });
+      await pdf.mouse.move(600, 500);
+      await themes("rail-rest-darkpage", async () => {
+        await pdf.waitForTimeout(300);
+      });
+      await themes("rail-hover-darkpage", async () => {
+        await pdf.mouse.move(rest.x + 30, rest.y + rest.height / 2, { steps: 4 });
+        await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2 - 1, { steps: 4 });
+        await pdf.waitForTimeout(450);
+      });
+      await pdf.evaluate(() => document.head.lastElementChild?.remove());
+      await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2);
+      await pdf.waitForTimeout(300);
       await pdf.mouse.click(rest.x + 6, rest.y + rest.height / 2, { button: "right" });
       const menu = pdf.getByRole("menu", { name: "Rail shows" });
       await menu.waitFor({ timeout: 3000 });
