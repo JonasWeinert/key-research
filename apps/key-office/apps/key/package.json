@@ -117,6 +117,10 @@
         "to": "modules/html"
       },
       {
+        "from": "../../../../integrations/zotero-key-sync/dist/key-sync.xpi",
+        "to": "zotero/key-sync.xpi"
+      },
+      {
         "from": "../sheets/native/xlsx-engine/target/release/xlsx-sidecar",
         "to": "native/xlsx-sidecar"
       },

@@ -1,0 +1,22 @@
+<vbox id="key-sync-prefs" onload="KeySyncPrefs.init(window)">
+  <groupbox>
+    <label><html:h2>Key</html:h2></label>
+    <html:p>Key keeps the collections or papers you choose in step with this library while both apps are open, and catches up on changes made while Key was closed. Key only reads from Zotero.</html:p>
+  </groupbox>
+  <groupbox>
+    <label><html:h2>Pairing code</html:h2></label>
+    <html:p>Key finds this code on its own. If it asks for one, copy it into Key.</html:p>
+    <hbox align="center">
+      <html:input id="key-sync-token" type="text" readonly="true" style="flex: 1; font-family: ui-monospace, Menlo, monospace;"/>
+      <button id="key-sync-copy" label="Copy"/>
+      <button id="key-sync-regenerate" label="New code"/>
+    </hbox>
+  </groupbox>
+  <groupbox>
+    <label><html:h2>Status</html:h2></label>
+    <html:p id="key-sync-status">…</html:p>
+    <hbox>
+      <button id="key-sync-now" label="Ask Key to sync now"/>
+    </hbox>
+  </groupbox>
+</vbox>

@@ -1,7 +1,16 @@
 # Zotero sync
 
-Key imports a Zotero library once by default. In Settings → Libraries → Zotero, **Keep in
-sync with Zotero** turns on a Zotero → Key sync for the "Zotero" library.
+Key imports a Zotero library once by default. **Keep in sync** (in the Zotero sheet, or
+Settings → Libraries → Zotero) follows Zotero through the Key Sync plugin
+(`integrations/zotero-key-sync`, `src/plugin.rs`): the plugin journals every change, Key asks
+every 15 seconds (and on window focus) for the changes since the last one it applied, fetches
+the items they touch into a mirror in `zotero-sync.sqlite`, and runs the merge below over it.
+Both modes take a scope: everything, chosen collections or chosen papers. A synced item that
+leaves the scope is unlinked (kept in Key, no longer updated); every 30 minutes the mirror is
+compared with Zotero's item list for anything the journal missed.
+
+The older sync that re-reads `zotero.sqlite` (described next) still runs for libraries that
+turned it on before, and stands aside once a plugin sync is set up.
 
 ## How it reads Zotero
 
@@ -20,7 +29,7 @@ While sync is on, the app asks the Zotero library's host every 30 seconds whethe
 | **Reading `zotero.sqlite`** (chosen) | Zotero → Key | Nothing | Works whether Zotero is running or not, offline, with no setup; sees exactly what Zotero stores locally, including file paths and annotations; one code path with the import. |
 | Zotero 7 local API (`localhost:23119/api/`) | Zotero → Key | Zotero running, “Allow other applications to communicate with Zotero” enabled | Read-only like the database, but only while Zotero runs and only after the user enables it; no deletion log, so deletions still need a full comparison. |
 | Zotero web API | Both ways | Zotero account, API key, network, Zotero sync on | The only route to writing back, but sees only what has been synced to zotero.org, not local file paths; writing to a user's cloud library from another app risks their data and needs version-conflict handling on both sides. |
-| Companion Zotero plugin | Both ways, live | Installing and maintaining a plugin across Zotero versions; a listener in Key | Live and could write back, but adds an install step and a moving target; not needed for Zotero → Key. |
+| Companion Zotero plugin (now used for sync) | Both ways, live | Installing a plugin (Zotero 7–9) | Live, with a change journal (no full comparisons), deletions and moves recorded as they happen; the one-time import still needs nothing. |
 
 Reading the database is the most robust choice for Zotero → Key. Two-way sync is left for
 later: it would go through the web API (with `If-Unmodified-Since-Version`) or a plugin.

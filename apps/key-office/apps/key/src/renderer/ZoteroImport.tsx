@@ -1,30 +1,38 @@
-// The Zotero import sheet: the whole library or chosen collections (a tree with item
-// counts), what comes across with them, a preview count, then progress and a summary.
-// Importing again updates what was imported before and keeps edits made in Key.
+// The Zotero sheet. First: import once, or keep in sync through the Key Sync plugin. Then,
+// for either: everything, chosen collections (a tree with item counts) or chosen papers (a
+// searchable list), and what comes along; then progress and a summary. Importing again
+// updates what was imported before and keeps edits made in Key.
 import { Button } from "@key/design-system";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import {
   bridge,
   type Invoke,
   type WorkspaceSummary,
+  type ZoteroItem,
   type ZoteroOptions,
   type ZoteroPreview,
+  type ZoteroProbe,
   type ZoteroProgress,
   type ZoteroReport,
+  type ZoteroSyncOutcome,
 } from "./library-api";
+import { blocker, choiceOf, filterItems, optionsOf, type Choice, type Mode, type Scope } from "./zotero-sheet-model";
 import "./zotero-import.css";
 
 type Collection = ZoteroPreview["collections"][number];
 
 const n = (value: number) => value.toLocaleString();
 const plural = (count: number, one: string, many = `${one}s`) => `${n(count)} ${count === 1 ? one : many}`;
+const message = (e: unknown) => String(e).replace(/^Error: /, "");
+/** Papers shown at once; a search narrows the rest. */
+const PAPERS_SHOWN = 300;
 
 export function ZoteroImportSheet(props: Omit<Props, "onDone"> & { onDone?: Props["onDone"] }) {
   const [busy, setBusy] = useState(false);
   return (
-    <GlobalDrawer onClose={props.onClose} busy={busy} presentation="sheet" label="Import from Zotero">
+    <GlobalDrawer onClose={props.onClose} busy={busy} presentation="sheet" label="Zotero">
       <ZoteroImport {...props} onDone={props.onDone ?? (() => {})} onBusy={setBusy} />
     </GlobalDrawer>
   );
@@ -35,28 +43,29 @@ interface Props {
   /** A workspace whose host reads the Zotero library for the preview. */
   workspaceId?: string;
   onClose: () => void;
-  /** After a finished import, with the workspace it went into. */
-  onDone: (workspace: WorkspaceSummary, report: ZoteroReport) => void;
+  /** After a finished import or a first sync, with the workspace it went into. */
+  onDone: (workspace: WorkspaceSummary, report: ZoteroReport, mode: Mode) => void;
   onBusy?: (busy: boolean) => void;
+  /** Opens on the second step in this mode. */
+  initialMode?: Mode;
+  /** The sync's current options, when changing what it covers. */
+  current?: ZoteroOptions | null;
 }
 
-export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy }: Props) {
-  const [scope, setScope] = useState<"library" | "collections">("library");
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [options, setOptions] = useState<Omit<ZoteroOptions, "collectionKeys">>({
-    attachments: true,
-    notes: true,
-    annotations: true,
-    mirrorCollections: true,
-  });
+export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, initialMode, current }: Props) {
+  const [mode, setMode] = useState<Mode>(initialMode ?? "import");
+  const [step, setStep] = useState<"mode" | "scope">(initialMode ? "scope" : "mode");
+  const [choice, setChoice] = useState<Choice>(() => choiceOf(current));
   const [preview, setPreview] = useState<ZoteroPreview>();
+  const [items, setItems] = useState<ZoteroItem[]>();
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ZoteroProgress | "starting">();
   const [result, setResult] = useState<{ workspace: WorkspaceSummary; report: ZoteroReport }>();
-  const request: ZoteroOptions = useMemo(
-    () => ({ ...options, ...(scope === "collections" ? { collectionKeys: [...chosen] } : {}) }),
-    [options, scope, chosen],
-  );
+  const [probe, setProbe] = useState<ZoteroProbe>();
+  const [token, setToken] = useState("");
+  const [library, setLibrary] = useState<number>();
+  const request = useMemo(() => optionsOf(choice), [choice]);
+  const changing = !!current;
 
   // The counts follow every change of choice; the library is read once and kept by the host.
   useEffect(() => {
@@ -64,7 +73,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy }: P
     const timer = setTimeout(() => {
       void invoke<ZoteroPreview>("store_zotero_preview", request as unknown as Record<string, unknown>, workspaceId)
         .then((p) => !stale && (setPreview(p), setError("")))
-        .catch((e) => !stale && setError(String(e).replace(/^Error: /, "")));
+        .catch((e) => !stale && setError(message(e)));
     }, preview ? 150 : 0);
     return () => {
       stale = true;
@@ -73,90 +82,179 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy }: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [invoke, workspaceId, request]);
 
+  // The paper list, the first time it is needed.
+  useEffect(() => {
+    if (choice.scope !== "papers" || items) return;
+    void invoke<ZoteroItem[]>("store_zotero_items", {}, workspaceId)
+      .then(setItems)
+      .catch((e) => setError(message(e)));
+  }, [invoke, workspaceId, choice.scope, items]);
+
+  // Sync: whether Zotero runs with the plugin, checked again until it does.
+  const probeNow = async (given?: string) => {
+    const zotero = (await bridge().workspaces?.().catch(() => []))?.find((w) => /\/Zotero$/.test(w.root));
+    const answer = await invoke<ZoteroProbe>("store_zotero_plugin_probe", given ? { token: given } : {}, zotero?.id ?? workspaceId).catch(
+      (e): ZoteroProbe => ({ connection: "error", message: message(e), libraries: [] }),
+    );
+    setProbe(answer);
+    return answer;
+  };
+  const connected = probe?.connection === "ok";
+  useEffect(() => {
+    if (mode !== "sync" || step !== "scope" || connected) return;
+    let stopped = false;
+    const check = () => void probeNow(token || undefined).then(() => !stopped && undefined);
+    check();
+    const timer = setInterval(check, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, step, connected, invoke, workspaceId]);
+
   const running = progress !== undefined && !result;
   useEffect(() => onBusy?.(running), [running, onBusy]);
+
+  const pollProgress = (workspace: string) => {
+    let polling = true;
+    void (async () => {
+      while (polling) {
+        const p = await invoke<ZoteroProgress | null>("store_zotero_progress", {}, workspace).catch(() => null);
+        if (polling && p) setProgress(p);
+        await new Promise((r) => setTimeout(r, 250));
+      }
+    })();
+    return () => (polling = false);
+  };
 
   const start = async () => {
     setError("");
     setProgress("starting");
-    let polling = true;
+    let stop = () => {};
     try {
       const workspace = await bridge().zoteroWorkspace();
-      const poll = async () => {
-        while (polling) {
-          const p = await invoke<ZoteroProgress | null>("store_zotero_progress", {}, workspace.id).catch(() => null);
-          if (polling && p) setProgress(p);
-          await new Promise((r) => setTimeout(r, 250));
-        }
-      };
-      void poll();
-      const done = await bridge().importZotero(request);
-      setResult(done);
-      onDone(done.workspace, done.report);
+      stop = pollProgress(workspace.id);
+      if (mode === "import") {
+        const done = await bridge().importZotero(request);
+        setResult(done);
+        onDone(done.workspace, done.report, mode);
+        return;
+      }
+      await invoke(
+        "store_zotero_plugin_configure",
+        {
+          options: request,
+          paused: false,
+          ...(probe?.tokenSource === "given" && token ? { token } : {}),
+          ...(library ?? probe?.defaultLibraryID ? { libraryID: library ?? probe?.defaultLibraryID } : {}),
+        },
+        workspace.id,
+      );
+      const outcome = await invoke<ZoteroSyncOutcome>("store_zotero_plugin_sync", { force: true }, workspace.id);
+      if (outcome.connection !== "ok" || !outcome.report) throw new Error(outcome.message || "Zotero did not answer. Key will try again on its own.");
+      void bridge().zoteroPlugin?.("wake").catch(() => {});
+      setResult({ workspace, report: outcome.report });
+      onDone(workspace, outcome.report, mode);
     } catch (e) {
       setProgress(undefined);
-      setError(String(e).replace(/^Error: /, ""));
+      setError(message(e));
     } finally {
-      polling = false;
+      stop();
     }
   };
 
-  const nothingChosen = scope === "collections" && chosen.size === 0;
+  const blocked = blocker(mode, choice, probe?.connection);
+  const verb = mode === "import" ? "import" : "sync";
+  const title = step === "mode" ? "Bring in your Zotero library" : changing ? "Change what Key syncs" : mode === "import" ? "Import from Zotero" : "Keep in sync with Zotero";
+  const lede =
+    step === "mode"
+      ? "Key only reads from Zotero; nothing there is changed."
+      : mode === "import"
+        ? preview
+          ? `From ${preview.dataDir.replace(/^\/Users\/[^/]+/, "~")}. Importing again later updates what came across.`
+          : "Reading your Zotero library…"
+        : "Changes made in Zotero come to Key while both apps are open; edits made in Key are kept.";
   return (
-    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label="Import from Zotero">
+    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title}>
       <header>
-        <h2>Import from Zotero</h2>
-        <p>
-          {preview ? <>From {preview.dataDir.replace(/^\/Users\/[^/]+/, "~")}. Zotero itself is not changed.</> : "Reading your Zotero library…"}
-        </p>
+        <h2>{title}</h2>
+        <p>{lede}</p>
         <button className="kx-sheet-close" aria-label="Close" disabled={running} onClick={onClose}>
           <Icon name="close" size={10} />
         </button>
       </header>
       <div className="key-property-body">
         {result ? (
-          <Summary report={result.report} workspace={result.workspace} />
+          <Summary report={result.report} workspace={result.workspace} mode={mode} />
         ) : running ? (
-          <ProgressView progress={progress} preview={preview} />
+          <ProgressView progress={progress} preview={preview} mode={mode} />
+        ) : step === "mode" ? (
+          <div className="kx-zotero-modes" role="radiogroup" aria-label="How to bring it in">
+            <ModeCard
+              icon="download"
+              title="Import once"
+              detail="Copies items, notes and highlights into Key now. Later changes in Zotero stay in Zotero until you import again."
+              note="Works on its own"
+              checked={mode === "import"}
+              onChoose={() => setMode("import")}
+            />
+            <ModeCard
+              icon="sync"
+              title="Keep in sync"
+              detail="Follows what you add, change, move and delete in Zotero, and catches up on what happened while Key was closed."
+              note="Uses the Key Sync plugin for Zotero"
+              checked={mode === "sync"}
+              onChoose={() => setMode("sync")}
+            />
+          </div>
         ) : (
           <>
+            {mode === "sync" && (
+              <PluginPanel
+                probe={probe}
+                token={token}
+                onToken={setToken}
+                onPair={() => void probeNow(token.trim())}
+                onCheck={() => void probeNow(token.trim() || undefined)}
+              />
+            )}
             <section className="kx-form-section">
-              <h3>What to import</h3>
-              <div className="kx-zotero-scope" role="radiogroup" aria-label="What to import">
-                <button role="radio" aria-checked={scope === "library"} onClick={() => setScope("library")}>
-                  <Icon name="books" size={14} />
-                  <span>
-                    <strong>Whole library</strong>
-                    <small>{preview ? plural(preview.library.items, "item") : "…"}</small>
-                  </span>
-                </button>
-                <button role="radio" aria-checked={scope === "collections"} disabled={!preview?.collections.length} onClick={() => setScope("collections")}>
-                  <Icon name="folder" size={14} />
-                  <span>
-                    <strong>Chosen collections</strong>
-                    <small>{preview ? plural(preview.collections.length, "collection") : "…"}</small>
-                  </span>
-                </button>
+              <div className="kx-zotero-scope-head">
+                <h3>What to {verb}</h3>
+                {mode === "sync" && connected && probe!.libraries.length > 1 && (
+                  <select className="kx-zotero-library" aria-label="Zotero library" value={library ?? probe?.defaultLibraryID ?? ""} onChange={(e) => setLibrary(Number(e.target.value))}>
+                    {probe!.libraries.map((l) => (
+                      <option key={l.libraryID} value={l.libraryID}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
-              {scope === "collections" && preview && <CollectionTree collections={preview.collections} chosen={chosen} onChange={setChosen} />}
+              <ScopePicker scope={choice.scope} preview={preview} onChange={(scope) => setChoice({ ...choice, scope })} />
+              {choice.scope === "collections" && preview && (
+                <CollectionTree collections={preview.collections} chosen={choice.collections} onChange={(collections) => setChoice({ ...choice, collections })} />
+              )}
+              {choice.scope === "papers" && <PaperPicker items={items} chosen={choice.papers} onChange={(papers) => setChoice({ ...choice, papers })} />}
             </section>
             <section className="kx-form-section">
               <h3>Bring along</h3>
               <div className="kx-form-group">
-                <Toggle label="PDFs and other files" detail="Linked where Zotero keeps them; nothing is copied." checked={options.attachments} onChange={(attachments) => setOptions({ ...options, attachments })} />
-                <Toggle label="Notes" detail="Converted to Markdown, with highlights as quotes." checked={options.notes} onChange={(notes) => setOptions({ ...options, notes })} />
-                <Toggle label="PDF annotations" detail="Each PDF’s highlights and comments, as a note of quotes." checked={options.annotations} onChange={(annotations) => setOptions({ ...options, annotations })} />
-                <Toggle label="Zotero collections" detail="Recreated as Key collections, with items filed in them." checked={options.mirrorCollections} onChange={(mirrorCollections) => setOptions({ ...options, mirrorCollections })} />
+                <Toggle label="PDFs and other files" detail="Linked where Zotero keeps them; nothing is copied." checked={choice.bring.attachments} onChange={(attachments) => setChoice({ ...choice, bring: { ...choice.bring, attachments } })} />
+                <Toggle label="Notes" detail="Converted to Markdown, with highlights as quotes." checked={choice.bring.notes} onChange={(notes) => setChoice({ ...choice, bring: { ...choice.bring, notes } })} />
+                <Toggle label="PDF annotations" detail="Each PDF’s highlights and comments, as a note of quotes." checked={choice.bring.annotations} onChange={(annotations) => setChoice({ ...choice, bring: { ...choice.bring, annotations } })} />
+                <Toggle label="Zotero collections" detail="Recreated as Key collections, with items filed in them." checked={choice.bring.mirrorCollections} onChange={(mirrorCollections) => setChoice({ ...choice, bring: { ...choice.bring, mirrorCollections } })} />
               </div>
             </section>
-            {error && <p className="kx-inline-error">{error}</p>}
           </>
         )}
+        {error && !running && <p className="kx-inline-error">{error}</p>}
       </div>
       <footer>
-        {!result && !running && preview && (
+        {step === "scope" && !result && !running && (
           <span className="kx-zotero-count" aria-live="polite">
-            {nothingChosen ? "Choose at least one collection" : <Counts counts={preview.selected} />}
+            {blocked && (choice.scope !== "library" || mode === "sync") ? blocked : preview ? <Counts counts={preview.selected} /> : null}
           </span>
         )}
         <span className="kx-footer-spacer" />
@@ -164,17 +262,195 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy }: P
           <Button variant="primary" onClick={onClose}>
             Done
           </Button>
-        ) : (
+        ) : step === "mode" ? (
           <>
-            <Button type="button" disabled={running} onClick={onClose}>
+            <Button type="button" onClick={onClose}>
               Cancel
             </Button>
-            <Button variant="primary" className="key-property-primary" disabled={running || !preview || nothingChosen || !preview.selected.items} onClick={() => void start()}>
-              {running ? "Importing…" : "Import"}
+            <Button variant="primary" className="key-property-primary" onClick={() => setStep("scope")}>
+              Continue
+            </Button>
+          </>
+        ) : (
+          <>
+            {!initialMode ? (
+              <Button type="button" disabled={running} onClick={() => setStep("mode")}>
+                Back
+              </Button>
+            ) : (
+              <Button type="button" disabled={running} onClick={onClose}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              variant="primary"
+              className="key-property-primary"
+              disabled={running || !!blocked || (mode === "import" && (!preview || !preview.selected.items))}
+              onClick={() => void start()}
+            >
+              {running ? (mode === "import" ? "Importing…" : "Syncing…") : changing ? "Save and sync" : mode === "import" ? "Import" : "Start syncing"}
             </Button>
           </>
         )}
       </footer>
+    </div>
+  );
+}
+
+function ModeCard({ icon, title, detail, note, checked, onChoose }: { icon: IconName; title: string; detail: string; note: string; checked: boolean; onChoose: () => void }) {
+  return (
+    <button className="kx-zotero-mode" role="radio" aria-checked={checked} onClick={onChoose}>
+      <span className="kx-zotero-mode-icon">
+        <Icon name={icon} size={18} />
+      </span>
+      <span className="kx-zotero-mode-text">
+        <strong>{title}</strong>
+        <span>{detail}</span>
+        <small>{note}</small>
+      </span>
+      <span className="kx-zotero-mode-check" aria-hidden="true">
+        {checked && <Icon name="check" size={11} />}
+      </span>
+    </button>
+  );
+}
+
+const SCOPES: [Scope, string][] = [
+  ["library", "Everything"],
+  ["collections", "Collections"],
+  ["papers", "Papers"],
+];
+
+function ScopePicker({ scope, preview, onChange }: { scope: Scope; preview?: ZoteroPreview; onChange: (scope: Scope) => void }) {
+  const detail =
+    scope === "library"
+      ? preview
+        ? `The whole library: ${plural(preview.library.items, "item")} in ${plural(preview.collections.length, "collection")}.`
+        : "The whole library."
+      : scope === "collections"
+        ? "Items in the collections you tick. Ticking one includes the collections inside it."
+        : "Only the papers you tick.";
+  return (
+    <>
+      <div className="kx-segmented kx-zotero-segmented" role="radiogroup" aria-label="Scope">
+        {SCOPES.map(([id, label]) => (
+          <button key={id} role="radio" aria-checked={scope === id} aria-pressed={scope === id} disabled={id === "collections" && preview && !preview.collections.length} onClick={() => onChange(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="kx-zotero-scope-detail">{detail}</p>
+    </>
+  );
+}
+
+/** What Zotero needs before Key can sync with it, and a quiet confirmation once it can. */
+function PluginPanel({ probe, token, onToken, onPair, onCheck }: { probe?: ZoteroProbe; token: string; onToken: (token: string) => void; onPair: () => void; onCheck: () => void }) {
+  const state = probe?.connection;
+  if (state === "ok")
+    return (
+      <div className="kx-zotero-plugin kx-zotero-plugin-ok" role="status">
+        <Icon name="check" size={13} />
+        <span>
+          Connected to Zotero {probe?.zoteroVersion ?? ""} · Key Sync {probe?.pluginVersion ?? ""}
+        </span>
+      </div>
+    );
+  const reveal = async () => {
+    const plugin = await bridge().zoteroPlugin?.();
+    if (plugin?.file) await bridge().revealPath(plugin.file);
+  };
+  return (
+    <div className="kx-zotero-plugin" role="status" aria-live="polite">
+      <span className="kx-zotero-plugin-icon">
+        <Icon name="puzzle" size={16} />
+      </span>
+      <div className="kx-zotero-plugin-text">
+        {state === undefined ? (
+          <strong>Looking for Zotero…</strong>
+        ) : state === "unpaired" ? (
+          <>
+            <strong>Pair Key with Zotero</strong>
+            <span>Copy the pairing code from Zotero → Settings → Key Sync.</span>
+            <div className="kx-zotero-token">
+              <input type="text" aria-label="Pairing code" placeholder="Pairing code" spellCheck={false} value={token} onChange={(e) => onToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && onPair()} />
+              <button className="kx-settings-button" disabled={!token.trim()} onClick={onPair}>
+                Pair
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <strong>{state === "not-running" ? "Open Zotero to keep it in sync" : state === "plugin-missing" ? "Install the Key Sync plugin in Zotero" : "Zotero did not answer"}</strong>
+            <span>
+              {state === "not-running"
+                ? "Key reaches Zotero while it runs. If the Key Sync plugin is not installed yet:"
+                : state === "plugin-missing"
+                  ? "Zotero is running, but without the plugin that tells Key about changes."
+                  : probe?.message}
+            </span>
+            {state !== "error" && (
+              <ol>
+                <li>Show the plugin file in Finder.</li>
+                <li>In Zotero, choose Tools → Plugins and drag “key-sync.xpi” onto that window.</li>
+                <li>Come back here. Key notices the plugin by itself.</li>
+              </ol>
+            )}
+            <div className="kx-zotero-plugin-actions">
+              <button className="kx-settings-button" onClick={() => void reveal()}>
+                Show plugin in Finder
+              </button>
+              <button className="kx-settings-button" onClick={onCheck}>
+                Check again
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A searchable list of the library's papers, each with a checkbox. */
+function PaperPicker({ items, chosen, onChange }: { items?: ZoteroItem[]; chosen: Set<string>; onChange: (chosen: Set<string>) => void }) {
+  const [query, setQuery] = useState("");
+  const shown = useMemo(() => filterItems(items ?? [], query), [items, query]);
+  const visible = shown.slice(0, PAPERS_SHOWN);
+  const toggle = (key: string, on: boolean) => {
+    const next = new Set(chosen);
+    on ? next.add(key) : next.delete(key);
+    onChange(next);
+  };
+  return (
+    <div className="kx-zotero-tree kx-zotero-papers">
+      <div className="kx-zotero-search">
+        <Icon name="search" size={13} />
+        <input type="search" aria-label="Search papers" placeholder="Search titles, authors and years" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {chosen.size > 0 && (
+          <button onClick={() => onChange(new Set())} title="Clear the choice">
+            {n(chosen.size)} chosen
+          </button>
+        )}
+      </div>
+      <div role="listbox" aria-label="Zotero papers" aria-multiselectable="true">
+        {!items ? (
+          <p className="kx-zotero-empty">Reading your Zotero library…</p>
+        ) : !shown.length ? (
+          <p className="kx-zotero-empty">No papers match “{query}”.</p>
+        ) : (
+          visible.map((item) => (
+            <label key={item.key} className="kx-zotero-paper" role="option" aria-selected={chosen.has(item.key)}>
+              <input type="checkbox" aria-label={item.title} checked={chosen.has(item.key)} onChange={(e) => toggle(item.key, e.target.checked)} />
+              <span className="kx-zotero-paper-text">
+                <span className="kx-zotero-name">{item.title}</span>
+                <small>{[item.creators, item.year].filter(Boolean).join(" · ") || item.itemType}</small>
+              </span>
+              {item.hasFile && <Icon name="doc" size={12} aria-label="Has a file" />}
+            </label>
+          ))
+        )}
+        {shown.length > visible.length && <p className="kx-zotero-empty">Showing {n(visible.length)} of {n(shown.length)}. Search to find the rest.</p>}
+      </div>
     </div>
   );
 }
@@ -276,24 +552,25 @@ function TriState({ checked, mixed, onChange, label }: { checked: boolean; mixed
 const STAGES: Record<string, string> = {
   starting: "Preparing…",
   reading: "Reading your Zotero library…",
-  items: "Importing items",
+  fetching: "Fetching from Zotero",
+  items: "Bringing items across",
   notes: "Converting notes",
   saving: "Finishing…",
 };
 
-function ProgressView({ progress, preview }: { progress: ZoteroProgress | "starting" | undefined; preview?: ZoteroPreview }) {
+function ProgressView({ progress, preview, mode }: { progress: ZoteroProgress | "starting" | undefined; preview?: ZoteroPreview; mode: Mode }) {
   const p = typeof progress === "object" ? progress : undefined;
   const stage = p?.stage ?? "starting";
   return (
     <div className="kx-zotero-progress" aria-live="polite">
-      <strong>{STAGES[stage] ?? "Importing…"}</strong>
+      <strong>{STAGES[stage] ?? (mode === "import" ? "Importing…" : "Syncing…")}</strong>
       {p && p.total > 0 ? <progress max={p.total} value={p.done} /> : <progress />}
       <small>{p && p.total > 0 ? `${n(p.done)} of ${n(p.total)}` : preview ? <Counts counts={preview.selected} /> : null}</small>
     </div>
   );
 }
 
-function Summary({ report, workspace }: { report: ZoteroReport; workspace: WorkspaceSummary }) {
+function Summary({ report, workspace, mode }: { report: ZoteroReport; workspace: WorkspaceSummary; mode: Mode }) {
   const lines = [
     report.added && `${plural(report.added, "item")} added`,
     report.updated && `${plural(report.updated, "item")} updated`,
@@ -304,18 +581,20 @@ function Summary({ report, workspace }: { report: ZoteroReport; workspace: Works
     report.linkedFiles && `${plural(report.linkedFiles, "file")} linked`,
     report.missingFiles && `${plural(report.missingFiles, "file")} not found on this Mac`,
     report.keptDeleted && `${plural(report.keptDeleted, "item")} you deleted in Key left out`,
+    report.unlinked && `${plural(report.unlinked, "item")} outside the new choice kept, no longer synced`,
   ].filter(Boolean) as string[];
   return (
     <div className="kx-zotero-summary">
       <span className="kx-zotero-done">
-        <Icon name="check" size={16} />
+        <Icon name={mode === "sync" ? "sync" : "check"} size={16} />
       </span>
-      <strong>Imported into “{workspace.name}”</strong>
+      <strong>{mode === "sync" ? `“${workspace.name}” is in sync with Zotero` : `Imported into “${workspace.name}”`}</strong>
       <ul>
         {lines.map((line) => (
           <li key={line}>{line}</li>
         ))}
       </ul>
+      {mode === "sync" && <small>Key keeps following Zotero while both are open. Pause or change the sync in Settings → Libraries.</small>}
       {report.conflictCount > 0 && <Conflicts report={report} />}
     </div>
   );

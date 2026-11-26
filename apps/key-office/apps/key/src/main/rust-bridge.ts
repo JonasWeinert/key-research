@@ -41,7 +41,7 @@ const MAX_QUEUED_BYTES = 64 * 1024 * 1024;
 const URGENT = new Set(["native_cancel_render", "processing_interaction"]);
 /** Commands that are always background work. Any other call can mark itself with
  *  `$background: true` in its arguments (taken out before it is sent). */
-const BACKGROUND = new Set(["store_status", "store_refresh", "store_zotero_sync", "store_zotero_progress", "store_zotero_status", "store_linked_sync", "store_index_priority", "store_enrich_options"]);
+const BACKGROUND = new Set(["store_status", "store_refresh", "store_zotero_sync", "store_zotero_progress", "store_zotero_status", "store_zotero_plugin_status", "store_linked_sync", "store_index_priority", "store_enrich_options"]);
 /** In flight at once: regular requests, and how many of those may be background work, so a
  *  user action always finds a free slot. */
 const IN_FLIGHT = 6;

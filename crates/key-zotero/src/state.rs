@@ -28,7 +28,8 @@ impl State {
              CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS tracked(
                kind TEXT NOT NULL, key TEXT NOT NULL, id TEXT, base TEXT NOT NULL,
-               trashed_by_sync INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(kind, key));",
+               trashed_by_sync INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(kind, key));
+             CREATE TABLE IF NOT EXISTS plugin_items(key TEXT PRIMARY KEY, record TEXT NOT NULL);",
         )
         .map_err(|e| e.to_string())?;
         Ok(State { db })
@@ -43,6 +44,41 @@ impl State {
             .execute("INSERT INTO meta(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value", params![key, value])
             .map(|_| ())
             .map_err(|e| e.to_string())
+    }
+
+    pub fn clear_meta(&self, key: &str) -> Result<()> {
+        self.db.execute("DELETE FROM meta WHERE key = ?", [key]).map(|_| ()).map_err(|e| e.to_string())
+    }
+
+    /// The Key Sync plugin's items as last fetched: key → record JSON.
+    pub fn plugin_items(&self) -> Result<std::collections::BTreeMap<String, String>> {
+        let mut statement = self.db.prepare("SELECT key, record FROM plugin_items").map_err(|e| e.to_string())?;
+        statement
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(|e| e.to_string())
+    }
+
+    /// Writes fetched items and removes gone ones in one transaction; `replace` starts over.
+    pub fn save_plugin_items(&mut self, upserts: &[(String, String)], removes: &[String], replace: bool) -> Result<()> {
+        let tx = self.db.transaction().map_err(|e| e.to_string())?;
+        if replace {
+            tx.execute("DELETE FROM plugin_items", []).map_err(|e| e.to_string())?;
+        }
+        {
+            let mut upsert = tx
+                .prepare("INSERT INTO plugin_items(key, record) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET record = excluded.record")
+                .map_err(|e| e.to_string())?;
+            for (key, record) in upserts {
+                upsert.execute(params![key, record]).map_err(|e| e.to_string())?;
+            }
+            let mut delete = tx.prepare("DELETE FROM plugin_items WHERE key = ?1").map_err(|e| e.to_string())?;
+            for key in removes {
+                delete.execute(params![key]).map_err(|e| e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())
     }
 
     /// Everything tracked of one kind ("item", "note", "collection").

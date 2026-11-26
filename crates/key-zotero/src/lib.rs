@@ -2,6 +2,8 @@
 // the original, and Key never writes to it), maps items onto key-store sources, links
 // attachments in place, converts notes to Markdown and mirrors collections.
 pub mod html;
+mod http;
+pub mod plugin;
 mod snapshot;
 mod state;
 mod sync;
@@ -37,6 +39,13 @@ pub struct ImportOptions {
     /// Restrict to these Zotero collections, by key. Sub-collections are listed explicitly.
     #[serde(default)]
     pub collection_keys: Option<Vec<String>>,
+    /// Restrict to these Zotero items (top-level), by key; with `collection_keys`, either.
+    #[serde(default)]
+    pub item_keys: Option<Vec<String>>,
+    /// A sync stops following items that leave its scope (they stay in Key) instead of
+    /// keeping them up to date.
+    #[serde(default)]
+    pub unlink_outside_scope: bool,
     /// Link each item's PDF (or other file) where Zotero keeps it.
     #[serde(default = "yes")]
     pub attachments: bool,
@@ -53,7 +62,17 @@ pub struct ImportOptions {
 
 impl Default for ImportOptions {
     fn default() -> Self {
-        ImportOptions { data_dir: None, collections: None, collection_keys: None, attachments: true, notes: true, annotations: true, mirror_collections: true }
+        ImportOptions {
+            data_dir: None,
+            collections: None,
+            collection_keys: None,
+            item_keys: None,
+            unlink_outside_scope: false,
+            attachments: true,
+            notes: true,
+            annotations: true,
+            mirror_collections: true,
+        }
     }
 }
 
@@ -69,7 +88,7 @@ pub struct Conflict {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct ImportReport {
     pub data_dir: PathBuf,
     /// Items in Key after the run that came from Zotero (added, updated or unchanged).
@@ -93,6 +112,8 @@ pub struct ImportReport {
     pub missing_files: usize,
     /// Items outside the chosen collections.
     pub skipped: usize,
+    /// Synced before, now outside the sync's scope: kept in Key, no longer updated.
+    pub unlinked: usize,
     pub conflict_count: usize,
     pub conflicts: Vec<Conflict>,
 }
@@ -111,8 +132,13 @@ impl Progress {
     }
 }
 
-/// The Zotero data directory: Zotero's `extensions.zotero.dataDir` pref, else ~/Zotero.
+/// The Zotero data directory: KEY_ZOTERO_DATA_DIR, Zotero's `extensions.zotero.dataDir`
+/// pref, else ~/Zotero.
 pub fn default_data_dir() -> Option<PathBuf> {
+    // Automated checks point Key at a fixture library.
+    if let Some(dir) = std::env::var_os("KEY_ZOTERO_DATA_DIR").map(PathBuf::from) {
+        return dir.join("zotero.sqlite").is_file().then_some(dir);
+    }
     if let Some(dir) = pref("extensions.zotero.dataDir").map(PathBuf::from).filter(|d| d.join("zotero.sqlite").is_file()) {
         return Some(dir);
     }
@@ -130,6 +156,22 @@ pub(crate) fn pref(name: &str) -> Option<String> {
         for line in prefs.lines() {
             if let Some(rest) = line.strip_prefix(&prefix) {
                 return Some(rest.trim_end_matches("\");").replace("\\\\", "\\"));
+            }
+        }
+    }
+    None
+}
+
+/// An integer pref from Zotero's profile (prefs.js).
+pub(crate) fn pref_int(name: &str) -> Option<i64> {
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let profiles = home.join("Library/Application Support/Zotero/Profiles");
+    let prefix = format!("user_pref(\"{name}\", ");
+    for entry in std::fs::read_dir(&profiles).ok()?.flatten() {
+        let Ok(prefs) = std::fs::read_to_string(entry.path().join("prefs.js")) else { continue };
+        for line in prefs.lines() {
+            if let Some(value) = line.strip_prefix(&prefix).and_then(|rest| rest.trim_end_matches(");").trim().parse().ok()) {
+                return Some(value);
             }
         }
     }
@@ -252,15 +294,22 @@ pub fn preview(options: &ImportOptions) -> Result<Preview> {
         }
     };
     let everything: HashSet<i64> = top.iter().copied().collect();
-    let selected: HashSet<i64> = match &options.collection_keys {
-        None => everything.clone(),
-        Some(keys) => {
-            let ids: HashSet<i64> = snapshot.collections.iter().filter(|c| keys.contains(&c.key)).map(|c| c.id).collect();
-            top.iter().copied().filter(|item| snapshot.collections_of.get(item).is_some_and(|c| c.iter().any(|c| ids.contains(c)))).collect()
+    let selected: HashSet<i64> = match (&options.collection_keys, &options.item_keys) {
+        (None, None) => everything.clone(),
+        (collections, items) => {
+            let ids: HashSet<i64> = snapshot.collections.iter().filter(|c| collections.as_ref().is_some_and(|k| k.contains(&c.key))).map(|c| c.id).collect();
+            let keys: HashSet<&str> = items.iter().flatten().map(String::as_str).collect();
+            top.iter()
+                .copied()
+                .filter(|item| {
+                    snapshot.collections_of.get(item).is_some_and(|c| c.iter().any(|c| ids.contains(c)))
+                        || snapshot.key_of.get(item).is_some_and(|k| keys.contains(k.as_str()))
+                })
+                .collect()
         }
     };
     let mut selected_counts = count(&selected, options);
-    if options.notes && options.collection_keys.is_none() {
+    if options.notes && options.collection_keys.is_none() && options.item_keys.is_none() {
         selected_counts.notes += snapshot.notes.iter().filter(|n| n.parent.is_none()).count();
     }
     Ok(Preview {
@@ -270,6 +319,69 @@ pub fn preview(options: &ImportOptions) -> Result<Preview> {
         selected: selected_counts,
         unfiled: top.iter().filter(|i| !snapshot.collections_of.contains_key(i)).count(),
     })
+}
+
+/// One Zotero item, for choosing papers one by one.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewItem {
+    pub key: String,
+    pub title: String,
+    /// "Palma", "Palma & Rossi" or "Palma et al."
+    pub creators: String,
+    pub year: Option<i64>,
+    pub item_type: String,
+    pub has_file: bool,
+    /// Zotero collection keys it is filed in.
+    pub collections: Vec<String>,
+}
+
+/// Every top-level item of the library (and standalone files), newest first.
+pub fn items(options: &ImportOptions) -> Result<Vec<PreviewItem>> {
+    let data_dir = options.data_dir.clone().or_else(default_data_dir).ok_or("No Zotero library found. Choose its data folder (it contains zotero.sqlite).")?;
+    let snapshot = snapshot::Snapshot::load(&data_dir)?;
+    let with_file: HashSet<i64> = snapshot.attachments.iter().filter(|a| a.path.is_some()).map(|a| a.parent.unwrap_or(a.id)).collect();
+    let collections_of = |id: i64| -> Vec<String> { snapshot.collections_of.get(&id).into_iter().flatten().filter_map(|c| snapshot.collection(*c).map(|c| c.key.clone())).collect() };
+    let mut list: Vec<(String, PreviewItem)> = Vec::new();
+    for item in &snapshot.items {
+        let fields = snapshot.fields.get(&item.id);
+        let field = |name: &str| fields.and_then(|f| f.iter().find(|(n, _)| n == name)).map(|(_, v)| decode_entities(v.trim()));
+        let authors: Vec<String> = snapshot
+            .creators
+            .get(&item.id)
+            .into_iter()
+            .flatten()
+            .filter(|c| c.role == "author" || c.role == "editor")
+            .filter_map(|c| c.family.clone().or_else(|| c.literal.clone()))
+            .collect();
+        let creators = match authors.as_slice() {
+            [] => String::new(),
+            [one] => one.clone(),
+            [a, b] => format!("{a} & {b}"),
+            [a, ..] => format!("{a} et al."),
+        };
+        list.push((
+            item.added.clone(),
+            PreviewItem {
+                key: item.key.clone(),
+                title: field("title").filter(|t| !t.is_empty()).unwrap_or_else(|| "Untitled".into()),
+                creators,
+                year: field("date").as_deref().and_then(year_of),
+                item_type: item.type_name.clone(),
+                has_file: with_file.contains(&item.id),
+                collections: collections_of(item.id),
+            },
+        ));
+    }
+    for a in snapshot.attachments.iter().filter(|a| a.parent.is_none()) {
+        let Some(path) = &a.path else { continue };
+        let Some(key) = snapshot.key_of.get(&a.id) else { continue };
+        let title = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let added = snapshot.added_of.get(&a.id).cloned().unwrap_or_default();
+        list.push((added, PreviewItem { key: key.clone(), title, item_type: "attachment".into(), has_file: true, collections: collections_of(a.id), ..Default::default() }));
+    }
+    list.sort_by(|a, b| b.0.cmp(&a.0));
+    Ok(list.into_iter().map(|(_, item)| item).collect())
 }
 
 /// Sets a source's file fields (or, without a file, whether its abstract can be indexed).
@@ -465,6 +577,9 @@ pub(crate) fn depth(collections: &[(i64, String, Option<i64>, String)], id: i64)
 
 #[cfg(test)]
 mod sync_tests;
+
+#[cfg(test)]
+mod plugin_tests;
 
 #[cfg(test)]
 mod tests {

@@ -164,15 +164,8 @@ impl Snapshot {
             ),
             |r| Ok(ZCollection { id: r.get(0)?, name: r.get(1)?, parent: r.get(2)?, key: r.get(3)? }),
         )?;
-        // Parents before children, so a mirror can create them in order.
-        let shape: Vec<(i64, String, Option<i64>, String)> = snapshot.collections.iter().map(|c| (c.id, c.name.clone(), c.parent, c.key.clone())).collect();
-        let depths: HashMap<i64, usize> = shape.iter().map(|c| (c.0, depth(&shape, c.0))).collect();
-        snapshot.collections.sort_by(|a, b| depths[&a.id].cmp(&depths[&b.id]).then(a.name.cmp(&b.name)));
+        order_collections(&mut snapshot.collections);
         let live: HashSet<i64> = snapshot.collections.iter().map(|c| c.id).collect();
-        for c in &mut snapshot.collections {
-            // A sub-collection of a trashed collection keeps its place at the top.
-            c.parent = c.parent.filter(|p| live.contains(p));
-        }
 
         snapshot.trashed = query(&db, "SELECT itemID FROM deletedItems", |r| r.get(0))?.into_iter().collect();
         for (id, key, added) in query(&db, "SELECT itemID, key, dateAdded FROM items", |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)))? {
@@ -199,17 +192,7 @@ impl Snapshot {
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get::<_, Option<i64>>(3)?.unwrap_or(0), r.get(4)?)),
         )?;
         for (item, first, last, mode, role) in creators {
-            let role = match role.as_str() {
-                "bookAuthor" => "container-author".to_string(),
-                "contributor" | "programmer" | "artist" | "director" | "podcaster" | "presenter" | "performer" => "author".to_string(),
-                other => other.to_string(),
-            };
-            let creator = if mode == 1 || first.as_deref().unwrap_or("").is_empty() {
-                Creator { literal: last.filter(|s| !s.is_empty()), role, ..Default::default() }
-            } else {
-                Creator { family: last, given: first, role, ..Default::default() }
-            };
-            snapshot.creators.entry(item).or_default().push(creator);
+            snapshot.creators.entry(item).or_default().push(creator(first, last, mode == 1, &role));
         }
         for (item, tag) in query(&db, "SELECT it.itemID, t.name FROM itemTags it JOIN tags t USING(tagID) ORDER BY it.itemID, t.name", |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
@@ -295,6 +278,32 @@ impl Snapshot {
             index += 1;
         }
         ids
+    }
+}
+
+/// A Zotero creator as key-store has it; `single_field` for names in one field ("WHO").
+pub(crate) fn creator(first: Option<String>, last: Option<String>, single_field: bool, role: &str) -> Creator {
+    let role = match role {
+        "bookAuthor" => "container-author".to_string(),
+        "contributor" | "programmer" | "artist" | "director" | "podcaster" | "presenter" | "performer" => "author".to_string(),
+        other => other.to_string(),
+    };
+    if single_field || first.as_deref().unwrap_or("").is_empty() {
+        Creator { literal: last.filter(|s| !s.is_empty()), role, ..Default::default() }
+    } else {
+        Creator { family: last, given: first, role, ..Default::default() }
+    }
+}
+
+/// Parents before children, so a mirror can create them in order. A sub-collection of a
+/// missing (trashed) collection keeps its place at the top.
+pub(crate) fn order_collections(collections: &mut [ZCollection]) {
+    let shape: Vec<(i64, String, Option<i64>, String)> = collections.iter().map(|c| (c.id, c.name.clone(), c.parent, c.key.clone())).collect();
+    let depths: HashMap<i64, usize> = shape.iter().map(|c| (c.0, depth(&shape, c.0))).collect();
+    collections.sort_by(|a, b| depths[&a.id].cmp(&depths[&b.id]).then(a.name.cmp(&b.name)));
+    let live: HashSet<i64> = collections.iter().map(|c| c.id).collect();
+    for c in collections.iter_mut() {
+        c.parent = c.parent.filter(|p| live.contains(p));
     }
 }
 
