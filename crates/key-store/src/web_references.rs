@@ -666,6 +666,46 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_cases_the_renderer_detection_was_tested_on() {
+        let scan = detect_web_references(
+            r##"<p>Health rose<sup><a href="#cite_note-1">[1]</a></sup> and so did income<sup><a href="#cite_note-2">[2]</a></sup>.</p>
+      <h2>References</h2>
+      <div class="reflist"><ol class="references">
+        <li id="cite_note-1"><span class="mw-cite-backlink"><a href="#cite_ref-1">^</a></span> <cite>Deaton, A. (2013). “The Great Escape: Health, Wealth, and the Origins of Inequality”. Princeton. <a href="https://doi.org/10.1515/9781400847969">doi:10.1515/9781400847969</a></cite></li>
+        <li id="cite_note-2"><span class="mw-cite-backlink"><a href="#cite_ref-2">^</a></span> Preston, S. H. (1975). The changing relation between mortality and level of economic development. Population Studies 29.</li>
+      </ol></div>"##,
+            None,
+        );
+        assert_eq!(scan.method, "list");
+        let first = &scan.references[0];
+        assert_eq!((first.number, first.anchor.as_deref(), first.doi.as_deref(), first.year), (1, Some("cite_note-1"), Some("10.1515/9781400847969"), Some(2013)));
+        assert_eq!(first.title.as_deref(), Some("The Great Escape: Health, Wealth, and the Origins of Inequality"));
+        assert!(first.text.starts_with("Deaton"), "{}", first.text);
+        assert_eq!(scan.citations.iter().map(|c| (c.anchor.as_str(), c.numbers[0])).collect::<Vec<_>>(), [("cite_note-1", 1), ("cite_note-2", 2)]);
+
+        let jats = detect_web_references(
+            r##"<p>As shown <a href="#B1">1</a>, <a href="#B2">2</a>.</p>
+      <section><h2>References</h2>
+        <div id="B1" class="ref">Smith J, Lee K. A long enough reference title about things. J Things. 2020;1:2.</div>
+        <div id="B2" class="ref">Doe A. Another long enough reference about other things. Nature. 2019.</div>
+      </section>"##,
+            None,
+        );
+        assert_eq!(jats.references.iter().map(|r| r.anchor.as_deref().unwrap_or_default()).collect::<Vec<_>>(), ["B1", "B2"]);
+        assert_eq!(jats.citations.iter().map(|c| c.numbers[0]).collect::<Vec<_>>(), [1, 2]);
+
+        let meta = detect_web_references(
+            r#"<head><meta name="citation_reference" content="citation_title=Income and health; citation_author=Jane Roe; citation_publication_date=2018; citation_doi=10.1000/xyz"></head><p>No list here.</p>"#,
+            None,
+        );
+        assert_eq!(meta.method, "meta");
+        let r = &meta.references[0];
+        assert_eq!((r.title.as_deref(), r.doi.as_deref(), r.year, r.authors.clone()), (Some("Income and health"), Some("10.1000/xyz"), Some(2018), vec!["Jane Roe".to_string()]));
+        let input = &reference_inputs(&meta)[0];
+        assert_eq!(input.metadata.as_ref().unwrap()["doi"], "10.1000/xyz");
+    }
+
+    #[test]
     fn reads_entries_under_a_heading_and_by_id() {
         let html = r#"<article><h2>2. Bibliography</h2>
             <p>Doe, J. (2018). A long enough title about reading lists. Journal of Things, 3(2).</p>

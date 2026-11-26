@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { dismissAll } from "@key-reader/ui/dismiss";
 import { Drawer } from "./motion/Drawer";
 import "./global-drawer.css";
 import "./modal.css";
@@ -59,6 +60,9 @@ export function GlobalDrawer({
 }) {
   const id = useId();
   useLayoutEffect(() => {
+    // A modal opening over the window (from a menu or shortcut, with no press to close them)
+    // closes the menus and popovers behind it: they would otherwise take its Escape.
+    if (!current) dismissAll("switch");
     publish({ id, children, onClose, busy, presentation, label });
   });
   useLayoutEffect(

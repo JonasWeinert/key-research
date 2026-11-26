@@ -1,7 +1,8 @@
 // The tag manager: a window-sized sheet with the library's tags as a tree on the left
 // (search, sort, multi-select, drag to nest, inline rename, colours) and on the right the
-// suggestions the local analysis finds, or the form for what the selection should become.
-// Every change is one store transaction (`store_tag_apply`) and can be undone.
+// suggestions the host's analysis finds (`store_tag_suggestions`), or the form for what the
+// selection should become. Every change is planned by the host (`store_tag_plan`), applied
+// as one store transaction (`store_tag_apply`) and can be undone.
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { entityFilter } from "./entity-ui";
@@ -9,7 +10,7 @@ import { showInLibrary } from "./filter-links";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon } from "./icons";
 import type { Invoke } from "./library-api";
-import { analyzeTagsAsync, fold, plural, splitPath, valueLabel, type PropertyInfo, type Suggestion, type SuggestionKind, type TagIndex } from "./tag-analysis";
+import { fold, plural, splitPath, valueLabel, type PropertyInfo, type Suggestion, type SuggestionKind, type TagIndex } from "./tag-analysis";
 import { ancestors, buildTree, planChange, sortTree, visibleRows, type ManagerPlan, type PlannedChange, type TagNode, type TagSort } from "./tag-plan";
 import "./tag-manager.css";
 
@@ -79,15 +80,15 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
       .catch(() => setDismissed(new Set()));
   }, [load, invoke, workspaceId]);
 
-  // The analysis runs in slices after every change; stale runs are dropped.
+  // The host analyses the tags again after every change; stale answers are dropped.
+  const analysis = useRef(0);
   useEffect(() => {
     if (!index || !dismissed) return;
-    const abort = new AbortController();
-    void analyzeTagsAsync(index, { dismissed, properties }, abort.signal)
-      .then(setSuggestions)
-      .catch(() => {});
-    return () => abort.abort();
-  }, [index, dismissed, properties]);
+    const run = ++analysis.current;
+    void invoke<Suggestion[]>("store_tag_suggestions", { dismissed: [...dismissed] }, workspaceId)
+      .then((list) => run === analysis.current && setSuggestions(list))
+      .catch(() => run === analysis.current && setSuggestions([]));
+  }, [index, dismissed, invoke, workspaceId]);
 
   const tree = useMemo(() => (index ? buildTree(index) : undefined), [index]);
   const roots = useMemo(() => (tree ? sortTree(tree.roots, sort) : []), [tree, sort]);
@@ -131,12 +132,11 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     }
   };
   const run = (plan: ManagerPlan, label?: string) => {
-    if (!index || !tree) return;
-    try {
-      void apply([planChange(plan, index, tree)], label);
-    } catch (e) {
-      setError(String(e).replace(/^Error: /, ""));
-    }
+    if (!index || busy) return;
+    void planChange(invoke, workspaceId, plan).then(
+      (change) => apply([change], label),
+      (e) => setError(String(e).replace(/^Error: /, "")),
+    );
   };
   const undo = async (entry: HistoryEntry) => {
     setBusy(true);
@@ -154,22 +154,19 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
   const dismiss = (ids: string[]) => {
     const next = new Set([...(dismissed ?? []), ...ids]);
     setDismissed(next);
+    setSuggestions((list) => list?.filter((s) => !next.has(s.id)));
     void invoke("store_ui_set", { key: DISMISSED_KEY, value: [...next].slice(-5000) }, workspaceId).catch(() => {});
   };
   const applySuggestions = (list: Suggestion[]) => {
-    if (!index || !tree) return;
-    // Each one is planned against the tags as they are now; ones a previous one already
-    // covered are skipped.
+    if (!index) return;
+    // Each one comes planned against the tags as they are now (stale ones have no change);
+    // ones a previous one already covered are skipped.
     const changes: PlannedChange[] = [];
     const touched = new Set<string>();
     for (const s of list) {
-      if (s.tags.some((t) => touched.has(key(t)))) continue;
-      try {
-        changes.push(planChange(s.plan, index, tree));
-        s.tags.forEach((t) => touched.add(key(t)));
-      } catch {
-        // Stale: the tags changed since it was found.
-      }
+      if (!s.change || s.tags.some((t) => touched.has(key(t)))) continue;
+      changes.push(s.change);
+      s.tags.forEach((t) => touched.add(key(t)));
     }
     void apply(changes, list.length === 1 ? changes[0]?.label : `Applied ${plural(changes.length, "suggestion")}`);
   };
@@ -424,13 +421,7 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
                         detail={group.detail}
                         list={group.list}
                         busy={busy}
-                        preview={(s) => {
-                          try {
-                            return index && tree ? planChange(s.plan, index, tree) : undefined;
-                          } catch {
-                            return undefined;
-                          }
-                        }}
+                        preview={(s) => s.change}
                         onSelect={(s) => setSelected(new Set(s.tags.filter((t) => tree?.nodes.has(key(t))).map(key)))}
                         onApply={(list) => applySuggestions(list)}
                         onDismiss={(list) => dismiss(list.map((s) => s.id))}
@@ -449,7 +440,8 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
               <ActionPanel
                 key={JSON.stringify(panel)}
                 panel={panel}
-                index={index}
+                invoke={invoke}
+                workspaceId={workspaceId}
                 tree={tree}
                 properties={properties}
                 busy={busy}
@@ -846,7 +838,8 @@ function History({ history, busy, onUndo }: { history: HistoryEntry[]; busy: boo
 
 function ActionPanel({
   panel,
-  index,
+  invoke,
+  workspaceId,
   tree,
   properties,
   busy,
@@ -854,7 +847,8 @@ function ActionPanel({
   onApply,
 }: {
   panel: Exclude<Panel, { mode: "suggestions" } | { mode: "history" }>;
-  index: TagIndex;
+  invoke: Invoke;
+  workspaceId: string;
   tree: ReturnType<typeof buildTree>;
   properties: PropertyInfo[];
   busy: boolean;
@@ -889,22 +883,31 @@ function ActionPanel({
     if (existing && existing.type !== type) problem = `“${existing.name}” is already a ${existing.type === "boolean" ? "checkbox" : existing.type} property. Choose another name or type.`;
     else if (existing) note = <>Adds to the existing “{existing.name}” property{existing.type === "select" && existing.options?.length ? ` (${plural(existing.options.length, "value")} already)` : ""}.</>;
     plan = { type: "property", name: existing?.name ?? name.trim(), propertyType: type, values: tags.map((t): [string, string | boolean] => [t, type === "boolean" ? true : values[t]?.trim() || valueLabel(t)]), removeTags };
-    // Items holding several of the tags keep all but the first as tags.
-    if (type === "select" && tags.length > 1) {
-      const idx = new Set(tags.map(key));
-      const ids = index.tags.map((t, i) => (idx.has(key(t.name)) ? i : -1)).filter((i) => i >= 0);
-      const several = index.items.filter((item) => item.tags.filter((t) => ids.includes(t)).length > 1).length;
-      if (several) note = <>{note} {plural(several, "item")} {several === 1 ? "has" : "have"} more than one of these tags: {several === 1 ? "it takes" : "they take"} the first value and keep the other tags.</>;
-    }
   }
-  let change: PlannedChange | undefined;
-  if (plan && !problem)
-    try {
-      change = planChange(plan, index, tree);
-    } catch (e) {
-      problem = String(e).replace(/^Error: /, "");
-    }
+  // The host plans it (and says why not) as the form changes.
+  const [planned, setPlanned] = useState<{ key: string; change?: PlannedChange; problem?: string }>();
+  const planKey = plan && !problem ? JSON.stringify(plan) : "";
+  useEffect(() => {
+    if (!planKey) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      void planChange(invoke, workspaceId, JSON.parse(planKey) as ManagerPlan).then(
+        (change) => live && setPlanned({ key: planKey, change }),
+        (e) => live && setPlanned({ key: planKey, problem: String(e).replace(/^Error: /, "") }),
+      );
+    }, 80);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [planKey, invoke, workspaceId]);
+  const current = planned?.key === planKey ? planned : undefined;
+  const change = planKey ? current?.change : undefined;
+  if (!problem && current?.problem) problem = current.problem;
   if (panel.mode === "nest" && !parent.trim()) problem = "";
+  // Items holding several of the tags keep all but the first as tags.
+  const several = type === "select" && tags.length > 1 ? (change?.multiple ?? 0) : 0;
+  if (panel.mode === "convert" && several) note = <>{note} {plural(several, "item")} {several === 1 ? "has" : "have"} more than one of these tags: {several === 1 ? "it takes" : "they take"} the first value and keep the other tags.</>;
 
   const heading =
     panel.mode === "merge" ? `Merge ${plural(tags.length, "tag")}` : panel.mode === "nest" ? `Nest ${tags.length === 1 ? `“${tags[0]}”` : plural(tags.length, "tag")}` : panel.mode === "delete" ? `Remove ${tags.length === 1 ? `“${tags[0]}”` : plural(tags.length, "tag")}` : "Convert to a property";

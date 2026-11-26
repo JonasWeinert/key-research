@@ -9,7 +9,10 @@ import type { WebContents } from "electron";
 import { capturePage, type PageMeta } from "./browser/snapshot";
 import { safeFileName } from "./browser/urls";
 import { proxiedUrlOf } from "./browser/proxy-service";
-import { referenceInputs, WEB_REFERENCES_SCRIPT, type WebReferenceScan } from "../shared/web-references";
+
+/** The live page as the host reads its references (key-store `web_references.rs`): its DOM
+ * as HTML, JSON-LD and all, and its address. */
+const LIVE_PAGE_SCRIPT = `({ html: document.documentElement.outerHTML, url: location.href })`;
 
 type Invoke = <T = unknown>(command: string, args: Record<string, unknown>, workspaceId: string) => Promise<T>;
 type Source = {
@@ -131,7 +134,7 @@ export class WebSources {
    * there. With `into`, the page becomes that source's file (a reference saved as a page). */
   async save(contents: WebContents, workspaceId: string, into?: string) {
     const snapshot = await capturePage(contents);
-    const scan = await this.scan(contents);
+    const live = await this.livePage(contents);
     const target = into ? await this.invoke<Source | null>("store_source", { id: into }, workspaceId) : undefined;
     if (into && (!target || target.filePath)) throw Error(target ? "This source has a file already" : "The source is no longer in the library");
     const existing = target ?? (await this.find(snapshot.meta.url, workspaceId));
@@ -158,7 +161,8 @@ export class WebSources {
         if (existing?.filePath && existing.id === id) for (const key of ["title", "creators", "containerTitle", "abstract"]) delete patch[key];
         await this.invoke("store_update", { id, patch }, workspaceId);
       }
-      if (scan?.references.length) await this.invoke("store_web_references", { id, references: referenceInputs(scan) }, workspaceId).catch(() => undefined);
+      // The host reads the reference list from the live page and keeps it as an analysis.
+      if (live) await this.invoke("store_web_references_detect", { id, html: live.html, url: live.url }, workspaceId).catch(() => undefined);
       this.changed();
       return { id, title: snapshot.meta.title, existing: !!existing };
     } finally {
@@ -166,10 +170,11 @@ export class WebSources {
     }
   }
 
-  /** The page's reference list, read where it is shown (its JSON-LD included). */
-  private async scan(contents: WebContents): Promise<WebReferenceScan | undefined> {
+  /** The page as shown (its JSON-LD included), for the host to read its references from. */
+  private async livePage(contents: WebContents): Promise<{ html: string; url: string } | undefined> {
     try {
-      return (await contents.executeJavaScriptInIsolatedWorld(1999, [{ code: WEB_REFERENCES_SCRIPT }], false)) as WebReferenceScan;
+      const page = (await contents.executeJavaScriptInIsolatedWorld(1999, [{ code: LIVE_PAGE_SCRIPT }], false)) as { html?: unknown; url?: unknown };
+      return typeof page?.html === "string" && page.html.length < 64 * 1024 * 1024 ? { html: page.html, url: String(page.url ?? "") } : undefined;
     } catch {
       return undefined;
     }

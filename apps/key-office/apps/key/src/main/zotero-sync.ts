@@ -1,15 +1,17 @@
-// Zotero sync through the Key Sync plugin: asks the Zotero workspace's host to sync every
-// 15 seconds while Key runs and when a window gets focus, backing off while Zotero is not
-// running or the plugin is missing. Also finds the plugin file Key carries.
+// Zotero sync through the Key Sync plugin: asks the Zotero workspace's host to sync while Key
+// runs and when a window gets focus. The host plans, merges and paces the sync (key-zotero
+// `plugin::sync` and `next_delay`: steady while Zotero answers, backing off while it is not
+// running or the plugin is missing); this only keeps the timer. Also finds and installs the
+// plugin file Key carries.
 import { app, ipcMain } from "electron";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { installPlugin, installStatus, openZotero, restartZotero, settleInstall } from "./zotero-install";
 
-const BASE = 15_000;
-const MAX = 5 * 60_000;
-/** Without a sync set up the host is asked rarely; setting one up wakes the timer. */
+/** Until the host has said when to ask again. */
+const FIRST = 15_000;
+/** Without a Zotero workspace (no host to ask) the timer looks rarely; setting one up wakes it. */
 const IDLE = 5 * 60_000;
 
 type Workspace = { id: string; root: string };
@@ -43,7 +45,7 @@ export function zoteroPluginFile(): string | null {
 }
 
 export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
-  let delay = BASE;
+  let delay = FIRST;
   let timer: NodeJS.Timeout | undefined;
   let running = false;
   let lastRun = 0;
@@ -64,31 +66,25 @@ export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
         return;
       }
       deps.syncing?.(true);
-      const result = (await deps.invoke("store_zotero_plugin_sync", { force, $background: !force }, workspace.id).finally(() => deps.syncing?.(false))) as {
+      const result = (await deps.invoke("store_zotero_plugin_sync", { force, schedule: true, $background: !force }, workspace.id).finally(() => deps.syncing?.(false))) as {
         ran?: boolean;
-        connection?: string;
+        nextMs?: number;
       } | null;
       if (result?.ran) deps.changed();
-      const connection = result?.connection;
-      if (connection === "ok" || connection === undefined) delay = BASE;
-      else if (connection === "off" || connection === "paused") delay = IDLE;
-      else delay = Math.min(MAX, Math.max(BASE, delay * 2));
+      if (typeof result?.nextMs === "number" && result.nextMs > 0) delay = result.nextMs;
     } catch (e) {
+      // The host itself did not answer (it is restarting): try again at the usual pace.
       console.warn("Zotero sync:", e);
-      delay = Math.min(MAX, Math.max(BASE, delay * 2));
+      delay = FIRST;
     } finally {
       running = false;
       schedule();
     }
   };
-  const wake = () => {
-    delay = BASE;
-    return tick(true);
-  };
+  const wake = () => tick(true);
 
   app.on("browser-window-focus", () => {
     if (Date.now() - lastRun < 5_000) return;
-    delay = BASE;
     void tick();
   });
   ipcMain.handle("key:zotero-plugin", async (event, action: unknown) => {
