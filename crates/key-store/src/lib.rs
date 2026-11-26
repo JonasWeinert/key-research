@@ -23,6 +23,8 @@ pub mod tag_plan;
 pub mod smart_query;
 pub mod web_references;
 mod html_dom;
+pub mod feeds;
+pub mod reading;
 pub use analysis::{CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -317,6 +319,8 @@ fn sort_expression(field: &str) -> String {
         "kind" => "s.kind",
         "pages" => "s.page_count",
         "citationKey" => "s.citation_key COLLATE NOCASE",
+        "status" => "CASE coalesce(nullif(s.read_state, ''), 'unread') WHEN 'unread' THEN 0 WHEN 'reading' THEN 1 ELSE 2 END",
+        "lastRead" => reading::LAST_READ_SQL,
         _ => "s.added_at",
     }
     .into()
@@ -490,6 +494,8 @@ impl Store {
             tx.commit().map_err(e)?;
         }
         citation_keys::ensure_schema(&conn)?;
+        feeds::ensure_schema(&conn)?;
+        reading::ensure_schema(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
         reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
         Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
@@ -1323,6 +1329,7 @@ fn select_sources() -> String {
         ]
         .map(String::from),
     );
+    columns.extend(Store::reading_columns().map(String::from));
     format!("SELECT {} FROM sources s", columns.join(", "))
 }
 
@@ -1379,7 +1386,11 @@ fn read_source(row: &Row) -> rusqlite::Result<Source> {
         note_count: row.get(index + 16)?,
         annotation_count: row.get(index + 17)?,
         appearance: serde_json::from_str(&text(index + 18)?).unwrap_or_default(),
-        fields,
+        fields: {
+            let mut fields = fields;
+            reading::decorate(&mut fields, row.get(index + 20)?, row.get(index + 21)?);
+            fields
+        },
     })
 }
 
@@ -1668,6 +1679,12 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
                 "ready" => conditions.push("s.index_status = 'ready'".into()),
                 "retracted" => conditions.push("s.retracted = 1 AND s.retraction_dismissed = 0".into()),
                 "flagged" => conditions.push("((s.retracted = 1 OR s.retraction_kind IS NOT NULL) AND s.retraction_dismissed = 0)".into()),
+                // Reading (reading.rs): what was read lately, and what is queued: in progress,
+                // or marked unread by hand.
+                "recent" => conditions.push(format!("{} IS NOT NULL", reading::LAST_READ_SQL)),
+                "toread" => conditions.push(
+                    "(s.read_state = 'reading' OR (coalesce(nullif(s.read_state, ''), 'unread') = 'unread' AND EXISTS (SELECT 1 FROM source_reading r WHERE r.source_id = s.id AND r.manual = 1)))".into(),
+                ),
                 _ => {}
             }
         }
