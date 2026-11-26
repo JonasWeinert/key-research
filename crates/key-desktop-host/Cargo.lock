@@ -2182,6 +2182,7 @@ dependencies = [
  "key-pdfium",
  "key-processing",
  "key-reference",
+ "key-safe-http",
  "key-semantic-search",
  "key-store",
  "key-zotero",
@@ -2191,6 +2192,8 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "tokio",
+ "unicode-normalization",
+ "url",
 ]
 
 [[package]]

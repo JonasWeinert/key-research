@@ -2,9 +2,9 @@
 //
 // To add one: an entry here (where to get a key, how to check it, what it is used for) and,
 // when it searches, a web provider whose `capabilities.service` names this id. The key is
-// stored by SecretStore under `service:<id>`; requests use it as a fallback (fallback.ts).
+// stored by SecretStore under `service:<id>`; the library host uses it as a fallback (web_search/http.rs).
 // Base URLs follow the web providers' environment overrides so smokes can use mock servers.
-import type { Fetch } from "../web-search/http";
+export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
 export interface Validation {
   ok: boolean;

@@ -11,6 +11,8 @@ mod linked_folders;
 mod openalex;
 #[path = "reference_worker.rs"]
 mod reference_worker;
+#[path = "web_search/mod.rs"]
+mod web_search;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{
@@ -2899,6 +2901,7 @@ pub struct Host {
     search: SemanticSearchService,
     imports: key_library::Imports,
     sessions: Arc<key_semantic_search::SearchSessions>,
+    web: web_search::WebSearch,
 }
 impl Host {
     pub fn new(root: PathBuf) -> Result<Self, String> {
@@ -2921,6 +2924,7 @@ impl Host {
             search,
             imports: Default::default(),
             sessions: Arc::default(),
+            web: Default::default(),
         };
         scholarly_resolver::start_retry_worker(host.search.library().clone());
         Ok(host)
@@ -3012,6 +3016,11 @@ impl Host {
                     .and_then(|id| json_output(native_cancel_render(HostState(&self.native), id))),
             ),
             "processing_interaction" => Some(json_output(processing_interaction())),
+            // Answered at once, so a search the user moved on from stops while it waits.
+            "web_search_cancel" => Some(arg::<String>(args, "requestId").and_then(|id| {
+                self.web.cancel(&id);
+                json_output(true)
+            })),
             "library_prioritize" => {
                 Some(arg(args, "hash").and_then(|hash| json_output(library_prioritize(hash))))
             }
@@ -3033,6 +3042,14 @@ impl Host {
         // A note's image arrives as bytes (pasted or dropped) rather than JSON.
         if command == "store_media_save" {
             return self.library.save_media(args, binary, &self.root);
+        }
+        if command.starts_with("web_") {
+            let library = web_search::StoreLibrary { library: &self.library, root: &self.root };
+            // Large arguments (every page of a merge) arrive as JSON in the binary frame.
+            let large = (!binary.is_empty()).then(|| serde_json::from_slice::<serde_json::Value>(binary)).transpose().map_err(|e| e.to_string())?;
+            let args = large.as_ref().unwrap_or(args);
+            return tokio::task::block_in_place(|| web_search::dispatch(&self.web, &library, command, args))
+                .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
         if let Some(result) = self.library_dispatch(command, args).await {
             return result;

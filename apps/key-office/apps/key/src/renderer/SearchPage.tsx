@@ -224,7 +224,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
             setCurrent(0);
             list.current?.focus();
           }}
-          tokenNote={web === "only" && webSearch.ready ? (f) => webTokenNote(f, webSearch.applicable) : undefined}
+          tokenNote={web === "only" && webSearch.ready ? (f) => webTokenNote(f, webSearch) : undefined}
         />
         <div className="kx-search-page-bar">
           <KindChips

@@ -27,8 +27,9 @@ export interface PageActionDeps {
   /** The library the tab's window shows. */
   workspaceOf(record: PageRecord): string | undefined;
   invoke<T = any>(command: string, args: Record<string, unknown>, workspaceId: string): Promise<T>;
-  lookupDoi(doi: string, workspaceId: string): Promise<WebResult | undefined>;
-  addWork(workspaceId: string, work: WebResult): Promise<{ source: { id: string }; existed: boolean }>;
+  /** The library host's "Add to library", the same as for search results and readers' works:
+   *  a work with a DOI takes OpenAlex's record of it when there is one. */
+  addWork(workspaceId: string, work: WebResult): Promise<{ source: { id: string }; existed: boolean; work?: WebResult }>;
   changed(record: PageRecord): void;
   emit(event: string, value?: unknown): void;
 }
@@ -81,8 +82,7 @@ export class PageActions {
     try {
       // The page's own address, not the library proxy's it came through.
       const pageUrl = webUrl(properUrlOf(record.web?.url));
-      const looked = article.doi ? await this.deps.lookupDoi(article.doi, workspaceId).catch(() => undefined) : undefined;
-      const work: WebResult = looked ?? {
+      const work: WebResult = {
         provider: "web",
         providerId: pageUrl ?? article.doi ?? "",
         title: article.title || article.doi || "Untitled",
@@ -94,11 +94,11 @@ export class PageActions {
         landingUrl: pageUrl,
       };
       if (!work.title) throw Error("This page has no title to add");
-      const { source, existed } = await this.deps.addWork(workspaceId, work);
+      const { source, existed, work: added } = await this.deps.addWork(workspaceId, work);
       state.sourceId = source.id;
       // A reference already in the library without its PDF gains it too.
       const bare = existed && !(await this.deps.invoke<{ filePath?: string } | null>("store_source", { id: source.id }, workspaceId).catch(() => null))?.filePath;
-      if (!existed || bare) void this.attachPdf(workspaceId, source.id, article.pdfUrl ?? work.pdfUrl);
+      if (!existed || bare) void this.attachPdf(workspaceId, source.id, article.pdfUrl ?? added?.pdfUrl);
       return { sourceId: source.id, existed };
     } finally {
       state.busy = false;

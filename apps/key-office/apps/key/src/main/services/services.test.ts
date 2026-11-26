@@ -2,58 +2,14 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { ProviderError } from "../web-search/http";
-import { WebSearch } from "../web-search";
-import { parseScholarPage, parseSummary } from "../web-search/scholar-serpapi";
 import { SecretStore } from "../secrets";
 import type { AppSettings } from "../app-settings";
-import { keyCanHelp, withKeyFallback, type ServiceKeys } from "./fallback";
 import { KeyedServices, publicSettings } from "./index";
 import { UsageStore, applyOutcome, rolled } from "./usage";
-import openalexFixture from "../web-search/fixtures/openalex-search.json";
-import scholarFixture from "../web-search/fixtures/serpapi-scholar.json";
 
 const KEY = "sk-test-abcdefgh9876";
 const settings = { openalexMailto: "", webProviders: {} } as unknown as AppSettings;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-
-describe("fallback policy", () => {
-  it("asks without the key first and with it only when that could help", async () => {
-    const run = vi.fn(async (key?: string) => {
-      if (!key) throw new ProviderError("OpenAlex is limiting requests", 429, true);
-      return "ok";
-    });
-    const record = vi.fn();
-    expect(await withKeyFallback({ key: KEY, mode: "fallback", run, record })).toBe("ok");
-    expect(run.mock.calls.map((c) => c[0])).toEqual([undefined, KEY]);
-    expect(record).toHaveBeenCalledWith({ ok: true });
-
-    const fine = vi.fn(async () => "fine");
-    await withKeyFallback({ key: KEY, mode: "fallback", run: fine, record });
-    expect(fine).toHaveBeenCalledTimes(1);
-    const notFound = vi.fn(async () => {
-      throw new ProviderError("OpenAlex returned HTTP 404", 404);
-    });
-    await expect(withKeyFallback({ key: KEY, mode: "fallback", run: notFound })).rejects.toThrow("404");
-    expect(notFound).toHaveBeenCalledTimes(1);
-  });
-  it("always uses the key when chosen and counts a refused key as invalid", async () => {
-    const record = vi.fn();
-    const run = vi.fn(async () => {
-      throw new ProviderError("refused", 403);
-    });
-    await expect(withKeyFallback({ key: KEY, mode: "always", run, record })).rejects.toThrow();
-    expect(run.mock.calls).toEqual([[KEY]]);
-    expect(record).toHaveBeenCalledWith(expect.objectContaining({ ok: false, invalid: true }));
-  });
-  it("knows which errors a key helps with", () => {
-    expect(keyCanHelp(new ProviderError("x", 429, true))).toBe(true);
-    expect(keyCanHelp(new ProviderError("x", 403))).toBe(true);
-    expect(keyCanHelp(new ProviderError("x", undefined, true))).toBe(true);
-    expect(keyCanHelp(new ProviderError("x", 404))).toBe(false);
-    expect(keyCanHelp(Object.assign(Error("t"), { name: "TimeoutError" }))).toBe(true);
-  });
-});
 
 describe("usage counting", () => {
   it("counts today and this month, rolling over", () => {
@@ -114,52 +70,6 @@ describe("keyed services", () => {
     const { keyed, usage } = await services();
     keyed.recordHost("openalex", { requests: 3, failures: 1, lastError: "OpenAlex is limiting requests with this key", remaining: 12 });
     expect(usage.usage("openalex")).toMatchObject({ today: 3, lastError: "OpenAlex is limiting requests with this key", remaining: 12 });
-  });
-});
-
-describe("Google Scholar via SerpApi", () => {
-  it("parses results", () => {
-    expect(parseSummary("A Vaswani, N Shazeer, N Parmar… - Advances in neural …, 2017 - proceedings.neurips.cc")).toEqual({ authors: ["A Vaswani", "N Shazeer", "N Parmar"], year: 2017, venue: "Advances in neural" });
-    const page = parseScholarPage(scholarFixture as never, 0);
-    expect(page.results).toHaveLength(2);
-    expect(page.results[0]).toMatchObject({ provider: "scholar", title: "Attention is all you need", year: 2017, citedBy: 150000, pdfUrl: "https://arxiv.org/pdf/1706.03762" });
-    expect(page.cursor).toBe("2");
-  });
-});
-
-describe("web search with keys", () => {
-  const keysOf = (keys: Record<string, string>, mode: "fallback" | "always" = "fallback") => ({
-    key: (s: string) => keys[s],
-    mode: () => mode,
-    record: vi.fn<ServiceKeys["record"]>(),
-  });
-  it("retries a rate-limited OpenAlex search with the key", async () => {
-    const urls: string[] = [];
-    const fetch = vi.fn(async (url: string) => {
-      urls.push(url);
-      return url.includes("api_key=") ? json(openalexFixture) : json({ error: "limited" }, 429);
-    });
-    const keys = keysOf({ openalex: KEY });
-    const search = new WebSearch({ settings: () => settings, invoke: async () => ({}), emit: () => {}, fetch: fetch as never, keys });
-    process.env.KEY_WEB_MAX_RETRY_WAIT_MS = "1";
-    const page = await search.search("openalex", "attention", { limit: 3 });
-    expect(page.results.length).toBe(3);
-    expect(urls.filter((u) => u.includes("api_key=")).length).toBe(1);
-    expect(urls[0]).not.toContain("api_key=");
-    expect(keys.record).toHaveBeenCalledWith("openalex", { ok: true });
-  });
-  it("falls back to Google Scholar when a catalogue fails, once per query", async () => {
-    const fetch = vi.fn(async (url: string) => (url.includes("search.json") ? json(scholarFixture) : json({}, 503)));
-    const keys = keysOf({ "scholar-serpapi": KEY });
-    const search = new WebSearch({ settings: () => settings, invoke: async () => ({}), emit: () => {}, fetch: fetch as never, keys });
-    process.env.KEY_WEB_MAX_RETRY_WAIT_MS = "1";
-    const providers = (await search.handle("web_providers", {}, "")) as { id: string; enabled: boolean; apiKey: boolean }[];
-    expect(providers.find((p) => p.id === "scholar")).toMatchObject({ enabled: false, apiKey: false });
-    const [a, b] = await Promise.all([search.search("openalex", "attention", { limit: 20 }), search.search("s2", "attention", { limit: 20 })]);
-    expect(a.results[0].provider).toBe("scholar");
-    expect(b.results[0].provider).toBe("scholar");
-    expect(fetch.mock.calls.filter(([u]) => String(u).includes("search.json")).length).toBe(1);
-    expect(keys.record).toHaveBeenCalledWith("scholar-serpapi", { ok: true });
   });
 });
 
