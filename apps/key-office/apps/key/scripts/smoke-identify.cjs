@@ -152,13 +152,14 @@ const fixtures = path.resolve(__dirname, "../../../../../tests/fixtures");
     }
     assert.ok(status.backfill.identify + status.backfill.lookup > 0, "the status counts the background pass");
     await call("store_index_control", { action: "pause" });
-    const pill = page.locator(".kx-activity summary").first();
-    if (await pill.count()) {
-      await pill.click();
-      await page.locator(".kx-activity-backfill").first().waitFor({ timeout: 6000 });
-      await page.screenshot({ path: path.join(temp, "backfill.png") });
-      await pill.click();
-    }
+    // The status bar's work item says so, and its panel (a popover above it) names the pass.
+    const work = page.getByRole("contentinfo", { name: "Status" }).locator('[data-status-item="work"]');
+    await work.waitFor({ timeout: 8000 });
+    await work.click();
+    await page.locator(".kx-status-popover .kx-activity-backfill").waitFor({ timeout: 6000 });
+    await page.screenshot({ path: path.join(temp, "backfill.png") });
+    await work.click();
+    await page.locator(".kx-status-popover").waitFor({ state: "detached" });
     await call("store_index_control", { action: "resume" });
     s = await until(olderBigData.id, (x) => x.enrichStatus === "done", "the older PDF looked up in the background");
     assert.equal(s.doi, "10.1186/s40545-021-00329-4");

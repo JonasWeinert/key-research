@@ -121,6 +121,78 @@ const assert = require("node:assert/strict");
     await page.evaluate((tabId) => window.key.tabAction("activate", { tabId }), pdfTab.id);
     await context.locator('[data-status-item="refs"]').waitFor();
 
+    // The library has no bar of its own: its count is one of the bar's items while it has
+    // focus, and its content runs down to the bar.
+    await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), ws.id);
+    const count = context.locator('[data-status-item="count"]');
+    await until(async () => /^1 item$/.test((await count.innerText().catch(() => "")).trim()), "the library contributes its count");
+    assert.equal(await count.evaluate((el) => el.tagName), "SPAN", "the count is plain text, not a button");
+    assert.equal(await context.locator('[data-status-item="refs"]').count(), 0, "the reader's items left with its focus");
+    assert.equal(await page.locator(".kx-status-bar").count(), 1, "one status bar, no scoped one");
+    assert.equal(await page.locator(".kx-library footer").count(), 0, "the library has no footer strip");
+    const libraryBottom = await page.locator(".kx-library-main").evaluate((el) => el.getBoundingClientRect().bottom);
+    assert(Math.abs(libraryBottom - box.y) <= 1, `the library runs down to the bar: ${libraryBottom} vs ${box.y}`);
+    await context.locator('[data-status-item="searchable"]').waitFor();
+
+    // Indexing is one item (the shell's), with its panel as a popover above it, also from
+    // the library: pause, then add a source so there is work waiting.
+    await page.evaluate((id) => window.key.invoke("store_index_control", { action: "pause" }, id), ws.id);
+    const second = path.join(temp, "Second status study.pdf");
+    await writeFile(second, Buffer.concat([await readFile(fixture), Buffer.from("\n% second\n")]));
+    await page.evaluate(({ id, files }) => window.key.importPaths(id, files), { id: ws.id, files: [second] });
+    const work = bar.locator('[data-status-item="work"]');
+    await until(async () => /Indexing/.test(await work.innerText().catch(() => "")), "the bar shows the indexing work");
+    await until(async () => /^2 items$/.test((await count.innerText().catch(() => "")).trim()), "the count follows");
+    const indexing = await bar.locator("[data-status-item]").evaluateAll((els) => els.filter((el) => /Indexing/.test(el.textContent)).length);
+    assert.equal(indexing, 1, "indexing shows once");
+    await until(async () => (await context.locator('[data-status-item="searchable"]').count()) === 0, "no searchable count while work waits");
+    await work.click();
+    const popover = page.locator(".kx-status-popover");
+    await popover.locator(".kx-activity-panel").waitFor();
+    assert.equal(await work.getAttribute("aria-expanded"), "true");
+    const [pop, anchor] = [await popover.boundingBox(), await work.boundingBox()];
+    assert(pop.y + pop.height <= anchor.y, `the popover hangs above its item: ${JSON.stringify({ pop, anchor })}`);
+    await shot("status-bar-activity-light");
+    await page.keyboard.press("Escape");
+    await popover.waitFor({ state: "detached" });
+    // Selecting two sources adds the selection.
+    await page.waitForFunction(() => document.querySelectorAll(".kx-library .kx-row").length === 2);
+    await page.locator(".kx-library .kx-row").nth(0).click();
+    await page.locator(".kx-library .kx-row").nth(1).click({ modifiers: ["Shift"] });
+    await context.locator('[data-status-item="selected"]', { hasText: "2 selected" }).waitFor();
+    await page.evaluate(() => window.key.setAppSettings({ theme: "dark" }));
+    await page.waitForTimeout(300);
+    await shot("status-bar-library-dark");
+    await page.evaluate(() => window.key.setAppSettings({ theme: "light" }));
+    await page.evaluate((id) => window.key.invoke("store_index_control", { action: "resume" }, id), ws.id);
+
+    // Two groups: the bar follows the focused group's view.
+    let groups = await page.evaluate(() => window.key.tabs());
+    const libraryTab = groups.tabs.find((t) => t.views[0].content?.section === "sources");
+    await page.evaluate((tabId) => window.key.tabAction("split-right", { tabId }), pdfTab.id);
+    await until(async () => (await page.evaluate(() => window.key.tabs())).groups.length === 2, "two groups");
+    await context.locator('[data-status-item="refs"]').waitFor();
+    assert.equal(await count.count(), 0, "the library's items left with its focus");
+    groups = await page.evaluate(() => window.key.tabs());
+    const libraryGroup = groups.groups.find((g) => g.tabIds.includes(libraryTab.id));
+    await page.evaluate((groupId) => window.key.tabAction("focus-group", { groupId }), libraryGroup.id);
+    await count.waitFor();
+    assert.equal(await context.locator('[data-status-item="refs"]').count(), 0, "the reader's items left with its focus");
+    await shot("status-bar-split-light");
+
+    // Short of room, the lowest-priority items go first and the bar never wraps.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(560, 820));
+    await until(
+      async () => (await bar.locator('[data-status-item="workspace"]').getAttribute("hidden")) !== null,
+      "the workspace item gives way first",
+    );
+    const fit = await bar.evaluate((el) => ({ height: el.offsetHeight, overflow: [...el.children].some((c) => c.scrollWidth > c.clientWidth + 1) }));
+    assert.deepEqual(fit, { height: 24, overflow: false }, "one line, nothing cut");
+    assert.equal(await count.isVisible(), true, "the view's count stays");
+    await shot("status-bar-narrow-light");
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 820));
+    await until(async () => (await bar.locator('[data-status-item="workspace"]').getAttribute("hidden")) === null, "room again");
+
     // An uncaught main-process error and an unhandled rejection: notices, not boxes.
     await app.evaluate(() => {
       setTimeout(() => {

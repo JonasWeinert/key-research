@@ -755,6 +755,7 @@ export default function WorkspaceContent({
         return (
           <ReferenceLibrary
             active={visible}
+            viewId={viewId}
             invoke={invoke}
             workspaceId={library.id}
             workspaceName={library.name}

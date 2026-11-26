@@ -30,9 +30,11 @@ html:not(.kx-vibrancy) .kx-status-bar {
 }
 .kx-status-side {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 .kx-status-context {
   justify-content: flex-end;
@@ -51,7 +53,19 @@ html:not(.kx-vibrancy) .kx-status-bar {
   background: none;
   color: inherit;
   font: inherit;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+.kx-status-item[hidden] {
+  display: none;
+}
+/* Plain information ("2 items"): quieter than what can be clicked. */
+.kx-status-item[data-text] {
+  color: var(--kx-text-3);
+}
+.kx-status-item[aria-expanded="true"] {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
 }
 .kx-status-item svg {
   flex: none;
@@ -73,18 +87,30 @@ button.kx-status-item:active {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.kx-status-work svg {
-  animation: kx-status-pulse 1.6s ease-in-out infinite;
+.kx-status-item .kx-ring circle {
+  stroke-width: 2;
 }
-@keyframes kx-status-pulse {
-  50% {
-    opacity: 0.35;
-  }
+.kx-status-item svg.kx-ring {
+  opacity: 1;
 }
-@media (prefers-reduced-motion: reduce) {
-  .kx-status-work svg {
-    animation: none;
-  }
+/* A popover hanging above a bar item (the indexing activity, a view's own). */
+.kx-status-popover {
+  position: fixed;
+  /* Above the still frames of native views (global-drawer.css). */
+  z-index: 950;
+  width: 360px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  user-select: text;
+  -webkit-user-select: text;
+  transform-origin: bottom left;
+  animation: kx-status-in 140ms var(--kx-ease);
 }
 .kx-status-notice {
   display: inline-flex;
