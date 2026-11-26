@@ -8,6 +8,7 @@ import "@key/design-system/styles.css";
 import "./design-shell.css";
 import "./native.css";
 import "./chrome.css";
+import "./reduced-effects";
 // The macOS window uses sidebar vibrancy; let the sidebar stay translucent there.
 if (/Macintosh/.test(navigator.userAgent))
   document.documentElement.classList.add("kx-vibrancy");
