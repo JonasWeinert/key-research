@@ -205,24 +205,65 @@ export function SourceEmbedView({ node, editor, selected }: ReactNodeViewProps) 
 
 // ── Item embed ─────────────────────────────────────────────────────────────
 
+/** An embed's own view of its item: a relation map with the options it was saved with. */
+export interface EmbedView {
+  view: string;
+  kinds?: string[];
+  cap?: number;
+  minCount?: number;
+  editable: boolean;
+  /** Keeps changed options (and the Markdown fallback line) in the note. */
+  update(attrs: { kinds?: string[]; cap?: number; minCount?: number; label?: string }): void;
+}
 /** How an embedded item shows (set by the app); `depth` counts embeds within embeds. */
-export type EmbedRenderer = (item: ItemLink, depth: number, label: string) => ReactNode;
+export type EmbedRenderer = (item: ItemLink, depth: number, label: string, view?: EmbedView) => ReactNode;
 let embedRenderer: EmbedRenderer | null = null;
 export function setEmbedRenderer(render: EmbedRenderer) {
   embedRenderer = render;
 }
+/** Where the "Relation map" block finds what to centre on, when the editor's props don't say. */
+let mapCenterSearch: ((query: string) => Promise<SourceRef[]>) | null = null;
+export function setMapCenterSearch(search: (query: string) => Promise<SourceRef[]>) {
+  mapCenterSearch = search;
+}
+export const defaultMapCenterSearch = (query: string) => mapCenterSearch?.(query) ?? Promise.resolve([]);
 /** How deep the embed being drawn is: a note embedded in a note that embeds it stops there. */
 export const EmbedDepth = createContext(0);
 
-export function ItemEmbedView({ node, editor, selected }: ReactNodeViewProps) {
+export function ItemEmbedView({ node, editor, selected, updateAttributes }: ReactNodeViewProps) {
   const href = String(node.attrs.href ?? "");
   const label = String(node.attrs.label || "") || "Embedded item";
   const item = itemFromHref(href);
   const depth = useContext(EmbedDepth);
+  const view = String(node.attrs.view || "");
+  const options: EmbedView | undefined = view
+    ? {
+        view,
+        kinds: node.attrs.kinds ? String(node.attrs.kinds).split(",").filter(Boolean) : undefined,
+        cap: Number(node.attrs.cap) || undefined,
+        minCount: Number(node.attrs.min) || undefined,
+        editable: editor.isEditable,
+        update: (attrs) => {
+          if (!editor.isEditable) return;
+          const next: Record<string, unknown> = {};
+          if (attrs.kinds) next.kinds = attrs.kinds.join(",");
+          if (attrs.cap) next.cap = String(attrs.cap);
+          if (attrs.minCount) next.min = attrs.minCount > 1 ? String(attrs.minCount) : "";
+          if (attrs.label && attrs.label !== node.attrs.label) next.label = attrs.label;
+          if (Object.entries(next).some(([k, v]) => String(node.attrs[k] ?? "") !== String(v))) updateAttributes(next);
+        },
+      }
+    : undefined;
   return (
-    <NodeViewWrapper className={`ne-item-embed${selected ? " is-selected" : ""}`} data-drag-handle="">
-      <div className="ne-item-embed-inner" contentEditable={false} data-item={href} data-item-title={label} onDoubleClick={() => item && getRuntime(editor)?.openItem(item)}>
-        <EmbedDepth.Provider value={depth + 1}>{item && embedRenderer ? embedRenderer(item, depth + 1, label) : <span className="ne-item-embed-missing">{label}</span>}</EmbedDepth.Provider>
+    <NodeViewWrapper className={`ne-item-embed${selected ? " is-selected" : ""}`} data-drag-handle="" data-view={view || undefined}>
+      <div
+        className="ne-item-embed-inner"
+        contentEditable={false}
+        data-item={view ? undefined : href}
+        data-item-title={label}
+        onDoubleClick={() => !view && item && getRuntime(editor)?.openItem(item)}
+      >
+        <EmbedDepth.Provider value={depth + 1}>{item && embedRenderer ? embedRenderer(item, depth + 1, label, options) : <span className="ne-item-embed-missing">{label}</span>}</EmbedDepth.Provider>
       </div>
     </NodeViewWrapper>
   );

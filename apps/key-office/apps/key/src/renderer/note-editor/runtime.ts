@@ -3,7 +3,7 @@ import type { Editor } from "@tiptap/core";
 import type { DraggedItem, ItemLink, SourceRef } from "./types";
 
 /** What the @ source picker inserts when an item is chosen. */
-export type PickMode = "link" | "embed" | "quote" | "cite";
+export type PickMode = "link" | "embed" | "quote" | "cite" | "map";
 
 export interface UrlPromptRequest {
   title: string;

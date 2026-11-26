@@ -32,7 +32,7 @@ function clear(editor: Editor, range: Range) {
 /** Types a picker's trigger so it opens: "[[" links, "![[" embeds, "@" cites (or quotes). */
 function openPicker(editor: Editor, range: Range, mode: PickMode) {
   const runtime = getRuntime(editor);
-  if (runtime && (mode === "quote" || mode === "cite")) runtime.pickMode = mode;
+  if (runtime && (mode === "quote" || mode === "cite" || mode === "map")) runtime.pickMode = mode;
   clear(editor, range).insertContent(mode === "link" ? "[[" : mode === "embed" ? "![[" : "@").run();
 }
 
@@ -53,6 +53,15 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: "link-source", label: "Link to anything", hint: "Note, source, highlight or canvas, like [[", group: "Research", icon: "link", keywords: ["mention", "reference", "[[", "note", "canvas", "highlight", "backlink"], run: (e, r) => openPicker(e, r, "link") },
   { id: "cite-source", label: "Cite a source", hint: "In-text citation, like @ (add p. 12 for a page)", group: "Research", icon: "quote", keywords: ["citation", "reference", "@", "apa", "page"], run: (e, r) => openPicker(e, r, "cite") },
   { id: "embed-source", label: "Embed anything", hint: "A live note, highlight, canvas or source, like ![[", group: "Research", icon: "books", keywords: ["card", "transclude", "include", "paper", "![["], run: (e, r) => openPicker(e, r, "embed") },
+  {
+    id: "relation-map",
+    label: "Relation map",
+    hint: "How a topic, person, journal or tag relates to the rest of the library",
+    group: "Research",
+    icon: "relations",
+    keywords: ["graph", "network", "map", "connections", "topics", "authors"],
+    run: (e, r) => openPicker(e, r, "map"),
+  },
   { id: "quote-source", label: "Quote from a source", hint: "Quotation with attribution", group: "Research", icon: "quote", keywords: ["citation", "excerpt", "cite"], run: (e, r) => openPicker(e, r, "quote") },
   {
     id: "image",
@@ -321,6 +330,11 @@ export function insertSource(editor: Editor, range: Range, ref: SourceRef, mode:
   const wholeSource = item.kind === "source" && !item.anchor;
   // The cache holds whole sources; a highlight shares its source's id.
   if (wholeSource) rememberSource(ref);
+  if (mode === "map") {
+    const node = { type: "itemEmbed", attrs: { href: itemHref(item), label: `Relation map of ${ref.title}`, view: "map" } };
+    editor.chain().focus().deleteRange(range).insertContent(node).run();
+    return;
+  }
   if (mode === "embed") {
     const node = wholeSource ? { type: "sourceEmbed", attrs: { id: ref.id, label: sourceLine(ref) } } : { type: "itemEmbed", attrs: { href: itemHref(item), label: ref.title } };
     editor.chain().focus().deleteRange(range).insertContent(node).run();

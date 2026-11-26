@@ -12,7 +12,7 @@ import { NoteMenus, embedPluginKey, linkPluginKey, slashPluginKey, sourcePluginK
 import type { MenuController, MenuState } from "./menus";
 import { NoteMedia } from "./mediaBehaviors";
 import { QuotePaste } from "./quotePaste";
-import { CalloutView, ImageView, ItemEmbedView, SourceEmbedView, SourceQuoteView, ToggleView, VideoEmbedView } from "./nodeViews";
+import { CalloutView, ImageView, ItemEmbedView, SourceEmbedView, SourceQuoteView, ToggleView, VideoEmbedView, defaultMapCenterSearch } from "./nodeViews";
 import { NoteRuntimeExtension } from "./runtime";
 import type { NoteRuntime, UrlPromptRequest } from "./runtime";
 import { Callout, ItemEmbed, NoteImage, SourceEmbed, SourceQuote, Toggle, VideoEmbed, buildSchemaExtensions, serializeNote } from "./schema";
@@ -173,8 +173,13 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
     () => ({
       placeholder: () => propsRef.current.placeholder ?? DEFAULT_PLACEHOLDER,
       // Links, embeds and citations can point at anything; quotes need a source.
-      search: (query, mode) => (mode !== "quote" && propsRef.current.searchItems ? propsRef.current.searchItems(query) : propsRef.current.searchSources(query)),
-      searchMore: async (query, mode) => (mode !== "quote" && propsRef.current.searchItemsMore ? propsRef.current.searchItemsMore(query) : []),
+      search: (query, mode) =>
+        mode === "map"
+          ? (propsRef.current.searchMapCenters ?? defaultMapCenterSearch)(query)
+          : mode !== "quote" && propsRef.current.searchItems
+            ? propsRef.current.searchItems(query)
+            : propsRef.current.searchSources(query),
+      searchMore: async (query, mode) => (mode !== "quote" && mode !== "map" && propsRef.current.searchItemsMore ? propsRef.current.searchItemsMore(query) : []),
       cite: async (ref, page) => propsRef.current.citeLabel?.(ref, page),
       dropped: (items, from, to) => {
         const editor = editorRef.current;

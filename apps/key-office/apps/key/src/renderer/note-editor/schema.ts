@@ -210,6 +210,14 @@ export const ItemEmbed = Node.create({
         parseHTML: (el) => el.getAttribute("data-label") ?? "",
         renderHTML: (attrs) => (attrs.label ? { "data-label": attrs.label } : {}),
       },
+      // A relation map of the item (view="map"), with the kinds it shows, how many of each and
+      // the fewest shared sources.
+      ...Object.fromEntries(
+        ["view", "kinds", "cap", "min"].map((name) => [
+          name,
+          { default: "", parseHTML: (el: HTMLElement) => el.getAttribute(`data-${name}`) ?? "", renderHTML: (attrs: Record<string, string>) => (attrs[name] ? { [`data-${name}`]: attrs[name] } : {}) },
+        ]),
+      ),
     };
   },
 
@@ -224,11 +232,14 @@ export const ItemEmbed = Node.create({
   markdownTokenizer: fenceTokenizer("embed", (attrs) => Boolean(attrs.href)),
 
   parseMarkdown(token, helpers) {
-    return helpers.createNode("itemEmbed", { href: token.attrs?.href ?? "", label: bodyLine(token) });
+    const a = token.attrs ?? {};
+    return helpers.createNode("itemEmbed", { href: a.href ?? "", label: bodyLine(token), view: a.view ?? "", kinds: a.kinds ?? "", cap: a.cap ?? "", min: a.min ?? "" });
   },
 
   renderMarkdown(node) {
-    return renderFence("embed", [["href", String(node.attrs?.href ?? "")]], String(node.attrs?.label || "Embedded item").replace(/\n+/g, " "));
+    // The body line is what other Markdown readers show: the title, or the map's summary.
+    const extra = (["view", "kinds", "cap", "min"] as const).filter((k) => node.attrs?.[k]).map((k): [string, string] => [k, String(node.attrs![k])]);
+    return renderFence("embed", [["href", String(node.attrs?.href ?? "")], ...extra], String(node.attrs?.label || "Embedded item").replace(/\n+/g, " "));
   },
 });
 

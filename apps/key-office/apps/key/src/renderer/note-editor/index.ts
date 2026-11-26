@@ -4,5 +4,5 @@ export { markdownToPlainText } from "./plainText";
 export type { DraggedItem, ItemKind, ItemLink, NoteEditorHandle, NoteEditorProps, NoteMediaHost, QuoteInsert, SourceRef } from "./types";
 export { CITE_DRAG_TYPE, QUOTE_DRAG_TYPE } from "./insertions";
 export { ITEM_DRAG_TYPE, hasItemDrag, itemFromHref, itemHref, readItemDrag, setItemDrag } from "./types";
-export { EmbedDepth, setEmbedRenderer, type EmbedRenderer } from "./nodeViews";
+export { EmbedDepth, setEmbedRenderer, setMapCenterSearch, type EmbedRenderer, type EmbedView } from "./nodeViews";
 export { editorTargetIn, onEditorTargets, type EditorTarget } from "./targets";
