@@ -193,7 +193,19 @@ impl Library {
             "store_tag_apply_many" => (|| {
                 let ops: Vec<key_store::TagOperation> = arg(args, "operations")?;
                 let label: Option<String> = arg(args, "label")?;
-                json_output(self.store.apply_tag_operations(&ops, label.as_deref())?)
+                let result = self.store.apply_tag_operations(&ops, label.as_deref())?;
+                // `withIndex`: what the manager needs next without a second call: the whole tag
+                // index when items changed, or only the tag tree when just the tree did.
+                if arg::<Option<bool>>(args, "withIndex")?.unwrap_or(false) {
+                    let mut out = serde_json::to_value(&result).map_err(|e| e.to_string())?;
+                    if ops.iter().any(|op| !op.replace.is_empty() || op.property.is_some()) {
+                        out["index"] = self.store.tag_index()?;
+                    } else {
+                        out["tree"] = self.store.tag_tree()?;
+                    }
+                    return json_output(out);
+                }
+                json_output(result)
             })(),
             "store_tag_restore" => arg::<key_store::TagSnapshot>(args, "snapshot").and_then(|s| json_output(self.store.restore_tags(&s)?)),
             "store_retag" => (|| json_output(self.store.retag(&arg::<Vec<String>>(args, "from")?, &arg::<String>(args, "to")?)?))(),

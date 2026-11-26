@@ -126,6 +126,12 @@ fn push_unique(out: &mut Vec<String>, tag: &str) {
 impl Store {
     /// Every tag with its count, every live source with its tags (as indexes) and title,
     /// and the tag tree: what the tag manager analyses.
+    /// Just the tag tree (parents and colours), for callers that know only it changed.
+    pub fn tag_tree(&self) -> Result<Json> {
+        let db = self.read()?;
+        Ok(Json::Object(read_tree(&db)?))
+    }
+
     pub fn tag_index(&self) -> Result<Json> {
         let db = self.read()?;
         let mut statement = db.prepare("SELECT id, title, year, tags FROM sources WHERE trashed_at IS NULL AND tags <> '[]'").map_err(e)?;
