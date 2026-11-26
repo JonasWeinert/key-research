@@ -4,6 +4,8 @@ export interface RustHostOptions {
   executable: string;
   libraryRoot: string;
   pdfiumPath?: string;
+  /** Extra environment for this host only (e.g. KEY_INDEX_EMBEDDINGS=0). */
+  env?: Record<string, string>;
 }
 export interface InvokeOptions {
   binary?: Uint8Array;
@@ -170,6 +172,7 @@ export class RustHost {
                 PDFIUM_LIB_PATH: this.options.pdfiumPath,
               }
             : {}),
+          ...this.options.env,
         },
       },
     );
