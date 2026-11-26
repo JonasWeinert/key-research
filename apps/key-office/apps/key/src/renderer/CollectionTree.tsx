@@ -23,35 +23,37 @@ const readSet = (key: string, fallback: string[] = []) => {
 };
 
 /**
- * The Collections group in the sidebar's Library section: the workspace's collections and
- * sub-collections. Collections are added, renamed, deleted, nested and reordered here, and
- * sources dropped on one are filed into it. The group's header takes collections dragged
- * to the top level.
+ * The sidebar's Library row and, folded beneath it, the workspace's collections and
+ * sub-collections. The row opens the library; its disclosure shows the collections (folded
+ * by default, remembered per workspace). Collections are added, renamed, deleted, nested and
+ * reordered here, and sources dropped on one are filed into it. The Library row takes
+ * collections dragged to the top level, and files dropped on it go to the library.
  */
 export default function CollectionTree({
   invoke,
   workspaceId,
   sourcesCurrent,
   onShowSources,
+  onOpenLibrary,
   budget,
-  onNeed,
 }: {
   invoke: Invoke;
   workspaceId?: string;
   /** The Sources view is the active tab. */
   sourcesCurrent: boolean;
   onShowSources: () => void;
+  /** Opens the whole library (the Library row itself). */
+  onOpenLibrary: () => void;
   /** Height (px) the list may take before "Show more" (see sidebar-budget.ts). */
   budget?: number;
-  /** The height the whole list would take. */
-  onNeed?: (px: number) => void;
 }) {
   const [showAll, setShowAll] = useState(false);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [selection, setSelection] = useState(currentSelection(workspaceId));
   const openKey = `key.collections.open:${workspaceId}`;
   const [expanded, setExpanded] = useState<Set<string>>(() => readSet(openKey));
-  const [sectionOpen, setSectionOpen] = useState(() => localStorage.getItem("key.sidebar.collections") !== "closed");
+  const libraryKey = `key.sidebar.library:${workspaceId}`;
+  const [sectionOpen, setSectionOpen] = useState(() => localStorage.getItem(libraryKey) === "open");
   const [creating, setCreating] = useState<{ parentId?: string } | null>(null);
   const [renaming, setRenaming] = useState<string>();
   const [drop, setDrop] = useState<{ id: string; place: Place }>();
@@ -67,6 +69,7 @@ export default function CollectionTree({
     load();
     setSelection(currentSelection(workspaceId));
     setExpanded(readSet(openKey));
+    setSectionOpen(localStorage.getItem(libraryKey) === "open");
     return onLibraryChanged(load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load, workspaceId]);
@@ -78,8 +81,9 @@ export default function CollectionTree({
   }, [expanded, openKey]);
   useEffect(() => {
     try {
-      localStorage.setItem("key.sidebar.collections", sectionOpen ? "open" : "closed");
+      localStorage.setItem(libraryKey, sectionOpen ? "open" : "closed");
     } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectionOpen]);
 
   // Children in their stored order (position, then name).
@@ -208,7 +212,7 @@ export default function CollectionTree({
     const open = expanded.has(c.id);
     const current = sourcesCurrent && selection?.collectionId === c.id;
     return (
-      <div key={c.id} role="treeitem" aria-expanded={kids.length ? open : undefined} aria-selected={current} aria-level={depth}>
+      <div key={c.id} role="treeitem" aria-expanded={kids.length ? open : undefined} aria-selected={current} aria-level={depth + 1}>
         <div
           className="kx-tree-row"
           data-current={current}
@@ -304,35 +308,97 @@ export default function CollectionTree({
   // Rows as shown: collections, and the children of the open ones.
   const visibleRows = (id: string | null): number => (children_.get(id) ?? []).reduce((n, c) => n + 1 + (expanded.has(c.id) ? visibleRows(c.id) : 0), 0);
   const rowCount = sectionOpen ? visibleRows(null) : 0;
-  useEffect(() => onNeed?.(rowCount * ROW_PX), [onNeed, rowCount]);
   const shown = showAll ? undefined : rowsThatFit(budget, rowCount, ROW_PX);
   // Rows left to draw this render, in reading order.
   let left = shown ?? Infinity;
   const menuCollection = menu && collections.find((c) => c.id === menu.id);
+  const libraryCurrent = sourcesCurrent && !selection?.collectionId;
   return (
     <>
-      <div className="kx-sidebar-group" data-drop={drop?.id === "@top" ? "inside" : undefined} {...dropProps(null)}>
-        <button className="kx-section-toggle" aria-expanded={sectionOpen} onClick={() => setSectionOpen(!sectionOpen)} title="Drop a collection here to move it to the top level">
-          <Icon name="chevronRight" size={9} style={{ transform: sectionOpen ? "rotate(90deg)" : undefined }} />
-          <Icon name="layers" size={15} className="kx-group-icon" />
-          <span>Collections</span>
-          {!!collections.length && <small>{collections.length}</small>}
-        </button>
-        <button aria-label="New collection" title="New collection" disabled={!workspaceId} onClick={() => startCreate()}>
-          <Icon name="plus" size={13} />
-        </button>
-      </div>
-      {sectionOpen && (
-        <nav className="kx-tree" role="tree" aria-label="Collections">
-          {top.map((c) => row(c, 1))}
-          {(shown !== undefined || (showAll && rowsThatFit(budget, rowCount, ROW_PX) !== undefined)) && (
-            <button className="kx-ref-more kx-sidebar-more" onClick={() => setShowAll(!showAll)}>
-              {showAll ? "Show fewer" : `Show ${rowCount - shown!} more`}
+      <nav className="kx-tree kx-library-tree" role="tree" aria-label="Library">
+        <div role="treeitem" aria-expanded={sectionOpen} aria-selected={libraryCurrent} aria-level={1}>
+          <div
+            className="kx-tree-row kx-library-row"
+            data-current={libraryCurrent}
+            data-drop={drop?.id === "@top" ? "inside" : undefined}
+            style={{ paddingLeft: indent(0) }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ id: "@library", x: e.clientX, y: e.clientY });
+            }}
+            {...dropProps(null)}
+          >
+            <button
+              className="kx-tree-disclosure"
+              aria-label={sectionOpen ? "Hide collections" : "Show collections"}
+              tabIndex={-1}
+              onClick={() => setSectionOpen(!sectionOpen)}
+            >
+              <Icon name="chevronRight" size={10} style={{ transform: sectionOpen ? "rotate(90deg)" : undefined }} />
             </button>
+            <button
+              className="kx-tree-label"
+              disabled={!workspaceId}
+              aria-current={libraryCurrent ? "page" : undefined}
+              title="Open the library · drop a collection here to move it to the top level"
+              onClick={() =>
+                sidebarClick({ kind: "sources" }, () => {
+                  if (workspaceId) selectLibrary({ workspaceId });
+                  onOpenLibrary();
+                })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "ArrowRight") setSectionOpen(true);
+                else if (e.key === "ArrowLeft") setSectionOpen(false);
+                else return;
+                e.preventDefault();
+              }}
+            >
+              <Icon name="books" />
+              <span>Library</span>
+            </button>
+            <span className="kx-tree-actions">
+              <button aria-label="New collection" title="New collection" disabled={!workspaceId} onClick={() => startCreate()}>
+                <Icon name="plus" size={11} />
+              </button>
+            </span>
+          </div>
+          {sectionOpen && workspaceId && (
+            <div role="group" className="kx-library-collections">
+              {top.map((c) => row(c, 1))}
+              {(shown !== undefined || (showAll && rowsThatFit(budget, rowCount, ROW_PX) !== undefined)) && (
+                <button className="kx-tree-more kx-sidebar-more" style={{ paddingLeft: `calc(${indent(1)} + var(--sb-gutter))` }} onClick={() => setShowAll(!showAll)}>
+                  {showAll ? "Show fewer" : `Show ${rowCount - shown!} more`}
+                </button>
+              )}
+              {creating && !creating.parentId && <NewRow depth={1} onDone={(name) => void create(name)} />}
+              {!collections.length && !creating && <p className="key-sidebar-hint kx-tree-hint kx-library-hint">Add a collection with +, then drag sources onto it.</p>}
+            </div>
           )}
-          {creating && !creating.parentId && <NewRow depth={1} onDone={(name) => void create(name)} />}
-          {workspaceId && !collections.length && !creating && <p className="key-sidebar-hint kx-tree-hint">Add a collection with +, then drag sources onto it.</p>}
-        </nav>
+        </div>
+      </nav>
+      {menu?.id === "@library" && (
+        <ContextMenu x={menu.x} y={menu.y} label="Library" onClose={() => setMenu(undefined)}>
+          {(close) =>
+            [
+              ["Open library", "books", () => choose(undefined)],
+              ["New collection", "plus", () => startCreate()],
+              [sectionOpen ? "Hide collections" : "Show collections", "layers", () => setSectionOpen(!sectionOpen)],
+            ].map(([text, icon, action]) => (
+              <button
+                key={text as string}
+                role="menuitem"
+                onClick={() => {
+                  close();
+                  (action as () => void)();
+                }}
+              >
+                <Icon name={icon as Parameters<typeof Icon>[0]["name"]} size={13} />
+                {text as string}
+              </button>
+            ))
+          }
+        </ContextMenu>
       )}
       {menu && menuCollection && (
         <ContextMenu x={menu.x} y={menu.y} label={`${menuCollection.name} collection`} onClose={() => setMenu(undefined)}>

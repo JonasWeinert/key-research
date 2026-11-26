@@ -1,7 +1,6 @@
 // Run serially: native windows and focus are shared with other GUI checks.
 // The sidebar: the workspace in the title bar (name goes Home, switching asks where),
-// Search, the Library's References (search, cite at the cursor of a note being written,
-// add to a canvas, open), and the Workspace section arranged by dragging rows and filing
+// Search, the Library row with its folded collections, and the Workspace section arranged by dragging rows and filing
 // them into folders, kept in the store across a reload. Screenshots in light and dark.
 const { _electron: electron } = require("playwright-core");
 const { mkdtemp, mkdir, readFile, writeFile } = require("node:fs/promises");
@@ -67,72 +66,60 @@ const assert = require("node:assert/strict");
     }, "Home");
     report.home = true;
 
-    // Search opens Open Quickly; the Library header opens the library.
+    // Search opens Open Quickly; the Library row opens the library.
     await sidebar.getByRole("button", { name: "Search" }).click();
     await page.locator(".kx-palette input").waitFor();
     await page.keyboard.press("Escape");
     await page.locator(".kx-palette").waitFor({ state: "detached" });
-    await sidebar.locator(".kx-top-title", { hasText: "Library" }).click();
+    const library = sidebar.getByRole("tree", { name: "Library" });
+    const libraryRow = library.locator(".kx-library-row");
+    await libraryRow.locator(".kx-tree-label").click();
     await until(async () => {
       const state = await tabs();
       return state.tabs.find((t) => t.id === state.activeTabId)?.views[0].kind === "library";
-    }, "the library from the header");
+    }, "the library from its row");
+    assert.equal(await libraryRow.getAttribute("data-current"), "true", "the Library row shows as current");
     assert.equal(await sidebar.locator(".kx-nav-item", { hasText: "All items" }).count(), 0, "All items is gone");
     report.search = true;
 
-    // References: rows read title then "Author et al. (Year)"; the search narrows them.
-    const refs = sidebar.getByRole("list", { name: "Reference list" });
-    const ref = (title) => refs.locator(".kx-ref-row", { hasText: title });
-    await ref("Interaction study").locator(".kx-ref-byline", { hasText: "Kirkby et al. (2022)" }).waitFor();
-    await ref("How many jobs").locator(".kx-ref-byline", { hasText: "Dingel & Neiman (2020)" }).waitFor();
-    await sidebar.locator(".kx-references .kx-section-toggle small", { hasText: "2" }).waitFor();
-    await sidebar.getByLabel("Search references").fill("jobs");
-    await until(async () => (await refs.locator(".kx-ref-row").count()) === 1, "the search to narrow the list");
-    await sidebar.getByLabel("Search references").fill("");
-    await until(async () => (await refs.locator(".kx-ref-row").count()) === 2, "both references again");
-    // Outside a note or canvas a row's action opens it.
-    await ref("How many jobs").hover();
-    await ref("How many jobs").locator(".kx-ref-action[data-action='Open']").waitFor();
-    report.references = true;
-
-    // In a note being written, Cite puts the in-text citation at the cursor.
-    await page.evaluate(({ id, note }) => window.key.tabAction("open-content", { section: "note", workspaceId: id, noteId: note.id, title: "Alpha" }), { id: ws.id, note: alpha });
-    const prose = page.locator(".kx-note-page .ProseMirror");
-    await prose.waitFor();
-    await prose.click();
-    await page.keyboard.press("End");
-    await page.keyboard.type(" As shown");
-    await ref("Interaction study").hover();
-    const cite = ref("Interaction study").locator(".kx-ref-action[data-action='Cite']");
-    await cite.click();
-    await prose.locator(`a[href="key://source/${source.id}"]`, { hasText: "(Kirkby et al., 2022)" }).waitFor();
-    await page.keyboard.type("and more.");
-    let saved = "";
-    await until(async () => /As shown \[\(Kirkby et al\., 2022\)\]\(key:\/\/source\/[^)]+\) and more\./.test((saved = (await call("store_note", { id: alpha.id }))?.body ?? "")), "the citation to save where the cursor was").catch((e) => {
-      throw Error(`${e.message}: ${JSON.stringify(saved)}`);
-    });
-    // The style selector changes what Cite writes.
-    const pickOption = async (button, name) => {
-      // The group's actions show on hover, in place of its count.
-      await sidebar.locator(".kx-references .kx-sidebar-group").hover();
-      await sidebar.getByRole("button", { name: button }).click();
-      await page.getByRole("menuitemradio", { name }).click();
-    };
-    await pickOption("Reference options", "Chicago (author-date)");
-    await ref("How many jobs").locator(".kx-ref-byline", { hasText: "Dingel and Neiman (2020)" }).waitFor();
-    await ref("How many jobs").hover();
-    await ref("How many jobs").locator(".kx-ref-action[data-action='Cite']").click();
-    await prose.locator(`a[href="key://source/${second.id}"]`, { hasText: "(Dingel and Neiman 2020)" }).waitFor();
-    await pickOption("Reference options", "APA 7th Edition");
-    report.cite = true;
-
-    // On a canvas, the action adds a card.
-    await page.evaluate(({ id, board }) => window.key.tabAction("open-content", { section: "canvas", workspaceId: id, canvasId: board.id, title: "Board" }), { id: ws.id, board });
-    await page.locator(".kx-canvas").waitFor();
-    await ref("How many jobs").hover();
-    await ref("How many jobs").locator(".kx-ref-action[data-action='Add to canvas']").click();
-    await until(async () => (await page.locator(".kx-canvas-node[data-type=item]").count()) === 1, "a card on the canvas");
-    report.addToCanvas = true;
+    // The upper section is Search and Library only: no References list or reference search,
+    // no separate Collections header.
+    assert.equal(await sidebar.getByLabel("Search references").count(), 0, "no reference search");
+    assert.equal(await sidebar.getByRole("list", { name: "Reference list" }).count(), 0, "no references list");
+    assert.equal(await sidebar.locator(".key-sidebar-section", { hasText: /^Library$/ }).count(), 0, "no Library section header");
+    // Collections start folded under Library; the disclosure shows only collections, nested.
+    const thesis = await call("store_collection_create", { name: "Thesis", parentId: null });
+    await call("store_collection_create", { name: "Chapter one with a rather long name that has to truncate", parentId: thesis.id });
+    await call("store_collection_create", { name: "Reading", parentId: null });
+    await page.reload();
+    await sidebar.locator(".kx-library-row").waitFor();
+    const libraryItem = library.locator(":scope > [role=treeitem]");
+    assert.equal(await libraryItem.getAttribute("aria-expanded"), "false", "Library starts folded");
+    assert.equal(await library.locator(".kx-tree-label", { hasText: "Thesis" }).count(), 0);
+    await page.mouse.move(700, 500);
+    await page.screenshot({ path: path.join(temp, "library-folded.png") });
+    await libraryRow.getByRole("button", { name: "Show collections" }).click();
+    await library.locator(".kx-tree-label", { hasText: "Thesis" }).waitFor();
+    const childLabels = await library.locator("[role=group] > [role=treeitem] .kx-tree-label > span").allTextContents();
+    assert.deepEqual(childLabels.sort(), ["Reading", "Thesis"], "only collections under Library");
+    // A collection opens the library filtered to it; the row is current, not Library.
+    await library.locator(".kx-tree-label", { hasText: "Thesis" }).click();
+    await until(async () => (await library.locator(".kx-tree-row[data-current=true] .kx-tree-label", { hasText: "Thesis" }).count()) === 1, "Thesis current");
+    assert.notEqual(await libraryRow.getAttribute("data-current"), "true");
+    // Keyboard: left folds a collection, right unfolds it.
+    await library.locator(".kx-tree-label", { hasText: "Thesis" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await library.locator(".kx-tree-label", { hasText: "Chapter one" }).waitFor();
+    await page.mouse.move(700, 500);
+    await page.screenshot({ path: path.join(temp, "library-open.png") });
+    // Left on the Library row folds it; the choice is kept per workspace.
+    await libraryRow.locator(".kx-tree-label").focus();
+    await page.keyboard.press("ArrowLeft");
+    await until(async () => (await libraryItem.getAttribute("aria-expanded")) === "false", "Library to fold");
+    await page.keyboard.press("ArrowRight");
+    await library.locator(".kx-tree-label", { hasText: "Thesis" }).waitFor();
+    assert.equal(await page.evaluate((id) => localStorage.getItem(`key.sidebar.library:${id}`), ws.id), "open");
+    report.library = true;
 
     // Workspace: the section is headed by the workspace's name, rows drag into a new order.
     const tree = sidebar.getByRole("tree", { name: "Workspace" });
@@ -206,26 +193,28 @@ const assert = require("node:assert/strict");
     await titlebar.locator(".key-workspace-home strong", { hasText: "Fieldwork" }).waitFor();
     report.switchChoice = true;
 
-    // Collections and References take at most half the sidebar; the rest waits behind Show more.
+    // Collections take at most half the sidebar; the rest waits behind Show more.
     // (In the workspace this window now shows.)
     const shownId = (await page.evaluate(() => window.key.workspaces())).find((w) => w.name === "Fieldwork").id;
     const callShown = (command, args) => page.evaluate(({ command, args, id }) => window.key.invoke(command, args, id), { command, args, id: shownId });
     for (let i = 0; i < 40; i++) await callShown("store_create", { source: { kind: "reference", itemType: "article", title: `Budget study ${String(i).padStart(2, "0")}` } });
     for (let i = 0; i < 14; i++) await callShown("store_collection_create", { name: `Budget collection ${i}`, parentId: null });
     await page.reload();
-    const more = page.locator(".kx-library-groups .kx-sidebar-more");
+    // This workspace's Library starts folded too.
+    await page.locator(".kx-library-row").getByRole("button", { name: "Show collections" }).click();
+    const more = page.locator(".kx-library-collections .kx-sidebar-more");
     await more.first().waitFor();
     const heights = async () =>
       page.evaluate(() => ({
-        library: document.querySelector(".kx-library-groups").getBoundingClientRect().height,
+        library: document.querySelector(".kx-library-collections").getBoundingClientRect().height,
         sidebar: document.querySelector(".kx-sidebar-scroll").getBoundingClientRect().height,
       }));
     const folded = await heights();
     assert.ok(folded.library <= folded.sidebar / 2 + 40, `the library lists keep to half the sidebar (${folded.library} of ${folded.sidebar})`);
     await more.last().click();
-    await page.locator(".kx-library-groups .kx-sidebar-more", { hasText: "Show fewer" }).waitFor();
+    await page.locator(".kx-library-collections .kx-sidebar-more", { hasText: "Show fewer" }).waitFor();
     assert.ok((await heights()).library > folded.library, "Show more shows the rest");
-    await page.locator(".kx-library-groups .kx-sidebar-more", { hasText: "Show fewer" }).click();
+    await page.locator(".kx-library-collections .kx-sidebar-more", { hasText: "Show fewer" }).click();
 
     // Sidebar menus open over the content, whole, not clipped at the sidebar's edge.
     const sidebarRight = await page.locator(".key-sidebar").evaluate((el) => el.getBoundingClientRect().right);

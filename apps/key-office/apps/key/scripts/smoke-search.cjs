@@ -55,6 +55,8 @@ const assert = require("node:assert/strict");
     await page.getByRole("region", { name: "Home", exact: true }).waitFor();
     const sidebar = page.locator(".key-sidebar");
     await sidebar.locator(".kx-nav-item", { hasText: "Alpha" }).waitFor();
+    // Collections fold under the Library row.
+    await sidebar.locator(".kx-library-row").getByRole("button", { name: "Show collections" }).click();
     await sidebar.locator(".kx-tree-label", { hasText: "Reading list" }).waitFor();
 
     // From the library, the search popup starts with sources only.
@@ -133,7 +135,7 @@ const assert = require("node:assert/strict");
     await shot(page, "tab-collection");
 
     // The Library drops the collection but keeps sources only.
-    await sidebar.locator(".kx-top-title", { hasText: "Library" }).click();
+    await sidebar.locator(".kx-library-row .kx-tree-label").click();
     await page.waitForFunction(() => !document.querySelector('.kx-search-page .kx-token[data-field="collection"]'));
     await tab.locator('.kx-kind-chips button[data-kind="source"][aria-pressed="true"]').waitFor();
     assert.equal(await activeKind(), "search");

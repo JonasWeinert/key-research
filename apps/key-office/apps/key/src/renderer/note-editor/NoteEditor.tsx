@@ -8,7 +8,7 @@ import { BlockGutter } from "./blockGutter";
 import { BubbleToolbar, normalizeUrl } from "./BubbleToolbar";
 import { NoteKeymap, SourceLinks } from "./behaviors";
 import { LibraryDrop, insertQuoteAt, insertReferenceAt } from "./insertions";
-import { NoteMenus } from "./menus";
+import { NoteMenus, embedPluginKey, linkPluginKey, slashPluginKey, sourcePluginKey } from "./menus";
 import type { MenuController, MenuState } from "./menus";
 import { NoteMedia } from "./mediaBehaviors";
 import { QuotePaste } from "./quotePaste";
@@ -23,6 +23,8 @@ import type { DraggedItem, NoteEditorHandle, NoteEditorProps } from "./types";
 import { insertDroppedItems, insertLinks, type DropMode } from "./mediaBehaviors";
 import { editorTargetFocused, registerEditorTarget, type EditorTarget } from "./targets";
 import "./note-editor.css";
+import { useDismiss, within } from "@key-reader/ui/dismiss";
+import { exitSuggestion } from "@tiptap/suggestion";
 
 const SAVE_DELAY_MS = 400;
 const DEFAULT_PLACEHOLDER = "Type / for blocks, [[ to link, @ to cite";
@@ -64,13 +66,7 @@ function UrlPrompt({ request, rect, onClose }: { request: UrlPromptRequest; rect
   const { ref, style } = usePopoverPosition(rect, []);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => inputRef.current?.focus(), []);
-  useEffect(() => {
-    const onDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", onDown, true);
-    return () => document.removeEventListener("mousedown", onDown, true);
-  }, [onClose, ref]);
+  useDismiss(true, { refs: [ref], onDismiss: onClose });
   const submit = () => {
     const url = normalizeUrl(value);
     onClose();
@@ -109,18 +105,14 @@ function DropChoice({ editor, choice, onClose }: { editor: NonNullable<ReturnTyp
   const { ref, style } = usePopoverPosition(choice.rect, []);
   useEffect(() => {
     const timer = window.setTimeout(onClose, 7000);
-    const dismiss = (e: Event) => {
-      if (e instanceof PointerEvent && ref.current?.contains(e.target as Node)) return;
-      onClose();
-    };
-    document.addEventListener("keydown", dismiss, true);
-    document.addEventListener("pointerdown", dismiss, true);
+    // Typing goes on writing; presses outside and scrolling away pass through (ui/dismiss).
+    document.addEventListener("keydown", onClose, true);
     return () => {
       window.clearTimeout(timer);
-      document.removeEventListener("keydown", dismiss, true);
-      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", onClose, true);
     };
   }, [onClose]);
+  useDismiss(true, { refs: [ref], kind: "passive", onDismiss: onClose });
   const turn = (mode: DropMode) => {
     onClose();
     if (mode === "link") return;
@@ -162,6 +154,20 @@ export default function NoteEditor(props: NoteEditorProps): JSX.Element {
     }),
     [],
   );
+
+  // Suggestion menus (/, @, [[, ![[) close on presses outside them and on scrolling away; the
+  // press goes through (to place the caret) and the editor keeps Escape.
+  useDismiss(!!menu, {
+    refs: [],
+    inside: (target) => within(target, ".ne-menu"),
+    kind: "passive",
+    escape: false,
+    onDismiss: () => {
+      const editor = editorRef.current;
+      if (editor && !editor.isDestroyed) for (const key of [slashPluginKey, sourcePluginKey, linkPluginKey, embedPluginKey]) exitSuggestion(editor.view, key);
+      setMenu(null);
+    },
+  });
 
   const runtime = useMemo<NoteRuntime>(
     () => ({

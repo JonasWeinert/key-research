@@ -1,6 +1,7 @@
 import { Button, Input } from "@key/design-system";
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
+import { useDismiss } from "@key-reader/ui/dismiss";
 export interface WorkspaceAppearance {
   id: string;
   name: string;
@@ -92,30 +93,15 @@ export default function WorkspaceSwitcher({
       setOpen(false);
     } else setChoosing(w);
   };
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: PointerEvent) => {
-      if (!container.current?.contains(e.target as Node)) {
-        setOpen(false);
-        setEditing(false);
-      }
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        setEditing(false);
-        container.current
-          ?.querySelector<HTMLButtonElement>(".key-workspace-trigger")
-          ?.focus();
-      }
-    };
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  // Outside presses (anywhere in the window), scrolling away and Escape close it; Escape
+  // gives focus back to the trigger (ui/dismiss).
+  useDismiss(open, {
+    refs: [container],
+    onDismiss: () => {
+      setOpen(false);
+      setEditing(false);
+    },
+  });
   async function add() {
     setBusy(true);
     setError("");

@@ -23,7 +23,7 @@ async function until(what, check, timeout = 15000) {
 
 (async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "key-linked-"));
-  const outside = path.join(temp, "Field notes");
+  const outside = path.join(temp, "Field notes from the coastal survey villages, second season");
   await mkdir(path.join(outside, "data"), { recursive: true });
   await mkdir(path.join(outside, ".hidden"), { recursive: true });
   await writeFile(path.join(outside, "plan.md"), "# Plan\n\nVisit the clinic on Tuesday.\n");
@@ -68,6 +68,17 @@ async function until(what, check, timeout = 15000) {
     await tree.locator(".kx-tree-label", { hasText: "data" }).click();
     await tree.locator(".kx-linked-file-row", { hasText: "survey.csv" }).waitFor();
     await shot(page, "1-linked-tree");
+    // The folder's name sits right after its icon, on the same grid as the other rows.
+    const gap = await folderRow.evaluate((label) => {
+      const icon = label.querySelector(".kx-linked-icon").getBoundingClientRect();
+      const name = label.querySelector(":scope > span:not(.kx-linked-icon)").getBoundingClientRect();
+      const sub = [...document.querySelectorAll(".kx-workspace-tree .kx-tree-label")].find((l) => l.textContent === "data");
+      const subIcon = sub.querySelector("svg").getBoundingClientRect();
+      const subName = sub.querySelector("span").getBoundingClientRect();
+      return { name: name.left - icon.right, sub: subName.left - subIcon.right, indent: subIcon.left - icon.left };
+    });
+    assert.ok(Math.abs(gap.name - gap.sub) <= 1, `the name follows the icon like other rows (${JSON.stringify(gap)})`);
+    assert.ok(Math.abs(gap.indent - 12) <= 1, `a level in is 12px (${JSON.stringify(gap)})`);
 
     // Markdown opens in the editor and writes back to the file.
     await tree.locator(".kx-linked-file-row", { hasText: "plan.md" }).click();

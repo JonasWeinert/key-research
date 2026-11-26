@@ -3620,40 +3620,6 @@ html.kx-modal-open :is(.key-group-strips, .tab-bar, .tab-strip, .kx-sidebar-titl
 .kx-tree-hint {
   margin-left: 32px;
 }
-.kx-library-section {
-  padding-left: 2px;
-}
-.key-sidebar-section > .kx-section-toggle {
-  display: inline-flex;
-  width: auto;
-  opacity: 1;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  height: 22px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-}
-.key-sidebar-section > .kx-section-toggle:hover {
-  background: transparent;
-  color: var(--kx-text-2);
-}
-.kx-section-toggle > svg {
-  opacity: 0;
-  transition:
-    opacity 120ms var(--kx-ease),
-    transform 140ms var(--kx-ease);
-}
-.kx-library-section:hover .kx-section-toggle > svg,
-.kx-section-toggle:focus-visible > svg,
-.kx-section-toggle[aria-expanded="false"] > svg {
-  opacity: 1;
-}
 .kx-tree-row > svg {
   flex: none;
   margin: 0 6px 0 2px;
@@ -4485,18 +4451,6 @@ button.kx-note-source:hover {
   color: var(--kx-text-3);
   font: 11px var(--kx-font);
 }
-.kx-library-section {
-  justify-content: flex-start;
-  gap: 0;
-  padding-left: 0;
-}
-.kx-library-section > .kx-library-toggle {
-  flex: none;
-  opacity: 1;
-  width: 16px;
-  padding: 0;
-  justify-content: center;
-}
 .key-sidebar-section > .kx-section-title.kx-nav-item {
   display: flex;
   place-items: initial;
@@ -4519,180 +4473,6 @@ button.kx-note-source:hover {
 .key-sidebar-section > .kx-section-title.kx-nav-item[aria-current="page"] {
   background: var(--kx-sidebar-selected);
   color: var(--kx-text);
-}
-.kx-library-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding-left: 8px;
-}
-/* A group's header inside a section: disclosure, small caps label and count, trailing actions. */
-.kx-sidebar-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  margin-top: 6px;
-  padding: 0 2px 0 0;
-  border-radius: 6px;
-  color: var(--kx-text-3);
-}
-.kx-sidebar-group[data-drop="inside"] {
-  background: var(--kx-accent-soft);
-  box-shadow: inset 0 0 0 2px var(--kx-accent);
-}
-.kx-sidebar-group > .kx-section-toggle {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  height: 22px;
-  padding: 0 4px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: inherit;
-  font: 600 10.5px var(--kx-font);
-  text-align: left;
-}
-.kx-sidebar-group > .kx-section-toggle:hover {
-  color: var(--kx-text-2);
-}
-.kx-sidebar-group > .kx-section-toggle > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kx-sidebar-group > .kx-section-toggle > small {
-  flex: none;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: var(--kx-fill);
-  font-size: 10px;
-  letter-spacing: 0;
-  font-variant-numeric: tabular-nums;
-}
-.kx-sidebar-group > button:not(.kx-section-toggle, .kx-group-text-button) {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--kx-text-2);
-  opacity: 0;
-  transition: opacity 120ms;
-}
-.key-sidebar:hover .kx-sidebar-group > button,
-.kx-sidebar-group > button:focus-visible {
-  opacity: 1;
-}
-.kx-sidebar-group > button:hover:not(:disabled),
-.kx-group-text-button:hover:not(:disabled) {
-  background: var(--kx-fill-2);
-  color: var(--kx-text);
-}
-.kx-sidebar-group > .kx-group-text-button,
-.kx-group-text-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  width: auto;
-  height: 22px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--kx-text-2);
-  font: 12px var(--kx-font);
-  opacity: 1;
-}
-.kx-group-text-button:disabled {
-  opacity: 0.4;
-}
-
-/* References: a compact reference manager list. */
-.kx-ref-list {
-  display: flex;
-  flex-direction: column;
-  margin: 0 -2px;
-}
-.kx-ref-row {
-  position: relative;
-  border-radius: 6px;
-}
-.kx-ref-row:hover,
-.kx-ref-row:focus-within {
-  background: var(--kx-fill);
-}
-.kx-ref-main {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--kx-text);
-  font: inherit;
-  text-align: left;
-  cursor: default;
-}
-.kx-ref-title,
-.kx-ref-byline {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.kx-ref-title {
-  font-size: 13px;
-}
-.kx-ref-byline {
-  color: var(--kx-text-3);
-  font-size: 11.5px;
-}
-.kx-ref-action {
-  position: absolute;
-  right: 6px;
-  bottom: 5px;
-  display: none;
-  align-items: center;
-  gap: 4px;
-  height: 20px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--kx-accent);
-  color: var(--kx-accent-ink);
-  font: 600 11px var(--kx-font);
-  box-shadow: var(--kx-shadow-lift);
-}
-.kx-ref-row:hover .kx-ref-action,
-.kx-ref-row:focus-within .kx-ref-action {
-  display: inline-flex;
-}
-.kx-ref-row:hover .kx-ref-byline {
-  padding-right: 92px;
-}
-.kx-ref-more {
-  margin: 2px 0;
-  padding: 4px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--kx-accent);
-  font: 12px var(--kx-font);
-  text-align: left;
-}
-.kx-ref-more:hover {
-  background: var(--kx-fill);
 }
 
 /* Workspace: notes, canvases, pages and documents in the user's own order and folders. */
@@ -4807,33 +4587,46 @@ button.kx-note-source:hover {
   background: transparent;
   color: var(--kx-text-2);
 }
-.key-sidebar .key-sidebar-section.kx-top-section > .kx-top-chevron {
-  width: 18px;
-  height: 18px;
-  color: var(--kx-text-3);
-  opacity: 0;
-}
-.key-sidebar .key-sidebar-section.kx-top-section:hover > .kx-top-chevron,
-.key-sidebar .key-sidebar-section.kx-top-section > .kx-top-chevron:focus-visible,
-.key-sidebar .key-sidebar-section.kx-top-section > .kx-top-chevron[aria-expanded="false"] {
-  opacity: 1;
-}
-.kx-top-chevron > svg {
-  transition: transform 140ms var(--kx-ease);
-}
-.kx-top-chevron[aria-expanded="true"] > svg {
-  transform: rotate(90deg);
-}
-.key-sidebar-section.kx-top-section > :is(.kx-top-title, .kx-top-chevron) + button:not(.kx-top-chevron) {
+.key-sidebar-section.kx-top-section > .kx-top-title + button {
   margin-left: auto;
 }
-.key-sidebar .key-sidebar-section.kx-top-section > button:not(.kx-top-title, .kx-top-chevron) {
+.key-sidebar .key-sidebar-section.kx-top-section > button:not(.kx-top-title) {
   opacity: 0;
 }
-.key-sidebar .key-sidebar-section.kx-top-section:hover > button:not(.kx-top-title, .kx-top-chevron),
-.key-sidebar .key-sidebar-section.kx-top-section > button:not(.kx-top-title, .kx-top-chevron):focus-visible,
-.key-sidebar .key-sidebar-section.kx-top-section > button[aria-expanded="true"]:not(.kx-top-title, .kx-top-chevron) {
+.key-sidebar .key-sidebar-section.kx-top-section:hover > button:not(.kx-top-title),
+.key-sidebar .key-sidebar-section.kx-top-section > button:not(.kx-top-title):focus-visible,
+.key-sidebar .key-sidebar-section.kx-top-section > button[aria-expanded="true"]:not(.kx-top-title) {
   opacity: 1;
+}
+
+/* Library: a row like any collection, under Search; its disclosure folds the collections. */
+.key-sidebar .kx-library-tree {
+  margin-top: 8px;
+}
+.key-sidebar .kx-library-row > .kx-tree-disclosure > svg {
+  color: var(--kx-text-3);
+}
+.key-sidebar .kx-library-row .kx-tree-label:disabled {
+  opacity: 0.5;
+}
+.kx-library-collections {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 1px;
+}
+.kx-tree-more {
+  height: 24px;
+  padding-right: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-accent);
+  font: 12px var(--kx-font);
+  text-align: left;
+}
+.kx-tree-more:hover {
+  background: var(--kx-fill);
 }
 
 /* Rows. Plain rows (workspace items, Settings) reserve the gutter as padding; tree rows
@@ -4864,79 +4657,13 @@ button.kx-note-source:hover {
   width: 16px;
   height: 16px;
 }
-.key-sidebar .kx-tree-label > small,
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle > small {
+.key-sidebar .kx-tree-label > small {
   margin-left: auto;
   padding: 0 2px 0 0;
   background: none;
   color: var(--kx-text-3);
   font: 11.5px var(--kx-font);
   font-variant-numeric: tabular-nums;
-}
-
-/* Collections and References: level-0 rows under Library that fold their lists. */
-.kx-library-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding-left: 0;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group {
-  height: 28px;
-  margin-top: 0;
-  padding: 0 4px 0 2px;
-  border-radius: 6px;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group:hover {
-  background: var(--kx-fill);
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle {
-  gap: 8px;
-  height: 28px;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--kx-text);
-  font: 13px var(--kx-font);
-  letter-spacing: 0;
-  text-transform: none;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle:hover {
-  background: transparent;
-  color: var(--kx-text);
-}
-/* The chevron fills the gutter; seen on hover, or while folded. */
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle > svg:first-child {
-  flex: none;
-  box-sizing: content-box;
-  width: 9px;
-  margin: 0 -8px 0 0;
-  padding: 0 1.5px;
-  color: var(--kx-text-3);
-  opacity: 0;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group:hover > .kx-section-toggle > svg:first-child,
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle:focus-visible > svg:first-child,
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle[aria-expanded="false"] > svg:first-child {
-  opacity: 1;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group > .kx-section-toggle > svg.kx-group-icon {
-  flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--kx-accent);
-  opacity: 1;
-}
-/* Its controls take the count's place while the row is pointed at. */
-.key-sidebar .kx-library-groups .kx-sidebar-group > button:not(.kx-section-toggle) {
-  display: none;
-  opacity: 1;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group:is(:hover, :focus-within) > button:not(.kx-section-toggle) {
-  display: grid;
-}
-.key-sidebar .kx-library-groups .kx-sidebar-group:is(:hover, :focus-within) > .kx-section-toggle > small {
-  display: none;
 }
 
 /* Hints sit in the text column of the level they describe, small and quiet. */
@@ -4962,54 +4689,6 @@ button.kx-note-source:hover {
   font-weight: 600;
 }
 
-/* References: compact rows at level 1, the title over a quiet byline. */
-.kx-ref-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: var(--kx-fill);
-  color: var(--kx-text-3);
-}
-.kx-ref-search:focus-within {
-  box-shadow: 0 0 0 2px var(--kx-accent-soft);
-}
-.kx-ref-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--kx-text);
-  font: 12px var(--kx-font);
-}
-.kx-ref-search input::placeholder {
-  color: var(--kx-text-3);
-}
-/* The search spans the sidebar, like the main Search field above. */
-.key-sidebar .kx-ref-search {
-  height: 26px;
-  margin: 2px 0 4px;
-  padding: 0 8px;
-  border-radius: 7px;
-}
-.key-sidebar .kx-references .kx-ref-list {
-  margin: 0 0 4px calc(var(--sb-icon-x) + var(--sb-level) - 8px);
-}
-.key-sidebar .kx-ref-main {
-  gap: 0;
-  padding: 4px 8px;
-}
-.key-sidebar .kx-ref-title {
-  font-size: 12.5px;
-  line-height: 17px;
-}
-.key-sidebar .kx-ref-byline {
-  font-size: 11px;
-  line-height: 15px;
-}
-.key-sidebar .kx-ref-more {
-  margin-left: calc(var(--sb-icon-x) + var(--sb-level) - 8px);
-}
 .kx-workspace-end {
   min-height: 12px;
   flex: none;

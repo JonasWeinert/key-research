@@ -25,9 +25,9 @@ const assert = require("node:assert/strict");
   const report = {};
   try {
     const page = await app.firstWindow();
-    // The Collections row's + shows on hover, in place of its count.
+    // The Library row's + (new collection) shows on hover; it unfolds the collections.
     const newCollection = async () => {
-      await page.locator(".kx-library-groups .kx-sidebar-group", { hasText: "Collections" }).hover();
+      await page.locator(".key-sidebar .kx-library-row").hover();
       await page.getByRole("button", { name: "New collection", exact: true }).click();
     };
     page.setDefaultTimeout(20000);
@@ -71,7 +71,7 @@ const assert = require("node:assert/strict");
     await page.getByPlaceholder("Collection name").fill("Thesis");
     await page.getByPlaceholder("Collection name").press("Enter");
     await page.locator(".kx-tree-label", { hasText: "Thesis" }).waitFor();
-    await page.locator(".key-sidebar .kx-top-title", { hasText: "Library" }).click();
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     await page.locator(".kx-row").nth(0).click();
     await page.locator(".kx-row").nth(1).click({ modifiers: ["Shift"] });
     const bulk = page.getByRole("toolbar", { name: "Selected sources" });
@@ -203,7 +203,7 @@ const assert = require("node:assert/strict");
 
     // Multi-level sort: Year, then Title, from header clicks (Shift adds a level) and the sort menu.
     for (const c of created) await call("store_update", { id: c.id, patch: { year: 2021 } });
-    await page.locator(".key-sidebar .kx-top-title", { hasText: "Library" }).click();
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     const titles = () => page.locator(".kx-table-row .kx-cell-title > span:last-child").allInnerTexts();
     await header("Year").click();
     await header("Title").click({ modifiers: ["Shift"] });
@@ -321,7 +321,7 @@ const assert = require("node:assert/strict");
     assert.equal(await page.locator(".kx-results [role=alert]").count(), 0);
     await search.fill("");
     await search.press("Escape");
-    await page.locator(".key-sidebar .kx-top-title", { hasText: "Library" }).click();
+    await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     report.search = true;
 
     // Suggestions turn into filter tokens: an author, picked with the keyboard, narrows the list;

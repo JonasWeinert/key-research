@@ -22,6 +22,7 @@ import { setUiLang, normalizeLang } from "@key/i18n";
 import { AgentFill } from "./agent-fill";
 import { AppSettingsStore, appInfo } from "./app-settings";
 import { downloadPdf } from "./download-pdf";
+import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
 import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { startZoteroPluginSync } from "./zotero-sync";
@@ -770,6 +771,7 @@ function attach(record: OwnedView, w: ShellWindow) {
   }
   const view = kind.create(record);
   record.view = view;
+  relayDismiss(view.webContents, () => record.host?.window);
   w.window.contentView.addChildView(view);
   record.host = w;
   view.webContents.on("focus", () => {
@@ -1382,6 +1384,9 @@ function createShell(
   touchRecent(w.workspaceId);
   // The window's title names its workspace, not the page.
   window.on("page-title-updated", (event) => event.preventDefault());
+  relayDismiss(window.webContents, () => window);
+  dismissOnBlur(window);
+  dismissOnMove(window);
   window.webContents.on("did-start-loading", () => {
     if (w.globalOverlay) {
       w.globalOverlay = undefined;

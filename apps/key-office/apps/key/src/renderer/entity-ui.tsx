@@ -10,6 +10,7 @@ import { itemAttrs } from "./item-ui";
 import type { PersonPageData, TopicPageData, VenuePageData } from "./library-api";
 import type { SearchFilter } from "./search-suggest";
 import "./entity.css";
+import { useDismiss } from "@key-reader/ui/dismiss";
 
 export type EntityKind = "person" | "venue" | "topic";
 export const ENTITY_ICON: Record<EntityKind, IconName> = { person: "user", venue: "book", topic: "tag" };
@@ -89,16 +90,10 @@ export function EntityPopover({ entity, anchor, onClose }: { entity: EntityRef; 
     const below = box.bottom + 6 + height < window.innerHeight;
     setPlace({ left: Math.max(8, Math.min(box.left, window.innerWidth - width - 8)), top: below ? box.bottom + 6 : Math.max(8, box.top - height - 6) });
   }, [anchor, data]);
-  useEffect(() => {
-    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && !anchor.contains(e.target as Node) && onClose();
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("mousedown", down);
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", down);
-      document.removeEventListener("keydown", key);
-    };
-  }, [anchor, onClose]);
+  // Outside presses, scrolling away (or the chip scrolling out of view) and Escape close it.
+  const anchorRef = useRef<Element | null>(anchor);
+  anchorRef.current = anchor;
+  useDismiss(true, { refs: [ref, anchorRef], anchor: anchorRef, onDismiss: onClose });
   const show = () => {
     const filter = entityFilter({ ...current, name: data?.title ?? current.name });
     if (libraryFilter) libraryFilter(filter);

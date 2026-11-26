@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld("key", {
         "command",
         "send-items",
         "browser-notice",
+        "dismiss-overlays",
       ].includes(event)
     )
       throw Error("Unknown event");

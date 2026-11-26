@@ -9,6 +9,7 @@ import type { PropertyDefinition } from "./PropertySheets";
 import { Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TypedProperties, type FieldSpec } from "./SourceInspector";
 import { COVER_COLORS, COVER_GRADIENTS, PAGE_ICONS, coverBackground, type PageAppearance } from "./page-appearance";
 import "./item-page.css";
+import { useDismiss } from "@key-reader/ui/dismiss";
 
 export type ItemKind = "note" | "source" | "record" | "person" | "venue" | "topic";
 
@@ -159,21 +160,10 @@ function PageDetails({ summary, children }: { summary?: ReactNode; children: Rea
   );
 }
 
-/** A popover that closes on an outside click or Escape. */
+/** A popover that closes on an outside press, scrolling away or Escape (ui/dismiss). */
 function Popover({ onClose, className, children }: { onClose: () => void; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && onClose();
-    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    // Opened by a click: listen from the next one on.
-    const timer = setTimeout(() => document.addEventListener("mousedown", down));
-    document.addEventListener("keydown", key);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", down);
-      document.removeEventListener("keydown", key);
-    };
-  }, [onClose]);
+  useDismiss(true, { refs: [ref], onDismiss: onClose });
   return (
     <div ref={ref} className={`kx-page-popover ${className ?? ""}`} role="dialog">
       {children}
