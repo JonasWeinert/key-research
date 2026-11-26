@@ -222,7 +222,8 @@ export function ItemEmbedView({ node, editor, selected, updateAttributes }: Reac
         update: (attrs) => {
           if (!editor.isEditable) return;
           const next: Record<string, unknown> = {};
-          if (attrs.kinds) next.kinds = attrs.kinds.join(",");
+          // No kinds: the legend shows all of them again.
+          if ("kinds" in attrs) next.kinds = attrs.kinds?.join(",") ?? "";
           if (attrs.cap) next.cap = String(attrs.cap);
           if (attrs.minCount) next.min = attrs.minCount > 1 ? String(attrs.minCount) : "";
           if (attrs.label && attrs.label !== node.attrs.label) next.label = attrs.label;
