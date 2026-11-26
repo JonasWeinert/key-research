@@ -363,12 +363,13 @@ export function TabBar({
 
   // document tabs are sibling WebContentsViews: they see neither this press
   // nor a focus change, so relay it for them to dismiss open popovers
+  // (once per window: the first strip listens for all of them)
   useEffect(() => {
+    if (!first) return;
     const notify = (): void => api.notifyChromePressed?.();
-    const strip = stripRef.current?.parentElement;
-    strip?.addEventListener("pointerdown", notify, true);
-    return () => strip?.removeEventListener("pointerdown", notify, true);
-  }, [api]);
+    document.addEventListener("pointerdown", notify, true);
+    return () => document.removeEventListener("pointerdown", notify, true);
+  }, [api, first]);
 
   // if the dragged tab is closed mid-drag (e.g. Cmd+W) its element unmounts
   // and pointerup/pointercancel never fire — clear the drag state ourselves
