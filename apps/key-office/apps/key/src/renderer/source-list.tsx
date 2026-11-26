@@ -2,7 +2,8 @@
 // related works; a topic's, person's, journal's or tag's sources): the title and byline, and
 // opened in place its abstract (read when first opened), its people, journal and tags as
 // entity links, and what can be done with it: Open, Open to the side, or Add to library for
-// works not in it yet (asking where, see add-from-source.tsx). ⌥-click opens it to the side,
+// works not in it yet (asking where, see add-from-source.tsx), and Add to Inbox to decide on
+// later (inbox-save.tsx). ⌥-click opens it to the side,
 // ⌘-click or a double-click in a tab.
 import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRetryingLookup } from "@key-reader/pdfjs/use-retrying-lookup";
@@ -14,6 +15,7 @@ import { itemAttrs } from "./item-ui";
 import { KIND_ICON, shortCreators, type Invoke, type Source, type WorkReference } from "./library-api";
 import { addFromSource, type AddOrigin } from "./add-from-source";
 import { useLibraryMatch } from "./library-match";
+import { AddToInboxButton, type InboxOrigin } from "./inbox-save";
 import "./entity.css";
 
 export type ListWork = Pick<WorkReference, "title" | "byline" | "year" | "container" | "doi" | "openalexId" | "matchedSourceId" | "text"> & {
@@ -34,8 +36,10 @@ export function SourceListItem({
   badge = !source,
   selected,
   onSelect,
+  picked,
   aside,
   actions,
+  inbox,
 }: {
   /** A work known by its metadata (a reference, a related work). */
   work?: ListWork;
@@ -50,11 +54,15 @@ export function SourceListItem({
   badge?: boolean;
   /** The row the keyboard is on, in lists that triage (the Inbox). */
   selected?: boolean;
-  onSelect?: () => void;
+  onSelect?: (e: MouseEvent<HTMLLIElement>) => void;
+  /** Picked for an action on several rows (the Inbox's selection). */
+  picked?: boolean;
   /** Marks beside the title (unread, saved, where it came from). */
   aside?: ReactNode;
   /** More actions after the row's own, when opened. */
   actions?: ReactNode;
+  /** Where Add to Inbox says the work was found (default: the origin source); false hides it. */
+  inbox?: InboxOrigin | false;
 }) {
   // A work the host did not match already (related works, cited-by): asked by its identifiers,
   // with its title only ever "possibly" the library's.
@@ -117,6 +125,7 @@ export function SourceListItem({
       data-in-library={inLibrary || !!added}
       data-open={open}
       data-selected={selected || undefined}
+      data-picked={picked || undefined}
       onMouseDown={onSelect}
       {...(id ? itemAttrs({ kind: "source", id, title }) : {})}
       draggable={!!id}
@@ -210,6 +219,23 @@ export function SourceListItem({
                   <button className="kx-page-action" disabled={adding} onClick={add}>
                     <Icon name="plus" size={12} /> {adding ? "Adding…" : possible ? "Add anyway" : "Add to library"}
                   </button>
+                  {inbox !== false && (
+                    <AddToInboxButton
+                      invoke={invoke}
+                      workspaceId={workspaceId}
+                      work={{
+                        title: work.title || work.text || null,
+                        authors: work.authors ?? (work.byline ? work.byline.split(/,\s*/).filter((a) => a && a !== "et al.") : null),
+                        year: work.year ?? null,
+                        venue: work.container ?? null,
+                        abstract: about?.abstract ?? work.abstract ?? null,
+                        doi: doi ?? null,
+                        ids: work.openalexId ? { openalex: work.openalexId } : null,
+                        landingUrl: work.url ?? null,
+                      }}
+                      origin={inbox || { kind: "source", sourceId: origin?.sourceId ?? null }}
+                    />
+                  )}
                 </>
               )
             )}

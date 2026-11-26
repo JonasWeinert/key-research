@@ -103,6 +103,7 @@ function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId:
         open,
         collections: async () => collectionsRef.current,
         addFrom: (work) => addFromSource((command, args, ws) => shellApi().invoke(command, args, ws ?? workspaceId), { workspaceId, sourceId: sourceIdRef.current ?? null }, work),
+        origin: async () => ({ sourceId: sourceIdRef.current ?? null, kind: "reader" }),
       }),
     [workspaceId, open, collectionsRef, sourceIdRef],
   );

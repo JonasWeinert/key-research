@@ -13,6 +13,7 @@
 // Tests and smokes point a feed at a local mock with KEY_FEEDS_ALLOW_LOOPBACK=1 (OpenAlex
 // with KEY_WEB_OPENALEX_URL); KEY_FEEDS_TICK_MS and KEY_FEEDS_START_DELAY_MS shorten waits.
 pub mod parse;
+pub mod suggest;
 
 use super::web_search::{
     WebSearch,
@@ -225,9 +226,15 @@ impl Inner {
         let outcome = self.check(subscription, &cancel);
         let result = match outcome {
             Ok((items, check)) => {
-                let added = self.store.add_feed_items(&subscription.id, &items);
+                let added = self.store.add_feed_items_ids(&subscription.id, &items);
                 self.store.record_feed_check(&subscription.id, &check)?;
-                added
+                // "Also add to a collection": new items after the first check, not its backlog.
+                if let (Ok(ids), Some(collection), Some(_)) = (&added, config_text(&subscription.config, "autoCollection"), subscription.checked_at) {
+                    if !ids.is_empty() && self.store.collections().is_ok_and(|all| all.iter().any(|c| c.id == collection)) {
+                        let _ = self.store.auto_add_feed_items(ids, &collection);
+                    }
+                }
+                added.map(|ids| ids.len())
             }
             Err(failure) => {
                 let check = Check { ok: false, error: Some(failure.message.clone()), retry_after_ms: failure.retry_after_ms, ..Default::default() };
@@ -255,6 +262,12 @@ impl Inner {
                 // 304: nothing new.
                 None => Ok((Vec::new(), check)),
             };
+        }
+        if subscription.kind == "pubmed" {
+            let query = config_text(&subscription.config, "query").ok_or("This PubMed search has no words".to_string())?;
+            let first = subscription.checked_at.is_none();
+            let (items, _) = self.pubmed(&query, if first { FIRST_PAGE } else { PAGE }, (!first).then_some(60), cancel)?;
+            return Ok((items, Check { ok: true, cursor: Some(civil(key_store::now_ms())), ..Default::default() }));
         }
         let items = self.openalex_items(subscription, cancel)?;
         Ok((items, Check { ok: true, cursor: Some(civil(key_store::now_ms())), ..Default::default() }))
@@ -391,21 +404,11 @@ impl Inner {
         if input.kind == "rss" {
             let config = input.config.get_or_insert_with(Map::new);
             let typed = config_text(config, "url").ok_or("Enter a feed or page address")?;
-            let mut url = address(&typed)?;
             let cancel = CancellationToken::active();
-            let response = self.get(&url, None, None, &cancel).map_err(|f| f.message)?;
-            let body = String::from_utf8_lossy(&response.body).into_owned();
-            let (feed, response) = match parse::feed(&body, Some(&url)) {
-                Some(feed) => (feed, response),
-                None => {
-                    let found = parse::discover(&body, &url);
-                    let (feed_url, _) = found.first().ok_or("No feed found at this address")?;
-                    config.insert("site".into(), json!(url.to_string()));
-                    url = address(feed_url)?;
-                    let (response, feed) = self.fetch_feed(&url, None, None, &cancel).map_err(|f| f.message)?;
-                    (feed.ok_or("No feed found at this address")?, response)
-                }
-            };
+            let (url, response, feed, site) = self.resolve_feed(&typed, &cancel)?;
+            if let Some(site) = site {
+                config.insert("site".into(), json!(site));
+            }
             config.insert("url".into(), json!(url.to_string()));
             if input.title.as_deref().is_none_or(|t| t.trim().is_empty()) {
                 input.title = feed.title.clone().or_else(|| url.host_str().map(String::from));
@@ -468,7 +471,35 @@ pub fn dispatch(feeds: &Feeds, command: &str, args: &Json) -> Option<Result<Outp
     let store = &inner.store;
     let query = || serde_json::from_value::<ItemQuery>(args.clone()).map_err(|e| e.to_string());
     let result = match command {
-        "feeds_subscriptions" => store.feed_subscriptions().and_then(json_output),
+        // Each with what a failure means (`problem`: a code the app explains with a fix).
+        "feeds_subscriptions" => store.feed_subscriptions().and_then(|list| {
+            let out: Vec<Json> = list
+                .into_iter()
+                .map(|s| {
+                    let problem = s.last_error.as_deref().filter(|_| s.failures > 0).map(suggest::problem);
+                    let mut v = serde_json::to_value(&s).unwrap_or(Json::Null);
+                    v["problem"] = json!(problem);
+                    v
+                })
+                .collect();
+            json_output(out)
+        }),
+        // What to follow for what was typed (journals, people, topics, arXiv, searches).
+        "feeds_suggest" => arg::<String>(args, "query").and_then(|q| json_output(inner.suggest(&q)?)),
+        "feeds_from_library" => inner.from_library().and_then(json_output),
+        "feeds_preview" => (|| {
+            let kind: String = arg(args, "kind")?;
+            let config: Map<String, Json> = arg::<Option<Map<String, Json>>>(args, "config")?.unwrap_or_default();
+            json_output(inner.preview(&kind, &config)?)
+        })(),
+        "feeds_arxiv_categories" => json_output(suggest::ARXIV.iter().map(|(code, name)| json!({ "code": code, "name": name, "url": suggest::arxiv_feed(code) })).collect::<Vec<_>>()),
+        // "Add to Inbox" for a work not in the library, wherever it is shown.
+        "inbox_save" => (|| {
+            let work: Json = arg(args, "work")?;
+            let origin: Option<Json> = arg(args, "origin")?;
+            json_output(store.save_to_inbox(&work, origin.as_ref().unwrap_or(&json!({})))?)
+        })(),
+        "inbox_state" => arg::<Vec<Json>>(args, "works").and_then(|works| json_output(store.inbox_states(&works)?)),
         "feeds_find" => (|| {
             let kind: String = arg(args, "kind")?;
             let config: Map<String, Json> = arg::<Option<Map<String, Json>>>(args, "config")?.unwrap_or_default();
@@ -608,6 +639,8 @@ mod tests {
                 "/rss.xml" if conditional => (304, vec![], String::new()),
                 "/rss.xml" => (200, vec![("ETag".into(), "\"v1\"".into())], include_str!("fixtures/journal-toc.rss").into()),
                 "/down.xml" => (503, vec![("Retry-After".into(), "120".into())], String::new()),
+                "/entrez/eutils/esearch.fcgi" => (200, vec![], include_str!("fixtures/pubmed-esearch.json").into()),
+                "/entrez/eutils/esummary.fcgi" => (200, vec![], include_str!("fixtures/pubmed-esummary.json").into()),
                 _ => (404, vec![], String::new()),
             };
             Ok(Response { status, headers, body: body.into_bytes() })
@@ -721,6 +754,104 @@ mod tests {
         assert!(feeds.inner.paused());
         call(&feeds, "feeds_environment", json!({ "online": true, "lowPower": false }));
         assert!(!feeds.inner.paused());
+    }
+
+    fn routed_openalex(url: &Url) -> (u16, String) {
+        let body = match url.path().rsplit('/').next().unwrap_or("") {
+            "sources" => include_str!("fixtures/openalex-sources.json").to_string(),
+            "authors" => include_str!("fixtures/openalex-authors.json").into(),
+            "topics" => include_str!("fixtures/openalex-topics.json").into(),
+            _ => fixture("openalex-search.json").to_string(),
+        };
+        (200, body)
+    }
+
+    #[test]
+    fn suggests_journals_people_and_topics_then_previews_before_following() {
+        let (_dir, feeds, _, urls) = feeds_with(routed_openalex);
+        let out = call(&feeds, "feeds_suggest", json!({ "query": "journal of ecology" }));
+        let journal = &out["journals"][0];
+        assert_eq!((journal["title"].as_str(), journal["config"]["openalexId"].as_str(), journal["publisher"].as_str()), (Some("Journal of Ecology"), Some("S11271929"), Some("Wiley")));
+        assert_eq!((journal["issn"].as_str(), journal["worksCount"].as_i64(), journal["following"].as_bool()), (Some("0022-0477"), Some(10970), Some(false)));
+        assert_eq!(out["people"][0]["affiliation"], "Canadian Institute for Advanced Research");
+        assert_eq!(out["people"][0]["orcid"], "0000-0002-9322-3515");
+        assert_eq!(out["people"][2]["affiliation"], Json::Null);
+        assert_eq!(out["topics"][0]["config"]["openalexId"], "T10341");
+        assert_eq!(out["searches"][0]["kind"], "openalex");
+        assert_eq!(out["searches"][1]["kind"], "pubmed");
+        let sources = urls.lock().unwrap().iter().find(|u| u.path().ends_with("/sources")).cloned().unwrap();
+        assert_eq!(Recorded::query(&sources)["search"], "journal of ecology");
+        assert!(Recorded::query(&sources).contains_key("mailto"), "the polite pool");
+        assert_eq!(call(&feeds, "feeds_suggest", json!({ "query": "journal.example.org/toc" }))["address"], true);
+        let arxiv = call(&feeds, "feeds_suggest", json!({ "query": "machine learning" }));
+        assert_eq!(arxiv["arxiv"][0]["config"]["url"], "https://rss.arxiv.org/rss/cs.LG");
+
+        // The journal's preview: its latest works, how often it publishes, and its own feed.
+        let mut config = journal["config"].as_object().cloned().unwrap();
+        config.insert("homepage".into(), json!("https://journal.example.org/toc"));
+        let preview = call(&feeds, "feeds_preview", json!({ "kind": "venue", "config": config }));
+        assert_eq!(preview["items"].as_array().unwrap().len(), 3);
+        assert_eq!((preview["perYear"].as_i64(), preview["alternative"]["url"].as_str()), (Some(3), Some("https://journal.example.org/rss.xml")));
+        let works = urls.lock().unwrap().iter().rev().find(|u| u.path().ends_with("/works")).cloned().unwrap();
+        assert!(Recorded::query(&works)["filter"].starts_with("primary_location.source.id:S11271929,from_publication_date:"));
+        // A page's feed, previewed before it is followed: nothing is stored.
+        let page = call(&feeds, "feeds_preview", json!({ "kind": "rss", "config": { "url": "journal.example.org/toc" } }));
+        assert_eq!((page["title"].as_str(), page["config"]["url"].as_str(), page["items"].as_array().map(Vec::len)), (Some("Nature Methods: latest research"), Some("https://journal.example.org/rss.xml"), Some(2)));
+        assert!(feeds.inner.store.feed_subscriptions().unwrap().is_empty());
+        // Followed: the suggestion says so.
+        call(&feeds, "feeds_subscribe", json!({ "kind": "venue", "title": "Journal of Ecology", "config": journal["config"] }));
+        assert_eq!(call(&feeds, "feeds_suggest", json!({ "query": "journal of ecology" }))["journals"][0]["following"], true);
+    }
+
+    #[test]
+    fn follows_a_pubmed_search() {
+        let (_dir, feeds, seen, _) = feeds_with(|_| (404, "{}".into()));
+        let out = call(&feeds, "feeds_subscribe", json!({ "kind": "pubmed", "title": "PubMed: coral bleaching", "config": { "query": "coral bleaching" } }));
+        assert_eq!((out["added"].as_u64(), out["error"].clone()), (Some(3), Json::Null));
+        let search = seen.lock().unwrap().iter().find(|(u, _)| u.contains("esearch")).cloned().unwrap().0;
+        assert!(search.contains("term=coral+bleaching") && search.contains("sort=pub_date") && search.contains("tool=Key"), "{search}");
+        let items = call(&feeds, "feeds_items", json!({}));
+        assert!(items["items"].as_array().unwrap().iter().all(|i| i["work"]["ids"]["pmid"].is_string()));
+        let preview = call(&feeds, "feeds_preview", json!({ "kind": "pubmed", "config": { "query": "coral bleaching" } }));
+        assert_eq!(preview["following"], true);
+        assert!(preview["perYear"].as_i64().unwrap() > 0);
+    }
+
+    #[test]
+    fn saves_a_web_result_to_the_inbox_and_says_where_it_stands() {
+        let (_dir, feeds, _, _) = feeds_with(|_| (404, "{}".into()));
+        let hit = json!({ "provider": "openalex", "providerId": "W9", "title": "Attention over long sequences", "authors": ["A B"], "year": 2025, "doi": "10.7/long", "ids": { "openalex": "W9" }, "key": "doi:10.7/long", "foundBy": ["openalex"], "rank": 0 });
+        assert_eq!(call(&feeds, "inbox_state", json!({ "works": [hit] }))[0]["state"], "none");
+        let out = call(&feeds, "inbox_save", json!({ "work": hit, "origin": { "kind": "web-search", "label": "long attention", "query": "long attention" } }));
+        assert_eq!((out["state"].as_str(), out["existed"].as_bool()), (Some("inbox"), Some(false)));
+        assert_eq!(call(&feeds, "inbox_state", json!({ "works": [hit] }))[0]["state"], "inbox");
+        let saved = call(&feeds, "feeds_items", json!({ "view": "saved" }));
+        assert_eq!(saved["items"][0]["origin"]["label"], "long attention");
+        assert_eq!(call(&feeds, "feeds_counts", json!({}))["unread"], 0);
+        assert_eq!(call(&feeds, "feeds_items", json!({ "savedByYou": true }))["total"], 1);
+    }
+
+    #[test]
+    fn explains_failures_and_adds_new_items_to_a_chosen_collection() {
+        let (_dir, feeds, _, _) = feeds_with(|_| (404, "{}".into()));
+        let store = feeds.inner.store.clone();
+        let down = store.save_feed_subscription(&SubscriptionInput { kind: "rss".into(), title: Some("Down".into()), config: json!({ "url": "https://x.example/down.xml" }).as_object().cloned(), ..Default::default() }).unwrap();
+        call(&feeds, "feeds_refresh", json!({ "id": down.id }));
+        assert_eq!(call(&feeds, "feeds_subscriptions", json!({}))[0]["problem"], "limited");
+        let collection = store.create_collection("From the journal", None, None).unwrap();
+        // The first check's backlog is not added.
+        call(&feeds, "feeds_subscribe", json!({ "kind": "rss", "config": { "url": "https://journal.example.org/rss.xml", "autoCollection": collection.id } }));
+        assert!(call(&feeds, "feeds_items", json!({}))["items"].as_array().unwrap().iter().all(|i| i["added"] == false));
+        // Later checks: what is new goes into the collection.
+        let (_dir2, later, _, _) = feeds_with(|_| (404, "{}".into()));
+        let store = later.inner.store.clone();
+        let collection = store.create_collection("From the journal", None, None).unwrap();
+        let config = json!({ "url": "https://journal.example.org/rss.xml", "autoCollection": collection.id });
+        let s = store.save_feed_subscription(&SubscriptionInput { kind: "rss".into(), title: Some("J".into()), config: config.as_object().cloned(), ..Default::default() }).unwrap();
+        store.record_feed_check(&s.id, &Check { ok: true, ..Default::default() }).unwrap();
+        assert_eq!(later.inner.refresh(&store.feed_subscription(&s.id).unwrap().unwrap()).unwrap(), 2);
+        let items = call(&later, "feeds_items", json!({}));
+        assert!(items["items"].as_array().unwrap().iter().all(|i| i["added"] == true && i["inLibrary"].is_string()), "{items}");
     }
 
     #[test]

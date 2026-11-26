@@ -598,6 +598,7 @@ mod tests {
             cursor: None,
             unread: 0,
             total: 0,
+            last_item_at: None,
         };
         let written = to_opml(&[subscription("rss", "Nature & co", json!({ "url": "https://www.nature.com/nature.rss?a=1&b=2" })), subscription("openalex", "Search \"x\"", json!({ "query": "graph neural", "filters": { "yearFrom": 2020 } }))]);
         let back = opml(&written);

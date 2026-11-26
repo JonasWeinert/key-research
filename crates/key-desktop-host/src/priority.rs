@@ -23,7 +23,7 @@ const INTERACTIVE: &[&str] = &[
     "resolve_search_target", "native_open_buffer", "native_render", "native_text", "native_search", "native_close", "native_hibernate",
     "workspace_save_entry", "workspace_save_record", "workspace_set_project_membership", "workspace_create_project", "workspace_save_attribute",
     "workspace_rename_attribute", "workspace_delete_attribute", "workspace_apply_property_proposal", "web_add_to_library", "web_library_match",
-    "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set",
+    "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set", "inbox_save", "inbox_state",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
@@ -43,7 +43,7 @@ const BACKGROUND: &[&str] = &[
 const SLOW_PREFIXES: &[&str] = &["store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_"];
 
 /// Exceptions to the prefixes: quick despite their family.
-const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_autoexport_targets"];
+const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_autoexport_targets"];
 
 pub fn is_slow(command: &str) -> bool {
     !QUICK.contains(&command) && SLOW_PREFIXES.iter().any(|p| command.starts_with(p))
@@ -105,6 +105,10 @@ mod tests {
         assert_eq!(resolve("store_sources", Some("background")), Class::Background);
         assert_eq!(resolve("store_sources", Some("nonsense")), Class::Interactive);
         assert!(is_slow("web_find_pdf") && !is_slow("feeds_mark_read") && !is_slow("store_source"));
+        // Saving a work to the Inbox is a click; finding what to follow asks the network.
+        assert_eq!(resolve("inbox_save", None), Class::Interactive);
+        assert!(is_slow("feeds_suggest") && is_slow("feeds_preview") && !is_slow("inbox_state"));
+        assert_eq!(resolve("feeds_refresh", None), Class::Background);
     }
 
     #[test]

@@ -77,3 +77,11 @@
     animation-duration: 2.4s;
   }
 }
+/* Add to Inbox: secondary to Add to library, quiet until it is used. */
+.key-work-inbox[data-state='inbox'],
+.key-work-inbox:disabled {
+  opacity: 0.8;
+}
+.key-work-add-row.key-work-inbox[data-state='none'] {
+  color: var(--key-ui-muted);
+}
