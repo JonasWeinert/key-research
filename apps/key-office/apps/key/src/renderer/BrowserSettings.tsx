@@ -28,8 +28,8 @@ export default function BrowserSettings() {
   };
   return (
     <>
-    <Group title="Browser" footer={error || undefined}>
-      <Row label="Browsing data" detail="Cookies, sign-ins, cached pages and downloaded PDFs.">
+    <Group title="Browser" intro="settings.web.browser" footer={error || undefined}>
+      <Row label="Browsing data" detail="Cookies, sign-ins, cached pages and downloaded PDFs. Clearing signs you out of every site in Key’s browser.">
         <button className="kx-settings-button" disabled={state === "clearing"} onClick={press}>
           {state === "confirm" ? "Clear everything" : state === "clearing" ? "Clearing…" : state === "done" ? "Cleared" : "Clear browsing data…"}
         </button>

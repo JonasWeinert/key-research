@@ -130,27 +130,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.kx-inbox-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 56px 24px;
-  color: var(--kx-text-3);
-  text-align: center;
-}
-.kx-inbox-empty h2 {
-  margin: 6px 0 0;
-  color: var(--kx-text);
-  font: 600 15px var(--kx-font);
-}
-.kx-inbox-empty p {
-  max-width: 420px;
-  margin: 0 0 10px;
-  color: var(--kx-text-2);
-  font-size: 13px;
-  line-height: 1.5;
-}
 .kx-inbox-more {
   color: var(--kx-text-3);
   font-size: 12px;
@@ -250,12 +229,6 @@
 .kx-feeds-remove:hover {
   background: var(--kx-fill);
   color: var(--kx-red);
-}
-.kx-feeds-none {
-  margin: 0;
-  padding: 10px 12px;
-  color: var(--kx-text-3);
-  font-size: 13px;
 }
 .kx-feeds-opml {
   display: flex;

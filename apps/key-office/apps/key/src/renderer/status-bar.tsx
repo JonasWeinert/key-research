@@ -1,6 +1,7 @@
 // The window's status bar (contract in shared/status-items.ts). Left: Zotero sync, background
 // work and the workspace, plus the latest error notice (main/app-notices.ts). Right: the
 // focused view's items, from native views over IPC or from DOM views via useStatusItems.
+import { openWorkspaceSettings } from "./settings-catalog";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDismiss } from "@key-reader/ui/dismiss";
@@ -9,6 +10,7 @@ import { Icon, isIconName, type IconName } from "./icons";
 import { ActivityPanel, activityLabel, isActive, olderSources, ProgressRing, referencesProgress, useLibraryStatus } from "./index-activity";
 import type { Invoke, LibraryStatus, ZoteroSyncStatus } from "./library-api";
 import { ago } from "./zotero-sheet-model";
+import { modelsWorkItem } from "./models-ui";
 import { useAutoExportStatus } from "./BiblioSheets";
 import { useMarkdownExportStatus } from "./markdown-export";
 import { inboxStatusItem, openInbox, useFeedCounts } from "./feeds-ui";
@@ -227,13 +229,13 @@ export function zoteroItem(sync: ZoteroSyncStatus | undefined, syncing: boolean,
   if (sync.paused) return { ...base, label: "Zotero paused", icon: "pause", tone: "off", title: title("Zotero sync is paused") };
   switch (sync.connection) {
     case "not-running":
-      return { ...base, label: "Zotero closed", tone: "idle", title: title("Zotero is not running. Key catches up when it runs.") };
+      return { ...base, label: "Zotero closed", tone: "idle", title: title("Zotero is not running. Key catches up on changes the next time Zotero is open.") };
     case "plugin-missing":
-      return { ...base, label: "Zotero needs Key Sync", tone: "warning", title: title("Install the Key Sync plugin in Zotero to keep syncing.", sync.message) };
+      return { ...base, label: "Zotero needs Key Sync", tone: "warning", title: title("Key Sync, the small plugin that tells Key what changes in Zotero, is missing. Click to install it.", sync.message) };
     case "unpaired":
-      return { ...base, label: "Zotero not connected", tone: "warning", title: title("Key Sync in Zotero needs to be connected to Key again.", sync.message) };
+      return { ...base, label: "Zotero not connected", tone: "warning", title: title("Key Sync in Zotero needs to be paired with Key again: copy the pairing code from Zotero › Settings › Key Sync.", sync.message) };
     case "error":
-      return { ...base, label: "Zotero sync failed", tone: "error", title: title("The last sync did not finish.", sync.message) };
+      return { ...base, label: "Zotero sync failed", tone: "error", title: title("The last sync did not finish. Key tries again on its own; nothing in Zotero was changed.", sync.message) };
     case "off":
       return { ...base, label: "Zotero sync off", tone: "off", title: title("Zotero sync is turned off") };
     default:
@@ -377,9 +379,9 @@ export function StatusBar({
               item.id === "zotero"
                 ? onOpenZotero()
                 : item.id === "autoexport"
-                  ? window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "export" }))
+                  ? openWorkspaceSettings("citations", workspaceId)
                 : item.id === "md-export"
-                  ? window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "markdown" }))
+                  ? openWorkspaceSettings("markdown", workspaceId)
                 : item.id === "inbox"
                   ? openInbox(workspaceId)
                 : item.id === "workspace"
@@ -432,13 +434,18 @@ export function StatusBar({
 function workItem(status: LibraryStatus | undefined): StatusItem | undefined {
   const activity = status?.activity;
   if (!status) return undefined;
+  // A model downloading (on first need, or the user asked) is the work going on.
+  const download = modelsWorkItem(status.models);
+  if (download && !(activity && isActive(activity))) return download;
   if (activity && (isActive(activity) || (activity.paused && olderSources(status.backfill) > 0))) {
     const { label, fraction } = activityLabel(activity);
     return {
       id: "work",
       label,
       ...(activity.paused ? { icon: "pause" } : fraction === undefined ? { busy: true } : { progress: fraction }),
-      title: activity.paused ? "Indexing is paused" : (activity.reading?.title ?? activity.embedding?.title ?? "Indexing sources"),
+      title: activity.paused
+        ? "Indexing is paused. Search works on what is already indexed. Resume in Settings › Search & indexing."
+        : `Reading ${activity.reading?.title ?? activity.embedding?.title ?? "your sources"} so search can find it. This runs on this Mac.`,
       priority: 90,
     };
   }
@@ -449,7 +456,7 @@ function workItem(status: LibraryStatus | undefined): StatusItem | undefined {
       id: "work",
       label: references.label,
       ...(references.fraction === undefined ? { busy: true } : { progress: references.fraction }),
-      title: status.references?.title ? `References of ${status.references.title}` : "Analysing references",
+      title: `Finding the reference list${status.references?.title ? ` of ${status.references.title}` : ""} and linking each entry to the work it names`,
       priority: 90,
     };
   if (status.enrichment)
@@ -457,7 +464,7 @@ function workItem(status: LibraryStatus | undefined): StatusItem | undefined {
       id: "work",
       label: `Looking up ${status.enrichment.toLocaleString()}`,
       icon: "globe",
-      title: `${status.enrichment.toLocaleString()} sources waiting for an OpenAlex lookup`,
+      title: `${status.enrichment.toLocaleString()} sources waiting to have their details filled in from OpenAlex, a free catalogue of scholarly works. Only identifiers and titles are sent.`,
       priority: 90,
     };
   return undefined;

@@ -3,6 +3,12 @@
 // own ("Via …" with Undo and Don't proxy this site), a site visited through it joins it, Add to
 // library and a PDF download work through it and keep the journal's own address, and proxies
 // import from a fixture zotero.sqlite and fixture Zotero Connector storage (Chrome, Firefox).
+// Need-based use: off campus a journal first loads directly, asks for a sign-in and reopens
+// through the proxy (the network is then known to need it); on a "campus" network (the fake
+// publisher lets everyone in, the fake EZproxy bounces straight to the site) nothing is
+// redirected and the bar says the page loaded directly; switching networks relearns, and Find
+// PDF's publisher page goes direct on campus and through the proxy off it. Networks are the
+// app's simulated ones (KEY_SIMULATED_NETWORK, keyBrowser.network()).
 // Every *.test host resolves to the local server (Chromium's host resolver rules).
 const { _electron: electron } = require("playwright-core");
 const { execFileSync } = require("node:child_process");
@@ -40,6 +46,15 @@ async function serve() {
        <meta name="citation_journal_title" content="Journal of Proxies"><meta name="citation_pdf_url" content="http://${host}/pdf/1.pdf">`,
     );
   const log = [];
+  // On campus: the publisher lets everyone in, and EZproxy sends campus addresses straight on.
+  const state = { campus: false };
+  const journals = new Set(["journal.test", "other.test", "third.test"]);
+  const paywall = () =>
+    page(
+      "Paywall | Journal of Proxies",
+      `<h1>Sign in through your library</h1><p>Abstract only.</p><p><a href="/action/showLogin?uri=%2Farticle">Access through your institution</a> <button>Get access</button></p>`,
+      `<meta name="citation_title" content="Proxied smoke article"><meta name="citation_doi" content="10.5555/key-proxy-smoke">`,
+    );
   const server = http.createServer((req, res) => {
     const host = (req.headers.host ?? "").replace(/:\d+$/, "");
     const url = new URL(req.url, `http://${host}`);
@@ -53,6 +68,10 @@ async function serve() {
       res.setHeader("server", "EZproxy");
       const target = new URL(url.searchParams.get("qurl") ?? url.search.replace(/^\?url=/, ""));
       res.statusCode = 302;
+      if (state.campus) {
+        res.setHeader("location", target.toString());
+        return res.end();
+      }
       res.setHeader("location", `http://${target.hostname.replace(/-/g, "--").replace(/\./g, "-")}.proxy.test${target.pathname}${target.search}`);
       return res.end();
     }
@@ -63,19 +82,23 @@ async function serve() {
       const m = url.pathname.match(/^\/pdf\/(\d+)\.pdf$/);
       if (m) return send(pdf(m[1]), "application/pdf");
     }
-    // The journal itself: a paywall without the proxy.
-    if (host === "journal.test" || host === "other.test") {
+    // The journal itself: a paywall without the proxy, the full text on campus.
+    if (journals.has(host)) {
+      const m = url.pathname.match(/^\/pdf\/(\d+)\.pdf$/);
+      if (state.campus && m) return send(pdf(`direct-${m[1]}`), "application/pdf");
+      if (state.campus && url.pathname === "/article") return send(article(host));
       if (url.pathname.startsWith("/pdf/")) {
         res.statusCode = 403;
         return send(page("Forbidden"));
       }
-      return send(page("Paywall | Journal of Proxies", "<h1>Sign in through your library</h1>"));
+      if (url.pathname.startsWith("/action/showLogin")) return send(page("Sign in", `<form><input type="password"></form>`));
+      return send(paywall());
     }
     res.statusCode = 404;
     send(page("Not found"));
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  return { server, port: server.address().port, log };
+  return { server, port: server.address().port, log, state };
 }
 
 /** A LevelDB log with one record putting `key` = `value` (what Chrome's extension storage holds). */
@@ -133,7 +156,7 @@ async function fixturesIn(temp) {
   const shots = path.join(temp, "shots");
   await mkdir(shots);
   const { zotero, home } = await fixturesIn(temp);
-  const { server, port, log } = await serve();
+  const { server, port, log, state } = await serve();
   const report = {};
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
@@ -146,6 +169,7 @@ async function fixturesIn(temp) {
       KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
       KEY_ZOTERO_DATA_DIR: zotero,
       KEY_PROXY_IMPORT_HOME: home,
+      KEY_SIMULATED_NETWORK: "Home network",
     },
   });
   if (process.env.KEY_SMOKE_VERBOSE) app.process().stderr.on("data", (d) => process.stderr.write(`[main] ${d}`));
@@ -178,9 +202,30 @@ async function fixturesIn(temp) {
     assert((await activeView()).web.url === "http://journal.test/article", "the bar shows the proper URL");
     await shot("remembered");
 
-    // 2. The journal's own address now goes through the proxy on its own.
+    // 2. Off campus on a network not seen before: the journal loads directly, asks for a
+    // sign-in, and reopens through the proxy on its own; the network is remembered as needing it.
+    const proxyId = kept.id;
+    const learnedHere = async (access) => {
+      const data = await proxies();
+      const here = data.networks.find((n) => n.id === data.network?.id);
+      return here?.proxies[proxyId]?.access === access && here;
+    };
+    log.length = 0;
     await open("http://journal.test/article");
-    await until(async () => (await activeView())?.web?.proxy?.via?.redirected, "the transparent redirect");
+    const signin = await until(async () => {
+      const via = (await activeView())?.web?.proxy?.via;
+      return via?.redirected && via;
+    }, "the reload through the proxy after the sign-in page");
+    assert(signin.why === "signin", `opened through the proxy because of the sign-in (${signin.why})`);
+    assert(log.includes("journal.test/article"), "the journal was tried directly first");
+    await shell.locator(".key-web-proxy", { hasText: "the site asked you to sign in" }).waitFor();
+    await shot("signin-light");
+    report.offCampus = await until(() => learnedHere("proxy"), "this network learned as needing the proxy");
+    // Known now: the next visit goes through the proxy up front.
+    log.length = 0;
+    await open("http://journal.test/article");
+    await until(async () => (await activeView())?.web?.proxy?.via?.why === "network", "the up-front redirect on a known network");
+    assert(!log.includes("journal.test/article"), "no direct try on a network known to need the proxy");
     const viaPage = await until(async () => app.windows().find((p) => p.url() === "http://journal-test.proxy.test/article" && p !== undefined), "the proxied page");
     await shell.locator(".key-web-proxy", { hasText: "Undo" }).waitFor();
     await shot("via-light");
@@ -217,6 +262,14 @@ async function fixturesIn(temp) {
     await until(async () => (await activeView())?.title?.startsWith("Paywall"), "the unproxied page after Undo");
     await wait(500);
     assert(!(await activeView()).web.proxy?.via, "after Undo the page is not proxied");
+    // Undo is kept for this site on this network; Settings can forget it.
+    const undone = await until(async () => {
+      const data = await proxies();
+      return data.networks.find((n) => n.id === data.network?.id)?.hosts["journal.test"];
+    }, "the Undo remembered");
+    assert(undone.access === "direct" && undone.how === "user", "Undo kept as a choice for the site here");
+    const here = (await proxies()).network.id;
+    await shell.evaluate((p) => window.key.proxies("network", p), { op: "choose-site", id: here, host: "journal.test" });
 
     // 6. Don't proxy this site: the journal leaves the proxy for good.
     await open("http://journal.test/article");
@@ -234,6 +287,70 @@ async function fixturesIn(temp) {
     await until(async () => (await proxies()).proxies[0].hosts.includes("other.test"), "the visited site associated");
     report.hostsAfterVisit = (await proxies()).proxies[0].hosts;
 
+    // 9. On campus: the publisher lets this network in. A site of the proxy loads directly
+    // (the probe sees EZproxy bounce straight to the site, the page shows the full text), and
+    // the network is learned as direct: nothing is redirected there.
+    await shell.evaluate((p) => window.key.proxies("save", p), { ...(await proxies()).proxies[0], hosts: ["other.test", "third.test"] });
+    state.campus = true;
+    await app.evaluate(() => globalThis.keyBrowser.network("uni.ac.uk"));
+    log.length = 0;
+    await open("http://other.test/article");
+    await until(async () => (await activeView())?.web?.proxy?.direct, "the direct notice on campus");
+    assert(!(await activeView()).web.proxy.via && (await activeView()).web.url === "http://other.test/article", "on campus the site is not proxied");
+    report.campus = await until(() => learnedHere("direct"), "the campus network learned as direct");
+    log.length = 0;
+    await open("http://third.test/article");
+    await until(async () => (await activeView())?.web?.proxy?.direct?.why === "network", "a direct load on the known campus network");
+    await shell.locator(".key-web-proxy[data-direct]", { hasText: "you seem to be on your library’s network" }).waitFor();
+    assert(!log.some((l) => l.includes("proxy.test")), "nothing went through the proxy on campus");
+    await shot("direct-light");
+    await shell.emulateMedia({ colorScheme: "dark" });
+    await shell.evaluate(() => window.key.setAppSettings({ theme: "dark" }));
+    await wait(400);
+    await shot("direct-dark");
+    await shell.evaluate(() => window.key.setAppSettings({ theme: "system" }));
+    await shell.emulateMedia({ colorScheme: "light" });
+    // Find PDF's publisher page goes direct on campus.
+    const findSource = await shell.evaluate((id) => window.key.invoke("store_create", { source: { kind: "reference", itemType: "article", indexStatus: "skipped", title: "Find PDF through the network", url: "http://third.test/article" } }, id), workspace.id);
+    const browseFor = async () => {
+      const found = await shell.evaluate(({ id, ws }) => window.key.invoke("web_find_pdf", { id }, ws), { id: findSource.id, ws: workspace.id });
+      assert(found.status === "browser" && found.url === "http://third.test/article", `Find PDF hands the publisher's page to the browser (${JSON.stringify(found)})`);
+      await shell.evaluate(({ url, ws, id }) => window.key.tabAction("open-url", { url, pdfFor: { workspaceId: ws, sourceId: id, title: "Find PDF through the network" } }), { url: found.url, ws: workspace.id, id: findSource.id });
+    };
+    log.length = 0;
+    await browseFor();
+    await until(async () => (await activeView())?.title?.startsWith("Proxied smoke article"), "Find PDF's page loaded directly on campus");
+    assert(!(await activeView()).web.proxy?.via && !log.some((l) => l.includes("proxy.test")), "Find PDF went direct on campus");
+    report.findPdfCampus = "direct";
+
+    // 10. Back home: the network is known to need the proxy, so pages (and Find PDF's) go
+    // through it up front.
+    state.campus = false;
+    await app.evaluate(() => globalThis.keyBrowser.network("Home network"));
+    log.length = 0;
+    await browseFor();
+    await until(async () => (await activeView())?.web?.proxy?.via?.why === "network", "Find PDF's page through the proxy at home");
+    assert(log.includes("third-test.proxy.test/article") && !log.includes("third.test/article"), "Find PDF went through the proxy off campus");
+    report.findPdfHome = "proxy";
+
+    // 11. A new network (a café): nothing known, so it tries directly and relearns.
+    await app.evaluate(() => globalThis.keyBrowser.network("Cafe"));
+    log.length = 0;
+    await open("http://other.test/article");
+    await until(async () => (await activeView())?.web?.proxy?.via?.why === "signin", "the café relearns: sign-in, then the proxy");
+    assert(log.includes("other.test/article"), "tried directly on the new network");
+    await until(() => learnedHere("proxy"), "the café learned as needing the proxy");
+    // Back on campus: remembered as direct straight away.
+    state.campus = true;
+    await app.evaluate(() => globalThis.keyBrowser.network("uni.ac.uk"));
+    log.length = 0;
+    await open("http://other.test/article");
+    await until(async () => (await activeView())?.web?.proxy?.direct?.why === "network", "campus remembered as direct");
+    assert(!log.some((l) => l.includes("proxy.test")), "no proxy on the remembered campus");
+    report.networks = (await proxies()).networks.map((n) => ({ label: n.label, proxies: n.proxies, hosts: Object.keys(n.hosts) }));
+    state.campus = false;
+    await app.evaluate(() => globalThis.keyBrowser.network("Home network"));
+
     // 8. Settings › Library access: import from Zotero and its Connectors, and the edit sheet.
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.webContents.send("open-settings")));
     const settings = shell.locator(".kx-settings");
@@ -249,6 +366,16 @@ async function fixturesIn(temp) {
     await settings.getByRole("heading", { name: "Library proxies" }).scrollIntoViewIfNeeded();
     await wait(300);
     await shot("settings-light");
+    await settings.getByText("uni.ac.uk", { exact: true }).waitFor();
+    await settings.getByRole("heading", { name: "Networks" }).scrollIntoViewIfNeeded();
+    await wait(200);
+    await shot("networks-light");
+    // Always proxy here, from the networks list.
+    const campusRow = settings.locator(".kx-proxy-network", { hasText: "uni.ac.uk" });
+    await campusRow.getByRole("combobox").selectOption("proxy");
+    await until(async () => (await proxies()).networks.find((n) => n.label === "uni.ac.uk")?.proxies[proxyId]?.how === "user", "Always proxy here chosen");
+    await campusRow.getByRole("button", { name: "Forget" }).click();
+    await until(async () => !(await proxies()).networks.some((n) => n.label === "uni.ac.uk"), "the campus network forgotten");
     await settings.locator(".kx-proxy-row").first().getByRole("button", { name: "Edit…" }).click();
     await shell.locator(".kx-proxy-sheet").waitFor();
     await wait(300);

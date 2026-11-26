@@ -4,7 +4,7 @@
   "private": true,
   "productName": "Key",
   "description": "Key research workspace",
-  "license": "MIT AND Apache-2.0",
+  "license": "MIT",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -92,14 +92,6 @@
         "to": "backend/libpdfium.dylib"
       },
       {
-        "from": "../../../../crates/opendataloader-pdf-rs/models/model_fp16.onnx",
-        "to": "models/layout/model_fp16.onnx"
-      },
-      {
-        "from": "../../../../crates/key-semantic-search/resources/snowflake-arctic-embed-xs-q",
-        "to": "models/snowflake-arctic-embed-xs-q"
-      },
-      {
         "from": "../docs/out",
         "to": "modules/docs"
       },
@@ -122,6 +114,11 @@
       {
         "from": "../../../../integrations/zotero-key-sync/dist/key-sync.xpi",
         "to": "zotero/key-sync.xpi"
+      },
+      {
+        "from": "../../../../data/citation",
+        "to": "citation",
+        "filter": ["styles/*.csl", "locales/*.xml", "index.json", "NOTICE"]
       },
       {
         "from": "../sheets/native/xlsx-engine/target/release/xlsx-sidecar",
@@ -166,14 +163,6 @@
       {
         "from": "../../node_modules/electron/dist/LICENSES.chromium.html",
         "to": "LICENSES.chromium.html"
-      },
-      {
-        "from": "../../node_modules/@genspark/cli",
-        "to": "gsk/node_modules/@genspark/cli"
-      },
-      {
-        "from": "../../node_modules/ws",
-        "to": "gsk/node_modules/ws"
       }
     ],
     "mac": {

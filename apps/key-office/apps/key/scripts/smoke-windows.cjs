@@ -61,7 +61,7 @@ const assert = require("node:assert/strict");
     await page.evaluate((tabId) => window.key.tabAction("pop-out", { tabId }), pdfTab);
     const second = await opened;
     second.setDefaultTimeout(20000);
-    await second.waitForFunction(() => document.querySelector(".tab-bar"));
+    await second.waitForFunction(() => document.querySelector(".kx-tabs"));
     await page.waitForFunction(async () => (await window.key.tabs()).windowCount === 2);
     const views = await hosted();
     assert.equal(views.length, 2);

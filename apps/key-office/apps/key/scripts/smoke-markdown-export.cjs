@@ -135,7 +135,7 @@ const assert = require("node:assert/strict");
     const resolved = await readFile(moved, "utf8");
     assert.match(resolved, /A fourth passage\./);
     assert.ok(resolved.includes("Compare with Piketty.") && resolved.includes("Keep this paragraph."));
-    await page.getByRole("button", { name: "Close settings" }).click();
+    await page.getByRole("button", { name: "Close Workspace Settings" }).click();
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:md-export-changed")));
     await page.locator(".kx-status-bar [data-status-item=md-export]", { hasText: /Markdown/ }).waitFor();
 

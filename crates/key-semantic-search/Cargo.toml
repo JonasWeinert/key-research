@@ -13,6 +13,7 @@ key-processing = { path = "../key-processing" }
 tempfile.workspace = true
 tantivy = "=0.26.1"
 key-library = { path = "../key-library" }
+key-models = { path = "../key-models" }
 anyhow = "1"
 asupersync = { version = "0.3.10", default-features = false, features = ["proc-macros"] }
 fastembed = { version = "5.17.2", default-features = false, features = ["ort-download-binaries-rustls-tls"] }

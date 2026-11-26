@@ -16,6 +16,7 @@ import { readAppearance } from "./page-appearance";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 
 import { notesChanged, noteSaved } from "./note-events";
+import { FirstUseTip } from "./explain";
 export { notesChanged, noteSaved };
 
 type MetaPatch = { fields?: Record<string, unknown>; properties?: Record<string, unknown>; appearance?: AppearancePatch };
@@ -221,6 +222,7 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
           }
         >
           {error && <p className="kx-inline-error">{error}</p>}
+          <FirstUseTip help="tip.note-cite" anchor=".kx-note-page-inner .ProseMirror" side="above" delay={1500} />
           <NoteEditor
             value={note.body}
             onChange={(body) => void save({ body })}

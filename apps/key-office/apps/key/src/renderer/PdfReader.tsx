@@ -22,6 +22,7 @@ import { readerLibraryWorks } from "./reader-library-works";
 import { ReferenceAside } from "./ReferenceAside";
 import { highlightUsage } from "./highlight-usage";
 import type { HighlightUsage } from "@key-reader/pdfjs/HighlightInfo";
+import { FirstUseTip } from "./explain";
 
 
 type Target = {
@@ -245,7 +246,7 @@ export default function PdfReader() {
         call<{ items: { collections?: string[] }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then(
           (found) => found.items[0]?.collections ?? [],
         ),
-      // Asks which collections, beside this PDF's by default (Settings › Libraries).
+      // Asks which collections, beside this PDF's by default (Workspace Settings › General).
       addFrom:
         workspaceId && bridge().addFromSource
           ? async (work) => bridge().addFromSource!({ origin: { workspaceId, sourceId: await sourceId().catch(() => null) }, work: { ...work } })
@@ -382,8 +383,9 @@ export default function PdfReader() {
   if (error)
     return (
       <main className="key-ui-root key-pdf-error">
-        <h2>Unable to open PDF</h2>
+        <h2>Key could not open this PDF</h2>
         <p>{error}</p>
+        <p>The file may be damaged, protected by a password, or no longer where Key expects it. Retry, or open the source’s page to find or attach the file again.</p>
         <button type="button" className="key-pdf-details" onClick={() => location.reload()}>
           Retry
         </button>
@@ -397,6 +399,7 @@ export default function PdfReader() {
     );
   return (
     <main className="key-ui-root key-pdf-reader">
+      <FirstUseTip help="tip.cite" anchor='.pdfjs-selection-action[aria-label="Cite"]' side="above" delay={600} />
       <section className="key-pdf-surface" ref={surface}>
         {/* One floating stack over the top of the page: the controls, Find, a search result. */}
         <div ref={chromeRef} className="key-pdf-chrome" data-hidden={chromeHidden || undefined}>

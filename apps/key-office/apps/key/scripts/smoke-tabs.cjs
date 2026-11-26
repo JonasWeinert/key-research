@@ -84,14 +84,14 @@ const assert = require("node:assert/strict");
     // Drag the reader's tab to the front of its strip.
     const source = page.locator(`[data-tab-id="${readerTab.id}"]`);
     const box = await source.boundingBox();
-    const first = await page.locator(`[data-group-strip="${leftGroup.id}"] .tab-item`).first().boundingBox();
+    const first = await page.locator(`[data-group-strip="${leftGroup.id}"] .kx-tab`).first().boundingBox();
     await page.mouse.move(box.x + box.width / 2, box.y + 12);
     await page.mouse.down();
     await page.mouse.move(first.x + 8, box.y + 12, { steps: 18 });
-    assert.equal(await page.locator(".drag-source").count(), 1);
+    assert.equal(await page.locator(".kx-tab[data-dragging]").count(), 1);
     assert(
       await page
-        .locator(`[data-group-strip="${leftGroup.id}"] .tab-item:not(.drag-source)`)
+        .locator(`[data-group-strip="${leftGroup.id}"] .kx-tab:not([data-dragging])`)
         .evaluateAll((nodes) => nodes.some((n) => n.style.transform.includes("translateX"))),
       "neighbours slide aside",
     );
@@ -104,7 +104,7 @@ const assert = require("node:assert/strict");
           () => {
             const frames = [];
             const sample = () => {
-              frames.push(Object.fromEntries([...document.querySelectorAll(".tab-item")].map((n) => [n.dataset.tabId, n.getBoundingClientRect().left])));
+              frames.push(Object.fromEntries([...document.querySelectorAll(".kx-tab")].map((n) => [n.dataset.tabId, n.getBoundingClientRect().left])));
               if (frames.length === 30) resolve(frames);
               else requestAnimationFrame(sample);
             };
@@ -166,7 +166,7 @@ const assert = require("node:assert/strict");
     await page.waitForFunction(() => document.querySelector(".key-sidebar-slot").getBoundingClientRect().width === 0);
     nativeBounds.push(await verifyNativeBounds("collapsed sidebar"));
     // Collapsed: the toggle moves into the first group's strip, beside the traffic lights.
-    const collapsedToggle = await page.locator(".tab-bar[data-first] .key-sidebar-toggle").boundingBox();
+    const collapsedToggle = await page.locator(".kx-tabs[data-first] .key-sidebar-toggle").boundingBox();
     assert(collapsedToggle.x >= 78 && collapsedToggle.x < 120 && collapsedToggle.y < 10, "Collapsed sidebar toggle belongs beside traffic lights");
     assert.equal(await page.locator(".key-sidebar-rail").count(), 0);
     await page.screenshot({ path: path.join(temp, "collapsed-sidebar.png") });

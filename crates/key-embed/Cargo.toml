@@ -6,6 +6,7 @@ license.workspace = true
 description = "EmbeddingGemma 2 embeddings through a shared llama.cpp server (Metal, CUDA, Vulkan or CPU)"
 
 [dependencies]
+key-models = { path = "../key-models" }
 reqwest = { workspace = true, features = ["rustls-tls-native-roots"] }
 serde.workspace = true
 serde_json.workspace = true

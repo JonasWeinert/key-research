@@ -2144,6 +2144,19 @@
 .kx-source-page-bar:has(.kx-docked-actions) {
   flex-wrap: nowrap;
 }
+/* In the library's details panel the bar stays one row: the kind gives way, and the close
+   button never drops to a second line. */
+.kx-inspector-page .kx-source-page-bar {
+  flex-wrap: nowrap;
+}
+.kx-inspector-page .kx-source-page-bar > .kx-kind-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.kx-inspector-page .kx-source-page-bar > :not(.kx-kind-badge) {
+  flex: none;
+}
 .kx-docked-actions {
   display: inline-flex;
   flex: none;

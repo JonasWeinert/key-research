@@ -99,12 +99,12 @@ const assert = require("node:assert/strict");
     assert.equal(result.last.files, 3);
     assert.ok(existsSync(path.join(mirror, "Theory", "Smith - 2021 - Growth and inequality.pdf")));
     assert.ok(existsSync(path.join(mirror, "Unfiled", "Lee - 2018 - A stored paper.pdf")));
-    await page.getByRole("button", { name: "Close settings" }).click();
+    await page.getByRole("button", { name: "Close Workspace Settings" }).click();
     await page.locator(".kx-settings").waitFor({ state: "detached" });
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: "files" })));
     await page.getByText(/3 files \(3 linked/).waitFor();
     await both(page, "settings-files-mirror");
-    await page.getByRole("button", { name: "Close settings" }).click();
+    await page.getByRole("button", { name: "Close Workspace Settings" }).click();
 
     // ── A managed file dragged out gets its readable name ──
     const [readable] = await call("store_file_readable_paths", { ids: [created[2].id] });

@@ -4,12 +4,12 @@ import { ModelProgressPill, useModelProgress } from "./model-progress";
 import { lazyComponent } from "./lazy";
 import { notesChanged } from "./note-events";
 import { markdownToPlainText } from "./note-editor";
-import type { SettingsSection } from "./Settings";
+import { settingsTarget, type SettingsSection, type SettingsTarget, type WorkspaceSettingsSection } from "./settings-catalog";
 import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api";
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
 import { AddFromSourceHost } from "./add-from-source";
 import type { SearchPreviewState } from "./search-preview";
-import { TabBar, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./TabBar";
+import { GroupTabStrip, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./tab-strip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LibrarySource, type LibraryHit } from "./LibraryHome";
 import "./shell.css";
@@ -41,6 +41,7 @@ import { InboxRow } from "./inbox-row";
 import { zoteroWorkspaceOf } from "./zotero-workspace";
 // Loaded on first use: most sessions never open these.
 const Settings = lazyComponent(() => import("./Settings").then((m) => m.default));
+const WorkspaceSettings = lazyComponent(() => import("./WorkspaceSettings").then((m) => m.default));
 const Onboarding = lazyComponent(() => import("./Onboarding").then((m) => m.default));
 const ZoteroImportSheet = lazyComponent(() => import("./ZoteroImport").then((m) => m.ZoteroImportSheet));
 interface Workspace {
@@ -161,7 +162,7 @@ function paneItem(content?: ContentSpec, title?: string): DraggedItem | undefine
 const contentIdentity = (content?: ContentSpec) =>
   content ? [content.section, content.noteId ?? content.canvasId ?? content.sourceId ?? content.entityId ?? content.record?.id ?? content.workspaceId ?? ""].join(":") : "";
 
-/** Each group's strip, as its TabBar shows it. */
+/** Each group's strip, as its GroupTabStrip shows it. */
 const groupSummaries = (state: TabState) =>
   new Map(
     state.groups.map((group) => [
@@ -298,7 +299,20 @@ export default function App() {
     void task(() => api().tabAction(name, payload));
   // App preferences, Settings and the first-run welcome.
   const [prefs, setPrefs] = useState<{ settings: AppSettings; info: AppInfo }>();
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>();
+  // Key Settings (⌘,) and Workspace Settings (⌥⌘,): one of them at a time.
+  const [settingsSection, setSettingsSectionState] = useState<SettingsSection>();
+  const [workspaceSettings, setWorkspaceSettings] = useState<{ section: WorkspaceSettingsSection; workspaceId?: string }>();
+  const setSettingsSection = (section: SettingsSection | undefined) => {
+    setWorkspaceSettings(undefined);
+    setSettingsSectionState(section);
+  };
+  const openSettingsTarget = (target: SettingsTarget) => {
+    if (target.window === "app") return setSettingsSection(target.section);
+    setSettingsSectionState(undefined);
+    setWorkspaceSettings({ section: target.section, workspaceId: target.workspaceId });
+    // Its picker lists every workspace, including one just added elsewhere (a Zotero import).
+    refreshWorkspaces();
+  };
   const [welcome, setWelcome] = useState(false);
   useEffect(() => {
     void bridge()
@@ -308,13 +322,30 @@ export default function App() {
         if (!loaded.settings.onboarded) setWelcome(true);
       })
       .catch((e) => setError(String(e)));
-    return api().on("open-settings", () => setSettingsSection("general"));
+    const offApp = api().on("open-settings", () => setSettingsSection("general"));
+    const offWorkspace = api().on("open-workspace-settings", () => openSettingsTarget({ window: "workspace", section: "workspace" }));
+    return () => {
+      offApp?.();
+      offWorkspace?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // A section of Settings, opened from elsewhere in the window (the status bar …).
+  // A section of either window, opened from elsewhere (the status bar, a sheet's link, the
+  // other window's search): a section id (old ids too) or { window, section, workspaceId }.
   useEffect(() => {
-    const open = (e: Event) => setSettingsSection(((e as CustomEvent<SettingsSection>).detail ?? "general") as SettingsSection);
+    const open = (e: Event) => openSettingsTarget(settingsTarget((e as CustomEvent).detail));
     window.addEventListener("key:open-settings-section", open);
     return () => window.removeEventListener("key:open-settings-section", open);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // An explainer's link opened the in-app browser: either settings window steps aside.
+  useEffect(() => {
+    const close = () => {
+      setSettingsSectionState(undefined);
+      setWorkspaceSettings(undefined);
+    };
+    window.addEventListener("key:help-navigated", close);
+    return () => window.removeEventListener("key:help-navigated", close);
   }, []);
   const updatePrefs = (patch: Partial<AppSettings>) =>
     void bridge()
@@ -326,6 +357,8 @@ export default function App() {
       })
       .catch((e) => setError(String(e)));
   const refreshWorkspaces = () => void api().workspaces().then(setWorkspaces).catch(() => {});
+  // Names, icons and colours changed elsewhere (the workspaces window, another window).
+  useEffect(() => api().on("workspaces-changed", refreshWorkspaces), []);
   useEffect(() => {
     void task(async () => {
       setWorkspaces(await api().workspaces());
@@ -603,7 +636,7 @@ export default function App() {
       });
       const groupId = strip?.dataset.groupStrip;
       if (!strip || !groupId || groupId === drag.groupId) return undefined;
-      const rects = Array.from(strip.querySelectorAll<HTMLElement>(".tab-item"), (el) => el.getBoundingClientRect());
+      const rects = Array.from(strip.querySelectorAll<HTMLElement>(".kx-tab"), (el) => el.getBoundingClientRect());
       const found = rects.findIndex((r) => x < r.left + r.width / 2);
       const index = found < 0 ? rects.length : found;
       const marker = index < rects.length ? rects[index].left - 1 : (rects.at(-1)?.right ?? strip.getBoundingClientRect().left + 8) + 1;
@@ -769,14 +802,33 @@ export default function App() {
           { id: "sidebar", label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: "sidebar", run: () => setSidebarCollapsed((v) => !v) },
           { id: "split", label: "Split right", icon: "split", shortcut: "⌘\\", run: () => action("split-right") },
           { id: "capture", label: "Quick capture", icon: "plus", shortcut: "⌃⌥Space", run: () => action("quick-capture") },
-          { id: "settings", label: "Settings", icon: "gear", shortcut: "⌘,", run: () => setSettingsSection("general") },
+          { id: "settings", label: "Key Settings", icon: "gear", shortcut: "⌘,", run: () => setSettingsSection("general") },
+          { id: "workspace-settings", label: "Workspace settings…", icon: "folder", shortcut: "⌥⌘,", run: () => openSettingsTarget({ window: "workspace", section: "workspace" }) },
           { id: "shortcuts", label: "Keyboard shortcuts", icon: "info", shortcut: "⌘/", run: () => window.dispatchEvent(new CustomEvent("key:shortcuts")) },
         ]}
       />
+      {prefs && workspaceSettings && !welcome && workspaces.length > 0 && (
+        <WorkspaceSettings
+          section={workspaceSettings.section}
+          onSection={(section) => setWorkspaceSettings((s) => s && { ...s, section })}
+          workspaceId={workspaceSettings.workspaceId ?? workspaceId ?? workspaces[0].id}
+          onWorkspace={(id) => setWorkspaceSettings((s) => s && { ...s, workspaceId: id })}
+          invoke={invoke}
+          workspaces={workspaces}
+          settings={prefs.settings}
+          info={prefs.info}
+          onSettings={updatePrefs}
+          onClose={() => setWorkspaceSettings(undefined)}
+          onWorkspacesChanged={refreshWorkspaces}
+          onRemoved={(shown) => setWorkspaceSettings((s) => s && { ...s, workspaceId: shown, section: "workspace" })}
+        />
+      )}
       {prefs && settingsSection && !welcome && (
         <Settings
           section={settingsSection}
+          onSection={setSettingsSectionState}
           invoke={invoke}
+          workspaceId={workspaceId}
           workspaces={workspaces}
           settings={prefs.settings}
           info={prefs.info}
@@ -801,6 +853,8 @@ export default function App() {
           info={prefs.info}
           theme={prefs.settings.theme}
           onTheme={(theme) => updatePrefs({ theme })}
+          autoDownload={prefs.settings.modelsAutoDownload !== false}
+          onAutoDownload={(modelsAutoDownload) => updatePrefs({ modelsAutoDownload })}
           onFinish={(id) => {
             setWelcome(false);
             updatePrefs({ onboarded: true });
@@ -834,7 +888,7 @@ export default function App() {
               openElsewhere={(tabs.windows ?? []).filter((w) => w.windowId !== tabs.windowId).map((w) => w.workspaceId)}
               openRequest={switcherRequest}
               onHome={() => action("open-home")}
-              onSettings={() => setSettingsSection("libraries")}
+              onSettings={() => openSettingsTarget({ window: "workspace", section: "workspace" })}
               onSelect={(id, newWindow) =>
                 // Choosing the workspace this window already shows goes Home.
                 id === tabs.workspaceId && !newWindow ? action("open-home") : void switchWorkspace(id, newWindow)
@@ -1017,7 +1071,7 @@ export default function App() {
           const rect = groupRect(group.id);
           if (!rect) return null;
           return (
-            <TabBar
+            <GroupTabStrip
               key={group.id}
               api={groupApi(group.id)}
               groupId={group.id}

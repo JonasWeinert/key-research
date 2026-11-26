@@ -38,8 +38,11 @@ const CITED_FIELDS: &str = "id,doi,display_name,publication_year,authorships,pri
 
 #[derive(Clone, Debug)]
 pub struct Options {
-    /// Look up sources on import (Settings → Library).
+    /// Look up sources on import: the workspace's own choice, else the app's.
     pub auto: bool,
+    /// The app-wide default (Key Settings › Privacy) and this workspace's override.
+    pub app_auto: bool,
+    pub own_auto: Option<bool>,
     pub mailto: String,
     pub api_key: Option<String>,
     /// Send the key with every request, not only when a keyless one fails.
@@ -49,8 +52,11 @@ pub struct Options {
 impl Options {
     fn from_env() -> Self {
         let var = |name: &str| std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        let app_auto = var("KEY_OPENALEX_ENABLED").is_none_or(|v| v != "0");
         Self {
-            auto: var("KEY_OPENALEX_ENABLED").is_none_or(|v| v != "0"),
+            auto: app_auto,
+            app_auto,
+            own_auto: None,
             mailto: var("KEY_OPENALEX_MAILTO").filter(|m| m.contains('@')).unwrap_or_else(|| DEFAULT_MAILTO.into()),
             // Older apps passed the key this way; the app now sends it in store_enrich_options.
             api_key: var("KEY_OPENALEX_API_KEY"),
@@ -97,6 +103,15 @@ impl OpenAlex {
 
     pub fn options(&self) -> Options {
         self.options.lock().map(|o| o.clone()).unwrap_or_else(|_| Options::from_env())
+    }
+
+    /// This workspace's own lookups choice (Workspace Settings); None follows the app.
+    pub fn set_own_auto(&self, own: Option<bool>) {
+        if let Ok(mut options) = self.options.lock() {
+            options.own_auto = own;
+            options.auto = own.unwrap_or(options.app_auto);
+        }
+        self.wake();
     }
 
     pub fn wake(&self) {
@@ -675,7 +690,8 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         "store_enrich_options" => (|| {
             if let Ok(mut options) = openalex.options.lock() {
                 if let Some(auto) = arg::<Option<bool>>(args, "auto")? {
-                    options.auto = auto;
+                    options.app_auto = auto;
+                    options.auto = options.own_auto.unwrap_or(auto);
                 }
                 if let Some(mailto) = arg::<Option<String>>(args, "mailto")? {
                     options.mailto = Some(mailto.trim().to_string()).filter(|m| m.contains('@')).unwrap_or_else(|| DEFAULT_MAILTO.into());
@@ -852,7 +868,7 @@ mod tests {
     static USAGE_TESTS: Mutex<()> = Mutex::new(());
 
     fn keyed(always: bool) -> Options {
-        Options { auto: true, mailto: DEFAULT_MAILTO.into(), api_key: Some("sk-test-1234".into()), key_always: always }
+        Options { auto: true, app_auto: true, own_auto: None, mailto: DEFAULT_MAILTO.into(), api_key: Some("sk-test-1234".into()), key_always: always }
     }
 
     /// The keyed retry path, from recorded answers: limited without a key → asked again with it.
@@ -924,7 +940,7 @@ mod tests {
         // SAFETY: the only test in this binary that reads the fixtures setting.
         unsafe { std::env::set_var("KEY_OPENALEX_FIXTURES", &fixtures) };
         let store = Store::open(dir.path().join("library")).unwrap();
-        let options = Options { auto: true, mailto: DEFAULT_MAILTO.into(), api_key: None, key_always: false };
+        let options = Options { auto: true, app_auto: true, own_auto: None, mailto: DEFAULT_MAILTO.into(), api_key: None, key_always: false };
         let reference = store.insert_source(input(json!({"kind": "reference", "title": "Falls paper (to read)", "doi": "10.5555/falls"}))).unwrap();
         let added = store.insert_source(input(json!({"kind": "pdf", "title": "Downloaded paper", "filePath": "/tmp/x.pdf", "fileHash": "h1"}))).unwrap();
         let record = Identification {

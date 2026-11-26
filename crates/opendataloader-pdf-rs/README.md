@@ -5,13 +5,16 @@ Markdown. It uses PDFium for text and page access, `lopdf` for raw tagged-PDF
 structure and vector evidence, and optionally PP-DocLayoutV3 through ONNX. No
 Java process, Java library, or server is required.
 
-The 63 MB ONNX model is included at `models/model_fp16.onnx`. ONNX and
+The 63 MB ONNX model is not in the repository: Key downloads it on demand from
+<https://huggingface.co/JonasWeinert/key-pp-doclayoutv3-onnx>. For this crate on its own,
+`node tools/models/fetch.mjs pp-doclayoutv3-fp16` fetches it (verified) into the dev
+cache; pass its path with `--model`, or copy it to `models/model_fp16.onnx`. ONNX and
 scientific-XML support are both compiled by default, but neither is used unless
 you explicitly enable it for a conversion.
 
 ## Copy into another project
 
-Copy this whole directory, including `models/`, then use it as a path dependency:
+Copy this whole directory (and the model, see above), then use it as a path dependency:
 
 ```toml
 [dependencies]
@@ -113,3 +116,15 @@ and tagged-PDF diagnostics. `to_markdown()` produces pure Markdown.
 
 Licensed under Apache-2.0. The bundled model and downloaded PDFium binary retain
 their upstream licenses; review them for your distribution context.
+
+## Provenance
+
+This crate is a Rust port of opendataloader-pdf
+(<https://github.com/opendataloader-project/opendataloader-pdf>, Java), derived from its
+version 2.0 or later, which is licensed under the Apache License 2.0. Key's owner confirmed
+that version basis on 2026-11-26. The port stays under Apache-2.0 (`LICENSE`).
+
+The PP-DocLayoutV3 layout model is used under the original model's Apache-2.0 terms
+(PaddlePaddle). The ONNX export comes from a third-party dataset
+(embedpdf/embed-pdf-viewer); on 2026-11-26 the owner accepted relying on the original
+model's Apache-2.0 terms for it.

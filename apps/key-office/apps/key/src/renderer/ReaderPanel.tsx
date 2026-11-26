@@ -7,6 +7,8 @@ import { readerLibraryWorks } from "./reader-library-works";
 import { addFromSource } from "./add-from-source";
 import { ReferenceAside } from "./ReferenceAside";
 import "./reader-panel.css";
+import { EmptyState } from "./explain";
+import { FirstUseTip } from "./explain";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>, workspaceId?: string) => Promise<T>;
 const shellApi = () =>
@@ -116,18 +118,22 @@ function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId:
   return (
     <ReferenceList
       header={
-        <AnalysisStatus
-          report={report}
-          onRerun={() => {
-            if (!sourceId) return;
-            setReport((r) => (r ? { ...r, analysis: null, references: [], indexStatus: "pending" } : r));
-            void shellApi()
-              .invoke("store_reanalyze", { id: sourceId }, workspaceId)
-              .then(refresh);
-          }}
-        />
+        <>
+          <FirstUseTip help="tip.citation-hover" anchor=".key-pdf-analysis" when={!!references?.length} />
+          <AnalysisStatus
+            report={report}
+            onRerun={() => {
+              if (!sourceId) return;
+              setReport((r) => (r ? { ...r, analysis: null, references: [], indexStatus: "pending" } : r));
+              void shellApi()
+                .invoke("store_reanalyze", { id: sourceId }, workspaceId)
+                .then(refresh);
+            }}
+          />
+        </>
       }
       references={references?.length || done ? references : undefined}
+      empty={<EmptyState help="empty.references" icon="book" compact />}
       onSelect={(reference) =>
         void shellApi().tabAction("reader-focus", { workspaceId, documentHash, page: reference.page, top: reference.yFraction })
       }

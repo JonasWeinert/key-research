@@ -62,7 +62,7 @@ export function AnalysisStatus({ report, onRerun, subject = "pdf" }: { report: A
       progress = jobFraction(job);
     } else line = report.indexStatus === "pending" ? `Waiting to read this ${it}…` : subject === "page" ? "Reading this page…" : report.layoutModel ? "Analysing the layout of this PDF…" : "Reading this PDF…";
     detail = "then its references are found and looked up";
-  } else if (!a) line = "Not analysed with the current method yet.";
+  } else if (!a) line = "Not analysed with the current method yet. Re-run to read it again.";
   else if (a.referencesStatus === "detecting" || a.referencesStatus === "pending") {
     step = 2;
     line = a.referencesStatus === "pending" ? "Waiting to find references…" : "Finding references…";
@@ -72,13 +72,13 @@ export function AnalysisStatus({ report, onRerun, subject = "pdf" }: { report: A
     progress = a.referencesTotal ? a.referencesDone / a.referencesTotal : 0;
     const identified = report.references.filter((r) => r.metadata?.title).length;
     detail = [`${a.referencesTotal} found`, identified ? `${identified} identified` : "", a.referencesMatched ? `${a.referencesMatched} in your library` : ""].filter(Boolean).join(" · ");
-  } else if (a.referencesStatus === "none") line = "No reference list found.";
+  } else if (a.referencesStatus === "none") line = `No reference list found in this ${it}.`;
   else if (a.referencesStatus === "failed")
     // Rate limits and outages pass: say so quietly rather than show the provider's error.
     line =
       classifyLookupError(a.referencesError ?? "") === "transient"
         ? "Reference lookup paused: the scholarly indexes are busy. Re-run to try again."
-        : `Reference lookup failed: ${a.referencesError ?? "unknown error"}`;
+        : `Looking up references did not finish (${a.referencesError ?? "no reason given"}). Check the internet connection and re-run.`;
   else {
     const identified = report.references.filter((r) => r.metadata?.title).length;
     line = [`${a.referencesTotal} ${a.referencesTotal === 1 ? "reference" : "references"}`, identified ? `${identified} identified` : "", a.referencesMatched ? `${a.referencesMatched} in your library` : ""]

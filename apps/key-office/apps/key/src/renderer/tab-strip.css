@@ -1,0 +1,247 @@
+/* The main window's tab strips (tab-strip.tsx). One bar per editor group, 40px tall, sharing the
+   title bar's band: blank space drags the window, controls do not. */
+
+.kx-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 40px;
+  flex: none;
+  min-width: 0;
+  background: var(--kx-bg);
+  box-shadow: inset 0 -1px 0 var(--kx-line);
+  font-family: var(--kx-font);
+  -webkit-app-region: drag;
+}
+html.kx-modal-open .kx-tabs {
+  -webkit-app-region: no-drag;
+}
+
+/* Room for the traffic lights before the first strip while the sidebar is hidden. */
+.kx-tabs-inset {
+  flex: none;
+  width: 6px;
+}
+.key-shell[data-sidebar="collapsed"] .kx-tabs[data-first] .kx-tabs-inset {
+  width: 80px;
+}
+html[data-full-screen] .key-shell .kx-tabs[data-first] .kx-tabs-inset {
+  width: 6px;
+}
+.kx-tabs .key-sidebar-toggle {
+  align-self: center;
+  margin-right: 4px;
+}
+
+/* The scrolling run of tabs, with the new-tab button at its end. */
+.kx-tabs-list {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  touch-action: none;
+}
+.kx-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+.kx-tabs-list[data-item-drop] {
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--kx-accent);
+}
+
+.kx-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 1 210px;
+  min-width: 96px;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: 7px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  cursor: default;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 120ms,
+    color 120ms;
+}
+.kx-tab:hover {
+  background: var(--kx-fill);
+}
+.key-shell .kx-tab:focus-visible {
+  outline: 2px solid var(--kx-accent);
+  outline-offset: -2px;
+}
+.kx-tab[data-pinned] {
+  flex: none;
+  min-width: 0;
+  padding: 0 10px;
+  justify-content: center;
+}
+
+.kx-tab-glyph {
+  display: flex;
+  flex: none;
+  color: var(--kx-text-2);
+}
+.kx-tab-glyph > svg {
+  width: 15px;
+  height: 15px;
+}
+.kx-tab-glyph > img {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: contain;
+}
+.kx-tab-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kx-tab-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-2);
+  opacity: 0;
+  cursor: default;
+  -webkit-app-region: no-drag;
+  transition: opacity 100ms;
+}
+.kx-tab:hover .kx-tab-close,
+.kx-tab[aria-selected="true"] .kx-tab-close {
+  opacity: 1;
+}
+.kx-tab-close:hover {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+
+/* The active tab. In the focused group: an accent-tinted plate, accent glyph and a 2px accent
+   underline. In another group: a quiet plate and a neutral underline. */
+.kx-tab[aria-selected="true"] {
+  background: var(--kx-accent-soft);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  color: var(--kx-text);
+  font-weight: 500;
+}
+.kx-tab[aria-selected="true"] .kx-tab-glyph {
+  color: var(--kx-accent-text);
+}
+.kx-tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--kx-accent);
+  pointer-events: none;
+}
+.kx-tabs:not([data-focused]) .kx-tab[aria-selected="true"] {
+  background: var(--kx-fill-2);
+  box-shadow: none;
+  font-weight: 400;
+}
+.kx-tabs:not([data-focused]) .kx-tab[aria-selected="true"] .kx-tab-glyph {
+  color: var(--kx-text-2);
+}
+.kx-tabs:not([data-focused]) .kx-tab[aria-selected="true"]::after {
+  background: var(--kx-text-3);
+}
+
+/* New tab, and the group's tab list. */
+.kx-tabs-button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--kx-text-2);
+  cursor: default;
+  -webkit-app-region: no-drag;
+}
+.kx-tabs-button:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+.kx-tabs-add {
+  margin-left: 2px;
+}
+.kx-tabs-all {
+  margin-right: 8px;
+}
+.kx-tabs-all svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Dragging: resting tabs slide to open the slot; the dragged one follows the pointer, lifted. */
+.kx-tabs-list[data-dragging="reorder"] .kx-tab {
+  transition: transform 150ms cubic-bezier(0.3, 0, 0.2, 1);
+}
+.kx-tabs-list[data-dragging] .kx-tab[data-dragging] {
+  z-index: 1;
+  transition: none;
+  box-shadow:
+    inset 0 0 0 0.5px var(--kx-line-strong),
+    var(--kx-shadow-sm);
+}
+/* The frame after a committed reorder swaps transforms for layout: never animate that. */
+.kx-tabs-list[data-settling] .kx-tab {
+  transition: none;
+}
+
+/* The hint beside the pointer, kept inside the title band above native views. */
+.kx-tab-drag-hint {
+  position: fixed;
+  top: 2px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  box-shadow: var(--kx-shadow-pop);
+  font: 11px/1.25 var(--kx-font);
+  pointer-events: none;
+}
+.kx-tab-drag-hint-key {
+  color: var(--kx-text-3);
+  font-size: 10px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-tab,
+  .kx-tab-close,
+  .kx-tabs-list[data-dragging] .kx-tab {
+    transition: none;
+  }
+}

@@ -134,6 +134,17 @@ impl Library {
         })?;
         self.workspace_info()?.ok_or("Workspace not initialized".into())
     }
+    /// Renames the workspace (its display name only; the folder stays where it is).
+    pub fn rename_workspace(&self, name: &str) -> Result<WorkspaceInfo> {
+        let name = label(name)?;
+        self.writer.run(true, move |c| {
+            if c.execute("UPDATE workspace_identity SET name=?1 WHERE singleton=1", params![name]).map_err(err)? != 1 {
+                return Err("Workspace not initialized".into());
+            }
+            Ok(())
+        })?;
+        self.workspace_info()?.ok_or("Workspace not initialized".into())
+    }
     pub fn projects(&self) -> Result<Vec<Project>> {
         self.connection()?
             .prepare("SELECT id,name,folder FROM workspace_projects ORDER BY name,id")
@@ -670,5 +681,14 @@ mod appearance_tests {
         assert_eq!(info.icon.as_deref(),Some("🔬"));
         assert_eq!(info.color.as_deref(),Some("#7c3aed"));
         assert_eq!(info.name,"Research");
+    }
+    #[test]
+    fn workspace_rename_keeps_identity_and_root() {
+        let temp=tempfile::tempdir().unwrap();
+        let lib=Library::open(temp.path().join(".key")).unwrap();
+        let before=lib.initialize_workspace("Research",temp.path()).unwrap();
+        assert!(lib.rename_workspace("  ").is_err());
+        let after=lib.rename_workspace(" Doctoral thesis ").unwrap();
+        assert_eq!((after.id,after.root,after.name.as_str()),(before.id,before.root,"Doctoral thesis"));
     }
 }

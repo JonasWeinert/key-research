@@ -48,9 +48,9 @@ const assert = require("node:assert/strict");
       .getByRole("button", { name: "Use colour #7c3aed", exact: true })
       .click();
     await page.screenshot({ path: path.join(temp, "appearance-editor.png") });
-    await page
-      .getByRole("button", { name: "Save appearance", exact: true })
-      .click();
+    // The display name changes with it (the folder keeps its name).
+    await page.getByRole("textbox", { name: "Name", exact: true }).fill("Renamed library");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.locator(".key-workspace-dropdown").waitFor({ state: "hidden" });
     const saved = await page.evaluate(
       (id) => window.key.invoke("workspace_info", {}, id),
@@ -58,6 +58,8 @@ const assert = require("node:assert/strict");
     );
     assert.equal(saved.icon, "🔬");
     assert.equal(saved.color, "#7c3aed");
+    assert.equal(saved.name, "Renamed library");
+    assert((await page.evaluate(() => window.key.workspaces())).some((w) => w.name === "Renamed library"), "the registry follows the rename");
     await page.screenshot({ path: path.join(temp, "sidebar.png") });
     const addedPath = path.join(temp, "Second workspace");
     await mkdir(addedPath);

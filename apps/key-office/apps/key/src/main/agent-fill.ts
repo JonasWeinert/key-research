@@ -9,7 +9,6 @@ import {
   type AiProviderConfig,
   type AiProviderId,
 } from '@key/ai-provider'
-import { gskApiKey } from '@key/ai-search'
 import type { Registry } from './workspaces'
 interface Provider {
   provider: AiProviderId
@@ -86,10 +85,10 @@ export class AgentFill {
     }
     const settings = resolveAiSettings(stored, defaultAiSettings())
     const provider = activeProvider(settings)
-    let config = settings.providers[provider]
-    if (provider === 'genspark' && !config.apiKey) config = { ...config, apiKey: gskApiKey() }
+    const config = settings.providers[provider]
+    if (provider === 'custom' && !config.baseUrl) throw Error('Configure an AI provider in AI settings')
     if (provider !== 'codex' && provider !== 'custom' && !config.apiKey)
-      throw Error('Configure an AI provider or sign in through an Office editor’s AI settings')
+      throw Error('Configure an AI provider in AI settings')
     if (provider !== 'codex' && !config.model) throw Error('Choose a model in AI settings')
     return { provider, config }
   }

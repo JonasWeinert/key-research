@@ -9,6 +9,7 @@ import { libraryChanged } from "./library-nav";
 import type { Invoke } from "./library-api";
 import { valueText, type Operation, type RefreshProposal } from "./library-hygiene";
 import "./hygiene.css";
+import { Explain } from "./explain";
 
 const clip = (text: string, max = 160) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
@@ -67,7 +68,8 @@ export default function MetadataUpdateSheet({ invoke, workspaceId, ids, onClose,
               ? `Looking up ${ids.length === 1 ? "this source" : `${ids.length} sources`} in OpenAlex and Crossref…`
               : changed.length
                 ? `${changed.length} ${changed.length === 1 ? "source has" : "sources have"} newer details. Fields you edited by hand are not ticked.`
-                : "Everything is up to date."}
+                : "Everything is up to date."}{" "}
+            <Explain help="metadata.update" />
           </p>
           <button className="kx-sheet-close" aria-label="Close" onClick={onClose}>
             <Icon name="close" size={10} />

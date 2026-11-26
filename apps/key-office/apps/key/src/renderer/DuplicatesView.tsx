@@ -12,6 +12,7 @@ import { itemTypeLabel, shortCreators, type Collection, type Invoke, type Source
 import { valueText, type DuplicateGroup, type DuplicateReport, type MergePreview, type Operation } from "./library-hygiene";
 import "./entity.css";
 import "./hygiene.css";
+import { Explain } from "./explain";
 
 const KIND_LABEL = { exact: "Same identifier", likely: "Likely duplicate", version: "Preprint and published" } as const;
 
@@ -72,7 +73,7 @@ export function DuplicatesView({ invoke, workspaceId, onChanged, onToast }: { in
             ? `${report.count.toLocaleString()} possible ${report.count === 1 ? "duplicate" : "duplicates"}`
             : "No duplicates found"}
           {report.groups.length > report.count && ` · ${report.groups.length - report.count} preprint and published ${report.groups.length - report.count === 1 ? "pair" : "pairs"}`}
-          . Nothing is merged unless you choose to.
+          . Nothing is merged unless you choose to. <Explain help="duplicates.what" />
         </p>
         {report.exactGroups > 0 && (
           <button className="kx-page-action" onClick={() => setConfirmAll(true)}>
@@ -83,7 +84,7 @@ export function DuplicatesView({ invoke, workspaceId, onChanged, onToast }: { in
       {report.groups.length === 0 ? (
         <div className="kx-merge-empty">
           <Icon name="check" size={18} />
-          <span>Every source looks like a work of its own.</span>
+          <span>Every source looks like a work of its own. Key compares DOIs, titles, years and authors.</span>
         </div>
       ) : (
         <ul className="kx-dup-groups">

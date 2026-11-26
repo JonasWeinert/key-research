@@ -129,7 +129,7 @@
 .key-web-proxy-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 220px;
+  max-width: min(340px, 36vw);
   margin-right: 2px;
 }
 .key-web-proxy > button {
@@ -187,11 +187,4 @@
     animation: none;
     opacity: 0.35;
   }
-}
-/* A favicon in a tab, in place of the kind's icon. */
-.tab-icon > img.key-favicon {
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  object-fit: contain;
 }

@@ -19,6 +19,7 @@ import WebPreview from "./WebPreview";
 import WebResults, { WebPill } from "./WebResults";
 import "./reference-library.css";
 import "./search-page.css";
+import { Explain } from "./explain";
 
 /** All · Sources · Notes …, each with its count; a click shows only that kind (⌘-click adds it).
  *  `only` limits the chips to some kinds (the note's library panel). */
@@ -237,6 +238,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
             }}
           />
           <WebPill pressed={web !== "off"} onClick={(e) => setWeb(e.metaKey || e.shiftKey ? (web === "off" ? "with" : "off") : web === "only" ? "off" : "only")} />
+          <Explain help="search.syntax" />
           <span className="kx-spacer" />
           <div className="kx-segmented" role="group" aria-label="Group by">
             <button type="button" aria-pressed={groupBy === "section"} onClick={() => setGroupBy("section")}>

@@ -108,38 +108,15 @@ export interface DeckAccess {
    * On search failure returns an empty array (fail-open; doesn't block the main generation path).
    */
   searchImages?(query: string, maxResults: number): Promise<string[]>
-  /** Whether cloud single-page generation is available (kill switch + gsk login state) */
-  isCloudPageGenEnabled?(): Promise<boolean>
-  /** live predicate (gsk login && cloud-tools toggle, or a BYOK media key); false hides generate_image */
+  /** live predicate (an image provider and model are configured); false hides generate_image */
   imageGenAvailable?(): boolean
   /** same for analyze_media */
   mediaAnalysisAvailable?(): boolean
   /**
-   * Cloud single-page generation (gsk slide_generate), used by generate_deck's self-driven
-   * pipeline: given the unified style + this page's brief/layout/images, the cloud service
-   * writes the HTML and converts it to a one-slide pptx. Returns a marker string that goes
-   * into a landGeneratedPages pageMarkers slot.
-   */
-  generatePageCloud?(args: {
-    pageIndex: number
-    totalPages: number
-    coreHook: string
-    style: string
-    title: string
-    brief: string
-    layout: string
-    images: string[]
-    context?: string
-    topic?: string
-    canvasW: number
-    canvasH: number
-    signal?: AbortSignal
-  }): Promise<{ ok: boolean; marker?: string; error?: string }>
-  /**
-   * Local single-page generation (used when cloud is unavailable, e.g. BYOK without gsk):
-   * same inputs and marker contract as generatePageCloud, but the page is produced entirely
-   * locally — one LLM request writes a structured slide spec and the main process builds it
-   * directly into a one-slide pptx (no HTML intermediate).
+   * Single-page generation used by generate_deck's self-driven pipeline: one LLM request
+   * writes a structured slide spec and the main process builds it directly into a one-slide
+   * pptx (no HTML intermediate). Returns a marker string that goes into a landGeneratedPages
+   * pageMarkers slot.
    */
   generatePageLocal?(args: {
     pageIndex: number
@@ -327,11 +304,6 @@ const TOOLS: AgentToolDef[] = [
           description:
             'Image description, English works better (keep any text to render in the image verbatim)',
         },
-        model: {
-          type: 'string',
-          description:
-            'Optional, defaults to the configured model. Genspark only — specify for special purposes: fal-bria-rmbg=background removal, fal-ai/recraft-clarity-upscale=upscale, flux-pro/outpaint=outpaint, fal-ai/image-editing/text-removal=remove text watermark',
-        },
         referenceImageUrls: {
           type: 'array',
           items: { type: 'string' },
@@ -348,7 +320,7 @@ const TOOLS: AgentToolDef[] = [
   {
     name: 'analyze_media',
     description:
-      'Analyze media content: understand images/audio/video (video and audio need Genspark or Gemini as the media provider). Pass media URLs (or local file paths) and analysis requirements; returns analysis text. Video supports extracting key points, structure, and time ranges — good for turning user material into usable deck content.',
+      'Analyze media content: understand images/audio/video (video and audio need Gemini as the media provider). Pass media URLs (or local file paths) and analysis requirements; returns analysis text. Video supports extracting key points, structure, and time ranges — good for turning user material into usable deck content.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1009,7 +981,7 @@ export function formatSlideDump(slide: RenderSlide): string {
   return `Canvas ${slide.widthPx}×${slide.heightPx}px (1 px = ${pxToEmu} EMU)\n${parts.join('\n---\n') || '(no elements on this page)'}${colorNote}`
 }
 
-/** tools that need a media provider: Genspark login + cloud tools, or a BYOK media key in Settings */
+/** tools that need a media provider: an image/media provider configured in Settings */
 function hiddenMediaTools(access: DeckAccess): Set<string> {
   const hidden = new Set<string>()
   if (access.imageGenAvailable?.() === false) hidden.add('generate_image')
@@ -1020,7 +992,7 @@ function hiddenMediaTools(access: DeckAccess): Set<string> {
 function mediaToolsOffNote(hidden: Set<string>): string {
   if (hidden.size === 0) return ''
   const plural = hidden.size > 1
-  return `\n\nNote: ${[...hidden].join(' and ')} ${plural ? 'are' : 'is'} currently unavailable (no image/media provider: signed out of Genspark or cloud tools off, and no media API key in Settings). Do not call or promise ${plural ? 'them' : 'it'}; for imagery use image_search + insert_web_image instead.`
+  return `\n\nNote: ${[...hidden].join(' and ')} ${plural ? 'are' : 'is'} currently unavailable (no image/media provider is configured in Settings). Do not call or promise ${plural ? 'them' : 'it'}; for imagery use image_search + insert_web_image instead.`
 }
 
 export function createSlidesSkill(access: DeckAccess): AgentSkill {
@@ -1644,9 +1616,7 @@ async function executeTool(
       const idx = Number(call.input.slideIndex)
       if (!slides[idx])
         return fail(t('aiFailRegen'), `slideIndex out of range (0-${slides.length - 1})`)
-      const regenUseCloud =
-        !!access.generatePageCloud && !!(await access.isCloudPageGenEnabled?.().catch(() => false))
-      if (!access.regenerateSlide || (!regenUseCloud && !access.generatePageLocal))
+      if (!access.regenerateSlide || !access.generatePageLocal)
         return fail(
           t('aiFailRegen'),
           'The current environment does not support the page-redo pipeline',
@@ -1661,7 +1631,7 @@ async function executeTool(
       const regenImages = Array.isArray(call.input.image_urls)
         ? (call.input.image_urls as unknown[]).map(String).filter((u) => /^https?:\/\//.test(u))
         : []
-      // One retry then give up (same semantics as generate_deck pages). Both paths return a
+      // One retry then give up (same semantics as generate_deck pages). The generator returns a
       // marker pointing at a one-slide pptx temp file; landing is shared.
       const backoff = access.retryBackoffMs ?? 2000
       let marker: string | null = null
@@ -1679,7 +1649,7 @@ async function executeTool(
         canvasW: 1280,
         canvasH: 720,
       }
-      const regenGen = regenUseCloud ? access.generatePageCloud! : access.generatePageLocal!
+      const regenGen = access.generatePageLocal
       for (let attempt = 0; attempt < 2 && !marker; attempt++) {
         if (attempt > 0 && backoff > 0) await new Promise((r) => setTimeout(r, backoff))
         const res = await regenGen(regenArgs)
@@ -1718,11 +1688,9 @@ async function executeTool(
       // ── Self-driven pipeline:
       //   1) Plan: use pages if passed; with topic, the tool plans the outline via LLM (batched recursion over threshold) — fixes missing pages at the input side.
       //   2) Generate: batched concurrent page generation (one retry per page), **each batch lands immediately → frontend shows pages one by one**.
-      //      Cloud (gsk slide_generate) when available; otherwise fully local — the LLM (app AI
-      //      transport, works with BYOK) writes a slide spec that is built directly into a pptx.
-      const useCloud =
-        !!access.generatePageCloud && !!(await access.isCloudPageGenEnabled?.().catch(() => false))
-      if (!useCloud && !access.generatePageLocal)
+      //      The LLM (app AI transport) writes a slide spec that is built directly into a pptx.
+      const generatePage = access.generatePageLocal
+      if (!generatePage)
         return fail(
           t('aiFailGenDeck'),
           'No page generation pipeline is available in this environment',
@@ -2033,8 +2001,8 @@ async function executeTool(
       const deckName = String(pages[0]?.title ?? '').trim() || topic || coreHook
 
       // ── Step 2: generate page by page + land as we go (frontend shows pages one by one).
-      // Cloud (gsk slide_generate) and local (LLM spec → pptx-engine build) both produce a
-      // one-slide pptx temp file; genOne returns its marker and landing reads the bytes.
+      // The local generator (LLM spec → pptx-engine build) produces a one-slide pptx temp
+      // file; genOne returns its marker and landing reads the bytes.
       // Land strictly in page order: nextToLand pointer; a page lands only when its marker is ready, keeping page order intact.
       const markerByIndex: (string | null)[] = new Array(total).fill(null)
       // Per-page completion flags (aligned with pages; same reference as state.pageDone, used by buildContext progress injection)
@@ -2102,10 +2070,10 @@ async function executeTool(
           canvasH,
           ...(signal ? { signal } : {}),
         }
-        // Both paths return a marker pointing at a one-slide pptx temp file. One retry, then the
-        // page is skipped for now (locally-failed pages get one more chance in the retry round)
-        // and the rest of the deck keeps generating.
-        const gen = useCloud ? access.generatePageCloud! : access.generatePageLocal!
+        // The generator returns a marker pointing at a one-slide pptx temp file. One retry, then
+        // the page is skipped for now (failed pages get one more chance in the retry round) and
+        // the rest of the deck keeps generating.
+        const gen = generatePage
         for (let attempt = 0; attempt < 2; attempt++) {
           if (cancelled()) return null
           if (attempt > 0 && BACKOFF_MS > 0) await new Promise((r) => setTimeout(r, BACKOFF_MS))
@@ -2195,18 +2163,15 @@ async function executeTool(
 
       // ── One retry round for failed pages, re-inserted at their original page position with
       //   insert_at (target position = existing-page offset + pages completed before this one).
-      //   Landing-failed pages re-land (cheap: the one-slide pptx already exists). Cloud
-      //   generation-failed pages already spent their single retry and stay skipped; local
+      //   Landing-failed pages re-land (cheap: the one-slide pptx already exists);
       //   generation-failed pages get one more generation attempt here (LLM calls are the
       //   user's own quota, and a JSON spec retry is cheap).
       if (!cancelled()) {
-        const retryIdxs = [...new Set([...(useCloud ? [] : genFailed), ...landFailed])].sort(
-          (a, b) => a - b,
-        )
+        const retryIdxs = [...new Set([...genFailed, ...landFailed])].sort((a, b) => a - b)
         for (const idx of retryIdxs) {
           if (cancelled()) break
           let marker = markerByIndex[idx]
-          if (!marker && !useCloud) marker = await genOne(pages[idx]!, idx + 1)
+          if (!marker) marker = await genOne(pages[idx]!, idx + 1)
           if (!marker) {
             pageProgressItems[idx] = {
               ...pageProgressItems[idx]!,

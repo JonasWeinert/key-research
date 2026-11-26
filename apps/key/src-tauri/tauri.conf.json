@@ -35,9 +35,7 @@
     "active": true,
     "targets": "all",
     "icon": [],
-    "resources": {
-      "../../../crates/key-semantic-search/resources/snowflake-arctic-embed-xs-q": "models/snowflake-arctic-embed-xs-q"
-    },
+    "resources": {},
     "macOS": {
       "frameworks": [
         "../../../vendor/pdfium/lib/libpdfium.dylib"

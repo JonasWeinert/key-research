@@ -129,6 +129,9 @@ export default function CommandCenter({
           return setOpen({ mode: "search" });
         case "shortcuts":
           return setOpen({ mode: "shortcuts" });
+        // From the workspaces window: a workspace opened to import Zotero into.
+        case "import-zotero":
+          return void window.dispatchEvent(new CustomEvent("key:open-zotero"));
         case "highlights":
           return workspaceId && void bridge().tabAction("open-content", { section: "highlights", workspaceId });
         case "copy-link":

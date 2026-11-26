@@ -122,7 +122,7 @@ const assert = require("node:assert/strict");
     // The modal dims and disables the tab bar, so switch through the shell API (as ⌘⇧] would).
     const home = before.tabs.find((t) => t.id !== owner);
     if (home) {
-      assert.ok((await page.locator(".tab-bar").evaluateAll((els) => els.map((el) => el.inert))).every(Boolean), "every group's tab strip is inert");
+      assert.ok((await page.locator(".kx-tabs").evaluateAll((els) => els.map((el) => el.inert))).every(Boolean), "every group's tab strip is inert");
       await page.evaluate((tabId) => window.key.tabAction("activate", { tabId }), home.id);
       await drawer.waitFor();
       assert.equal(

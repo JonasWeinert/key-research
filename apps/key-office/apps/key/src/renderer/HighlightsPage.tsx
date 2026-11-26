@@ -11,6 +11,7 @@ import { bridge, type Invoke, type Source, type SourcePage } from "./library-api
 import type { DraggedItem } from "./note-editor";
 import { currentTheme, highlightColor } from "./canvas/canvas-colors";
 import "./highlights-page.css";
+import { EmptyState as Guide } from "./explain";
 
 interface Row extends Highlight {
   source: Source;
@@ -155,7 +156,7 @@ export default function HighlightsPage({ invoke, workspaceId }: { invoke: Invoke
           )}
         </div>
       </header>
-      {rows && !rows.length && <p className="kx-highlights-empty">Highlights you make in PDFs appear here. Select text in a PDF and pick a colour.</p>}
+      {rows && !rows.length && <Guide help="empty.highlights" icon="highlight" />}
       <div className="kx-highlights-list" role="listbox" aria-multiselectable tabIndex={0}>
         {groups.map((list) => (
           <div key={grouped ? list[0]?.source.id : "all"} className="kx-highlights-group">

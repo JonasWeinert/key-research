@@ -8,6 +8,8 @@ import { bridge, type AppInfo, type Invoke, type Theme, type WorkspaceSummary } 
 import { ThemePicker } from "./Settings";
 import { WORKSPACE_COLORS } from "./WorkspaceSwitcher";
 import "./onboarding.css";
+import { Explain } from "./explain";
+import "./models.css";
 
 const STEPS = ["welcome", "library", "sources", "appearance"] as const;
 type Step = (typeof STEPS)[number];
@@ -18,6 +20,8 @@ export default function Onboarding({
   info,
   theme,
   onTheme,
+  autoDownload = true,
+  onAutoDownload,
   onFinish,
 }: {
   invoke: Invoke;
@@ -25,6 +29,9 @@ export default function Onboarding({
   info: AppInfo;
   theme: Theme;
   onTheme: (theme: Theme) => void;
+  /** Download on-device models when first needed (Settings › Search & indexing). */
+  autoDownload?: boolean;
+  onAutoDownload?: (value: boolean) => void;
   /** Called with the library to open, if any. */
   onFinish: (workspaceId?: string) => void;
 }) {
@@ -68,10 +75,18 @@ export default function Onboarding({
                 <Point icon="search">Search by words or by meaning, down to the passage</Point>
                 <Point icon="lock">Everything runs and stays on this Mac</Point>
               </ul>
+              <label className="kx-onboarding-models">
+                <div>
+                  <strong>Download on-device models when needed</strong>
+                  <small>Search and PDF layout models (about 400 MB) come from Hugging Face the first time Key needs them, then stay on this Mac.</small>
+                </div>
+                <input type="checkbox" className="kx-switch" aria-label="Download on-device models when needed" checked={autoDownload} onChange={(e) => onAutoDownload?.(e.target.checked)} />
+              </label>
             </Copy>
           )}
           {step === "library" && (
-            <Copy eyebrow="Library" title="Your library" lead="A folder on this Mac. Files you add stay where they are.">
+            <Copy eyebrow="Library" title="Your library" lead="A folder on this Mac that holds your sources, notes and collections. You can add more libraries later.">
+              <Explain help="settings.libraries.what" label="What is a library?" className="kx-onboarding-explain" />
               {library && (
                 <div className="kx-onboarding-card">
                   <span className="kx-onboarding-swatch" style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
@@ -107,7 +122,7 @@ export default function Onboarding({
                 <Choice
                   icon="zotero"
                   title="Import from Zotero"
-                  detail={info.zoteroFound ? "Items, collections, notes and PDFs. Zotero is not changed." : "No Zotero library found on this Mac."}
+                  detail={info.zoteroFound ? "Copies items, collections, notes and links to PDFs. Key never changes your Zotero library." : "No Zotero library found on this Mac."}
                   busy={importing === "zotero"}
                   disabled={!info.zoteroFound || !!importing}
                   onClick={() =>
@@ -139,11 +154,11 @@ export default function Onboarding({
                 </p>
               )}
               {error && <p className="kx-inline-error">{error}</p>}
-              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Keep it in sync with Zotero later, in Settings.</p>}
+              {info.zoteroFound && !imported && <p className="kx-onboarding-note">Importing copies your library once. To have later changes in Zotero follow into Key, turn on sync in Workspace Settings › Zotero.</p>}
             </Copy>
           )}
           {step === "appearance" && (
-            <Copy eyebrow="Appearance" title="Choose a look" lead="Change it any time in Settings.">
+            <Copy eyebrow="Appearance" title="Choose a look" lead="Change it any time in Key Settings.">
               <ThemePicker value={theme} onChange={onTheme} />
             </Copy>
           )}

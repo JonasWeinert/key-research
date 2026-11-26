@@ -365,6 +365,8 @@ export interface LibraryStatus {
   enrichment?: number;
   /** Older PDFs identified and looked up in the background, behind everything else. */
   backfill?: { identify: number; lookup: number };
+  /** On-device models (models-ui.tsx): state, progress and disk use. */
+  models?: import("./models-ui").ModelsListing;
 }
 
 export type Theme = "system" | "light" | "dark";
@@ -372,6 +374,8 @@ export interface AppSettings {
   theme: Theme;
   onboarded: boolean;
   layoutModel: boolean;
+  /** Download on-device models by themselves when first needed (default on). */
+  modelsAutoDownload?: boolean;
   zoteroSync: boolean;
   /** Look sources up in OpenAlex when they are imported with a DOI (and refresh counts when viewed). */
   openalex: boolean;
@@ -387,6 +391,8 @@ export interface AppSettings {
   /** The CSL style id and locale citations use (the host reads them from the settings file). */
   citationStyle?: string;
   citationLocale?: string;
+  /** What Key shows when it opens (app-level): the workspaces window, last time's windows, or the last workspace. */
+  openAtLaunch?: "workspaces" | "restore" | "last";
 }
 export interface AppInfo {
   version: string;
@@ -413,6 +419,10 @@ export interface Bridge {
   setAppSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   workspaces(): Promise<WorkspaceSummary[]>;
   addWorkspace(): Promise<WorkspaceSummary | null>;
+  /** Moves a workspace's folder (Workspace Settings › Location); null when cancelled. */
+  moveWorkspace(workspaceId: string): Promise<WorkspaceSummary | null>;
+  /** Forgets a workspace (its folder stays); answers with the workspace this window now shows. */
+  removeWorkspace?(workspaceId: string): Promise<{ workspaceId: string }>;
   tabAction(action: string, payload?: unknown): Promise<unknown>;
   addFiles(workspaceId: string, collectionId?: string): Promise<unknown[]>;
   importPaths(workspaceId: string, paths: string[], collectionId?: string): Promise<unknown[]>;
@@ -425,7 +435,7 @@ export interface Bridge {
    *  and "open" report and drive installing the plugin into Zotero's profile. */
   zoteroPlugin(action?: "wake" | "status" | "install" | "restart" | "open"): Promise<{ file: string | null; install?: ZoteroInstall; error?: string } | null>;
   /** A file chosen in an open or save panel, or null. */
-  choosePath(request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }): Promise<string | null>;
+  choosePath(request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[]; filterName?: string; allowFolders?: boolean }): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
   writeClipboard?(data: { text: string; html?: string; rtf?: string }): Promise<void>;

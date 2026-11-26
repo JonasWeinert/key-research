@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 contextBridge.exposeInMainWorld("key", {
+  // Automated checks run without first-use tips unless they ask for them (renderer/explain.tsx).
+  automation: process.env.KEY_SKIP_ONBOARDING === "1" && process.env.KEY_SHOW_TIPS !== "1",
   invoke: (
     command: string,
     args?: unknown,
@@ -10,6 +12,10 @@ contextBridge.exposeInMainWorld("key", {
     ipcRenderer.invoke("key:invoke", command, args, workspaceId, navigator.userActivation?.isActive ? { ...(options as object | undefined), gesture: true } : options),
   workspaces: () => ipcRenderer.invoke("key:workspaces"),
   addWorkspace: () => ipcRenderer.invoke("key:add-workspace"),
+  // The workspaces window (main/launcher.ts); "show" works from any window.
+  launcher: (action: string, payload?: unknown) => ipcRenderer.invoke("key:launcher", action, payload),
+  removeWorkspace: (workspaceId: string) => ipcRenderer.invoke("key:remove-workspace", workspaceId),
+  moveWorkspace: (workspaceId: string) => ipcRenderer.invoke("key:move-workspace", workspaceId),
   appSettings: () => ipcRenderer.invoke("key:app-settings"),
   setAppSettings: (patch: unknown) => ipcRenderer.invoke("key:set-app-settings", patch),
   tabs: () => ipcRenderer.invoke("key:tabs"),
@@ -77,6 +83,7 @@ contextBridge.exposeInMainWorld("key", {
         "property-definitions-changed",
         "library-changed",
         "open-settings",
+        "open-workspace-settings",
         "note-changed",
         "links-changed",
         "linked-folders-changed",
@@ -102,6 +109,9 @@ contextBridge.exposeInMainWorld("key", {
         "full-screen",
         "open-item-link",
         "library-sources-changed",
+        "launcher-changed",
+        "workspaces-changed",
+        "launcher-command",
       ].includes(event)
     )
       throw Error("Unknown event");

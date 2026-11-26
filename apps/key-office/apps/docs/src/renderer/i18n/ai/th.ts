@@ -8,7 +8,6 @@ export const th = {
   aiStarterPolishAll: 'ขัดเกลาทั้งเอกสารให้น้ำเสียงเป็นมืออาชีพยิ่งขึ้น',
   aiStarterContinue: 'เขียนต่อจากเนื้อหาที่มีอยู่',
   aiStarterFillTemplate: 'ค้นหาและกรอกตัวยึดตำแหน่งในเอกสาร',
-  aiGskLoginBtn: 'ลงชื่อเข้าใช้ Genspark',
   aiPanelTitle: 'Key AI',
   aiOpenAssistant: 'เปิดผู้ช่วย AI',
   aiSummarizeBtn: 'สรุปด้วย AI',
@@ -103,8 +102,7 @@ export const th = {
   aiOverloadedError: 'บริการ AI มีผู้ใช้งานจำนวนมากในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่',
   aiNetworkError:
     'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อบริการ AI ได้ โปรดตรวจสอบการเชื่อมต่อแล้วลองใหม่',
-  aiCreditsExhausted:
-    'เครดิต Genspark ของคุณหมดแล้ว โปรดเติมเครดิตที่ genspark.ai/pricing แล้วลองใหม่',
+  aiCreditsExhausted: 'เครดิตของผู้ให้บริการ AI หมดแล้ว โปรดเติมกับผู้ให้บริการแล้วลองอีกครั้ง',
   aiSumReadAttachment: 'อ่านสิ่งที่แนบ',
   aiSumImageAttachment: 'รูปภาพแนบ {name}',
   aiSumRead: 'อ่าน {name}',

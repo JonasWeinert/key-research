@@ -399,13 +399,30 @@ impl Indexer {
         self.models.status()
     }
 
+    /// Stops the search model (its files were removed); it starts again when next needed.
+    pub fn unload_embedder(&self) {
+        if let Ok(mut slot) = self.embedder.lock() {
+            *slot = None;
+        }
+    }
+
     /// The loaded embedder, loading it once the files exist.
     pub fn embedder(&self) -> Option<Arc<Embedder>> {
         if !self.embeddings.load(Ordering::SeqCst) {
             return None;
         }
+        if !self.models.is_ready() {
+            // First need: fetch the model in the background (if the user allows automatic
+            // downloads); passages keep their place and get vectors once it is here.
+            let signal = self.clone();
+            self.models.request(false, Some(Box::new(move || {
+                let _ = signal.embedder();
+                signal.wake();
+            })));
+            return None;
+        }
         let mut slot = self.embedder.lock().ok()?;
-        if slot.is_none() && self.models.is_ready() {
+        if slot.is_none() {
             match Embedder::load(&self.models) {
                 Ok(embedder) => *slot = Some(Arc::new(embedder)),
                 Err(error) => eprintln!("Key search model: {error}"),
@@ -472,29 +489,13 @@ impl Indexer {
     }
 
     fn run(self, pdf: Arc<dyn PdfText>) {
-        // Start the model download in the background so text indexing never waits on it.
-        let models = self.models.clone();
-        let signal = self.clone();
-        let fetch = self.embeddings.load(Ordering::SeqCst);
-        thread::spawn(move || {
-            if !fetch {
-                return;
-            }
-            loop {
-                match models.download() {
-                    Ok(true) => {
-                        // Start the search model now, so the first search does not wait for it.
-                        let _ = signal.embedder();
-                        break signal.wake();
-                    }
-                    Ok(false) => thread::sleep(Duration::from_secs(5)),
-                    Err(error) => {
-                        eprintln!("Key search model download: {error}");
-                        thread::sleep(Duration::from_secs(60));
-                    }
-                }
-            }
-        });
+        // A model already on disk starts now, so the first search does not wait for it.
+        if self.embeddings.load(Ordering::SeqCst) && self.models.is_ready() {
+            let signal = self.clone();
+            thread::spawn(move || {
+                let _ = signal.embedder();
+            });
+        }
         // Two stages: extraction of the next documents overlaps embedding of the current one.
         let (sender, receiver) = mpsc::sync_channel::<Prepared>(2);
         let embedding = self.clone();
@@ -1038,7 +1039,8 @@ mod tests {
             live: Arc::default(),
             priorities: Arc::default(),
             layout_model: Arc::new(AtomicBool::new(true)),
-            embeddings: Arc::new(AtomicBool::new(true)),
+            // No model downloads from unit tests.
+            embeddings: Arc::new(AtomicBool::new(false)),
             working: Arc::default(),
             opened_lane: Arc::default(),
             pdf: Arc::default(),

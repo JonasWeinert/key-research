@@ -8,6 +8,7 @@ import { useSyncExternalStore } from "react";
 import { toast } from "./item-actions";
 import { bridge, type Invoke, type Source } from "./library-api";
 import { libraryChanged } from "./library-nav";
+import { workspaceSettings } from "./workspace-settings-api";
 import "./find-pdf.css";
 
 export interface FindPdfResult {
@@ -104,11 +105,10 @@ export async function findPdfs(invoke: Invoke, workspaceId: string, sources: Pic
   );
 }
 
-/** After an add: Find PDF when Settings › Libraries says to (off by default). Silent. */
+/** After an add: Find PDF when the workspace's settings say to (off by default). Silent. */
 export async function findPdfAfterAdd(invoke: Invoke, workspaceId: string, sourceId: string) {
-  const settings = await bridge()
-    .appSettings()
-    .then((r) => r.settings)
+  const settings = await workspaceSettings(invoke, workspaceId)
+    .then((r) => r.effective)
     .catch(() => undefined);
   if (!settings?.findPdfOnAdd) return;
   const result = await findPdfRequest(invoke, workspaceId, sourceId).catch(() => undefined);
