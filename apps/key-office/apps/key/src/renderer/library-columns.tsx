@@ -85,7 +85,8 @@ export function useSourceColumns({
       { id: "updated", label: "Modified", width: 100, hidden: true, sortField: "updated", render: (s) => <span className="kx-cell-muted">{relativeDate(s.updatedAt)}</span> },
       {
         id: "reading",
-        label: "Status",
+        // Not "Status": a library often has its own Status property.
+        label: "Reading status",
         width: 110,
         hidden: true,
         sortField: "status",

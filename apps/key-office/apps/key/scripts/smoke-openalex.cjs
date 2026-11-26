@@ -64,7 +64,7 @@ const assert = require("node:assert/strict");
     await sourcePage.locator('.kx-research-row[data-research="Cited by"]', { hasText: "1,238" }).waitFor();
     await sourcePage.locator('.kx-research-row[data-research="Access"]', { hasText: "Gold open access" }).waitFor();
     await sourcePage.locator(".kx-work-references h3", { hasText: "1 in your library" }).waitFor();
-    await sourcePage.locator('.kx-work-list li[data-in-library="true"]', { hasText: "How open science helps researchers succeed" }).waitFor();
+    await sourcePage.locator('.kx-work-list li[data-in-library="true"]', { hasText: "How open science helps researchers succeed" }).first().waitFor();
     assert.ok((await sourcePage.locator('.kx-work-list li[data-in-library="false"]').count()) > 5, "works not yet in the library are listed too");
     // A reference opens in place to its abstract, read from OpenAlex only when opened.
     await sourcePage.getByRole("button", { name: "Show all 47" }).click();
