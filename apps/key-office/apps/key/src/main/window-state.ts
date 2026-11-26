@@ -19,7 +19,10 @@ export type SavedView =
       title: string;
     }
   | { type: "pdf"; workspaceId: string; hash: string; title: string }
-  | { type: "office"; kind: string; path: string; workspaceId?: string };
+  | { type: "office"; kind: string; path: string; workspaceId?: string }
+  /** A browser tab, and a PDF opened from the browser (kept for a while, not in a library). */
+  | { type: "web"; url: string; title: string }
+  | { type: "web-pdf"; url: string; hash: string; title: string };
 export interface SavedTab {
   view: SavedView;
   pinned?: boolean;

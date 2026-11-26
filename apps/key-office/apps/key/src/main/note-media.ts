@@ -3,7 +3,7 @@
 // a library source's image file. Notes keep only the relative `media/…` path, so they
 // survive the workspace folder being renamed or moved. Embedded players get what they
 // need to load, and links they open go to the user's browser.
-import { app, net, protocol, session, shell } from "electron";
+import { net, protocol, session } from "electron";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Registry } from "./workspaces";
@@ -40,8 +40,7 @@ export function serveNoteMedia(registry: Registry) {
 
 /**
  * YouTube's player refuses to start without a referrer (error 153), which a page loaded
- * from a file never sends; the embed gets its own origin as one. Links that pages open
- * in a new window go to the user's browser.
+ * from a file never sends; the embed gets its own origin as one.
  */
 export function routeEmbeddedMedia() {
   session.defaultSession.webRequest.onBeforeSendHeaders(
@@ -52,10 +51,5 @@ export function routeEmbeddedMedia() {
       callback({ requestHeaders: headers });
     },
   );
-  app.on("web-contents-created", (_event, contents) => {
-    contents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) void shell.openExternal(url);
-      return { action: "deny" };
-    });
-  });
+  // Links pages open in a new window become browser tabs (see "web-contents-created" in index.ts).
 }

@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld("key", {
   readerResult: (direction: number) =>
     ipcRenderer.invoke("key:reader-result", direction),
   readerReady: () => ipcRenderer.invoke("key:reader-ready"),
+  // A PDF opened from the web (see main/browser).
+  readerAddToLibrary: () => ipcRenderer.invoke("key:reader-add-to-library"),
+  readerOpenInLibrary: () => ipcRenderer.invoke("key:reader-open-in-library"),
+  readerOpenPage: () => ipcRenderer.invoke("key:reader-open-page"),
+  clearBrowsingData: () => ipcRenderer.invoke("key:clear-browsing-data"),
   readerState: (state: unknown) => ipcRenderer.send("key:reader-state", state),
   on: (event: string, callback: (value: unknown) => void) => {
     if (
@@ -65,6 +70,7 @@ contextBridge.exposeInMainWorld("key", {
         "toggle-inspector",
         "command",
         "send-items",
+        "browser-notice",
       ].includes(event)
     )
       throw Error("Unknown event");
