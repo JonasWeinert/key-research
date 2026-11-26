@@ -4,6 +4,9 @@
   min-height: 0;
   flex-direction: column;
 }
+.key-ref-list-host > * {
+  flex: none;
+}
 .key-ref-list {
   display: flex;
   flex-direction: column;

@@ -325,9 +325,7 @@
 .pdfjs-cite-facts dd {
   min-width: 0;
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .pdfjs-cite-facts a {
   color: inherit;

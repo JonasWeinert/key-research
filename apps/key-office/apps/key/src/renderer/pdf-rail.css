@@ -75,6 +75,10 @@
   height: 14px;
 }
 
+/* While its menu is open the rail shows no preview card. */
+.key-pdf-rail[data-menu] .key-preview-rail-previews {
+  display: none;
+}
 /* Right-click on the rail: chapters or page thumbnails, and the full table of contents. */
 .key-pdf-rail-menu {
   position: absolute;

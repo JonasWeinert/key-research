@@ -162,6 +162,7 @@ export function PdfRail({ rail: given, detected }: { rail: PdfReaderRail; detect
       ref={host}
       className="key-pdf-rail"
       data-mode={contents ? "contents" : "pages"}
+      data-menu={menu ? "" : undefined}
       onContextMenu={(event) => {
         event.preventDefault();
         const box = host.current!.getBoundingClientRect();
