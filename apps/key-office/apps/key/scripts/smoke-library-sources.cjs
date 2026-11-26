@@ -193,8 +193,61 @@ const assert = require("node:assert/strict");
     await row.getByRole("button", { name: "Open", exact: true }).waitFor();
     await both(page, "topic-sources");
 
+    // ── No sideways scroll: long values fit the details panel at any width, and the reader's Details tab ──
+    await call("store_update", {
+      id: pdf.id,
+      patch: {
+        title: "Health versus income: a large-scale analysis of how people trade one against the other across countries and decades",
+        url: "https://example.org/a/very/long/path/without/spaces/health-versus-income-full-text-download?ref=supercalifragilistic",
+        containerTitle: "Proceedings of the International Interdisciplinary Conference on Health Economics and Wellbeing Measurement",
+        creators: Array.from({ length: 12 }, (_, i) => ({ given: `Marco${i}`, family: `Palma-Montgomery-Featherstonehaugh${i}` })),
+        tags: Array.from({ length: 12 }, (_, i) => `tag-with-a-long-name-${i}`).concat(["supercalifragilisticexpialidocious-unbroken-tag-name"]),
+        abstract: "People value health and income. ".repeat(10) + "averyveryverylongunbrokentokenthatneverwraps".repeat(3),
+      },
+    });
+    await call("library_save_annotations", { hash: pdf.id, annotations: [{ id: "wide", text: "averyveryverylongunbrokenhighlightedtoken".repeat(3), comment: "", color: "yellow", range: { start: { page: 0, index: 0 }, end: { page: 0, index: 10 } }, anchor: { pages: [{ page: 0, bounds: [] }] } }] });
+    const overflow = (el) => {
+      const right = el.getBoundingClientRect().left + el.clientWidth + 0.5;
+      const out = [];
+      for (const d of el.querySelectorAll("*")) {
+        const r = d.getBoundingClientRect();
+        if (!r.width || !r.height || r.right <= right) continue;
+        // Content scrolled inside a narrower box of its own (a clamp, a menu) does not count.
+        let clipped = false;
+        for (let p = d.parentElement; p && p !== el && !clipped; p = p.parentElement) clipped = getComputedStyle(p).overflowX !== "visible" && p.getBoundingClientRect().right <= right;
+        if (!clipped && !d.closest("details:not([open])")) out.push(`${d.tagName.toLowerCase()}.${[...d.classList].join(".")}`);
+      }
+      return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, out: out.slice(0, 8) };
+    };
+    const fits = async (locator, label) => {
+      const r = await locator.evaluate(overflow);
+      assert.ok(r.scrollWidth <= r.clientWidth && r.out.length === 0, `${label}: nothing runs past the panel (${JSON.stringify(r)})`);
+    };
+    // Earlier tabs hold the source as it was: start from the library alone.
+    await tabAction("open-content", { section: "sources", workspaceId: ws.id });
+    await tabAction("close-tabs", { tabId: (await activeTab()).id, which: "others" });
+    await library.locator(".kx-row", { hasText: "Health versus income" }).click();
+    await side.locator(".kx-page-highlights mark").waitFor();
+    if ((await side.locator(".kx-page-details-toggle").getAttribute("aria-expanded")) !== "true") await side.locator(".kx-page-details-toggle").click();
+    for (const width of [320, 440, 640]) {
+      await page.locator(".kx-inspector").evaluate((el, w) => el.style.setProperty("--kx-inspector-width", `${w}px`), width);
+      await page.waitForTimeout(250);
+      await fits(side, `details panel at ${width}px`);
+      if (width === 320) await both(page, "details-narrow");
+    }
+    await library.locator(".kx-row", { hasText: "Health versus income" }).dblclick({ position: { x: 24, y: 20 } });
+    const docked = page.locator(".kx-source-page[data-side=false]:visible");
+    await docked.locator(".kx-page-highlights mark").waitFor();
+    if ((await docked.locator(".kx-page-details-toggle").getAttribute("aria-expanded")) !== "true") await docked.locator(".kx-page-details-toggle").click();
+    await fits(docked, "reader's Details tab");
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(820, 900));
+    await page.waitForTimeout(400);
+    await fits(docked, "reader's Details tab, narrow window");
+    await both(page, "reader-details-narrow");
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1500, 940));
+
     assert.deepEqual(errors, []);
-    console.log(JSON.stringify({ ok: true, temp, chooser: true, dontAsk: true, bridge: true, pinnedBar: true, fileCard: true, zotero: true, topicRows: true }));
+    console.log(JSON.stringify({ ok: true, temp, chooser: true, dontAsk: true, bridge: true, pinnedBar: true, fileCard: true, zotero: true, topicRows: true, noSideScroll: true }));
   } catch (e) {
     await app.windows()[0]?.screenshot({ path: path.join(temp, "failure.png") }).catch(() => {});
     console.error("Artifacts", temp);
