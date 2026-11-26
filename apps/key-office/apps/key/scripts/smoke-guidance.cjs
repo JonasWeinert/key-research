@@ -155,7 +155,7 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
     await shot("inbox-empty-light");
 
     // The manager, from the empty state's action; follow a feed so the Inbox has items.
-    await empty.getByRole("button", { name: "Add a feed…" }).click();
+    await empty.getByRole("button", { name: "Follow something…" }).click();
     const sheet = page.getByRole("dialog", { name: "Feeds and alerts" });
     await sheet.getByText("Not following anything").waitFor();
     await shot("feeds-manager-light");
