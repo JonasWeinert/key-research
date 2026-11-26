@@ -143,7 +143,7 @@ const assert = require("node:assert/strict");
     assert.equal(bounds.views.length, 1);
     assert.equal(bounds.views[0].x, 0);
     assert.equal(bounds.views[0].y, 40);
-    assert.equal(bounds.views[0].height, bounds.size[1] - 40);
+    assert.equal(bounds.views[0].height, bounds.size[1] - 40 - 24, "above the status bar");
     const report = {
       ok: true,
       temp,

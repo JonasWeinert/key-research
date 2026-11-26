@@ -137,7 +137,7 @@ const assert = require("node:assert/strict");
     });
     await reader.getByRole("button", { name: "Details & notes", pressed: true }).waitFor();
     // Hidden from the panel itself, the reader's button follows.
-    await page.getByRole("button", { name: "Hide details and notes" }).click();
+    await page.getByRole("button", { name: "Hide details and references" }).click();
     await reader.getByRole("button", { name: "Details & notes", pressed: false }).waitFor();
     await reader.getByRole("button", { name: "Details & notes" }).click();
     await page.locator(".kx-source-page[data-side=false] .kx-page-details-toggle").waitFor();
