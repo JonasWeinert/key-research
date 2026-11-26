@@ -27,13 +27,28 @@ pub fn run(store: &Store, options: &ImportOptions, mode: Mode, progress: &dyn Fn
     let data_dir = options.data_dir.clone().or_else(crate::default_data_dir).ok_or("No Zotero library found. Choose its data folder (it contains zotero.sqlite).")?;
     progress(Progress::new("reading", 0, 0));
     let snapshot = Snapshot::load(&data_dir)?;
+    let mut saved = options.clone();
+    saved.data_dir = Some(data_dir);
+    let report = run_snapshot(store, &saved, mode, &snapshot, progress)?;
+    let state = State::open(store.root())?;
+    state.set_meta("options", &serde_json::to_string(&saved).map_err(|e| e.to_string())?)?;
+    state.set_meta("stamp", &serde_json::to_string(&snapshot.stamp).map_err(|e| e.to_string())?)?;
+    drop(snapshot);
+    // The copy is only needed while the import dialog or a run is open.
+    Snapshot::forget();
+    Ok(report)
+}
+
+/// One pass over a library read either from zotero.sqlite or from the Key Sync plugin.
+pub(crate) fn run_snapshot(store: &Store, options: &ImportOptions, mode: Mode, snapshot: &Snapshot, progress: &dyn Fn(Progress)) -> Result<ImportReport> {
+    let data_dir = snapshot.data_dir.clone();
     let mut state = State::open(store.root())?;
     let mut run = Run {
         store,
         options,
         mode,
-        snapshot: &snapshot,
-        report: ImportReport { data_dir: data_dir.clone(), ..Default::default() },
+        snapshot,
+        report: ImportReport { data_dir, ..Default::default() },
         collection_ids: HashMap::new(),
         collection_keys: HashMap::new(),
         source_of: HashMap::new(),
@@ -66,17 +81,10 @@ pub fn run(store: &Store, options: &ImportOptions, mode: Mode, progress: &dyn Fn
     state.save("item", &run.item_changes)?;
     state.save("note", &run.note_changes)?;
     state.save("collection", &run.collection_changes)?;
-    let mut saved = options.clone();
-    saved.data_dir = Some(data_dir);
-    state.set_meta("options", &serde_json::to_string(&saved).map_err(|e| e.to_string())?)?;
-    state.set_meta("stamp", &serde_json::to_string(&snapshot.stamp).map_err(|e| e.to_string())?)?;
     state.set_meta("lastRun", &key_store::now_ms().to_string())?;
     run.report.conflict_count = run.report.conflict_count.max(run.report.conflicts.len());
     let report = run.report;
     state.set_meta("report", &serde_json::to_string(&report).map_err(|e| e.to_string())?)?;
-    drop(snapshot);
-    // The copy is only needed while the import dialog or a run is open.
-    Snapshot::forget();
     Ok(report)
 }
 
@@ -93,19 +101,25 @@ pub fn last_run(store: &Store) -> Result<crate::LastRun> {
 
 /// Which Zotero items and collections an import covers.
 struct Scope {
-    /// None for the whole library.
+    /// None for the whole library (unless items are chosen).
     collections: Option<HashSet<i64>>,
+    /// Items chosen one by one, by key.
+    items: Option<HashSet<String>>,
+    /// Collections recreated in Key: the chosen ones, and those holding chosen items (with
+    /// the collections around them). None for all.
+    mirrored: Option<HashSet<i64>>,
 }
 
 impl Scope {
     fn covers(&self, snapshot: &Snapshot, item: i64) -> bool {
-        match &self.collections {
-            None => true,
-            Some(allowed) => snapshot.collections_of.get(&item).is_some_and(|c| c.iter().any(|c| allowed.contains(c))),
+        if self.collections.is_none() && self.items.is_none() {
+            return true;
         }
+        let in_collection = self.collections.as_ref().is_some_and(|allowed| snapshot.collections_of.get(&item).is_some_and(|c| c.iter().any(|c| allowed.contains(c))));
+        in_collection || self.items.as_ref().is_some_and(|keys| snapshot.key_of.get(&item).is_some_and(|k| keys.contains(k)))
     }
     fn mirrors(&self, collection: i64) -> bool {
-        self.collections.as_ref().is_none_or(|c| c.contains(&collection))
+        self.mirrored.as_ref().is_none_or(|c| c.contains(&collection))
     }
 }
 
@@ -138,7 +152,26 @@ impl Run<'_> {
                 snapshot.with_descendants(&roots).into_iter().collect()
             })
         };
-        Scope { collections }
+        let items: Option<HashSet<String>> = self.options.item_keys.as_ref().map(|keys| keys.iter().cloned().collect());
+        let mirrored = items.as_ref().map(|keys| {
+            let mut ids: HashSet<i64> = collections.clone().unwrap_or_default();
+            for (item, key) in &snapshot.key_of {
+                if keys.contains(key) {
+                    for mut current in snapshot.collections_of.get(item).into_iter().flatten().copied() {
+                        // The collection and those it sits in.
+                        while ids.insert(current) {
+                            match snapshot.collection(current).and_then(|c| c.parent) {
+                                Some(parent) => current = parent,
+                                None => break,
+                            }
+                        }
+                    }
+                }
+            }
+            ids
+        });
+        let mirrored = mirrored.or_else(|| collections.clone());
+        Scope { collections, items, mirrored }
     }
 
     fn conflict(&mut self, title: &str, what: &str, detail: String) {
@@ -273,11 +306,31 @@ impl Run<'_> {
             .filter_map(|a| Some(ZItem { id: a.id, key: snapshot.key_of.get(&a.id)?.clone(), type_name: "document".into(), added: snapshot.added_of.get(&a.id).cloned().unwrap_or_default() }))
             .collect();
         let files = self.files();
+        let unlink = self.options.unlink_outside_scope;
+        let is_unlinked = |t: &Tracked| t.base.get("unlinked").and_then(Json::as_bool) == Some(true);
         let candidates: Vec<&ZItem> = snapshot
             .items
             .iter()
             .chain(&standalone)
-            .filter(|item| scope.covers(snapshot, item.id) || tracked.get(&item.key).is_some_and(|t| t.id.is_some()))
+            .filter(|item| {
+                if scope.covers(snapshot, item.id) {
+                    return true;
+                }
+                let Some(t) = tracked.get(&item.key).filter(|t| t.id.is_some()) else { return false };
+                if !unlink {
+                    return true;
+                }
+                // Out of the sync's scope now: the source stays in Key, no longer followed.
+                if !is_unlinked(t) {
+                    let mut base = t.base.clone();
+                    if let Some(object) = base.as_object_mut() {
+                        object.insert("unlinked".into(), Json::Bool(true));
+                    }
+                    self.report.unlinked += 1;
+                    self.item_changes.insert(item.key.clone(), Some(Tracked { base, ..t.clone() }));
+                }
+                false
+            })
             .collect();
         let total = candidates.len();
         let mut new: Vec<(SourceInput, &ZItem, Map<String, Json>)> = Vec::new();
@@ -309,7 +362,7 @@ impl Run<'_> {
             };
             let restore = known.is_some_and(|t| t.trashed_by_sync);
             // Unchanged in Zotero since the last run: nothing to do.
-            if !restore && base.is_some_and(|b| b["z"] == Json::Object(z.clone())) {
+            if !restore && !known.is_some_and(is_unlinked) && base.is_some_and(|b| b["z"] == Json::Object(z.clone())) {
                 self.report.unchanged += 1;
                 self.source_of.insert(item.id, id);
                 continue;
@@ -351,7 +404,7 @@ impl Run<'_> {
             // Tracked items that are no longer in Zotero (deleted, or in Zotero's trash).
             let alive: HashSet<&str> = snapshot.items.iter().chain(&standalone).map(|i| i.key.as_str()).collect();
             for (key, t) in tracked {
-                let Some(id) = t.id.as_ref().filter(|_| !alive.contains(key.as_str()) && !t.trashed_by_sync) else { continue };
+                let Some(id) = t.id.as_ref().filter(|_| !alive.contains(key.as_str()) && !t.trashed_by_sync && !is_unlinked(t)) else { continue };
                 if let Some(current) = self.store.source(id)? {
                     if current.trashed_at.is_none() {
                         self.store.trash(std::slice::from_ref(id), true)?;

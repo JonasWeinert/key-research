@@ -262,29 +262,53 @@ var KeySync = {
       }
       const items = [...tops.values()];
       await KeySync.load(items);
+      // Read before the items, so a change made meanwhile makes the stamp look stale.
+      const stamps = await KeySync.stamps(libraryID, items.map((i) => i.id));
       const records = [];
-      for (const item of items) records.push(await KeySync.serialize(item));
+      for (const item of items) records.push({ ...(await KeySync.serialize(item)), stamp: stamps.get(item.id) || "" });
       return { records, missing };
     },
 
     async versions(libraryID) {
-      return (await KeySync.topLevelRows(libraryID)).map((r) => ({ key: r.key, version: r.version, dateModified: r.modified, deleted: !!r.deleted }));
+      return (await KeySync.topLevelRows(libraryID)).map((r) => ({ key: r.key, version: r.version, stamp: r.stamp, deleted: !!r.deleted }));
     },
   },
 
-  /** Top-level items of a library (not notes, files or annotations inside an item). */
+  /** Top-level items of a library (not notes, files or annotations inside an item), each
+   *  with a stamp that changes when it or anything inside it changes: the latest
+   *  modification time and the number of parts. */
   async topLevelRows(libraryID) {
     const rows = await Zotero.DB.queryAsync(
-      `SELECT I.itemID, I.key, I.version, I.clientDateModified AS modified, (D.itemID IS NOT NULL) AS deleted
-       FROM items I LEFT JOIN deletedItems D USING (itemID)
-       WHERE I.libraryID = ?
+      `WITH family(top, id) AS (
+         SELECT itemID, itemID FROM items WHERE libraryID = ?1
+         UNION ALL SELECT parentItemID, itemID FROM itemNotes WHERE parentItemID IS NOT NULL
+         UNION ALL SELECT parentItemID, itemID FROM itemAttachments WHERE parentItemID IS NOT NULL
+         UNION ALL SELECT A.parentItemID, N.itemID FROM itemAnnotations N JOIN itemAttachments A ON A.itemID = N.parentItemID WHERE A.parentItemID IS NOT NULL
+         UNION ALL SELECT N.parentItemID, N.itemID FROM itemAnnotations N
+       ),
+       stamps AS (
+         SELECT F.top, MAX(X.clientDateModified) || '#' || COUNT(*) AS stamp FROM family F JOIN items X ON X.itemID = F.id
+         WHERE F.id NOT IN (SELECT itemID FROM deletedItems) OR F.id = F.top GROUP BY F.top
+       )
+       SELECT I.itemID, I.key, I.version, S.stamp, (D.itemID IS NOT NULL) AS deleted
+       FROM items I LEFT JOIN deletedItems D USING (itemID) LEFT JOIN stamps S ON S.top = I.itemID
+       WHERE I.libraryID = ?1
          AND I.itemID NOT IN (SELECT itemID FROM itemNotes WHERE parentItemID IS NOT NULL)
          AND I.itemID NOT IN (SELECT itemID FROM itemAttachments WHERE parentItemID IS NOT NULL)
          AND I.itemID NOT IN (SELECT itemID FROM itemAnnotations)
        ORDER BY I.itemID`,
       [libraryID],
     );
-    return (rows || []).map((r) => ({ itemID: r.itemID, key: r.key, version: r.version, modified: r.modified, deleted: r.deleted }));
+    return (rows || []).map((r) => ({ itemID: r.itemID, key: r.key, version: r.version, stamp: r.stamp || "", deleted: r.deleted }));
+  },
+
+  /** Stamps (see topLevelRows) of some top-level items, by item ID. */
+  async stamps(libraryID, itemIDs) {
+    const wanted = new Set(itemIDs);
+    const stamps = new Map();
+    if (!wanted.size) return stamps;
+    for (const row of await this.topLevelRows(libraryID)) if (wanted.has(row.itemID)) stamps.set(row.itemID, row.stamp);
+    return stamps;
   },
 
   async load(items) {

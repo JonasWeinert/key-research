@@ -91,6 +91,25 @@ impl Library {
         report
     }
 
+    /// One sync through the Key Sync Zotero plugin; skipped while another run holds the lock.
+    fn zotero_plugin_sync(&self, force: bool) -> Result<key_zotero::plugin::Outcome, String> {
+        let Ok(_running) = self.zotero.try_lock() else {
+            return Ok(key_zotero::plugin::Outcome::default());
+        };
+        let progress = self.zotero_progress.clone();
+        let outcome = key_zotero::plugin::sync(&self.store, force, &|p| {
+            if let Ok(mut current) = progress.lock() {
+                *current = Some(p);
+            }
+        });
+        *self.zotero_progress.lock().map_err(|e| e.to_string())? = None;
+        if outcome.as_ref().is_ok_and(|o| o.ran) {
+            self.indexer.wake();
+            self.openalex.wake();
+        }
+        outcome
+    }
+
     /// A key-store source the reader knows by content hash (or id, before hashing).
     pub fn reader_source(&self, hash: &str) -> Option<(Source, PathBuf)> {
         let source = self.store.source_by_hash(hash).ok()??;
@@ -286,11 +305,36 @@ impl Library {
                 let options: key_zotero::ImportOptions = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
                 json_output(key_zotero::preview(&options)?)
             })(),
+            // Every top-level Zotero item, for choosing papers one by one.
+            "store_zotero_items" => (|| {
+                let options: key_zotero::ImportOptions = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
+                json_output(key_zotero::items(&options)?)
+            })(),
+            // Sync through the Key Sync plugin: whether Zotero and the plugin answer, the
+            // sync's settings, one sync, and its status.
+            "store_zotero_plugin_probe" => json_output(key_zotero::plugin::probe(
+                Some(&self.store),
+                arg::<Option<u16>>(args, "port").ok().flatten(),
+                arg::<Option<String>>(args, "token").ok().flatten(),
+            )),
+            "store_zotero_plugin_configure" => (|| {
+                let configure: key_zotero::plugin::Configure = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
+                json_output(key_zotero::plugin::configure(&self.store, configure)?)
+            })(),
+            "store_zotero_plugin_sync" => (|| {
+                let force = arg::<Option<bool>>(args, "force")?.unwrap_or(false);
+                json_output(self.zotero_plugin_sync(force)?)
+            })(),
+            "store_zotero_plugin_status" => key_zotero::plugin::status(&self.store).and_then(json_output),
             "store_zotero_progress" => self.zotero_progress.lock().map_err(|e| e.to_string()).and_then(|p| json_output(p.clone())),
             "store_zotero_status" => key_zotero::last_run(&self.store).and_then(json_output),
             // Called on a timer while sync is on: cheap unless zotero.sqlite changed.
             "store_zotero_sync" => (|| {
                 let force = arg::<Option<bool>>(args, "force")?.unwrap_or(false);
+                // The plugin keeps this library in sync instead.
+                if key_zotero::plugin::configured(&self.store) {
+                    return json_output(json!({ "ran": false, "reason": "plugin" }));
+                }
                 let Some(options) = key_zotero::last_run(&self.store)?.options else {
                     return json_output(json!({ "ran": false, "reason": "never-imported" }));
                 };

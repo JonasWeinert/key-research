@@ -181,6 +181,8 @@ var KeySyncCore = (() => {
         }
         const scope = normalizeScope(body.scope);
         const all = await adapter.scopeKeys(libraryID, scope);
+        // Only which items are in scope, for a reconcile.
+        if (body.keysOnly) return json(200, { libraryID, seq, epoch: journal.epoch, keys: all, total: all.length });
         const offset = Math.max(0, Number(body.offset) || 0);
         const limit = Math.min(ITEMS_PAGE_MAX, Math.max(1, Number(body.limit) || ITEMS_PAGE));
         const page = all.slice(offset, offset + limit);

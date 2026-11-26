@@ -39,6 +39,7 @@ All bodies are JSON. Send `Authorization: Bearer <pairing code>`.
 | `GET handshake` | `{name, protocol, version, zotero, paired}`; when paired also `epoch`, `seq`, `defaultLibraryID`, `libraries`. Works without the code, so Key can tell "plugin missing" from "not paired". |
 | `GET collections?libraryID=` | `{collections: [{key, name, parentKey}]}` |
 | `POST items` `{libraryID, scope, offset, limit}` | A page of top-level items in scope (`{type: "all"}`, `{type: "collections", collections: [keys]}`, `{type: "items", items: [keys]}`): `{items, total, next, seq, epoch}` |
+| `POST items` `{libraryID, scope, keysOnly: true}` | Only the keys in scope: `{keys, total}`. |
 | `POST items` `{libraryID, keys}` | Those items (a child key returns its top-level item); `missing` lists keys that no longer exist. |
 | `GET changes?since=&epoch=&libraryID=` | `{epoch, seq, floor, more, resyncRequired, changes: [{seq, kind, op, key, libraryID}]}`. `kind` is `item`, `collection`, `library` (refetch it all) or `ping`; `op` is `upsert` or `delete`. `resyncRequired` when the journal cannot answer (another epoch, dropped entries, or a lost save). |
 | `GET versions?libraryID=` | Every top-level item's key, version, modification date and whether it is in the trash, for a full reconcile. |
