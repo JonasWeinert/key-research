@@ -9,6 +9,9 @@ mod identify;
 mod linked;
 mod links;
 pub mod matching;
+pub mod normalize;
+pub mod formula;
+pub mod find;
 mod openalex;
 mod properties;
 mod relations;
@@ -23,6 +26,7 @@ pub mod tag_analysis;
 pub mod tag_plan;
 pub mod smart_query;
 pub mod web_references;
+pub mod web_pages;
 mod html_dom;
 pub mod feeds;
 pub mod reading;
@@ -262,6 +266,9 @@ pub struct ListQuery {
     pub collection_id: Option<String>,
     #[serde(default)]
     pub tag: Option<String>,
+    /// Only `tag` itself, not the tags under it in the tag tree.
+    #[serde(default)]
+    pub tag_exact: bool,
     #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
@@ -306,8 +313,7 @@ pub struct SortKey {
 fn sort_expression(field: &str) -> String {
     // `property:<name>` sorts by a typed property; the name is quoted into a JSON path.
     if let Some(name) = field.strip_prefix("property:") {
-        let name: String = name.chars().filter(|c| !matches!(c, '"' | '\\' | '\0')).collect::<String>().replace('\'', "''");
-        return format!("json_extract(s.properties, '$.\"{name}\"')");
+        return formula::property_sql(name);
     }
     match field {
         "title" => "s.title COLLATE NOCASE",
@@ -502,7 +508,10 @@ impl Store {
         citation_keys::ensure_schema(&conn)?;
         feeds::ensure_schema(&conn)?;
         reading::ensure_schema(&conn)?;
+        graph::ensure_people_index(&conn)?;
+        formula::register(&conn)?;
         let reader = Connection::open(root.join("key.db")).map_err(e)?;
+        formula::register(&reader)?;
         reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
         Ok(Self { root, conn: Arc::new(Mutex::new(conn)), reader: Arc::new(Mutex::new(reader)), duplicates: Default::default() })
     }
@@ -563,6 +572,8 @@ impl Store {
         let db = self.db()?;
         let tx = db.unchecked_transaction().map_err(e)?;
         let now = now_ms();
+        // People new to the library get their merge suggestions once, at the end.
+        let ids = graph::with_batched_suggestions(&tx, || {
         let mut ids = Vec::with_capacity(inputs.len());
         for input in &inputs {
             let existing: Option<String> = match (&input.origin, &input.origin_key) {
@@ -600,6 +611,8 @@ impl Store {
             refresh_fts(&tx, &id)?;
             ids.push(id);
         }
+        Ok(ids)
+        })?;
         tx.commit().map_err(e)?;
         Ok(ids)
     }
@@ -624,6 +637,7 @@ impl Store {
         if let Some(source) = source.as_mut() {
             identify::decorate(&db, source)?;
             citation_keys::decorate(&db, source)?;
+            formula::decorate(&db, std::slice::from_mut(source))?;
         }
         Ok(source)
     }
@@ -667,11 +681,12 @@ impl Store {
             query.offset
         );
         let mut statement = db.prepare(&sql).map_err(e)?;
-        let items = statement
+        let mut items = statement
             .query_map(params_from_iter(values.iter()), read_source)
             .map_err(e)?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(e)?;
+        formula::decorate(&db, &mut items)?;
         let next = query.offset + items.len();
         let counts = counts(&db, query)?;
         Ok(SourcePage {
@@ -833,72 +848,19 @@ impl Store {
     }
 
     pub fn create_collection(&self, name: &str, parent_id: Option<&str>, origin_key: Option<&str>) -> Result<Collection> {
-        let id = new_id();
-        let db = self.db()?;
-        if let Some(key) = origin_key {
-            if let Some(existing) = db
-                .query_row("SELECT id FROM collections WHERE origin_key = ?", [key], |r| r.get::<_, String>(0))
-                .optional()
-                .map_err(e)?
-            {
-                db.execute("UPDATE collections SET name = ?2, parent_id = ?3 WHERE id = ?1", params![existing, name, parent_id])
-                    .map_err(e)?;
-                drop(db);
-                return self.collections()?.into_iter().find(|c| c.id == existing).ok_or_else(|| "Collection missing".into());
-            }
-        }
-        db.execute(
-            "INSERT INTO collections(id, parent_id, name, position, origin_key)
-             VALUES (?1, ?2, ?3, (SELECT coalesce(max(position), 0) + 1 FROM collections), ?4)",
-            params![id, parent_id, name.trim(), origin_key],
-        )
-        .map_err(e)?;
-        drop(db);
+        let id = create_collection_in(&*self.db()?, &new_id(), name, parent_id, origin_key)?;
         self.collections()?.into_iter().find(|c| c.id == id).ok_or_else(|| "Collection missing".into())
     }
 
     pub fn update_collection(&self, id: &str, name: Option<&str>, parent_id: Option<Option<&str>>) -> Result<()> {
-        let db = self.db()?;
-        if let Some(name) = name {
-            db.execute("UPDATE collections SET name = ?2 WHERE id = ?1", params![id, name.trim()]).map_err(e)?;
-        }
-        if let Some(parent) = parent_id {
-            if let Some(parent) = parent {
-                let inside: bool = db
-                    .query_row(
-                        "WITH RECURSIVE up(id) AS (SELECT ?1 UNION SELECT c.parent_id FROM collections c JOIN up ON c.id = up.id WHERE c.parent_id IS NOT NULL)
-                         SELECT EXISTS(SELECT 1 FROM up WHERE id = ?2)",
-                        params![parent, id],
-                        |r| r.get(0),
-                    )
-                    .map_err(e)?;
-                if inside {
-                    return Err("A collection cannot contain itself".into());
-                }
-            }
-            db.execute("UPDATE collections SET parent_id = ?2 WHERE id = ?1", params![id, parent]).map_err(e)?;
-        }
-        Ok(())
+        update_collection_in(&*self.db()?, id, name, parent_id)
     }
 
     /// Puts `ids` under `parent_id` in this order; other siblings keep their relative order after them.
     pub fn reorder_collections(&self, parent_id: Option<&str>, ids: &[String]) -> Result<()> {
-        for id in ids {
-            self.update_collection(id, None, Some(parent_id))?;
-        }
-        let mut db = self.db()?;
-        let tx = db.transaction().map_err(e)?;
-        let siblings: Vec<String> = {
-            let mut statement = tx
-                .prepare("SELECT id FROM collections WHERE parent_id IS ?1 ORDER BY position, name COLLATE NOCASE")
-                .map_err(e)?;
-            let rows = statement.query_map([parent_id], |r| r.get::<_, String>(0)).map_err(e)?;
-            rows.collect::<std::result::Result<_, _>>().map_err(e)?
-        };
-        let order = ids.iter().cloned().chain(siblings.into_iter().filter(|s| !ids.contains(s)));
-        for (position, id) in order.enumerate() {
-            tx.execute("UPDATE collections SET position = ?2 WHERE id = ?1", params![id, position as i64]).map_err(e)?;
-        }
+        let db = self.db()?;
+        let tx = db.unchecked_transaction().map_err(e)?;
+        reorder_collections_in(&tx, parent_id, ids)?;
         tx.commit().map_err(e)
     }
 
@@ -1321,6 +1283,71 @@ impl Store {
 
 // ── Row helpers ─────────────────────────────────────────────
 
+/// Creates a collection (or, for an `origin_key` seen before, renames and moves that one); its id.
+pub(crate) fn create_collection_in(db: &Connection, id: &str, name: &str, parent_id: Option<&str>, origin_key: Option<&str>) -> Result<String> {
+    if let Some(key) = origin_key {
+        if let Some(existing) = db.query_row("SELECT id FROM collections WHERE origin_key = ?", [key], |r| r.get::<_, String>(0)).optional().map_err(e)? {
+            db.execute("UPDATE collections SET name = ?2, parent_id = ?3 WHERE id = ?1", params![existing, name, parent_id]).map_err(e)?;
+            return Ok(existing);
+        }
+    }
+    db.execute(
+        "INSERT INTO collections(id, parent_id, name, position, origin_key)
+         VALUES (?1, ?2, ?3, (SELECT coalesce(max(position), 0) + 1 FROM collections), ?4)",
+        params![id, parent_id, name.trim(), origin_key],
+    )
+    .map_err(e)?;
+    Ok(id.to_string())
+}
+
+pub(crate) fn update_collection_in(db: &Connection, id: &str, name: Option<&str>, parent_id: Option<Option<&str>>) -> Result<()> {
+    if let Some(name) = name {
+        db.execute("UPDATE collections SET name = ?2 WHERE id = ?1", params![id, name.trim()]).map_err(e)?;
+    }
+    if let Some(parent) = parent_id {
+        if let Some(parent) = parent {
+            let inside: bool = db
+                .query_row(
+                    "WITH RECURSIVE up(id) AS (SELECT ?1 UNION SELECT c.parent_id FROM collections c JOIN up ON c.id = up.id WHERE c.parent_id IS NOT NULL)
+                     SELECT EXISTS(SELECT 1 FROM up WHERE id = ?2)",
+                    params![parent, id],
+                    |r| r.get(0),
+                )
+                .map_err(e)?;
+            if inside {
+                return Err("A collection cannot contain itself".into());
+            }
+        }
+        db.execute("UPDATE collections SET parent_id = ?2 WHERE id = ?1", params![id, parent]).map_err(e)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn reorder_collections_in(db: &Connection, parent_id: Option<&str>, ids: &[String]) -> Result<()> {
+    for id in ids {
+        update_collection_in(db, id, None, Some(parent_id))?;
+    }
+    let siblings: Vec<String> = {
+        let mut statement = db.prepare("SELECT id FROM collections WHERE parent_id IS ?1 ORDER BY position, name COLLATE NOCASE").map_err(e)?;
+        let rows = statement.query_map([parent_id], |r| r.get::<_, String>(0)).map_err(e)?;
+        rows.collect::<std::result::Result<_, _>>().map_err(e)?
+    };
+    let order = ids.iter().cloned().chain(siblings.into_iter().filter(|s| !ids.contains(s)));
+    for (position, id) in order.enumerate() {
+        db.execute("UPDATE collections SET position = ?2 WHERE id = ?1", params![id, position as i64]).map_err(e)?;
+    }
+    Ok(())
+}
+
+/// A collection and the collections under it, parents first.
+pub(crate) fn collection_subtree(db: &Connection, id: &str) -> Result<Vec<String>> {
+    let mut statement = db
+        .prepare("WITH RECURSIVE down(id, depth) AS (SELECT ?1, 0 UNION ALL SELECT c.id, down.depth + 1 FROM collections c JOIN down ON c.parent_id = down.id) SELECT id FROM down ORDER BY depth")
+        .map_err(e)?;
+    let rows = statement.query_map([id], |r| r.get::<_, String>(0)).map_err(e)?;
+    rows.collect::<std::result::Result<_, _>>().map_err(e)
+}
+
 fn select_sources() -> String {
     let mut columns: Vec<String> = TEXT_FIELDS.iter().chain(NUMBER_FIELDS).map(|(_, c)| format!("s.{c}")).collect();
     columns.extend(
@@ -1704,7 +1731,7 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
         values.push(Value::Text(collection.clone()));
     }
     if let Some(tag) = &query.tag {
-        conditions.push("EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value = ?)".into());
+        conditions.push(if query.tag_exact { "EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value = ?)".into() } else { tag_ops::tag_family_condition("?") });
         values.push(Value::Text(tag.clone()));
     }
     if let Some(kind) = &query.kind {

@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WebContents } from "electron";
-import { capturePage, type PageMeta } from "./browser/snapshot";
+import { capturePage } from "./browser/snapshot";
 import { safeFileName } from "./browser/urls";
 import { proxiedUrlOf } from "./browser/proxy-service";
 
@@ -29,60 +29,8 @@ type Source = {
 
 const COMMANDS = new Set(["saved_page_save", "saved_page_find", "saved_page_html", "saved_page_fetch"]);
 
-/** A URL as pages are matched by: no fragment, no trailing slash, no tracking parameters. */
-export function pageKey(url: string | undefined) {
-  if (!url) return "";
-  try {
-    const u = new URL(url);
-    u.hash = "";
-    for (const name of [...u.searchParams.keys()]) if (/^(utm_|fbclid$|gclid$|mc_)/i.test(name)) u.searchParams.delete(name);
-    u.hostname = u.hostname.replace(/^www\./, "");
-    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}${u.search}`.toLowerCase();
-  } catch {
-    return url;
-  }
-}
-
-/** "Doe, Jane" or "Jane Doe" as a creator; organisations stay literal. */
-function creator(name: string) {
-  const clean = name.replace(/\s+/g, " ").trim();
-  if (clean.includes(",")) {
-    const [family, given] = clean.split(",", 2).map((s) => s.trim());
-    return { family, given, role: "author" };
-  }
-  const parts = clean.split(" ");
-  if (parts.length < 2 || parts.length > 4) return { literal: clean, role: "author" };
-  return { family: parts.at(-1), given: parts.slice(0, -1).join(" "), role: "author" };
-}
-
-/** The source fields a page's metadata fills. */
-export function sourcePatch(meta: PageMeta, capturedAt: string) {
-  const date = meta.date && !Number.isNaN(Date.parse(meta.date)) ? new Date(meta.date) : undefined;
-  const site = meta.site || (() => {
-    try {
-      return new URL(meta.url).hostname.replace(/^www\./, "");
-    } catch {
-      return undefined;
-    }
-  })();
-  const patch: Record<string, unknown> = {
-    itemType: "webpage",
-    title: meta.title || site || meta.url,
-    url: meta.url,
-    containerTitle: site,
-    accessed: capturedAt.slice(0, 10),
-    creators: meta.authors.map(creator),
-  };
-  if (date) {
-    patch.date = meta.date!.slice(0, 10);
-    patch.year = date.getUTCFullYear();
-  }
-  if (meta.doi) patch.doi = meta.doi;
-  if (meta.description) patch.abstract = meta.description.slice(0, 4000);
-  if (meta.language) patch.language = meta.language;
-  patch.properties = { webSnapshot: { url: meta.url, canonical: meta.canonical, capturedAt } };
-  return patch;
-}
+// Which source a page is (its normalised address or DOI) and the fields its metadata fills
+// are decided by the host (key-store `web_pages.rs`): `store_web_page_find`, `store_web_page_apply`.
 
 export class WebSources {
   constructor(
@@ -117,17 +65,8 @@ export class WebSources {
   /** The library's web source for `url`, preferring one with a saved page; else a source
    * with no file yet that is this page (by its DOI or address), to save the page into. */
   async find(url: string, workspaceId: string, doi?: string): Promise<Source | undefined> {
-    const key = pageKey(url);
-    if (!key) return undefined;
-    const page = await this.invoke<{ items: Source[] }>("store_sources", { kind: "web", limit: 2000, offset: 0 }, workspaceId);
-    const matches = page.items.filter((s) => !s.trashedAt && pageKey(s.url) === key);
-    const web = matches.find((s) => s.filePath) ?? matches[0];
-    if (web) return web;
-    const text = doi || url;
-    const found = await this.invoke<{ items: Source[] }>("store_sources", { text: text.slice(0, 200), limit: 12, scope: "all" }, workspaceId).catch(() => ({ items: [] as Source[] }));
-    return found.items.find(
-      (s) => !s.trashedAt && !s.filePath && ((doi && s.doi?.toLowerCase() === doi.toLowerCase()) || (s.url && pageKey(s.url) === key)),
-    );
+    if (!url) return undefined;
+    return (await this.invoke<Source | null>("store_web_page_find", { url, doi: doi ?? null }, workspaceId)) ?? undefined;
   }
 
   /** Snapshots the page and keeps it in the library: answers the source and whether it was
@@ -150,17 +89,11 @@ export class WebSources {
         const [created] = await this.invoke<{ id: string; existing?: boolean }[]>("store_import_files", { paths: [path] }, workspaceId);
         id = created.id;
       }
-      const patch = sourcePatch(snapshot.meta, snapshot.capturedAt);
-      if (existing && existing.kind !== "web") {
-        // A reference keeps what it is (an article, its title and authors); it gains the page.
-        const keep: Record<string, unknown> = { properties: { ...(existing.properties ?? {}), webSnapshot: (patch.properties as Record<string, unknown>).webSnapshot } };
-        if (!existing.url) keep.url = snapshot.meta.url;
-        await this.invoke("store_update", { id, patch: keep }, workspaceId);
-      } else {
-        // A page saved again keeps the title and details someone may have edited.
-        if (existing?.filePath && existing.id === id) for (const key of ["title", "creators", "containerTitle", "abstract"]) delete patch[key];
-        await this.invoke("store_update", { id, patch }, workspaceId);
-      }
+      await this.invoke(
+        "store_web_page_apply",
+        { id, meta: snapshot.meta, capturedAt: snapshot.capturedAt, existingId: existing?.id ?? null, existingKind: existing?.kind ?? null, existingHadFile: !!existing?.filePath },
+        workspaceId,
+      );
       // The host reads the reference list from the live page and keeps it as an analysis.
       if (live) await this.invoke("store_web_references_detect", { id, html: live.html, url: live.url }, workspaceId).catch(() => undefined);
       this.changed();

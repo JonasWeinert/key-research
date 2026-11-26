@@ -65,7 +65,8 @@ fn source_set(kind: &str) -> Option<String> {
         "person" => "SELECT sp.source_id FROM source_people sp WHERE sp.person_id = ?1".into(),
         "venue" => "SELECT s.id FROM sources s WHERE s.venue_id = ?1".into(),
         "topic" | "field" => TOPIC_SOURCES.into(),
-        "tag" => "SELECT s.id FROM sources s, json_each(s.tags) j WHERE j.value = ?1".into(),
+        // A tag with the tags under it in the tag tree.
+        "tag" => format!("SELECT s.id FROM sources s WHERE {}", crate::tag_ops::tag_family_condition("?1")),
         "collection" => "SELECT sc.source_id FROM source_collections sc WHERE sc.collection_id IN (
             WITH RECURSIVE down(id) AS (SELECT ?1 UNION ALL SELECT c.id FROM collections c JOIN down ON c.parent_id = down.id) SELECT id FROM down)"
             .into(),
@@ -173,8 +174,15 @@ fn name_of(db: &Connection, kind: &str, id: &str) -> Result<Option<String>> {
         "topic" | "field" => "SELECT name FROM topics WHERE id = ?",
         "collection" => "SELECT name FROM collections WHERE id = ?",
         "source" => "SELECT CASE WHEN title = '' THEN 'Untitled' ELSE title END FROM sources WHERE id = ? AND trashed_at IS NULL",
-        "tag" => "SELECT ?1 FROM sources s, json_each(s.tags) j WHERE j.value = ?1 AND s.trashed_at IS NULL LIMIT 1",
+        "tag" => "",
         _ => return Ok(None),
+    };
+    let family;
+    let sql = if kind == "tag" {
+        family = format!("SELECT ?1 FROM sources s WHERE s.trashed_at IS NULL AND {} LIMIT 1", crate::tag_ops::tag_family_condition("?1"));
+        family.as_str()
+    } else {
+        sql
     };
     db.query_row(sql, [id], |r| r.get(0)).optional().map_err(e)
 }
@@ -227,7 +235,7 @@ impl Store {
         let db = self.read()?;
         let (count, first, last): (i64, Option<i64>, Option<i64>) = db
             .query_row(
-                "SELECT count(DISTINCT s.id), min(s.year), max(s.year) FROM sources s, json_each(s.tags) j WHERE j.value = ?1 AND s.trashed_at IS NULL",
+                &format!("SELECT count(*), min(s.year), max(s.year) FROM sources s WHERE s.trashed_at IS NULL AND {}", crate::tag_ops::tag_family_condition("?1")),
                 [name],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )

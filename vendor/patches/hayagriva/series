@@ -1,0 +1,5 @@
+# Key's changes to hayagriva, applied in this order on top of the pristine crate.
+# <patch> | why | upstream status
+0001-trim-manifest-to-the-library.patch | drop the CLI and test targets whose files are pruned from the vendored tree | Key-only, not for upstream
+0002-bibliography-drops-citation-name-disambiguation.patch | bibliography entries no longer print a citation's disambiguated name forms ("Smith." for "Smith, A.") | should be submitted upstream (typst/hayagriva)
+0003-title-case-keeps-inner-capitals.patch | CSL title case capitalises word starts only, so "PLoS One", "iPhone", "mRNA" keep their case (CSL spec behaviour) | should be submitted upstream (typst/hayagriva)

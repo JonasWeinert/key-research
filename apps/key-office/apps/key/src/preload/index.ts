@@ -99,6 +99,7 @@ contextBridge.exposeInMainWorld("key", {
         "add-from-source",
         "full-screen",
         "open-item-link",
+        "library-sources-changed",
       ].includes(event)
     )
       throw Error("Unknown event");

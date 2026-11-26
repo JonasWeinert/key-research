@@ -155,7 +155,10 @@ impl OpenAlex {
             };
             match next {
                 Ok(Some(job)) => {
-                    if let Err(fail) = enrich(&store, &job, &options) {
+                    let result = enrich(&store, &job, &options);
+                    // Open library views refresh (throttled) as lookups fill sources in.
+                    crate::events::library_changed();
+                    if let Err(fail) = result {
                         let (status, retry) = match &fail {
                             Fail::NotFound | Fail::Unlisted { .. } => ("not_found", None),
                             // Busy: back off 1, 2, 4 … minutes, then give up until asked again.
@@ -390,8 +393,7 @@ fn fixture(dir: &std::path::Path, path: &str, query: &[(&str, &str)]) -> Result<
 }
 
 fn bare_doi(doi: &str) -> String {
-    let doi = doi.trim().to_ascii_lowercase();
-    ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "doi:"].iter().find_map(|p| doi.strip_prefix(p).map(String::from)).unwrap_or(doi)
+    key_store::normalize::doi_or_text(doi)
 }
 
 /// The work for a source: by OpenAlex id, DOI (as read from an added PDF, then its other

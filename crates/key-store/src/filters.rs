@@ -12,7 +12,8 @@ pub struct Filter {
     /// and, by id from the metadata graph: person | venue | publisher | institution | topic | keyword | funder;
     /// from OpenAlex: citations (with op gt | gte | lt | lte | is) | retracted | oaStatus | workType | language
     pub field: String,
-    /// is | contains (default), or a comparison for `citations`
+    /// is | contains (default), or a comparison for `citations`; for a tag, `is` includes the
+    /// tags under it in the tag tree and `exact` is that tag only| contains (default), or a comparison for `citations`
     #[serde(default)]
     pub op: Option<String>,
     pub value: String,
@@ -57,7 +58,9 @@ pub(crate) fn condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
             "s.id IN (SELECT ch.source_id FROM chunks ch WHERE ch.id IN (SELECT rowid FROM chunks_fts WHERE chunks_fts MATCH ?))".into(),
             vec![Value::Text(fts_phrase(value)?)],
         ),
-        ("tag", true) => ("EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value = ? COLLATE NOCASE)".into(), vec![text()]),
+        // A tag includes the tags under it in the tag tree; "exact" is that tag only.
+        ("tag", _) if filter.op.as_deref() == Some("exact") => ("EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value = ? COLLATE NOCASE)".into(), vec![text()]),
+        ("tag", true) => (crate::tag_ops::tag_family_condition("?"), vec![text()]),
         ("tag", false) => ("EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value LIKE ? ESCAPE '\\')".into(), vec![like(value)]),
         // A collection includes items filed in any of its sub-collections.
         ("collection", _) => (
@@ -133,12 +136,13 @@ pub(crate) fn condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
         ("oaStatus", _) => ("s.oa_status = ?".into(), vec![text()]),
         ("workType", _) => ("s.work_type = ?".into(), vec![text()]),
         ("language", _) => ("s.language = ? COLLATE NOCASE".into(), vec![text()]),
+        // A formula property filters by its computed value.
         ("property", is) => {
-            let path = Value::Text(format!("$.\"{}\"", filter.key.as_deref()?.replace('"', "\\\"")));
+            let value_sql = crate::formula::property_sql(filter.key.as_deref()?);
             if is {
-                ("CAST(json_extract(s.properties, ?) AS TEXT) = ? COLLATE NOCASE".into(), vec![path, text()])
+                (format!("CAST({value_sql} AS TEXT) = ? COLLATE NOCASE"), vec![text()])
             } else {
-                ("CAST(json_extract(s.properties, ?) AS TEXT) LIKE ? ESCAPE '\\'".into(), vec![path, like(value)])
+                (format!("CAST({value_sql} AS TEXT) LIKE ? ESCAPE '\\'"), vec![like(value)])
             }
         }
         _ => return None,

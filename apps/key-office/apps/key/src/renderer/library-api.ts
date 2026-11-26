@@ -8,6 +8,8 @@ export interface Source extends CitableSource {
   creators: Creator[];
   tags: string[];
   properties: Record<string, unknown>;
+  /** Formula properties' values, computed by the host: a value or `{ error }`. */
+  formulaValues?: Record<string, unknown>;
   collections: string[];
   starred: boolean;
   indexStatus: string;

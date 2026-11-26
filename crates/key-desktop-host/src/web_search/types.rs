@@ -98,13 +98,7 @@ pub struct WebHit {
 }
 
 pub fn bare_doi(doi: Option<&str>) -> Option<String> {
-    let doi = doi?.trim().to_lowercase();
-    let doi = ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/"]
-        .iter()
-        .find_map(|p| doi.strip_prefix(p))
-        .unwrap_or(&doi);
-    let doi = doi.strip_prefix("doi:").map(str::trim_start).unwrap_or(doi);
-    Some(doi.to_string()).filter(|d| !d.is_empty())
+    Some(key_store::normalize::doi_or_text(doi?)).filter(|d| !d.is_empty())
 }
 
 /// Text without case, accents or tags; letters and digits only, single-spaced.

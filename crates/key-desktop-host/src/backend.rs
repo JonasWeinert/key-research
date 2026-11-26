@@ -2951,6 +2951,30 @@ impl Host {
     }
     /// Workspace-library commands and reader commands for sources that live in key-store.
     async fn library_dispatch(&self, command: &str, args: &serde_json::Value) -> Option<Result<Output, String>> {
+        // The search everywhere (key-store find.rs): library items plus the workspace's pages.
+        if command == "store_find" {
+            return Some(tokio::task::block_in_place(|| {
+                let query: key_store::find::FindQuery = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
+                let text = query.text.trim().to_string();
+                let pages = query.kinds.as_ref().is_none_or(|k| k.iter().any(|k| k == "record")) && !(query.counted && !query.filters.is_empty());
+                let records: Vec<key_store::find::PageRecord> = if pages {
+                    let limit = query.limit.unwrap_or(10).clamp(1, 200);
+                    self.search
+                        .library()
+                        .records(None, Some(text.as_str()).filter(|t| !t.is_empty()), limit, 0)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|r| key_store::find::PageRecord { id: r.id, kind: r.kind, title: r.title })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                // One or two letters are still being typed; meaning needs a real word.
+                let full = query.phase.as_deref() != Some("titles") && !query.titles_only;
+                let vector = if full && text.chars().filter(|c| c.is_alphanumeric()).count() >= 3 { self.library.indexer.embed_query(&text) } else { None };
+                json_output(self.library.store.find(&query, &records, vector.as_deref())?)
+            }));
+        }
         if command.starts_with("store_") {
             let library = &self.library;
             let root = self.root.clone();

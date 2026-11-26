@@ -5,7 +5,7 @@
 use crate::fields::{self, text};
 use crate::{Format, Parsed, Record, Warning};
 use key_store::duplicates::{MatchKind as EngineKind, Work};
-use key_store::{ListQuery, Source, SourceInput, Store, citation_keys::fold_ascii, normalize_doi};
+use key_store::{ListQuery, Source, SourceInput, Store, citation_keys::fold_ascii};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
 use std::collections::{BTreeMap, HashMap};
@@ -137,25 +137,25 @@ struct Journal {
     notes: Vec<String>,
     collections: Vec<String>,
     undone: bool,
+    /// Its entry in the library's operations journal (⌘Z undoes the import there too).
+    #[serde(default)]
+    seq: Option<i64>,
 }
 
 // ── Duplicates ───────────────────────────────────────────────────────────────
 
-/// Title, folded to lower-case letters and digits.
+/// Title, folded to lower-case letters and digits (the shared normaliser, spaces dropped).
 pub fn title_key(title: &str) -> String {
-    fold_ascii(title).chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+    key_store::normalize::compact_title_key(&fold_ascii(title))
 }
 
-fn isbn_key(isbn: &str) -> String {
-    isbn.chars().filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x').collect::<String>().to_uppercase()
-}
-
-/// The library's identifiers and titles, for matching many records at once.
-/// One small seam: when the store's duplicate engine is available this is where it plugs in.
+/// Records matched against each other (entries earlier in the same file, or the library)
+/// with the store's duplicate engine: an identifier or identical file is exact; a likely
+/// match, or a preprint and its published version, is possible.
 #[derive(Default)]
 pub struct DuplicateIndex {
-    ids: HashMap<String, (String, String, String)>,
-    titles: HashMap<String, Vec<(String, Option<i64>, String)>>,
+    works: key_store::duplicates::WorkIndex,
+    titles: HashMap<String, String>,
 }
 
 impl DuplicateIndex {
@@ -175,69 +175,25 @@ impl DuplicateIndex {
         Ok(index)
     }
 
-    fn identifiers(fields: &Map<String, Json>) -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some(doi) = text(fields, "doi").and_then(|d| normalize_doi(d).or_else(|| Some(fields::clean_doi(d).to_lowercase()))) {
-            out.push(format!("doi:{}", doi.to_lowercase()));
-        }
-        if let Some(isbn) = text(fields, "isbn") {
-            for part in isbn.split([',', ';', ' ']).map(isbn_key).filter(|k| k.len() >= 10) {
-                out.push(format!("isbn:{part}"));
-            }
-        }
-        if let Some(pmid) = text(fields, "pmid") {
-            out.push(format!("pmid:{}", pmid.trim()));
-        }
-        if let Some(arxiv) = text(fields, "arxivId") {
-            let id = arxiv.trim().trim_start_matches("arXiv:").to_lowercase();
-            let id = id.rsplit_once('v').filter(|(_, v)| v.chars().all(|c| c.is_ascii_digit()) && !v.is_empty()).map_or(id.clone(), |(base, _)| base.to_string());
-            out.push(format!("arxiv:{id}"));
-        }
-        out
-    }
-
-    fn add(&mut self, id: &str, title: &str, fields: &Map<String, Json>) {
-        for key in Self::identifiers(fields) {
-            self.ids.entry(key.clone()).or_insert_with(|| (id.to_string(), key.split(':').next().unwrap_or("").to_string(), title.to_string()));
-        }
-        let key = title_key(title);
-        if key.len() >= 12 {
-            self.titles.entry(key).or_default().push((id.to_string(), fields.get("year").and_then(Json::as_i64), title.to_string()));
-        }
-    }
-
     pub fn add_source(&mut self, source: &Source) {
-        self.add(&source.id, source.title(), &source.fields);
+        let input = SourceInput { creators: source.creators.clone(), fields: source.fields.clone(), ..Default::default() };
+        let mut work = work(&input);
+        work.title = Some(source.title().to_string());
+        self.titles.insert(source.id.clone(), source.title().to_string());
+        self.works.add(&source.id, &work);
     }
 
     pub fn add_input(&mut self, id: &str, input: &SourceInput) {
-        self.add(id, text(&input.fields, "title").unwrap_or(""), &input.fields);
+        self.titles.insert(id.to_string(), text(&input.fields, "title").unwrap_or("").to_string());
+        self.works.add(id, &work(input));
     }
 
-    /// The best match for a record: an identifier (exact), else the same title within a year (possible).
+    /// The best match for a record.
     pub fn find(&self, input: &SourceInput) -> Option<DuplicateMatch> {
-        for key in Self::identifiers(&input.fields) {
-            if let Some((id, kind, title)) = self.ids.get(&key) {
-                let title = title.clone();
-                let reason = match kind.as_str() {
-                    "doi" => "Same DOI",
-                    "isbn" => "Same ISBN",
-                    "pmid" => "Same PubMed ID",
-                    _ => "Same arXiv ID",
-                };
-                return Some(DuplicateMatch { source_id: id.clone(), kind: MatchKind::Exact, reason: reason.into(), title });
-            }
-        }
-        let title = text(&input.fields, "title").unwrap_or("");
-        let year = input.fields.get("year").and_then(Json::as_i64);
-        let candidates = self.titles.get(&title_key(title))?;
-        candidates
-            .iter()
-            .find(|(_, y, _)| match (y, year) {
-                (Some(a), Some(b)) => (a - b).abs() <= 1,
-                _ => true,
-            })
-            .map(|(id, _, t)| DuplicateMatch { source_id: id.clone(), kind: MatchKind::Possible, reason: "Same title".into(), title: t.clone() })
+        let best = self.works.find(&work(input)).into_iter().next()?;
+        let kind = if best.kind == EngineKind::Exact { MatchKind::Exact } else { MatchKind::Possible };
+        let title = self.titles.get(&best.source_id).cloned().unwrap_or_default();
+        Some(DuplicateMatch { source_id: best.source_id, kind, reason: best.reason, title })
     }
 }
 
@@ -621,8 +577,28 @@ pub fn run(
     store.ensure_citation_keys()?;
     report.collections_created = journal.collections.len();
     report.created_ids = journal.created.clone();
+    journal.seq = record_in_journal(store, &journal)?;
     save_journal(store, &journal, &report)?;
     Ok(report)
+}
+
+/// One entry in the operations journal for the whole import: undo moves the new sources to
+/// the Trash and takes back merges, notes, filings and new collections; redo brings them back.
+fn record_in_journal(store: &Store, journal: &Journal) -> Result<Option<i64>, String> {
+    let mut changed: BTreeMap<String, Map<String, Json>> = BTreeMap::new();
+    for (id, undo) in &journal.merged {
+        changed.entry(id.clone()).or_default().extend(undo.clone());
+    }
+    for (collection, id) in &journal.memberships {
+        let undo = changed.entry(id.clone()).or_default();
+        let mut gone = undo.remove("collectionsRemove").and_then(|v| v.as_array().cloned()).unwrap_or_default();
+        gone.push(Json::from(collection.clone()));
+        undo.insert("collectionsRemove".into(), Json::Array(gone));
+    }
+    let rows = [("collections", "id", journal.collections.clone()), ("source_collections", "source_id", journal.created.clone()), ("notes", "id", journal.notes.clone())];
+    let label = if journal.label.is_empty() { "Import".to_string() } else { format!("Import {}", journal.label) };
+    let entry = store.journal_added("import", &label, &journal.created, &rows, &changed.into_iter().collect::<Vec<_>>())?;
+    Ok(entry.map(|e| e.seq))
 }
 
 fn save_journal(store: &Store, journal: &Journal, report: &Report) -> Result<(), String> {
@@ -646,14 +622,20 @@ pub fn history(store: &Store) -> Result<Vec<Report>, String> {
     let mut out = Vec::new();
     for id in list.iter().rev() {
         let Some(value) = store.meta(&format!("{JOURNAL_PREFIX}{id}"))?.and_then(|v| serde_json::from_str::<Json>(&v).ok()) else { continue };
-        if let Some(report) = value.get("report").and_then(|r| serde_json::from_value::<Report>(r.clone()).ok()) {
+        if let Some(mut report) = value.get("report").and_then(|r| serde_json::from_value::<Report>(r.clone()).ok()) {
+            // Undone or redone with ⌘Z in the library since.
+            let seq = value.get("journal").and_then(|j| j.get("seq")).and_then(Json::as_i64);
+            if let Some((_, undone)) = seq.map(|s| store.journal_entry(s)).transpose()?.flatten() {
+                report.undone = undone;
+            }
             out.push(report);
         }
     }
     Ok(out)
 }
 
-/// Undoes an import: its new sources (and their notes) are deleted, merged sources put
+/// Undoes an import through the operations journal (its new sources go to the Trash);
+/// an import too old for the journal: its new sources (and their notes) are deleted, merged sources put
 /// back, collections it created removed when nothing else is in them.
 pub fn undo(store: &Store, id: &str) -> Result<Report, String> {
     let key = format!("{JOURNAL_PREFIX}{id}");
@@ -662,6 +644,20 @@ pub fn undo(store: &Store, id: &str) -> Result<Report, String> {
     let mut report: Report = serde_json::from_value(value.get("report").cloned().unwrap_or_default()).unwrap_or_default();
     if journal.undone {
         return Err("That import was already undone".into());
+    }
+    if let Some(seq) = journal.seq {
+        match store.journal_entry(seq)? {
+            Some((_, true)) => return Err("That import was already undone".into()),
+            Some((_, false)) => {
+                store.undo_entry(seq)?;
+                journal.undone = true;
+                report.undone = true;
+                store.set_meta(&key, &serde_json::to_string(&json!({ "journal": journal, "report": report })).map_err(|e| e.to_string())?)?;
+                return Ok(report);
+            }
+            // Gone from the journal (too old): undone the way it was recorded here.
+            None => {}
+        }
     }
     for note in &journal.notes {
         let _ = store.delete_note(note);

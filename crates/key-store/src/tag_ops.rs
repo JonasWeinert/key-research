@@ -74,6 +74,17 @@ pub struct TagResult {
     /// or the source already had a different value).
     pub kept: usize,
     pub undo: TagSnapshot,
+    /// The journal entry that undoes it.
+    pub entry: Option<crate::journal::JournalEntry>,
+}
+
+/// SQL for "source `s` carries tag `param` or a tag under it in the tag tree" (children,
+/// grandchildren …, case-insensitively). `param` is the placeholder (`?`, `?1`).
+pub(crate) fn tag_family_condition(param: &str) -> String {
+    format!(
+        "EXISTS (WITH RECURSIVE fam(name) AS (SELECT {param} UNION SELECT t.key FROM json_each(coalesce((SELECT value FROM meta WHERE key = '{TREE_KEY}'), '{{}}')) t, fam \
+         WHERE json_extract(t.value, '$.parent') = fam.name COLLATE NOCASE) SELECT 1 FROM json_each(s.tags) j, fam WHERE j.value = fam.name COLLATE NOCASE)"
+    )
 }
 
 fn read_tree(db: &Connection) -> Result<Map<String, Json>> {
@@ -150,11 +161,54 @@ impl Store {
     /// Applies one tag operation to every source holding the tags (trashed ones too, so
     /// nothing comes back on restore), in one transaction.
     pub fn apply_tags(&self, op: &TagOperation) -> Result<TagResult> {
+        self.apply_tag_operations(std::slice::from_ref(op), None)
+    }
+
+    /// Applies tag operations as one journaled entry (⌘Z in the library and the tag
+    /// manager's History undo it like any other operation).
+    pub fn apply_tag_operations(&self, ops: &[TagOperation], label: Option<&str>) -> Result<TagResult> {
+        let label = label.map(String::from).unwrap_or_else(|| ops.first().map(operation_label).unwrap_or_else(|| "Change tags".into()));
+        let (mut result, entry) = self.journaled("tags", &label, &[], |tx, rec| {
+            rec.watch(tx, "meta", "key = ?1", vec![rusqlite::types::Value::Text(TREE_KEY.into())])?;
+            let names: Vec<String> = ops.iter().filter_map(|o| o.property.as_ref()).map(|p| p.name.trim().to_string()).collect();
+            rec.watch_in(tx, "property_definitions", "name", &names)?;
+            let mut total = TagResult::default();
+            for op in ops {
+                let one = apply_in(tx, op, rec)?;
+                total.affected += one.affected;
+                total.kept += one.kept;
+                total.undo.sources.extend(one.undo.sources);
+                total.undo.tree = total.undo.tree.or(one.undo.tree);
+                total.undo.definition = total.undo.definition.or(one.undo.definition);
+            }
+            Ok(total)
+        })?;
+        result.entry = entry;
+        Ok(result)
+    }
+}
+
+fn operation_label(op: &TagOperation) -> String {
+    let quoted = |t: &str| format!("“{}”", t.trim());
+    if let Some(property) = &op.property {
+        return format!("Turn tags into the property {}", quoted(&property.name));
+    }
+    match op.replace.as_slice() {
+        [] if !op.tree.is_empty() => "Change the tag hierarchy".into(),
+        [one] if one.to.is_empty() => format!("Remove tag {}", quoted(&one.from)),
+        [one] if one.to.len() == 1 => format!("Rename tag {} to {}", quoted(&one.from), quoted(&one.to[0])),
+        many if many.iter().all(|r| r.to.len() == 1 && r.to[0] == many[0].to[0]) => format!("Merge {} tags into {}", many.len(), quoted(&many[0].to[0])),
+        many if many.iter().all(|r| r.to.is_empty()) => format!("Remove {} tags", many.len()),
+        _ => "Change tags".into(),
+    }
+}
+
+/// One tag operation inside a journaled transaction.
+fn apply_in(tx: &Connection, op: &TagOperation, rec: &mut crate::journal::Recorder) -> Result<TagResult> {
+    {
         if op.replace.len() > 5000 || op.replace.iter().any(|r| r.from.trim().is_empty() || r.to.iter().any(|t| t.len() > 256)) {
             return Err("Invalid tag operation".into());
         }
-        let db = self.db()?;
-        let tx = db.unchecked_transaction().map_err(e)?;
         let mut snapshot = TagSnapshot::default();
         let replace: HashMap<String, &Vec<String>> = op.replace.iter().map(|r| (r.from.trim().to_lowercase(), &r.to)).collect();
         let values: Vec<(String, &Json)> = op.property.iter().flat_map(|p| p.values.iter().map(|(t, v)| (t.trim().to_lowercase(), v))).collect();
@@ -254,18 +308,21 @@ impl Store {
                     continue;
                 }
                 snapshot.sources.push(SourceTags { id: id.clone(), tags: tags.clone(), properties: before_props });
-                write_source(&tx, &id, &next, Some(&patch))?;
+                rec.touch(tx, &id)?;
+                write_source(tx, &id, &next, Some(&patch))?;
                 affected += 1;
             }
         }
         if !op.tree.is_empty() {
-            let tree = read_tree(&tx)?;
+            let tree = read_tree(tx)?;
             snapshot.tree = Some(Json::Object(tree.clone()));
-            write_tree(&tx, &merge_json(tree, &op.tree))?;
+            write_tree(tx, &merge_json(tree, &op.tree))?;
         }
-        tx.commit().map_err(e)?;
-        Ok(TagResult { affected, kept, undo: snapshot })
+        Ok(TagResult { affected, kept, undo: snapshot, entry: None })
     }
+}
+
+impl Store {
 
     /// Puts back what `apply_tags` overwrote, in one transaction.
     pub fn restore_tags(&self, snapshot: &TagSnapshot) -> Result<usize> {
@@ -379,5 +436,30 @@ mod tests {
         store.restore_tags(&result.undo).unwrap();
         assert_eq!(store.property_definitions().unwrap().len(), 1);
         assert!(store.source(&a).unwrap().unwrap().properties.get("Important").is_none());
+    }
+
+    #[test]
+    fn a_parent_tag_includes_its_children_unless_exact() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let parent = source(&store, "Survey of methods", &["Methods"]);
+        let child = source(&store, "Deep nets", &["machine learning"]);
+        let grandchild = source(&store, "Transformers", &["Attention"]);
+        source(&store, "Unrelated", &["Other"]);
+        store.apply_tags(&op(json!({"tree": {"Machine learning": {"parent": "Methods"}, "Attention": {"parent": "machine learning"}}}))).unwrap();
+        let ids = |q: Json| {
+            let mut ids: Vec<String> = store.list_sources(&serde_json::from_value(q).unwrap()).unwrap().items.into_iter().map(|s| s.id).collect();
+            ids.sort();
+            ids
+        };
+        let mut all = vec![parent.clone(), child.clone(), grandchild.clone()];
+        all.sort();
+        assert_eq!(ids(json!({"filters": [{"field": "tag", "op": "is", "value": "methods"}]})), all);
+        assert_eq!(ids(json!({"tag": "Methods"})), all);
+        assert_eq!(ids(json!({"filters": [{"field": "tag", "op": "exact", "value": "Methods"}]})), vec![parent.clone()]);
+        assert_eq!(ids(json!({"tag": "Methods", "tagExact": true})), vec![parent]);
+        assert_eq!(store.tag_page("Methods").unwrap().unwrap().source_count, 3);
+        let map = store.relation_map("tag", "Methods", 10).unwrap().unwrap();
+        assert!(!map.nodes.is_empty());
     }
 }

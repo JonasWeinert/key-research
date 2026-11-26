@@ -43,3 +43,9 @@ Dependency audit currently reports the upstream `pptxgenjs -> image-size`
 parser denial-of-service advisories. At verification time the latest published
 image-size version (2.0.2) is still affected; npm's suggested pptxgenjs downgrade
 is not an appropriate fix. Reassess before distributing a release.
+
+## Vendored third-party code
+
+Vendored crates are pristine upstream plus an ordered patch series, recorded in
+`vendor/upstream.json` and updated with `node tools/vendor-update.mjs` (see `vendor/README.md`).
+Run `node tools/vendor-update.mjs check` before a release to see newer upstream versions.

@@ -1,0 +1,81 @@
+{
+  "$comment": "Where every vendored third-party tree came from. tools/vendor-update.mjs reads and updates this file; see vendor/README.md.",
+  "hayagriva": {
+    "kind": "crate",
+    "crate": "hayagriva",
+    "version": "0.10.1",
+    "commit": "e51299ecd1a9f62b2f069af2f554ae4e84d50527",
+    "source": "https://static.crates.io/crates/hayagriva/hayagriva-0.10.1.crate",
+    "repository": "https://github.com/typst/hayagriva",
+    "sha256": "7b6c185c5c72546d50b25b70187f01ab9a1a2fa21c4db8691e2426fa5fce805c",
+    "path": "vendor/hayagriva",
+    "patches": "vendor/patches/hayagriva",
+    "prune": [
+      ".cargo_vcs_info.json",
+      "Cargo.lock",
+      "Cargo.toml.orig",
+      "archive",
+      "docs",
+      "styles",
+      "tests",
+      "src/main.rs"
+    ],
+    "pins": [
+      "crates/key-cite/Cargo.toml"
+    ],
+    "test": [
+      "cargo",
+      "test",
+      "-p",
+      "key-cite"
+    ]
+  },
+  "pdfium-render-tile": {
+    "kind": "crate",
+    "crate": "pdfium-render",
+    "version": "0.9.2",
+    "source": "https://static.crates.io/crates/pdfium-render/pdfium-render-0.9.2.crate",
+    "repository": "https://github.com/ajrcarey/pdfium-render",
+    "path": "vendor/pdfium-render-tile",
+    "patchNotes": "vendor/pdfium-render-tile/TILE_PATCH.md",
+    "$todo": "Not yet split into vendor/patches/pdfium-render; the tile patch is described in TILE_PATCH.md."
+  },
+  "gpui-0.2.2-display-fix": {
+    "kind": "crate",
+    "crate": "gpui",
+    "version": "0.2.2",
+    "source": "https://static.crates.io/crates/gpui/gpui-0.2.2.crate",
+    "repository": "https://github.com/zed-industries/zed",
+    "path": "vendor/gpui-0.2.2-display-fix",
+    "patchNotes": "Backport of zed-industries/zed#38269 (screen change resyncs the CAMetalLayer); see the [patch.crates-io] comment in Cargo.toml.",
+    "fixedUpstream": "zed-industries/zed#38269 (drop this fork once gpui > 0.2.2 is released with it)"
+  },
+  "pdfium": {
+    "kind": "binary",
+    "version": "148.0.7763.0",
+    "build": "chromium/7763",
+    "source": "https://github.com/bblanchon/pdfium-binaries/releases/tag/chromium/7763",
+    "path": "vendor/pdfium",
+    "fetch": "scripts/fetch-pdfium.sh",
+    "sha256": {
+      "pdfium-mac-arm64.tgz": "9acf49e46c68992cd40810e88264b1ad171805d02fd41c4cca336aad6653b333",
+      "pdfium-mac-x64.tgz": "f455e0868ef7e5174a315de8789ee2b7a5544638d0ac7a3312ea7b68ebbc99cb"
+    },
+    "latest": "https://api.github.com/repos/bblanchon/pdfium-binaries/releases/latest"
+  },
+  "cbindgen-compat": {
+    "kind": "original",
+    "path": "vendor/cbindgen-compat",
+    "stands_in_for": "cbindgen 0.28.0"
+  },
+  "option-ext-compat": {
+    "kind": "original",
+    "path": "vendor/option-ext-compat",
+    "stands_in_for": "option-ext 0.2.0"
+  },
+  "dwrote-compat": {
+    "kind": "original",
+    "path": "vendor/dwrote-compat",
+    "stands_in_for": "dwrote 0.11.5"
+  }
+}

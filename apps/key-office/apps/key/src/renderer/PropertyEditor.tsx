@@ -3,7 +3,7 @@ import { GlobalDrawer } from "./GlobalDrawer";
 import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import { evaluatePropertyFormula } from "./property-formula";
+import { useFormulaPreview, type FormulaEval } from "./formula";
 import "./property-tools.css";
 import { Icon } from "./icons";
 export interface PropertyDraft {
@@ -28,6 +28,7 @@ export default function PropertyEditor({
   error,
   targetCount,
   properties,
+  evaluate,
   previewTitle,
   onClose,
   onSave,
@@ -46,6 +47,8 @@ export default function PropertyEditor({
   error?: string;
   targetCount: number;
   properties: Record<string, unknown>;
+  /** Evaluates a formula for the preview (the host does the work). */
+  evaluate?: FormulaEval;
   previewTitle?: string;
   onClose: () => void;
   onSave: (draft: PropertyDraft, agent: boolean) => void;
@@ -67,17 +70,9 @@ export default function PropertyEditor({
       ?.focus();
     return () => before?.focus();
   }, []);
-  let preview = "",
-    formulaError = "";
-  if (draft.type === "formula" && draft.formula.trim()) {
-    try {
-      preview = String(
-        evaluatePropertyFormula(draft.formula, properties) ?? "Empty",
-      );
-    } catch (e) {
-      formulaError = e instanceof Error ? e.message : String(e);
-    }
-  }
+  const result = useFormulaPreview(draft.type === "formula" ? evaluate : undefined, draft.formula, properties);
+  const formulaError = result?.error ?? "";
+  const preview = result && !result.error ? result.text || "Empty" : "";
   const addOption = () => {
     const v = option.trim();
     if (v && !draft.options.includes(v))

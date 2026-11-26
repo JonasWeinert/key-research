@@ -241,7 +241,20 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
             changed();
             json_output(json!({ "entry": entry, "state": store.journal_state(1)? }))
         })(),
-        "store_journal" => (|| json_output(store.journal_state(arg::<Option<usize>>(args, "limit")?.unwrap_or(20))?))(),
+        // A formula's value (the property editors' preview): over a source (`id`), or over
+        // given values; `{value}` or `{error}`.
+        "store_formula_evaluate" => (|| {
+            let formula: String = arg(args, "formula")?;
+            let context = match arg::<Option<String>>(args, "id")? {
+                Some(id) => key_store::formula::source_context(&store.source(&id)?.ok_or("Source not found")?),
+                None => arg::<Option<serde_json::Map<String, serde_json::Value>>>(args, "properties")?.unwrap_or_default(),
+            };
+            json_output(match key_store::formula::evaluate(&formula, &context) {
+                Ok(value) => json!({ "value": value.to_json(), "text": value.text() }),
+                Err(error) => json!({ "error": error }),
+            })
+        })(),
+        "store_journal" => (||json_output(store.journal_state(arg::<Option<usize>>(args, "limit")?.unwrap_or(20))?))(),
         // Duplicates.
         "store_duplicates" => (|| json_output(store.duplicate_groups(arg::<Option<bool>>(args, "withSources")?.unwrap_or(true))?))(),
         "store_duplicates_summary" => (|| {

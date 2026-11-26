@@ -1,7 +1,7 @@
 // The analysis and plans themselves are tested in Rust (key-store tag_analysis_tests.rs);
-// these cover what the manager still does itself: its tree and its form defaults.
+// this covers what the manager still does itself: its tree (form defaults come from the host).
 import { describe, expect, it } from "vitest";
-import { splitPath, valueLabel, type TagIndex } from "./tag-analysis";
+import type { TagIndex } from "./tag-analysis";
 import { buildTree, sortTree, visibleRows } from "./tag-plan";
 
 function indexOf(itemTags: string[][], tree: TagIndex["tree"] = {}): TagIndex {
@@ -37,10 +37,4 @@ describe("tag manager tree", () => {
     expect(rows.map((r) => r.name)).toEqual(["Methods", "Surveys"]);
   });
 
-  it("reads names for the convert form's defaults", () => {
-    expect(splitPath("status: read")).toEqual(["status", "read"]);
-    expect(splitPath("self-employment")).toBeUndefined();
-    expect(valueLabel("status: to read", "status")).toBe("To read");
-    expect(valueLabel("_tablet")).toBe("Tablet");
-  });
 });

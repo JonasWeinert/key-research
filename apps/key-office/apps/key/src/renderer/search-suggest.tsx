@@ -11,7 +11,8 @@ import { parseQuery, type DetectedKind, type Detection } from "./smart-query";
 export interface SearchFilter {
   /** creator | container | title | notes | fulltext | tag | collection | year | property */
   field: string;
-  op?: "is" | "contains" | "gt" | "gte" | "lt" | "lte";
+  /** For a tag, `is` includes the tags under it in the tag tree; `exact` is that tag only. */
+  op?: "is" | "exact" | "contains" | "gt" | "gte" | "lt" | "lte";
   value: string;
   /** The property name, for `field = "property"`. */
   key?: string;
@@ -30,7 +31,9 @@ interface MenuItem {
   content: ReactNode;
   count?: number;
   /** A reading of the query (smart-query.ts): the text left to search, and kinds to show. */
-  detected?: { rest: string; kinds?: DetectedKind[] };
+  /** A reading of the query: what remains as text, kinds to show, and the text it read
+   *  (the parser answers asynchronously, so the field may hold more by the time it is picked). */
+  detected?: { rest: string; kinds?: DetectedKind[]; read: string };
   /** Picked, it does this instead of adding tokens ("Add … to library"). */
   action?: () => void;
 }
@@ -181,7 +184,7 @@ export default function SearchField({
           key: `detected:${d.id}:${d.filters.map(filterKey).join("|")}:${d.kinds?.join() ?? ""}`,
           filters: d.filters,
           icon: d.filters.length ? (FIELD[d.filters[0].field] ?? FIELD.property).icon : "filter",
-          detected: { rest: d.rest, kinds: d.kinds },
+          detected: { rest: d.rest, kinds: d.kinds, read: parsed.text },
           content: (
             <>
               {d.filters.map((f) => (
@@ -282,7 +285,7 @@ export default function SearchField({
     }
     if (item.filters.length) onFilters([...filters, ...item.filters]);
     if (item.detected?.kinds?.length) onKinds?.(item.detected.kinds);
-    onText(item.detected?.rest ?? "");
+    onText(item.detected ? restAfterPick(item.detected.rest ?? "", item.detected.read, text) : "");
     setIndex(-1);
     inputRef.current?.focus();
   };
@@ -327,7 +330,18 @@ export default function SearchField({
           return (
           <span key={filterKey(f)} className="kx-token" data-field={f.field} data-value={f.value} data-inactive={note ? true : undefined} title={note ? `${tokenScope(f)} ${f.label}: ${note}` : `${tokenScope(f)} ${f.label}`}>
             <Icon name={(FIELD[f.field] ?? FIELD.property).icon} size={11} />
-            <span className="kx-token-scope">{tokenScope(f)}</span>
+            {f.field === "tag" ? (
+              <button
+                type="button"
+                className="kx-token-scope kx-token-scope-toggle"
+                title={f.op === "exact" ? "Only this tag. Click to include the tags under it" : "This tag and the tags under it. Click for this tag only"}
+                onClick={() => onFilters(filters.map((other) => (other === f ? { ...f, op: f.op === "exact" ? "is" : "exact" } : other)))}
+              >
+                {tokenScope(f)}
+              </button>
+            ) : (
+              <span className="kx-token-scope">{tokenScope(f)}</span>
+            )}
             <span className="kx-token-value">{f.label}</span>
             <button
               type="button"
@@ -400,11 +414,19 @@ export default function SearchField({
   );
 }
 
+/** The text left after picking a reading of `read`: its rest plus whatever was typed since. */
+export function restAfterPick(rest: string, read: string, current: string) {
+  const now = current.trim();
+  if (!read || now === read || !now.startsWith(read)) return rest;
+  return (rest + now.slice(read.length)).trimStart();
+}
+
 /** "Author", "Status" or "Title contains" in front of the token's value. */
 function tokenScope(f: SearchFilter) {
   if (f.field === "item") return FIELD.item.label;
   // The label says it all: "Cited more than 100 times", "Retracted".
   if (f.field === "citations" || f.field === "retracted") return "";
   const field = f.field === "property" ? (f.key ?? "Property") : (FIELD[f.field]?.label ?? f.field);
+  if (f.field === "tag" && f.op === "exact") return `${field} only`;
   return !f.op || f.op === "contains" ? `${field} contains` : field;
 }

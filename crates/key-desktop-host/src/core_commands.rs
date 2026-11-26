@@ -19,6 +19,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
             json_output(store.tag_suggestions(dismissed, max_themes)?)
         })(),
         // A plan as the operation `store_tag_apply` takes, with its preview.
+        "store_tag_convert_defaults" => arg::<Vec<String>>(args, "tags").and_then(|tags| json_output(key_store::tag_analysis::convert_defaults(&tags))),
         "store_tag_plan" => arg::<TagPlan>(args, "plan").and_then(|plan| json_output(store.tag_plan(&plan)?)),
         // Readings of a search query (identifiers, years, citations, kinds, tag and collection names).
         "store_parse_query" => (|| {

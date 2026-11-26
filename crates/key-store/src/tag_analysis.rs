@@ -639,6 +639,23 @@ pub fn value_label(tag: &str, prefix: Option<&str>) -> String {
     if text.is_empty() { tag.to_string() } else { capitalize(&text) }
 }
 
+/// What the tag manager's "Turn into a property" form starts with: the shared root of the
+/// tags ("status" for "status: read" and "status: to read"), a property name and each tag's value.
+pub fn convert_defaults(tags: &[String]) -> serde_json::Value {
+    let roots: Vec<Option<String>> = tags.iter().map(|t| split_path(t).map(|p| p[0].clone())).collect();
+    let common = match roots.first() {
+        Some(Some(first)) if roots.len() > 1 && roots.iter().all(|r| r.as_deref().is_some_and(|r| fold(r) == fold(first))) => Some(first.clone()),
+        _ => None,
+    };
+    let name = match (tags, &common) {
+        ([one], _) => value_label(one, None),
+        (_, Some(common)) => value_label(common, None),
+        _ => String::new(),
+    };
+    let values: serde_json::Map<String, serde_json::Value> = tags.iter().map(|t| (t.clone(), serde_json::Value::from(value_label(t, common.as_deref())))).collect();
+    serde_json::json!({ "common": common, "name": name, "values": values })
+}
+
 /// The name kept when variants merge: the most used, then unprefixed, then the better cased.
 pub fn survivor(names: &[String], count: &dyn Fn(&str) -> usize) -> String {
     let mut sorted = names.to_vec();

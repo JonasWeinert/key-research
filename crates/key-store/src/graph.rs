@@ -306,10 +306,12 @@ pub(crate) fn short_id(value: &str) -> String {
 
 /// A person found by name: one with no identifiers and this exact spelling, or one whose
 /// spelling the user confirmed by merging.
+// The `+` keeps SQLite on `people_name`: the identifiers' unique indexes also answer
+// `IS NULL`, and walking every unidentified person made each bulk import quadratic.
 fn find_by_name(db: &Connection, key: &str) -> Result<Option<String>> {
     db.query_row(
         "SELECT id FROM (
-           SELECT p.id, 0 o FROM people p WHERE p.name_key = ?1 AND p.orcid IS NULL AND p.openalex_id IS NULL
+           SELECT p.id, 0 o FROM people p WHERE p.name_key = ?1 AND +p.orcid IS NULL AND +p.openalex_id IS NULL
            UNION ALL SELECT n.person_id, 1 FROM person_names n WHERE n.name_key = ?1 AND n.confirmed = 1)
          ORDER BY o LIMIT 1",
         [key],
@@ -404,8 +406,55 @@ pub(crate) fn sync_people(db: &Connection, source_id: &str, suggest: bool) -> Re
         prune_person(db, &person)?;
     }
     if suggest {
-        for person in created {
-            suggest_for(db, &person)?;
+        let deferred = DEFERRED.with(|d| d.borrow_mut().as_mut().map(|list| list.extend(created.iter().cloned())).is_some());
+        if !deferred {
+            for person in created {
+                suggest_for(db, &person)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+thread_local! {
+    /// People created during a bulk insert, whose merge suggestions wait for its end.
+    static DEFERRED: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `work` (a bulk insert) with merge suggestions for the people it creates made once
+/// at the end, family by family: each family is read once, not once per new person.
+pub(crate) fn with_batched_suggestions<T>(db: &Connection, work: impl FnOnce() -> Result<T>) -> Result<T> {
+    let outer = DEFERRED.with(|d| d.borrow().is_some());
+    if outer {
+        return work();
+    }
+    DEFERRED.with(|d| *d.borrow_mut() = Some(Vec::new()));
+    let out = work();
+    let created = DEFERRED.with(|d| d.borrow_mut().take()).unwrap_or_default();
+    let out = out?;
+    suggest_batch(db, &created)?;
+    Ok(out)
+}
+
+fn suggest_batch(db: &Connection, people: &[String]) -> Result<()> {
+    let mut families: HashMap<String, Vec<String>> = HashMap::new();
+    for id in people {
+        let family: Option<String> = db.prepare_cached("SELECT family_key FROM people WHERE id = ?").and_then(|mut s| s.query_row([id], |r| r.get(0)).optional()).map_err(e)?;
+        if let Some(family) = family.filter(|f| !f.is_empty()) {
+            families.entry(family).or_default().push(id.clone());
+        }
+    }
+    for (family, ids) in families {
+        let all = candidates(db, Some(&family), None)?;
+        let by_id: HashMap<&str, &Candidate> = all.iter().map(|c| (c.id.as_str(), c)).collect();
+        for id in ids {
+            let Some(me) = by_id.get(id.as_str()) else { continue };
+            let mine = given_tokens(&me.name_key, &me.family_key);
+            for other in all.iter().filter(|o| o.id != me.id && given_compatible(&mine, &given_tokens(&o.name_key, &o.family_key))).take(400) {
+                if let Some(reason) = merge_reason(db, me, other)? {
+                    record_suggestion(db, me, other, &reason)?;
+                }
+            }
         }
     }
     Ok(())
@@ -417,24 +466,35 @@ struct Candidate {
     family_key: String,
     orcid: Option<String>,
     openalex_id: Option<String>,
-    sources: i64,
     created_at: i64,
 }
 
-fn candidates(db: &Connection, family: Option<&str>) -> Result<Vec<Candidate>> {
-    let mut statement = db
-        .prepare(
-            "SELECT p.id, p.name_key, p.family_key, p.orcid, p.openalex_id, (SELECT count(*) FROM source_people sp WHERE sp.person_id = p.id), p.created_at
-             FROM people p WHERE ?1 IS NULL OR p.family_key = ?1",
-        )
-        .map_err(e)?;
+/// People who could be one person with a new spelling: the same family name and a first
+/// given name that starts alike (`given_compatible` needs that), read through
+/// `people_family_initial`. `None` reads everyone (the library-wide pass).
+fn candidates(db: &Connection, family: Option<&str>, initial: Option<&str>) -> Result<Vec<Candidate>> {
+    let sql = match (family, initial) {
+        (None, _) => "SELECT p.id, p.name_key, p.family_key, p.orcid, p.openalex_id, p.created_at FROM people p WHERE ?1 IS NULL AND ?2 IS NULL",
+        (Some(_), None) => "SELECT p.id, p.name_key, p.family_key, p.orcid, p.openalex_id, p.created_at FROM people p WHERE p.family_key = ?1 AND ?2 IS NULL",
+        // No given name (initial = family's first letter) matches any given name.
+        (Some(_), Some(_)) => {
+            "SELECT p.id, p.name_key, p.family_key, p.orcid, p.openalex_id, p.created_at FROM people p
+             WHERE p.family_key = ?1 AND (substr(p.name_key, 1, 1) = ?2 OR p.name_key = p.family_key)"
+        }
+    };
+    let mut statement = db.prepare_cached(sql).map_err(e)?;
     statement
-        .query_map([family], |r| {
-            Ok(Candidate { id: r.get(0)?, name_key: r.get(1)?, family_key: r.get(2)?, orcid: r.get(3)?, openalex_id: r.get(4)?, sources: r.get(5)?, created_at: r.get(6)? })
+        .query_map(params![family, initial], |r| {
+            Ok(Candidate { id: r.get(0)?, name_key: r.get(1)?, family_key: r.get(2)?, orcid: r.get(3)?, openalex_id: r.get(4)?, created_at: r.get(5)? })
         })
         .map_err(e)?
         .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(e)
+}
+
+/// The index behind `candidates` (kept out of the migrations: created when missing).
+pub(crate) fn ensure_people_index(db: &Connection) -> Result<()> {
+    db.execute_batch("CREATE INDEX IF NOT EXISTS people_family_initial ON people(family_key, substr(name_key, 1, 1))").map_err(e)
 }
 
 /// Why two people might be one, or None when they cannot be (different identifiers, or
@@ -451,11 +511,8 @@ fn merge_reason(db: &Connection, a: &Candidate, b: &Candidate) -> Result<Option<
         return Ok(None);
     }
     let together: bool = db
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM source_people x JOIN source_people y ON y.source_id = x.source_id WHERE x.person_id = ?1 AND y.person_id = ?2)",
-            params![a.id, b.id],
-            |r| r.get(0),
-        )
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM source_people x JOIN source_people y ON y.source_id = x.source_id WHERE x.person_id = ?1 AND y.person_id = ?2)")
+        .and_then(|mut s| s.query_row(params![a.id, b.id], |r| r.get(0)))
         .map_err(e)?;
     if together {
         return Ok(None);
@@ -466,7 +523,10 @@ fn merge_reason(db: &Connection, a: &Candidate, b: &Candidate) -> Result<Option<
 fn record_suggestion(db: &Connection, a: &Candidate, b: &Candidate, reason: &str) -> Result<()> {
     // Keep the identified one, else the one with more sources, else the older.
     let identified = |c: &Candidate| c.orcid.is_some() || c.openalex_id.is_some();
-    let a_first = (identified(a), a.sources, -a.created_at) >= (identified(b), b.sources, -b.created_at);
+    let sources = |c: &Candidate| -> Result<i64> {
+        db.prepare_cached("SELECT count(*) FROM source_people WHERE person_id = ?").and_then(|mut s| s.query_row([&c.id], |r| r.get(0))).map_err(e)
+    };
+    let a_first = (identified(a), sources(a)?, -a.created_at) >= (identified(b), sources(b)?, -b.created_at);
     let (keep, other) = if a_first { (a, b) } else { (b, a) };
     db.execute(
         "INSERT INTO person_merge_suggestions(person_id, other_id, reason, created_at)
@@ -480,11 +540,16 @@ fn record_suggestion(db: &Connection, a: &Candidate, b: &Candidate, reason: &str
 
 /// Suggests merges between one person and the others with their family name.
 pub(crate) fn suggest_for(db: &Connection, person_id: &str) -> Result<()> {
-    let family: Option<String> = db.query_row("SELECT family_key FROM people WHERE id = ?", [person_id], |r| r.get(0)).optional().map_err(e)?;
-    let Some(family) = family.filter(|f| !f.is_empty()) else { return Ok(()) };
-    let all = candidates(db, Some(&family))?;
+    let found: Option<(String, String)> = db
+        .prepare_cached("SELECT family_key, name_key FROM people WHERE id = ?")
+        .and_then(|mut s| s.query_row([person_id], |r| Ok((r.get(0)?, r.get(1)?))).optional())
+        .map_err(e)?;
+    let Some((family, key)) = found.filter(|(f, _)| !f.is_empty()) else { return Ok(()) };
+    // Without a given name (the key is the family name alone) anyone of the family fits.
+    let initial: Option<String> = (key != family).then(|| key.chars().take(1).collect());
+    let all = candidates(db, Some(&family), initial.as_deref())?;
     let Some(me) = all.iter().find(|c| c.id == person_id) else { return Ok(()) };
-    for other in all.iter().take(400) {
+    for other in all.iter().filter(|o| o.id != me.id).take(400) {
         if let Some(reason) = merge_reason(db, me, other)? {
             record_suggestion(db, me, other, &reason)?;
         }
@@ -495,7 +560,7 @@ pub(crate) fn suggest_for(db: &Connection, person_id: &str) -> Result<()> {
 /// Suggests merges across the whole library (after the backfill).
 pub(crate) fn suggest_all(db: &Connection) -> Result<()> {
     let mut groups: HashMap<String, Vec<Candidate>> = HashMap::new();
-    for candidate in candidates(db, None)? {
+    for candidate in candidates(db, None, None)? {
         groups.entry(candidate.family_key.clone()).or_default().push(candidate);
     }
     for group in groups.values().filter(|g| g.len() > 1 && g.len() <= 200) {
@@ -1178,14 +1243,7 @@ pub(crate) fn byline(names: &[&str]) -> String {
 }
 
 pub(crate) fn bare_doi(doi: &str) -> String {
-    let doi = doi.trim();
-    let lower = doi.to_ascii_lowercase();
-    for prefix in ["https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"] {
-        if lower.starts_with(prefix) {
-            return lower[prefix.len()..].to_string();
-        }
-    }
-    lower
+    crate::normalize::doi_or_text(doi)
 }
 
 /// Re-links citations to a source that just arrived or gained an identifier, and the citing
@@ -1279,5 +1337,32 @@ mod tests {
         assert!(given_compatible(&["j", "r"], &["jason", "r"]));
         assert!(!given_compatible(&["jason"], &["jane"]));
         assert!(!given_compatible(&["j", "p"], &["jason", "r"]));
+    }
+
+    /// A bulk import where many authors share a family name (as in a large real library):
+    /// linking people must not compare each new person with every namesake in SQL.
+    #[test]
+    fn people_sync_stays_fast_on_a_bulk_import() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::Store::open(dir.path()).unwrap();
+        let families = ["Smith", "Wang", "Li", "Zhang", "Garcia", "Müller", "Kim", "Nguyen", "Patel", "Silva"];
+        let inputs: Vec<crate::SourceInput> = (0..12_000)
+            .map(|i| {
+                let creators: Vec<serde_json::Value> = (0..3)
+                    .map(|k| serde_json::json!({"family": families[(i * 3 + k) % families.len()], "given": format!("G{}", (i * 7 + k * 13) % 1500), "role": "author"}))
+                    .collect();
+                serde_json::from_value(serde_json::json!({"kind": "reference", "title": format!("Work {i}"), "creators": creators})).unwrap()
+            })
+            .collect();
+        let start = std::time::Instant::now();
+        for chunk in inputs.chunks(500) {
+            store.insert_sources(chunk.to_vec()).unwrap();
+        }
+        let took = start.elapsed();
+        eprintln!("12k sources, 36k authors in 10 families: {took:?}");
+        let people: i64 = store.read().unwrap().query_row("SELECT count(*) FROM people", [], |r| r.get(0)).unwrap();
+        assert!(people > 1000, "{people}");
+        // 39 s before people were found by their name index (debug build); about 8 s after.
+        assert!(took.as_secs_f64() < 25.0, "people sync took {took:?}");
     }
 }

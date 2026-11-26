@@ -189,24 +189,30 @@ impl Library {
             })(),
             "store_tag_index" => self.store.tag_index().and_then(json_output),
             "store_tag_apply" => arg::<key_store::TagOperation>(args, "operation").and_then(|op| json_output(self.store.apply_tags(&op)?)),
+            // Several tag operations as one journal entry (the tag manager's "Apply" of a plan).
+            "store_tag_apply_many" => (|| {
+                let ops: Vec<key_store::TagOperation> = arg(args, "operations")?;
+                let label: Option<String> = arg(args, "label")?;
+                json_output(self.store.apply_tag_operations(&ops, label.as_deref())?)
+            })(),
             "store_tag_restore" => arg::<key_store::TagSnapshot>(args, "snapshot").and_then(|s| json_output(self.store.restore_tags(&s)?)),
             "store_retag" => (|| json_output(self.store.retag(&arg::<Vec<String>>(args, "from")?, &arg::<String>(args, "to")?)?))(),
             "store_collections" => json_output(self.store.collections().unwrap_or_default()),
             "store_collection_create" => (|| {
                 let name: String = arg(args, "name")?;
                 let parent: Option<String> = arg(args, "parentId")?;
-                json_output(self.store.create_collection(&name, parent.as_deref(), None)?)
+                json_output(self.store.create_collection_undoable(&name, parent.as_deref())?.0)
             })(),
             "store_collection_update" => (|| {
                 let id: String = arg(args, "id")?;
                 let name: Option<String> = arg(args, "name")?;
                 let parent: Option<Option<String>> = args.get("parentId").map(|v| v.as_str().map(String::from));
-                self.store.update_collection(&id, name.as_deref(), parent.as_ref().map(|p| p.as_deref()))?;
+                self.store.update_collection_undoable(&id, name.as_deref(), parent.as_ref().map(|p| p.as_deref()))?;
                 json_output(true)
             })(),
             "store_collection_reorder" => (|| {
                 let parent: Option<String> = arg(args, "parentId")?;
-                self.store.reorder_collections(parent.as_deref(), &arg::<Vec<String>>(args, "ids")?)?;
+                self.store.reorder_collections_undoable(parent.as_deref(), &arg::<Vec<String>>(args, "ids")?)?;
                 json_output(true)
             })(),
             // Small JSON settings the renderer keeps per workspace (the sidebar's order and folders).
@@ -220,7 +226,10 @@ impl Library {
                 self.store.set_meta(&format!("ui.{key}"), &value.to_string())?;
                 json_output(true)
             })(),
-            "store_collection_delete" => arg::<String>(args, "id").and_then(|id| json_output(self.store.delete_collection(&id)?)),
+            "store_collection_delete" => arg::<String>(args, "id").and_then(|id| {
+                self.store.delete_collection_undoable(&id)?;
+                json_output(())
+            }),
             "store_membership" => (|| {
                 json_output(
                     self.store
@@ -257,7 +266,10 @@ impl Library {
                 let patch: Map<String, Json> = arg(args, "patch")?;
                 json_output(self.store.update_note_meta(&id, &patch)?)
             })(),
-            "store_note_delete" => arg::<String>(args, "id").and_then(|id| json_output(self.store.delete_note(&id)?)),
+            "store_note_delete" => arg::<String>(args, "id").and_then(|id| {
+                self.store.delete_note_undoable(&id)?;
+                json_output(())
+            }),
             // Cross-references: what an item links to and what links to it, and the items a
             // link can point at (notes, sources, highlights, canvases).
             "store_links" => (|| json_output(self.store.item_links(&arg::<String>(args, "kind")?, &arg::<String>(args, "id")?)?))(),
@@ -439,6 +451,28 @@ impl Library {
             }),
             // A saved web page's reference list, found in its HTML by the shell: stored as the
             // PDF analysis' are, then looked up by the reference worker the same way.
+            // Saved web pages: which source a page is, and the fields its metadata fills.
+            "store_web_page_find" => (|| {
+                let url: String = arg(args, "url")?;
+                let doi: Option<String> = arg(args, "doi")?;
+                json_output(self.store.find_web_page(&url, doi.as_deref())?)
+            })(),
+            "store_web_page_apply" => (|| {
+                let id: String = arg(args, "id")?;
+                let meta: key_store::web_pages::PageMeta = arg(args, "meta")?;
+                let captured_at: String = arg(args, "capturedAt")?;
+                let mut existing = match arg::<Option<String>>(args, "existingId")? {
+                    Some(existing) => self.store.source(&existing)?,
+                    None => None,
+                };
+                // What it was before the page became its file (attaching makes it a web source).
+                if let (Some(source), Some(kind)) = (existing.as_mut(), arg::<Option<String>>(args, "existingKind")?) {
+                    source.kind = kind;
+                }
+                let had_file = arg::<Option<bool>>(args, "existingHadFile")?.unwrap_or(false);
+                json_output(self.store.apply_web_page(&id, &meta, &captured_at, existing.as_ref(), had_file)?)
+            })(),
+            "store_web_page_key" => arg::<String>(args, "url").and_then(|url| json_output(key_store::normalize::page_key(&url))),
             "store_web_references" => (|| {
                 let id: String = arg(args, "id")?;
                 let references: Vec<key_store::ReferenceInput> = arg(args, "references")?;
