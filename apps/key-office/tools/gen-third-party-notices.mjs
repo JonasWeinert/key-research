@@ -339,9 +339,9 @@ out += sub('GenOffice (Docs, Sheets, Slides, Markdown and HTML editors and share
 out += `Key's Office editors and their packages are derived from GenOffice
 (https://github.com/genspark-ai/genoffice, commit de139a061537bea40f0cc81ef8f09a95f77ac52a)
 and remain under the Apache License 2.0. Key modified them (product branding,
-shell integration, theming, fixes); see UPSTREAM.md in the source. Key's tab
-strip (TabBar.tsx, tabbar.css) also derives from GenOffice's shell and stays
-Apache-2.0. The licence text ships as licenses/GENOFFICE-LICENSE.
+shell integration, theming, fixes); see UPSTREAM.md in the source. Key's
+Electron shell is Key's own MIT code. The licence text ships as
+licenses/GENOFFICE-LICENSE.
 
 NOTICE:
 ${readFileSync(join(ROOT, 'NOTICE'), 'utf8').trim()}
