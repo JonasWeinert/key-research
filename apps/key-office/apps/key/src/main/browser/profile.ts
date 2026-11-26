@@ -2,7 +2,7 @@
 // workspace and headless page, kept across restarts (cookies, storage, cache, logins).
 // Nothing clears it but "Clear browsing data" in Settings.
 import { app, session, type Session } from "electron";
-import { acceptLanguages, browserUserAgent, looksLikePdf } from "./urls";
+import { browserUserAgent, looksLikePdf } from "./urls";
 
 export const BROWSER_PARTITION = "persist:key-browser";
 /** Permissions a page gets without asking; everything else is refused. */
@@ -26,9 +26,10 @@ let configured: Session | undefined;
 export function browserSession(): Session {
   if (configured) return configured;
   const ses = session.fromPartition(BROWSER_PARTITION, { cache: true });
-  // Chrome's user agent (requests, `navigator`, workers alike), and the system's languages
-  // with weights the way Chrome sends them ("en-GB,en;q=0.9"), not a bare single locale.
-  ses.setUserAgent(browserUserAgent(app.userAgentFallback, app.getName()), acceptLanguages(app.getPreferredSystemLanguages()));
+  // Chrome's user agent (requests, `navigator`, workers alike). Accept-Language is left as
+  // Chromium sends it: overriding it here does not reach `navigator.languages`, and a header
+  // that disagrees with the page's languages is itself what bot checks look for.
+  ses.setUserAgent(browserUserAgent(app.userAgentFallback, app.getName()));
   ses.setPermissionRequestHandler((_contents, permission, callback) => callback(ALLOWED.has(permission)));
   ses.setPermissionCheckHandler((_contents, permission) => ALLOWED.has(permission));
   ses.setDevicePermissionHandler(() => false);

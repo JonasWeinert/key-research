@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { TempPdfs, fileSha256 } from "./temp-pdfs";
 import { pdfBehindViewer } from "./readers";
 import { bareDoiOf, cleanScan, doiOfResolverUrl } from "./scan";
-import { acceptLanguages, browserUserAgent,citationPdfUrl, hostLabel, looksLikePdf, navigable, pdfTitle, safeFileName, systemUrl, uniqueName, webUrl } from "./urls";
+import { browserUserAgent, citationPdfUrl, hostLabel, looksLikePdf, navigable, pdfTitle, safeFileName, systemUrl, uniqueName, webUrl } from "./urls";
 
 describe("online readers and article pages", () => {
   it("finds the PDF behind a viewer or publisher reader", () => {
@@ -32,10 +32,6 @@ describe("online readers and article pages", () => {
     expect(cleanScan({ article: { title: "T", doi: "https://doi.org/10.5555/x", authors: ["A", 3] } }).article).toMatchObject({ doi: "10.5555/x", title: "T", authors: ["A"] });
     expect(cleanScan({}, "10.9999/y").article?.doi).toBe("10.9999/y");
     expect(cleanScan({ challenge: "yes" }).challenge).toBe(false);
-  });
-  it("sends the system's languages the way Chrome does", () => {
-    expect(acceptLanguages(["en-GB", "de-DE"])).toBe("en-GB,en,de-DE,de");
-    expect(acceptLanguages([])).toBe("en-US,en");
   });
 });
 
