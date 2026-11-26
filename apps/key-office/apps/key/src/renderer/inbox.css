@@ -276,6 +276,7 @@
 .kx-inbox-why {
   display: flex;
   flex-basis: 100%;
+  order: 10;
   align-items: flex-start;
   gap: 5px;
   margin: 4px 0 0;

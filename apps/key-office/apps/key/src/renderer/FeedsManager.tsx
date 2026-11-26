@@ -67,7 +67,7 @@ function Row({ s, collections, update, remove, refresh }: { s: Subscription; col
       </span>
       <div>
         <span className="kx-feeds-title">{s.title}</span>
-        <small>{status(s)}</small>
+        <small className="kx-feeds-status">{status(s)}</small>
         {failing && (
           <small className="kx-feeds-problem" title={s.lastError ?? undefined}>
             <Icon name="warning" size={11} /> {problemText(s.problem)}{" "}

@@ -284,3 +284,11 @@
   align-items: center;
   gap: 4px;
 }
+.kx-follow-search input:focus,
+.kx-follow-search input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.kx-feeds-row small.kx-feeds-status {
+  white-space: normal;
+}

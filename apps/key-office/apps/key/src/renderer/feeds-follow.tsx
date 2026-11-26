@@ -55,15 +55,16 @@ interface Preview {
 
 export const errorText = (e: unknown) => String(e).replace(/^Error: /, "").replace(/^Error invoking remote method '[^']+': /, "").replace(/^Error: /, "");
 const n = (v?: number) => (v == null ? "" : v.toLocaleString());
+const works = (v?: number) => v != null && `${n(v)} ${v === 1 ? "work" : "works"}`;
 
 function detail(s: Suggestion) {
   switch (s.kind) {
     case "venue":
-      return [s.publisher, s.issn && `ISSN ${s.issn}`, s.worksCount != null && `${n(s.worksCount)} works`].filter(Boolean).join(" · ");
+      return [s.publisher, s.issn && `ISSN ${s.issn}`, works(s.worksCount)].filter(Boolean).join(" · ");
     case "author":
-      return [s.affiliation, s.worksCount != null && `${n(s.worksCount)} works`, s.orcid && `ORCID ${s.orcid}`].filter(Boolean).join(" · ");
+      return [s.affiliation, works(s.worksCount), s.orcid && `ORCID ${s.orcid}`].filter(Boolean).join(" · ");
     case "topic":
-      return [s.field, s.worksCount != null && `${n(s.worksCount)} works`].filter(Boolean).join(" · ");
+      return [s.field, works(s.worksCount)].filter(Boolean).join(" · ");
     case "openalex":
       return "New works matching these words, from OpenAlex";
     case "pubmed":

@@ -30,7 +30,7 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await Promise.all(["sources", "authors", "topics"].map(async (name) => [name, JSON.parse(await readFile(path.join(feedFixtures, `openalex-${name}.json`), "utf8"))])),
   );
   // A web search's one result, not among the author's works.
-  const webWork = { ...openalexPage.results[0], id: "https://openalex.org/W4999000001", doi: "https://doi.org/10.5555/web-inbox", display_name: "Smoke web result on reef ecology", title: "Smoke web result on reef ecology" };
+  const webWork = { ...openalexPage.results[0], id: "https://openalex.org/W4999000001", doi: "https://doi.org/10.5555/web-inbox", display_name: "Smoke web result on reef ecology", title: "Smoke web result on reef ecology", ids: { openalex: "https://openalex.org/W4999000001", doi: "https://doi.org/10.5555/web-inbox" }, primary_location: null, best_oa_location: null, locations: [] };
   let items = [item(1, "10.5555/inbox-1"), item(2, "10.5555/inbox-2")];
   const log = [];
   const server = createServer((req, res) => {
@@ -222,7 +222,7 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     // Bulk: x picks two, s saves both.
     await inbox.locator(".kx-inbox-list").focus();
     await page.keyboard.press("x");
-    await page.keyboard.press("j");
+    await page.keyboard.press("k");
     await page.keyboard.press("x");
     await inbox.locator(".kx-inbox-bulk", { hasText: "2 selected" }).waitFor();
     await shot(page, "inbox-grouped-light");
