@@ -1,0 +1,455 @@
+/* Fill a property (FillSheet.tsx): a window-sized sheet with steps, then the review. */
+.key-global-drawer.key-modal:has(.kx-fill) {
+  --kx-modal-width: 900px;
+  --kx-modal-min-height: 600px;
+}
+.kx-fill {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--kx-text);
+  font-size: 13px;
+}
+.kx-fill .kx-fb-head .kx-hint,
+.kx-fill .kx-fb-head > div > p {
+  margin: 0;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fill-steps {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-fill-steps button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--kx-text-2);
+  font: 12px var(--kx-font);
+}
+.kx-fill-steps button span {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--kx-fill-2);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.kx-fill-steps button[aria-current="step"] {
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent-text);
+}
+.kx-fill-steps button[aria-current="step"] span {
+  background: var(--kx-accent);
+  color: var(--kx-on-accent);
+}
+.kx-fill-steps button:disabled {
+  opacity: 0.45;
+}
+.kx-fill-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 20px;
+  overflow: auto;
+}
+.kx-fill-step {
+  display: grid;
+  gap: 14px;
+}
+.kx-fill-step h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.kx-fill-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+.kx-fill-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: inherit;
+  text-align: left;
+}
+.kx-fill-card:hover {
+  background: var(--kx-fill);
+}
+.kx-fill-card[aria-pressed="true"] {
+  border-color: var(--kx-accent);
+  box-shadow: 0 0 0 1px var(--kx-accent);
+}
+.kx-fill-card > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.kx-fill-card strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.kx-fill-card small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.kx-fill-card-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+}
+.kx-fill-card-icon[data-method="rule"] {
+  background: var(--kx-fill-2);
+  color: var(--kx-indigo);
+}
+.kx-fill-form .kx-form-row > input,
+.kx-fill-form .kx-form-row > textarea {
+  flex: 1;
+}
+.kx-fill-instruction {
+  align-items: flex-start;
+}
+.kx-fill-instruction textarea {
+  flex: 1;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--kx-line);
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: 13px/1.4 var(--kx-font);
+  resize: vertical;
+}
+.kx-fill-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.kx-fill-import {
+  display: flex;
+  flex-basis: 100%;
+  align-items: flex-start;
+  gap: 6px;
+}
+.kx-fill-import textarea {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--kx-line);
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: 11.5px ui-monospace, "SF Mono", monospace;
+}
+.kx-fill-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kx-accent-text);
+  font: 12px var(--kx-font);
+}
+.kx-fill-link:disabled {
+  color: var(--kx-text-3);
+}
+.kx-fill-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.kx-fill-input {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+}
+.kx-fill-input:has(input:checked) {
+  border-color: var(--kx-accent);
+}
+.kx-fill-input span {
+  display: grid;
+  gap: 1px;
+}
+.kx-fill-input strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.kx-fill-input small {
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-fill-privacy {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--kx-fill);
+}
+.kx-fill-privacy > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--kx-accent);
+}
+.kx-fill-privacy[data-local] > svg {
+  color: var(--kx-green);
+}
+.kx-fill-privacy p {
+  margin: 0;
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.kx-fill-privacy strong {
+  color: var(--kx-text);
+  font-weight: 500;
+}
+.kx-fill-code {
+  font-family: ui-monospace, "SF Mono", monospace !important;
+}
+.kx-fill-shapes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.kx-fill-shapes button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: 12.5px var(--kx-font);
+}
+.kx-fill-shapes button[aria-checked="true"] {
+  border-color: var(--kx-accent);
+  box-shadow: 0 0 0 1px var(--kx-accent);
+}
+.kx-fill-shapes button:disabled {
+  opacity: 0.4;
+}
+.kx-fill-items {
+  display: grid;
+  gap: 8px;
+}
+.kx-fill-item {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+}
+.kx-fill-item header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kx-fill-item header strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-fill-item-status {
+  flex: none;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text-2);
+  font-size: 11px;
+  line-height: 18px;
+}
+.kx-fill-item-status[data-status="proposed"],
+.kx-fill-item-status[data-status="accepted"] {
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent-text);
+}
+.kx-fill-item-status[data-status="failed"] {
+  color: var(--kx-red);
+}
+.kx-fill-item-value {
+  display: grid;
+  gap: 2px;
+}
+.kx-fill-item-value input {
+  width: 100%;
+}
+.kx-fill-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kx-fill-evidence {
+  display: grid;
+  gap: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--kx-line);
+}
+.kx-fill-quote {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: var(--kx-text);
+  font-size: 12px;
+}
+.kx-fill-quote > svg {
+  color: var(--kx-amber);
+}
+.kx-fill-quote[data-verified] > svg {
+  color: var(--kx-green);
+}
+.kx-fill-quote small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-fill-evidence details summary {
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-fill-passage {
+  margin-top: 6px;
+}
+.kx-fill-passage small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-fill-passage p {
+  max-height: 140px;
+  margin: 2px 0 0;
+  overflow: auto;
+  color: var(--kx-text-2);
+  font: 12px/1.5 var(--kx-font-serif);
+}
+.kx-fill-passage mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--kx-amber) 30%, transparent);
+  color: var(--kx-text);
+}
+.kx-fill-muted {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fill-error {
+  color: var(--kx-red);
+  font-size: 12px;
+}
+.kx-fill-empty {
+  padding: 24px;
+  text-align: center;
+}
+.kx-fill-estimate {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.kx-fill-estimate > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--kx-fill);
+}
+.kx-fill-estimate strong {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.kx-fill-estimate small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-fill-message {
+  margin: 10px 0 0;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fill-foot-note {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-fill-review {
+  display: grid;
+  gap: 12px;
+}
+.kx-fill-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kx-fill-progress > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.kx-fill-progress small {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fill-bar {
+  flex: 1;
+  height: 6px;
+  min-width: 80px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--kx-fill-2);
+}
+.kx-fill-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--kx-accent);
+  transition: width 0.3s var(--kx-ease);
+}
+.kx-fill-review-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

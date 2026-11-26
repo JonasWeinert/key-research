@@ -11,6 +11,18 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
     let store = &library.store;
     let changed = || library.indexer.wake();
     let run = || arg::<String>(args, "runId");
+    // The sources: given ids, else a collection's or the whole library's.
+    let ids = || -> Result<Vec<String>, String> {
+        let given: Option<Vec<String>> = arg(args, "ids")?;
+        match given.filter(|ids| !ids.is_empty()) {
+            Some(ids) => Ok(ids),
+            None if arg::<Option<bool>>(args, "all")?.unwrap_or(false) => store.fill_scope_ids(None),
+            None => match arg::<Option<String>>(args, "collectionId")? {
+                Some(collection) => store.fill_scope_ids(Some(&collection)),
+                None => Ok(Vec::new()),
+            },
+        }
+    };
     Some(match command {
         "store_fill_recipes" => (|| json_output(store.fill_recipes()?))(),
         "store_fill_starters" => json_output(starter_recipes()),
@@ -22,13 +34,13 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         })(),
         "store_fill_recipe_import" => (|| json_output(Store::import_fill_recipe(&arg::<String>(args, "text")?)?))(),
         "store_fill_validate" => (|| json_output(arg::<Recipe>(args, "recipe")?.validate()?))(),
-        "store_fill_estimate" => (|| json_output(store.fill_estimate(arg::<Recipe>(args, "recipe")?, &arg::<Vec<String>>(args, "ids")?)?))(),
+        "store_fill_estimate" => (|| json_output(store.fill_estimate(arg::<Recipe>(args, "recipe")?, &ids()?)?))(),
         "store_fill_run_create" => (|| {
             let provider: Option<String> = arg(args, "provider")?;
             let model: Option<String> = arg(args, "model")?;
             let summary = store.fill_run_create(
                 arg::<Recipe>(args, "recipe")?,
-                &arg::<Vec<String>>(args, "ids")?,
+                &ids()?,
                 arg::<Option<bool>>(args, "sample")?.unwrap_or(false),
                 arg::<Option<bool>>(args, "auto")?.unwrap_or(false),
                 provider.as_deref(),
@@ -51,7 +63,8 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         })(),
         "store_fill_run_status" => (|| json_output(store.fill_run_set_status(&run()?, &arg::<String>(args, "status")?)?))(),
         "store_fill_runs" => (|| json_output(store.fill_runs(arg::<Option<usize>>(args, "limit")?.unwrap_or(20))?))(),
-        "store_fill_run" => (|| json_output(store.fill_run(&run()?, arg::<Option<usize>>(args, "offset")?.unwrap_or(0), arg::<Option<usize>>(args, "limit")?.unwrap_or(200))?))(),
+        "store_fill_run" => (|| json_output(store.fill_run(&run()?, arg::<Option<usize>>(args, "offset")?.unwrap_or(0), arg::<Option<usize>>(args, "limit")?.unwrap_or(200), arg::<Option<bool>>(args, "passages")?.unwrap_or(false))?))(),
+        "store_fill_run_passages" => (|| json_output(store.fill_run_passages(&run()?, &arg::<String>(args, "sourceId")?)?))(),
         "store_fill_review" => (|| {
             let out = store.fill_review(
                 &run()?,

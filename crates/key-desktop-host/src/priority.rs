@@ -26,7 +26,7 @@ const INTERACTIVE: &[&str] = &[
     "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set", "store_formula_evaluate", "store_formula_catalog", "store_formula_analyze",
     "store_formula_preview", "store_formula_print", "store_formula_prompt", "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete",
     "store_fill_recipe_export", "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status",
-    "store_fill_runs", "store_fill_run", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
+    "store_fill_runs", "store_fill_run", "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but

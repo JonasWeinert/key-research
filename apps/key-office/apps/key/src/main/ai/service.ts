@@ -327,7 +327,7 @@ export class AiService {
     if (ai && !endpoint) throw Error(reason);
     const summary = await this.deps.invoke(
       "store_fill_run_create",
-      { recipe, ids, sample: !!args?.sample, auto: !!args?.auto, provider: ai ? this.settings.provider : "rule", model: ai ? endpoint?.model : null },
+      { recipe, ids, collectionId: args?.collectionId ?? null, all: !!args?.all, sample: !!args?.sample, auto: !!args?.auto, provider: ai ? this.settings.provider : "rule", model: ai ? endpoint?.model : null },
       workspaceId,
     );
     this.watch(workspaceId);

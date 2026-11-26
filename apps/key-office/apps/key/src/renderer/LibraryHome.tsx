@@ -1507,7 +1507,7 @@ export default function LibraryHome({
           }}
         />
       )}
-      {agentDialog && !attribute && (
+      {agentDialog && (
         <AgentPropertyDialog
           invoke={invoke}
           workspaceId={agentSelection?.workspaceId || workspaceId}
@@ -1522,7 +1522,7 @@ export default function LibraryHome({
                 : [])
           }
           propertyName={agentProperty}
-          onClose={() => {setAgentDialog(false);setAgentSelection(undefined);}}
+          onClose={() => {setAgentDialog(false);setAgentSelection(undefined);setAttribute(false);}}
           onSaved={() => {
             void refresh();
             setMetadataRevision((n) => n + 1);
@@ -1540,11 +1540,11 @@ export default function LibraryHome({
           }}
         />
       )}
-      {attribute && <PropertyEditor
+      {attribute && !agentDialog && <PropertyEditor
         initial={{name:attributeName,type:attributeType,value:attributeValue,options:attributeOptions.split(';').map(s=>s.trim()).filter(Boolean),formula:attributeFormula,applyValues:attributeApply}}
         editing={columns.some(c=>c.id===`property:${attributeName}`)}
         onBack={()=>setAgentDialog(false)}
-        agentContent={agentDialog ? <AgentPropertyDialog key={agentProperty} embedded invoke={invoke} workspaceId={agentSelection?.workspaceId || attributeContext?.workspaceId} hashes={agentSelection?.hashes || []} propertyName={agentProperty} onClose={()=>setAgentDialog(false)} onSaved={()=>setMetadataRevision(n=>n+1)} /> : undefined}
+        
         busy={busy} error={error || undefined} targetCount={attributeContext?.targets.length || 0}
         properties={attributeContext?.properties || {}} previewTitle={attributeContext?.title} onClose={()=>{setAttribute(false);setAgentDialog(false);setAgentSelection(undefined);}} onSave={(draft,agent)=>void applyAttribute(draft,agent)}
       />}

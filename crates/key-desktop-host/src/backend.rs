@@ -21,6 +21,7 @@ mod export_commands;
 mod openalex;
 #[path = "hygiene.rs"]
 mod hygiene;
+#[path = "fill_commands.rs"]
 mod fill_commands;
 #[path = "workspace_settings.rs"]
 mod workspace_settings;

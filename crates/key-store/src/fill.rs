@@ -539,6 +539,18 @@ fn writable(db: &Connection, id: &str, property: &str, refill: bool) -> Result<(
 }
 
 impl Store {
+    /// Every source in a collection, or in the library (not in the Trash).
+    pub fn fill_scope_ids(&self, collection: Option<&str>) -> Result<Vec<String>> {
+        let db = self.read()?;
+        let sql = match collection {
+            Some(_) => "SELECT s.id FROM sources s JOIN source_collections c ON c.source_id = s.id WHERE c.collection_id = ?1 AND s.trashed_at IS NULL AND s.merged_into IS NULL ORDER BY s.added_at LIMIT 20000",
+            None => "SELECT id FROM sources WHERE trashed_at IS NULL AND merged_into IS NULL AND ?1 IS NULL ORDER BY added_at LIMIT 20000",
+        };
+        let mut statement = db.prepare(sql).map_err(e)?;
+        let rows = statement.query_map([collection], |r| r.get::<_, String>(0)).map_err(e)?;
+        rows.collect::<std::result::Result<_, _>>().map_err(e)
+    }
+
     pub fn fill_recipes(&self) -> Result<Vec<Recipe>> {
         let db = self.read()?;
         let mut statement = db.prepare("SELECT config FROM fill_recipes ORDER BY updated_at DESC").map_err(e)?;
@@ -807,19 +819,19 @@ impl Store {
     }
 
     /// A run with its sources: status, proposal, confidence, evidence and the passages read.
-    pub fn fill_run(&self, run: &str, offset: usize, limit: usize) -> Result<Json> {
+    pub fn fill_run(&self, run: &str, offset: usize, limit: usize, passages: bool) -> Result<Json> {
         let db = self.db()?;
         let summary = summary(&db, run)?;
         let mut statement = db
             .prepare(
-                "SELECT i.source_id, i.status, i.value, i.confidence, i.evidence, i.passages, i.note, i.error, i.prior, s.title, json_extract(s.properties, ?2)
+                "SELECT i.source_id, i.status, i.value, i.confidence, i.evidence, CASE WHEN ?5 THEN i.passages END, i.note, i.error, i.prior, s.title, json_extract(s.properties, ?2)
                  FROM fill_items i LEFT JOIN sources s ON s.id = i.source_id WHERE i.run_id = ?1 ORDER BY i.seq LIMIT ?3 OFFSET ?4",
             )
             .map_err(e)?;
         let path = format!("$.\"{}\"", summary.recipe.property.replace('"', "\\\""));
         let parse = |t: Option<String>| t.and_then(|t| serde_json::from_str::<Json>(&t).ok()).unwrap_or(Json::Null);
         let rows = statement
-            .query_map(params![run, path, limit.clamp(1, 500) as i64, offset as i64], |r| {
+            .query_map(params![run, path, limit.clamp(1, 500) as i64, offset as i64, passages], |r| {
                 Ok(json!({
                     "sourceId": r.get::<_, String>(0)?, "status": r.get::<_, String>(1)?, "value": parse(r.get(2)?), "confidence": r.get::<_, Option<f64>>(3)?,
                     "evidence": parse(r.get(4)?), "passages": parse(r.get(5)?), "note": r.get::<_, Option<String>>(6)?, "error": r.get::<_, Option<String>>(7)?,
@@ -830,6 +842,17 @@ impl Store {
             .map_err(e)?;
         let items: Vec<Json> = rows.collect::<std::result::Result<_, _>>().map_err(e)?;
         Ok(json!({ "run": summary, "items": items }))
+    }
+
+    /// The passages one source of a run was asked about (the review's evidence).
+    pub fn fill_run_passages(&self, run: &str, source: &str) -> Result<Json> {
+        let text: Option<String> = self
+            .db()?
+            .query_row("SELECT passages FROM fill_items WHERE run_id = ?1 AND source_id = ?2", params![run, source], |r| r.get(0))
+            .optional()
+            .map_err(e)?
+            .flatten();
+        Ok(text.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or(json!([])))
     }
 
     /// Accepts (optionally edited) and rejects proposals; `all` accepts every open proposal.
@@ -1170,7 +1193,7 @@ mod tests {
         store.fill_run_answer(&run.id, &a, Some("{\"value\": 40, \"confidence\": 0.95, \"evidence\": [{\"passage\": \"P1\", \"quote\": \"n = 40\"}]}"), None, (100, 10)).unwrap();
         let done = store.fill_run_answer(&run.id, &b, Some("{\"value\": 900}"), None, (100, 10)).unwrap();
         assert_eq!(done["status"], json!("done"));
-        let detail = store.fill_run(&run.id, 0, 50).unwrap();
+        let detail = store.fill_run(&run.id, 0, 50, true).unwrap();
         assert_eq!(detail["items"][0]["evidence"][0]["verified"], json!(true));
         assert_eq!(detail["run"]["tokensIn"], json!(200));
         // Someone types a value into Beta before the review: that proposal goes stale.
@@ -1197,13 +1220,13 @@ mod tests {
         let next = store.fill_run_next(&run.id, 10).unwrap();
         assert_eq!(next["requests"], json!([]));
         assert_eq!(next["status"], json!("done"));
-        let detail = store.fill_run(&run.id, 0, 10).unwrap();
+        let detail = store.fill_run(&run.id, 0, 10, true).unwrap();
         assert_eq!(detail["items"][0]["value"], json!(1250));
         assert_eq!(detail["items"][1]["status"], json!("empty"));
         let formula = Recipe { property: "Shout".into(), shape: "text".into(), method: "rule".into(), rule: Rule { kind: "formula".into(), formula: "upper({Title})".into(), ..Default::default() }, ..Default::default() };
         let run = store.fill_run_create(formula, std::slice::from_ref(&a), true, false, None, None).unwrap();
         store.fill_run_next(&run.id, 10).unwrap();
-        assert_eq!(store.fill_run(&run.id, 0, 10).unwrap()["items"][0]["value"], json!("ALPHA"));
+        assert_eq!(store.fill_run(&run.id, 0, 10, true).unwrap()["items"][0]["value"], json!("ALPHA"));
     }
 
     #[test]

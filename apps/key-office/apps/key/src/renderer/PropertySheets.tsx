@@ -1,7 +1,7 @@
 // Sheets that act on library sources: typed property definitions (create, edit,
 // rename, apply), agent fill, the tag manager and adding a reference by identifier.
 import { useCallback, useEffect, useState } from "react";
-import { AgentPropertyDialog } from "./EntryTools";
+import FillSheet from "./FillSheet";
 import { GlobalDialog } from "./GlobalDrawer";
 import { Icon } from "./icons";
 import type { Invoke, Source } from "./library-api";
@@ -128,6 +128,8 @@ export function PropertySheet({
       setBusy(false);
     }
   };
+  if (agentFor)
+    return <FillSheet invoke={invoke} workspaceId={workspaceId} targets={state.targets.map(sourceKey)} propertyName={agentFor} onClose={onClose} onSaved={onSaved} />;
   return (
     <PropertyEditor
       initial={initial}
@@ -144,26 +146,11 @@ export function PropertySheet({
       previewTitle={single?.title}
       onClose={onClose}
       onSave={(draft, agent) => void save(draft, agent)}
-      onBack={() => setAgentFor(undefined)}
-      agentContent={
-        agentFor ? (
-          <AgentPropertyDialog
-            key={agentFor}
-            embedded
-            invoke={invoke}
-            workspaceId={workspaceId}
-            hashes={state.targets.slice(0, 25).map(sourceKey)}
-            propertyName={agentFor}
-            onClose={onClose}
-            onSaved={onSaved}
-          />
-        ) : undefined
-      }
     />
   );
 }
 
-/** Agent fill for a property across up to 25 sources. */
+/** Fill a property with AI or a rule across the given sources. */
 export function AgentFillSheet({
   invoke,
   workspaceId,
@@ -179,16 +166,7 @@ export function AgentFillSheet({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  return (
-    <AgentPropertyDialog
-      invoke={invoke}
-      workspaceId={workspaceId}
-      hashes={targets.slice(0, 25).map(sourceKey)}
-      propertyName={propertyName ?? ""}
-      onClose={onClose}
-      onSaved={onSaved}
-    />
-  );
+  return <FillSheet invoke={invoke} workspaceId={workspaceId} targets={targets.map((t) => t.id)} propertyName={propertyName} onClose={onClose} onSaved={onSaved} />;
 }
 
 export function TagManagerSheet({ invoke, workspaceId, onClose, onSaved }: { invoke: Invoke; workspaceId: string; onClose: () => void; onSaved: () => void }) {
