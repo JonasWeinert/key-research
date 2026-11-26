@@ -10,7 +10,7 @@
   outline: none;
   background: var(--kx-bg-sunken);
   color: var(--kx-text);
-  font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  font: 13px/1.5 var(--kx-font);
   resize: vertical;
 }
 .kx-identifier-text:focus-visible {

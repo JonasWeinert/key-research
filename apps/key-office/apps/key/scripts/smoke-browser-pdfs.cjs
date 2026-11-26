@@ -222,13 +222,17 @@ async function serve() {
     assert(carried.some((a) => a.id === "smoke-carry" && a.comment === highlight.comment), "the annotation is on the library item");
     report.carried = carried.map((a) => ({ id: a.id, text: a.text, comment: a.comment }));
 
-    // An article page: Add to library in the bar adds it (with its PDF), then says In library.
+    // An article page: a source with its title (but no DOI) makes it "Possibly in library",
+    // which still offers Add; Add to library adds it (with its PDF), then says In library.
+    await shell.evaluate((id) => window.key.invoke("store_create", { source: { kind: "reference", itemType: "article", title: "A smoke article about browser PDFs", year: 2024 } }, id), workspace.id);
     await activateHome();
     await home.click("#article");
     await until(async () => (await activeView())?.web?.article?.doi === "10.5555/key-smoke-article", "the article detected");
-    await shell.locator(".key-web-article").waitFor();
+    await until(async () => (await activeView())?.web?.article?.possiblyInLibrary, "the title match");
+    await shell.locator(".key-web-article[data-possible]", { hasText: "Possibly in library" }).waitFor();
+    await shell.locator(".key-web-article:not([data-possible])", { hasText: "Add anyway" }).waitFor();
     await shell.screenshot({ path: path.join(shots, "article-bar.png") });
-    await shell.click(".key-web-article");
+    await shell.click(".key-web-article:not([data-possible])");
     await until(async () => (await activeView())?.web?.article?.inLibrary, "the article in the library", 60000);
     const article = await until(async () => {
       const found = await shell.evaluate((id) => window.key.invoke("store_sources", { text: "10.5555/key-smoke-article", limit: 5, scope: "all" }, id), workspace.id);
