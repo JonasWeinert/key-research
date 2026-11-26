@@ -48,6 +48,7 @@ export function parseOpenAlexWork(work: OpenAlexWork): WebResult | undefined {
   const primary = work.primary_location;
   const best = work.best_oa_location;
   const pmid = short(work.ids?.pmid);
+  const arxiv = arxivFrom(primary?.landing_page_url, best?.landing_page_url, doi);
   return {
     provider: "openalex",
     providerId: short(work.id) ?? work.id,
@@ -62,12 +63,13 @@ export function parseOpenAlexWork(work: OpenAlexWork): WebResult | undefined {
       pmid: pmid?.replace(/\D/g, "") || undefined,
       pmcid: short(work.ids?.pmcid)?.replace(/^.*\//, "") || undefined,
       mag: work.ids?.mag ? String(work.ids.mag) : undefined,
-      arxiv: arxivFrom(primary?.landing_page_url, best?.landing_page_url, doi),
+      arxiv,
     },
     citedBy: work.cited_by_count ?? undefined,
     openAccess: work.open_access?.is_oa ?? undefined,
     oaStatus: work.open_access?.oa_status ?? undefined,
-    pdfUrl: best?.pdf_url ?? undefined,
+    // An arXiv preprint's PDF is always free, even when OpenAlex points elsewhere.
+    pdfUrl: best?.pdf_url ?? (arxiv ? `https://arxiv.org/pdf/${arxiv}` : undefined),
     landingUrl: doi ? `https://doi.org/${doi}` : (primary?.landing_page_url ?? undefined),
     type: work.type ?? undefined,
   };
