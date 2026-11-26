@@ -1093,6 +1093,7 @@ export default function App() {
                 viewId={v.id}
                 style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT, width: rect.width }}
                 onStep={(step) => action("history", { viewId: v.id, step })}
+                onPage={(op) => action("web-page", { viewId: v.id, op })}
               />
             );
           })}

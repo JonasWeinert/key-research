@@ -52,6 +52,52 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Right end: a stalled check's reload, and the article's Add to library. */
+.key-web-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 8px;
+  flex: none;
+}
+.key-web-actions > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: inherit;
+  white-space: nowrap;
+}
+.key-web-actions > button:hover:not(:disabled) {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+.key-web-actions > .key-web-article:not([data-done]) {
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+  font-weight: 500;
+}
+.key-web-actions > .key-web-article:not([data-done]):hover:not(:disabled) {
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+  filter: brightness(1.06);
+}
+.key-web-actions > .key-web-article:disabled {
+  opacity: 0.6;
+}
+.key-web-actions > .key-web-article[data-done] > svg {
+  color: var(--kx-accent);
+}
+.key-web-actions > .key-web-stalled {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
 /* Loading: a thin line sweeping along the bar's bottom edge. */
 .key-web-progress {
   position: absolute;
