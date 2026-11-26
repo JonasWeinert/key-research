@@ -34,7 +34,8 @@ export const secretName = (id: string) => `service:${id}`;
 const openalexBase = () => (process.env.KEY_WEB_OPENALEX_URL || "https://api.openalex.org").replace(/\/$/, "");
 const s2Base = () => (process.env.KEY_WEB_S2_URL || "https://api.semanticscholar.org").replace(/\/$/, "");
 export const serpapiBase = () => (process.env.KEY_WEB_SERPAPI_URL || "https://serpapi.com").replace(/\/$/, "");
-const elsevierBase = () => (process.env.KEY_DB_ELSEVIER_URL || "https://api.elsevier.com").replace(/\/$/, "");
+const ncbiBase = () => (process.env.KEY_DB_NCBI_URL || "https://eutils.ncbi.nlm.nih.gov").replace(/\/$/, "");
+const elsevierBase =() => (process.env.KEY_DB_ELSEVIER_URL || "https://api.elsevier.com").replace(/\/$/, "");
 const clarivateBase = () => (process.env.KEY_DB_CLARIVATE_URL || "https://api.clarivate.com").replace(/\/$/, "");
 const clarivateExpandedBase = () => (process.env.KEY_DB_WOS_EXPANDED_URL || "https://wos-api.clarivate.com").replace(/\/$/, "");
 
@@ -113,6 +114,25 @@ export const SERVICES: KeyedService[] = [
       if (refused(response.status)) return { ok: false, message: "Semantic Scholar refused this key" };
       if (!response.ok && response.status !== 429) return { ok: false, message: `Semantic Scholar returned HTTP ${response.status}` };
       return { ok: true, message: response.status === 429 ? "Key accepted; Semantic Scholar is busy right now" : "Semantic Scholar accepted the key" };
+    },
+  },
+  {
+    id: "ncbi",
+    name: "PubMed",
+    via: "NCBI E-utilities",
+    summary: "Optional. Raises the PubMed rate limit from 3 to 10 requests a second, so large searches finish sooner.",
+    usedFor: "Database search (PubMed connector)",
+    keyUrl: "https://account.ncbi.nlm.nih.gov/settings/",
+    keyUrlLabel: "ncbi.nlm.nih.gov",
+    keyRequired: true,
+    async validate(key, context) {
+      const params = new URLSearchParams({ db: "pubmed", retmode: "json", tool: "key", api_key: key });
+      const response = await probe(`${ncbiBase()}/entrez/eutils/einfo.fcgi?${params}`, context);
+      if (!response) return { ok: false, message: "Couldn't reach NCBI" };
+      if (response.status === 400 || refused(response.status)) return { ok: false, message: "NCBI refused this key" };
+      if (response.status === 429) return { ok: false, message: "NCBI is limiting requests right now; try again in a moment" };
+      if (!response.ok) return { ok: false, message: `NCBI returned HTTP ${response.status}` };
+      return { ok: true, message: "NCBI accepted the key" };
     },
   },
   {

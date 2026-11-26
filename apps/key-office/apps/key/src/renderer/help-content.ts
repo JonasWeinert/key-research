@@ -250,6 +250,14 @@ export const HELP = {
       links: [{ label: "Request a key at semanticscholar.org", url: "https://www.semanticscholar.org/product/api#api-key-form" }],
     },
   ),
+  "settings.services.ncbi": explain(
+    "A PubMed (NCBI) key",
+    ["PubMed is free and works without a key. A free NCBI key lets Key send 10 requests a second instead of 3, so large PubMed searches finish sooner."],
+    {
+      steps: ["Sign in at ncbi.nlm.nih.gov (a free NCBI account, or your institution's login).", "Open Account settings and find API Key Management.", "Create a key, paste it here and press Save."],
+      links: [{ label: "Get a key at ncbi.nlm.nih.gov", url: "https://account.ncbi.nlm.nih.gov/settings/" }],
+    },
+  ),
   "settings.services.elsevier": explain(
     "A Scopus key",
     [
