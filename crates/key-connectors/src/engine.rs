@@ -177,6 +177,8 @@ pub struct SearchState {
     pub done: bool,
     pub split_years: bool,
     pub requests: u32,
+    /// Replaces the plan's page size (tests record small fixtures).
+    pub page_size: Option<u64>,
 }
 
 impl SearchState {
@@ -200,6 +202,7 @@ impl SearchState {
             done: false,
             split_years: false,
             requests: 0,
+            page_size: None,
         }
     }
 
@@ -493,7 +496,7 @@ impl Engine {
         }
         let chunk = state.chunks[state.chunk].clone();
         let mut vars = self.base_vars(spec, &chunk, creds, &state.options);
-        let size = Self::page_size(plan, &vars);
+        let size = state.page_size.unwrap_or_else(|| Self::page_size(plan, &vars)).clamp(1, 10_000);
         vars.insert("pageSize".into(), size.to_string());
         let before = state.requests;
         let records = match plan.adapter.as_str() {

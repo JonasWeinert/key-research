@@ -665,6 +665,9 @@ pub struct TestSpec {
     /// At most this many records are read (and per-record details fetched) by the test.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_records: Option<usize>,
+    /// Replaces the plan's page size for this test (small fixtures).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<u64>,
 }
 
 fn default_pages() -> u32 {

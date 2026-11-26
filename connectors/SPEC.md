@@ -325,7 +325,7 @@ without a year are kept and counted).
 
 Requests: a param or form value may be `{ "join": ",", "parts": [templates] }` (empty parts left
 out; no parts left: no parameter). In `body`, a string that is exactly `"{var}"` becomes a JSON
-number when the value is an integer. Any param, header or form value is a template (wrapping
+number when the value is an integer; literal braces in a body (GraphQL) are written `{{` and `}}`. Any param, header or form value is a template (wrapping
 `{query}` is fine). `format: "csv"`: items are the rows, a path is a column header as written.
 
 Plans: `itemsWhere` (keep items where that path is non-empty); `pageSize` may be a template
@@ -353,7 +353,8 @@ object is tested itself); `[0]` on a lone object is the object. HTML selectors a
 `:contains(text)`, `:first-child`, `:nth-of-type(n)`, comma lists, and `:scope` / `$` for the item
 itself. XML predicates: `[@a='v']`, `[@a]`, `[child='v']`, `[n]` (from 1).
 
-Tests: `options` (the connector's option values), `maxRecords` (records read, and per-record
+Tests: `options` (the connector's option values), `pageSize` (replaces the plan's page size, for small
+fixtures), `maxRecords` (records read, and per-record
 detail calls), `offlineOnly` (skipped by the live health check).
 
 Robots: the engine is for documented APIs and does not read robots.txt; say in `terms` why the
