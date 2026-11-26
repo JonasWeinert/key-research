@@ -4625,6 +4625,7 @@ dependencies = [
  "frankensearch",
  "frankensearch-core",
  "key-library",
+ "key-models",
  "key-processing",
  "opendataloader-pdf",
  "serde",
