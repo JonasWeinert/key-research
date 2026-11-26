@@ -202,8 +202,13 @@ impl<T> Drop for Guard<'_, T> {
 }
 
 fn effective(rank: usize, since: Instant, now: Instant) -> usize {
+    if rank == 0 {
+        return 0;
+    }
+    // Aging lifts waiting work up to foreground, never level with a user action: otherwise a
+    // pile of aged background writers would all go first, being older.
     let aged = (now.duration_since(since).as_millis() / AGING.as_millis().max(1)) as usize;
-    rank.saturating_sub(aged)
+    rank.saturating_sub(aged).max(1)
 }
 
 impl<T> PriorityPool<T> {
@@ -403,6 +408,15 @@ mod tests {
         old.join().unwrap();
         new.join().unwrap();
         assert_eq!(*got.lock().unwrap(), ["background", "visible"]);
+    }
+
+    #[test]
+    fn aged_work_never_passes_a_user_action() {
+        let start = Instant::now();
+        let long_ago = start - AGING * 20;
+        assert_eq!(effective(Class::Idle as usize, long_ago, start), 1);
+        assert_eq!(effective(Class::Interactive as usize, start, start), 0);
+        assert_eq!(effective(Class::Background as usize, start, start), 3);
     }
 
     #[test]

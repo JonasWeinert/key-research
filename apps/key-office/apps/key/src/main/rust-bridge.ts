@@ -315,9 +315,11 @@ export class RustHost {
     this.queuedBytes += request.bytes;
     this.queue.unshift(request);
   }
-  /** The class a waiting request goes at now: one better per AGING_MS waited. */
+  /** The class a waiting request goes at now: one better per AGING_MS waited, up to foreground
+   *  (never level with a user action, which would let a pile of older background work go first). */
   private effectiveRank(request: Pending, now: number): number {
-    return Math.max(0, request.rank - Math.floor((now - request.queuedAt) / AGING_MS));
+    if (request.rank === 0) return 0;
+    return Math.max(1, request.rank - Math.floor((now - request.queuedAt) / AGING_MS));
   }
   private drain(): void {
     if (!this.child) return;
