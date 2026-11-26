@@ -1,0 +1,29 @@
+/* What a reference resolved to, under it in the References list (see ReferenceAside.tsx). */
+.key-ref-aside {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--key-ui-muted);
+  font-size: var(--key-ui-text-xs, 11px);
+  line-height: 1.35;
+}
+.key-ref-aside-title {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+}
+.key-ref-aside-title,
+.key-ref-aside-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.key-ref-aside-title small {
+  font-size: inherit;
+  opacity: 0.8;
+}
+.key-ref-aside .key-work-add-row {
+  margin-right: -6px;
+}

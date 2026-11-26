@@ -1,0 +1,67 @@
+/* Add to library: in a citation card's action row (with .pdfjs-cite-action, --key-* tokens)
+   and in a reference list row (--key-ui-* tokens, which the shell and the reader both define). */
+.pdfjs-cite-action.key-work-add[data-state='absent'],
+.pdfjs-cite-action.key-work-add[data-state='failed'] {
+  color: var(--key-accent);
+}
+.pdfjs-cite-action.key-work-add:disabled {
+  opacity: 0.75;
+}
+.pdfjs-cite-action.key-work-add-checking {
+  width: 88px;
+  pointer-events: none;
+}
+.key-work-add-row {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--key-ui-muted);
+  font: inherit;
+  font-size: var(--key-ui-text-xs, 11px);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: default;
+}
+.key-work-add-row[data-state='absent'],
+.key-work-add-row[data-state='failed'] {
+  color: var(--key-ui-primary);
+}
+.key-work-add-row:hover:not(:disabled) {
+  background: var(--key-ui-hover);
+}
+.key-work-add-row:focus-visible {
+  outline: 2px solid var(--key-ui-focus);
+  outline-offset: -1px;
+}
+.key-work-add-row.key-work-add-checking {
+  width: 0;
+  padding: 0;
+}
+.key-work-add svg {
+  width: 11px;
+  height: 11px;
+}
+.key-work-add-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: key-work-add-spin 0.8s linear infinite;
+}
+@keyframes key-work-add-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-work-add-spinner {
+    animation-duration: 2.4s;
+  }
+}

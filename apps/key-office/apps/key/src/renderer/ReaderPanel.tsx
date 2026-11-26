@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { SidePanel } from "@key-reader/ui/SidePanel";
 import { ReferenceList } from "@key-reader/pdfjs/ReferenceList";
 import { Icon } from "./icons";
 import { AnalysisStatus, working, type AnalysisReport } from "./reader-analysis";
+import { readerLibraryWorks } from "./reader-library-works";
+import { ReferenceAside } from "./ReferenceAside";
 import "./reader-panel.css";
 
 type Invoke = <T>(command: string, args?: Record<string, unknown>, workspaceId?: string) => Promise<T>;
@@ -66,11 +68,13 @@ export function ReaderPanel({
 function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId: string; documentHash: string; onCount: (n: number) => void }) {
   const [report, setReport] = useState<AnalysisReport | null>();
   const [sourceId, setSourceId] = useState<string>();
+  const [collections, setCollections] = useState<string[]>([]);
   const refresh = useCallback(async () => {
     try {
-      const found = await shellApi().invoke<{ items: { id: string }[] }>("store_sources", { ids: [documentHash], limit: 1, scope: "all" }, workspaceId);
+      const found = await shellApi().invoke<{ items: { id: string; collections?: string[] }[] }>("store_sources", { ids: [documentHash], limit: 1, scope: "all" }, workspaceId);
       const id = found.items[0]?.id;
       setSourceId(id);
+      setCollections(found.items[0]?.collections ?? []);
       setReport(id ? await shellApi().invoke<AnalysisReport>("store_analysis", { id }, workspaceId) : null);
     } catch {
       setReport(null);
@@ -82,6 +86,21 @@ function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId:
     const timer = setTimeout(() => void refresh(), 2000);
     return () => clearTimeout(timer);
   }, [report, refresh]);
+  const open = useCallback(
+    (id: string) => void shellApi().tabAction("open-source-page", { workspaceId, sourceId: id }),
+    [workspaceId],
+  );
+  // Add to library beside this PDF, in its collections (read when adding).
+  const collectionsRef = useLatest(collections);
+  const works = useMemo(
+    () =>
+      readerLibraryWorks({
+        invoke: <T,>(command: string, args?: Record<string, unknown>) => shellApi().invoke<T>(command, args, workspaceId),
+        open,
+        collections: async () => collectionsRef.current,
+      }),
+    [workspaceId, open, collectionsRef],
+  );
   const references = report
     ? report.references
         .filter((r) => r.number != null && r.page != null)
@@ -109,29 +128,13 @@ function ReaderReferences({ workspaceId, documentHash, onCount }: { workspaceId:
       onSelect={(reference) =>
         void shellApi().tabAction("reader-focus", { workspaceId, documentHash, page: reference.page, top: reference.yFraction })
       }
-      aside={(reference) => {
-        const meta = reference.metadata;
-        if (!meta?.title && !reference.matchedSourceId) return null;
-        return (
-          <div className="key-pdf-reference-aside">
-            {meta?.title && (
-              <span title={meta.doi ? `doi:${meta.doi}` : undefined}>
-                {meta.title}
-                {meta.year ? ` (${meta.year})` : ""}
-              </span>
-            )}
-            {reference.matchedSourceId && (
-              <button
-                type="button"
-                onClick={() => void shellApi().tabAction("open-source-page", { workspaceId, sourceId: reference.matchedSourceId })}
-              >
-                In your library
-                <Icon name="arrowRight" size={11} />
-              </button>
-            )}
-          </div>
-        );
-      }}
+      aside={(reference) => <ReferenceAside known={reference} works={sourceId ? works : undefined} onOpen={open} />}
     />
   );
+}
+
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
 }
