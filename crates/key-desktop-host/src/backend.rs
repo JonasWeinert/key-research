@@ -2960,6 +2960,7 @@ impl Host {
             feeds,
             databases: Arc::new(databases::Databases::new(root_for_databases)),
         };
+        host.databases.start_background_checks();
         scholarly_resolver::start_retry_worker(host.search.library().clone());
         Ok(host)
     }

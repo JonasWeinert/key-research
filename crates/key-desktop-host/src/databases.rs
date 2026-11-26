@@ -205,6 +205,27 @@ impl Databases {
         this
     }
 
+    /// A minute after start, and then every few hours, checks for connector updates (at most
+    /// once a day; nothing is fetched until updates are set up in connectors/trust.json).
+    pub fn start_background_checks(self: &Arc<Self>) {
+        if std::env::var("KEY_CONNECTORS_NO_AUTO_CHECK").is_ok() {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        let _ = std::thread::Builder::new().name("key-db-updates".into()).spawn(move || {
+            std::thread::sleep(Duration::from_secs(60));
+            loop {
+                let Some(this) = weak.upgrade() else { return };
+                key_store::priority::set_thread_class(key_store::priority::Class::Background);
+                if this.trust().configured() {
+                    this.check_updates(false);
+                }
+                drop(this);
+                std::thread::sleep(Duration::from_secs(6 * 3600));
+            }
+        });
+    }
+
     fn data_dir(&self) -> PathBuf {
         self.root.join("databases")
     }
