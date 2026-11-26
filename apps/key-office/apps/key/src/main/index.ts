@@ -26,7 +26,7 @@ import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
 import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { publicSettings, type KeyedServices } from "./services";
-import { hostKeyRequests, startKeyedServices } from "./services/setup";
+import { hostKeyRequests, pushHostKeys, startKeyedServices } from "./services/setup";
 import { startZoteroPluginSync } from "./zotero-sync";
 import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
@@ -697,10 +697,9 @@ const browserPages = new PageActions({
   openPdf: (contents, file, replace) => openDownloadedPdf(contents, file, replace),
   workspaceOf: (record) => (shellOfView(record.id) ?? focusedShell())?.workspaceId,
   invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
-  lookupDoi: async (doi, workspaceId) => (webSearchService ? ((await webSearchService.handle("web_lookup", { provider: "openalex", id: doi }, workspaceId)) as any) : undefined),
   addWork: async (workspaceId, work) => {
     if (!webSearchService) throw Error("The library is still starting");
-    return webSearchService.add(workspaceId, work);
+    return webSearchService.add(workspaceId, work, true);
   },
   changed: (record) => {
     const w = shellOfView(record.id);
@@ -2280,10 +2279,9 @@ else
         (url, work) => browserService.withLoadedPage(url, work),
       );
       const webSearch = (webSearchService = new WebSearch({
-        settings: () => appSettings.get(),
-        invoke: (c, a, w) => registry.invoke(c, a, w),
+        invoke: (c, a, w, o) => registry.invoke(c, a, w, o),
         emit,
-        keys: { key: (s) => keyedServices?.key(s), mode: (s) => keyedServices?.mode(s) ?? "fallback", record: (s, o) => keyedServices?.record(s, o) },
+        anyWorkspace: () => focusedShell()?.workspaceId,
       }));
       routeEmbeddedMedia();
       agentFill = new AgentFill(
@@ -2518,6 +2516,7 @@ else
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
+        if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders)) pushHostKeys();
         if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
             void registry

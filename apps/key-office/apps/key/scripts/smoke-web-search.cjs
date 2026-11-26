@@ -12,7 +12,7 @@ const { tmpdir } = require("node:os");
 const path = require("node:path");
 const assert = require("node:assert/strict");
 
-const fixtures = path.resolve(__dirname, "../src/main/web-search/fixtures");
+const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host/src/web_search/fixtures");
 
 (async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "key-web-search-"));

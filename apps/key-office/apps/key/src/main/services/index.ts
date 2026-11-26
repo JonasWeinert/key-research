@@ -3,11 +3,9 @@
 // `services_*` commands on key:invoke and only ever sees whether a key is set, its last four
 // characters and the counters, never a key.
 import type { AppSettings, AppSettingsStore } from "../app-settings";
-import { PROVIDERS } from "../web-search/registry";
-import type { Fetch } from "../web-search/http";
+import type { Fetch } from "./registry";
 import type { SecretStore } from "../secrets";
-import type { ServiceKeys } from "./fallback";
-import { SERVICES, secretName, serviceFor, type KeyedService, type Validation } from "./registry";
+import { SERVICES, secretName, serviceFor, serviceForProvider, type KeyedService, type Validation } from "./registry";
 import type { KeyMode, Outcome, UsageStore } from "./usage";
 
 const DEFAULT_MAILTO = "key-app@users.noreply.github.com";
@@ -22,7 +20,7 @@ export interface HostKeyUsage {
   invalid?: boolean;
 }
 
-export class KeyedServices implements ServiceKeys {
+export class KeyedServices {
   constructor(
     private readonly deps: {
       secrets: SecretStore;
@@ -151,7 +149,7 @@ export async function migratePlaintextKeys(settings: AppSettingsStore, secrets: 
   if (current.openalexApiKey) moves.push([secretName("openalex"), current.openalexApiKey]);
   const providers: AppSettings["webProviders"] = {};
   for (const [id, entry] of Object.entries(current.webProviders ?? {})) {
-    const service = PROVIDERS.find((p) => p.id === id)?.capabilities.service;
+    const service = serviceForProvider(id)?.id;
     if (entry.apiKey && service) moves.push([secretName(service), entry.apiKey]);
     const { apiKey, ...rest } = entry;
     providers[id] = service ? rest : entry;

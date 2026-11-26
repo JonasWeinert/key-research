@@ -14,7 +14,7 @@ const { tmpdir } = require("node:os");
 const path = require("node:path");
 const assert = require("node:assert/strict");
 
-const fixtures = path.resolve(__dirname, "../src/main/web-search/fixtures");
+const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host/src/web_search/fixtures");
 const OPENALEX_KEY = "oa-smoke-key-7f3a9c21b8d4";
 const SERPAPI_KEY = "serp-smoke-key-5e6d7c8b9a01";
 

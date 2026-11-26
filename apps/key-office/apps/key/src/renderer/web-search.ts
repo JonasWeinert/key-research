@@ -1,9 +1,9 @@
-// The search page's web results: each provider asked on its own (see main/web-search),
+// The search page's web results: each provider asked on its own (the library host's web_search),
 // merged as they arrive, checked against the library, and added to it on request.
 // Nothing here touches the network unless the Web pill is on.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { activeWebFilters, pickWebFilters, toWebFilters, webFilterKey, type FilterToken, type WebFilterKey, type WebFilters } from "../shared/web-filters";
-import { mergeWeb, type WebHit, type WebPage, type WebProviderInfo, type WebResult } from "../shared/web-search";
+import type { FilterToken, WebFilterKey, WebFilters } from "../shared/web-filters";
+import type { WebHit, WebPage, WebProviderInfo, WebResult } from "../shared/web-search";
 import { bridge, type Invoke } from "./library-api";
 
 /** Every web link the search page opens goes through here (an in-app browser can take them over). */
@@ -33,9 +33,9 @@ export const errorText = (error: unknown) => String((error as Error)?.message ??
 let counter = 0;
 
 /** Why a token does nothing for the web, or undefined when some provider applies it. */
-export function webTokenNote(token: FilterToken, applicable: Set<WebFilterKey>) {
-  const key = webFilterKey(token);
-  if (key && applicable.has(key)) return undefined;
+export function webTokenNote(token: FilterToken, web: { applicable: Set<WebFilterKey>; keyOf: (token: FilterToken) => WebFilterKey | null | undefined }) {
+  const key = web.keyOf(token);
+  if (key && web.applicable.has(key)) return undefined;
   if (token.field === "collection") return "Not available for web search. Works you add go into this collection.";
   return "Not available for web search";
 }
@@ -96,16 +96,29 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
   }, [active, invoke]);
   const enabled = useMemo(() => (infos ?? []).filter((p) => p.enabled), [infos]);
   const enabledKey = enabled.map((p) => p.id).join();
-  // The tokens some provider can apply; the others are left to the library.
+  // The tokens some provider that is on can apply, as the library host reads them (web_filters);
+  // the others are left to the library.
   const applicable = useMemo(() => new Set(enabled.flatMap((p) => p.filters ?? [])), [enabled]);
-  const tokensKey = JSON.stringify(tokens.map(({ field, op, value, label }) => [field, op, value, label]));
-  const filters = useMemo(() => {
-    const all = toWebFilters(tokens);
-    return pickWebFilters(all, activeWebFilters(all).filter((k) => applicable.has(k)));
+  const signature = (t: FilterToken) => JSON.stringify([t.field, t.op, t.value, t.label]);
+  const tokensKey = JSON.stringify(tokens.map(signature));
+  const askedKey = `${enabledKey}|${tokensKey}`;
+  const [answer, setAnswer] = useState<{ asked: string; filters: WebFilters; keys: Record<string, WebFilterKey | null> }>();
+  useEffect(() => {
+    if (!active || !infos) return;
+    if (!tokens.length) return setAnswer({ asked: askedKey, filters: {}, keys: {} });
+    let live = true;
+    void invoke<{ filters: WebFilters; keys: (WebFilterKey | null)[] }>("web_filters", { tokens })
+      .then((r) => live && setAnswer({ asked: askedKey, filters: r.filters, keys: Object.fromEntries(tokens.map((t, i) => [signature(t), r.keys[i] ?? null])) }))
+      .catch(() => live && setAnswer({ asked: askedKey, filters: {}, keys: {} }));
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokensKey, applicable]);
-  const filtersKey = JSON.stringify(filters);
-  const filtered = activeWebFilters(filters).length > 0;
+  }, [active, !!infos, askedKey, invoke]);
+  const filters = answer?.asked === askedKey ? answer.filters : undefined;
+  const keyOf = useCallback((t: FilterToken) => answer?.keys[signature(t)], [answer]);
+  const filtersKey = JSON.stringify(filters ?? null);
+  const filtered = !!filters && Object.keys(filters).length > 0;
 
   const run = useCallback(
     (only?: string) => {
@@ -120,13 +133,13 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
           ? list.map((p) => (p.info.id === only ? { ...p, status: "loading", results: [], cursor: undefined, error: undefined } : p))
           : enabled.map((info) => ({ info, status: "loading", results: [], more: false })),
       );
-      for (const info of asked) void fetchPage(info, q, filters, gen);
+      for (const info of asked) void fetchPage(info, q, filters ?? {}, gen);
     },
     [enabled, fetchPage, cancelAll, q, filters],
   );
 
   useEffect(() => {
-    if (!active || !infos) return;
+    if (!active || !infos || !filters) return;
     if ((q.length < 2 && !filtered) || !online) {
       cancelAll();
       generation.current++;
@@ -155,10 +168,25 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     const next = latest.current.filter((p) => p.status === "done" && p.cursor && !p.more);
     if (!next.length) return;
     setProviders((list) => list.map((p) => (next.some((n) => n.info.id === p.info.id) ? { ...p, more: true } : p)));
-    for (const p of next) void fetchPage(p.info, q, filters, gen, p.cursor);
+    for (const p of next) void fetchPage(p.info, q, filters ?? {}, gen, p.cursor);
   }, [fetchPage, q, filters]);
 
-  const hits = useMemo(() => mergeWeb(providers.filter((p) => p.results.length).map((p) => ({ provider: p.info.id, results: p.results }))), [providers]);
+  // One list from every provider's pages, merged by the library host (web_merge); the last
+  // merge stays until the next arrives.
+  const [hits, setHits] = useState<WebHit[]>([]);
+  const resultsKey = providers.map((p) => `${p.info.id}:${p.results.length}:${p.results[0]?.providerId ?? ""}`).join();
+  useEffect(() => {
+    const lists = providers.filter((p) => p.results.length).map((p) => ({ provider: p.info.id, results: p.results }));
+    if (!lists.length) return setHits([]);
+    let live = true;
+    void invoke<WebHit[]>("web_merge", { lists })
+      .then((merged) => live && setHits(merged))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultsKey, invoke]);
 
   // Works already in the library, checked as they arrive and all again when the library changes.
   const checked = useRef(new Set<string>());
@@ -196,10 +224,12 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     hits,
     /** Filter kinds some provider applies. */
     applicable,
+    /** The web filter a token is (as the library host reads it), once known. */
+    keyOf,
     /** Web filters are set (a search can run without words). */
     filtered,
     /** Which providers are on is known. */
-    ready: !!infos,
+    ready: !!infos && !!filters,
     online,
     inLibrary,
     noted,

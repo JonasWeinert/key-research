@@ -210,7 +210,13 @@ fn fetch(path: &str, query: &[(&str, &str)], options: &Options, attempts: usize)
             }
             *last = Some(Instant::now());
         }
-        key_reference::openalex_get(path, query, Some(mailto), key)
+        // The same OpenAlex requests as web search (base URL, polite pool, key, transport).
+        super::web_search::openalex::request(&super::web_search::http::send, path, query, Some(mailto), key, &key_safe_http::CancellationToken::active())
+            .map(|r| key_reference::OpenAlexResponse { status: r.status, retry_after: r.retry_after(), remaining: r.remaining(), body: r.body })
+            .map_err(|e| match e {
+                super::web_search::http::SendError::Failed(message) => format!("OpenAlex: {message}"),
+                other => format!("OpenAlex: {other:?}"),
+            })
     };
     fetch_with(&send, &thread::sleep, path, query, options, attempts)
 }
