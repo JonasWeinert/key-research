@@ -12,6 +12,7 @@ const paths = {
   display: "M2.4 3.2h11.2c.4 0 .8.4.8.8v6.8c0 .4-.4.8-.8.8H2.4a.8.8 0 0 1-.8-.8V4c0-.4.4-.8.8-.8ZM5.6 14h4.8M8 11.6V14",
   chip: "M5 4.2h6c.4 0 .8.4.8.8v6c0 .4-.4.8-.8.8H5a.8.8 0 0 1-.8-.8V5c0-.4.4-.8.8-.8ZM6.5 1.8v2.4M9.5 1.8v2.4M6.5 11.8v2.4M9.5 11.8v2.4M1.8 6.5h2.4M1.8 9.5h2.4M11.8 6.5h2.4M11.8 9.5h2.4",
   info: "M8 14.2A6.2 6.2 0 1 0 8 1.8a6.2 6.2 0 0 0 0 12.4ZM8 7.4v3.8M8 5h.01",
+  warning: "M7.1 2.7a1 1 0 0 1 1.8 0l5.3 9.6a1 1 0 0 1-.9 1.5H2.7a1 1 0 0 1-.9-1.5ZM8 6.3v3M8 11.6h.01",
   home: "M3 7.2 8 3l5 4.2V13a.9.9 0 0 1-.9.9H9.6V10H6.4v3.9H3.9A.9.9 0 0 1 3 13Z",
   books:
     "M3 2.8h2.6v10.4H3zM5.6 2.8h2.6v10.4H5.6zM9.1 3.6l2.4-.7 2.6 9.8-2.4.7z",
@@ -89,6 +90,8 @@ const paths = {
   redo: "m10.5 3.5 2.7 2.7-2.7 2.7M13 6.2H6.6a3.6 3.6 0 0 0 0 7.2H9",
 } as const;
 export type IconName = keyof typeof paths;
+/** For icon names that arrive as data (status bar items from views). */
+export const isIconName = (name: unknown): name is IconName => typeof name === "string" && Object.hasOwn(paths, name);
 
 export function Icon({ name, size = 16, ...rest }: IconProps & { name: IconName }) {
   return (
