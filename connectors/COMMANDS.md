@@ -110,6 +110,30 @@ are reported in `progress[].error` and never fail the whole run.
 Inbox: use `inbox_save { work: DbRecord, origin: { kind: "database", label, query, sourceId, url } }`
 and `inbox_state { works }` (owned by the Inbox module); `DbRecord` is a valid `work`.
 
+## Also available
+
+- `db_report` also takes `format: "markdown"` (a table of sources, queries as sent and counts).
+- `db_add_to_library` also takes `tag` (added to every added or existing source) and `lookup`.
+- `db_results` with `limit: 0` answers progress and counts only (cheap to poll); `total` is the
+  de-duplicated count, `listed` the count for the current `dedupe`/`connector` view.
+- `db_recall { runId, seeds: [{ doi?, title? }] }` -> `{ seeds: [{ found, foundBy, matchedKey }],
+  found, of, perConnector }`: does the search find these known papers?
+- `db_connectors_rollback {}`: back to the previous downloaded bundle.
+- `db_translate` entries of manual connectors carry `manualUrl` (the source's search page with
+  the query filled in). `ConnectorInfo` carries `guide`, `options` (`free`, `pattern`) and
+  `supports.mode`.
+- Records: `authors` are display names ("Ann Lee"); `type` is web search's kind (report,
+  article, preprint …), `recordType` the connector's (working-paper, trial …).
+- `Progress` also carries `raw` (items before Key's own filter), `quotaRemaining`, `undated`,
+  `warnings` (for example why nothing was found), `errorKind`, `startedAt`, `finishedAt`.
+- Secrets pushed with `db_options.keys` by service id: `ncbi`, `elsevier`, `elsevier-insttoken`,
+  `clarivate-wos`, `clarivate-wos-expanded`, `openalex`.
+- `db_suggest_terms` answers `[]` for now.
+
+Environment (tests and smokes only): `KEY_CONNECTORS_MOCK` (a loopback base URL every request
+goes to, as `/<host>/<path>`), `KEY_CONNECTORS_DEV_TRUST=1` (trust the public dev key),
+`KEY_CONNECTORS_UPDATE_URL`, `KEY_CONNECTORS_DIR`, `KEY_CONNECTORS_NO_AUTO_CHECK`.
+
 ## Health and updates
 
 A connector whose runs fail 3 times in a row (network failures excluded when every connector
