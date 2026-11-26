@@ -1,6 +1,7 @@
 // The inspector: a panel at the window's right edge that follows whatever is selected
 // (a library row, a canvas card, the focused note) and shows it in place — its preview,
 // details, a source's notes and highlights, and what links to it — without opening it.
+import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { Fragment, useEffect, useState } from "react";
 import { FilterLink, FilterLinks, showInLibrary, sourceFilter } from "./filter-links";
 import { Icon } from "./icons";
@@ -168,7 +169,7 @@ export default function Inspector({ invoke, workspaceId, items, onClose }: { inv
                     {info.source.creators.map((c, i) => (
                       <Fragment key={i}>
                         {i > 0 && ", "}
-                        <FilterLink filter={sourceFilter.creator(c)}>{creatorName(c)}</FilterLink>
+                        <CreatorLink creator={c} />
                       </Fragment>
                     ))}
                   </p>
@@ -182,7 +183,7 @@ export default function Inspector({ invoke, workspaceId, items, onClose }: { inv
                 {info.source.containerTitle && (
                   <p>
                     <span>In</span>
-                    <FilterLink filter={sourceFilter.container(info.source.containerTitle)}>{info.source.containerTitle}</FilterLink>
+                    <VenueLink venueId={info.source.venueId} title={info.source.containerTitle} />
                   </p>
                 )}
                 {info.source.doi && (
@@ -199,7 +200,7 @@ export default function Inspector({ invoke, workspaceId, items, onClose }: { inv
                     {info.source.tags.map((tag, i) => (
                       <Fragment key={tag}>
                         {i > 0 && ", "}
-                        <FilterLink filter={sourceFilter.tag(tag)}>{tag}</FilterLink>
+                        <TagLink tag={tag} />
                       </Fragment>
                     ))}
                   </p>

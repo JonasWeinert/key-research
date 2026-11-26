@@ -4,7 +4,7 @@
 // send reaches an open editor rather than racing it through the store.
 import { apa, apaInText } from "./citation";
 import type { IconName } from "./icons";
-import { bridge, shortCreators, type Invoke, type Note, type PersonPageData, type Source, type TopicPageData, type VenuePageData } from "./library-api";
+import { bridge, shortCreators, type Invoke, type Note, type PersonPageData, type Source, type TagPageData, type TopicPageData, type VenuePageData } from "./library-api";
 import { itemFromHref, itemHref, markdownToPlainText, type DraggedItem, type ItemLink } from "./note-editor";
 import { noteSources } from "./note-sources";
 import { belowContent, layoutCards, normalizeDoc } from "./canvas/model";
@@ -63,7 +63,8 @@ export function itemIcon(item: Pick<ItemLink, "kind" | "anchor">, sourceKind?: s
   if (item.kind === "record") return "doc";
   if (item.kind === "person") return "user";
   if (item.kind === "venue") return "book";
-  if (item.kind === "topic") return "tag";
+  if (item.kind === "topic") return "layers";
+  if (item.kind === "tag") return "hash";
   if (item.kind === "file") return sourceKind === "markdown" ? "note" : sourceKind === "image" ? "image" : "doc";
   return SOURCE_ICON[sourceKind ?? ""] ?? "doc";
 }
@@ -150,9 +151,22 @@ async function readItem(invoke: Invoke, workspaceId: string, item: ItemLink): Pr
         item,
         title: page.topic.name,
         kindLabel: page.topic.level === "topic" ? "Topic" : page.topic.level[0].toUpperCase() + page.topic.level.slice(1),
-        icon: "tag",
+        icon: "layers",
         subtitle: page.topic.path.map((t) => t.name).join(" › ") || undefined,
         summary: `${page.topic.sourceCount} ${page.topic.sourceCount === 1 ? "source" : "sources"} in your library`,
+        exists: true,
+      };
+    }
+    case "tag": {
+      const page = await invoke<TagPageData | null>("store_tag", { id: item.id }, workspaceId);
+      if (!page) return missing("Tag");
+      const span = page.firstYear && page.lastYear ? (page.firstYear === page.lastYear ? `${page.firstYear}` : `${page.firstYear}–${page.lastYear}`) : "";
+      return {
+        item,
+        title: page.name,
+        kindLabel: "Tag",
+        icon: "hash",
+        summary: [`${page.sourceCount} ${page.sourceCount === 1 ? "source" : "sources"} in your library`, span].filter(Boolean).join(" · "),
         exists: true,
       };
     }
@@ -226,6 +240,7 @@ export function openItemAt(item: ItemLink, placement: Placement = "tab", title?:
     case "person":
     case "venue":
     case "topic":
+    case "tag":
       return action("open-content", { section: item.kind, workspaceId, entityId: item.id, title });
     case "source": {
       const page = item.anchor?.startsWith("page:") ? Number(item.anchor.slice(5)) : undefined;

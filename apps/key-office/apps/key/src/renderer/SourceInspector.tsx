@@ -5,7 +5,7 @@ import type { Creator } from "./citation";
 import { FilterButton, FilterLink, FilterLinks, fieldFilter, sourceFilter } from "./filter-links";
 import type { SearchFilter } from "./search-suggest";
 import { Icon } from "./icons";
-import { EntityButton, EntityLink, type EntityRef } from "./entity-ui";
+import { EntityButton, EntityLink, TagLink, type EntityRef } from "./entity-ui";
 import { formulaValue, type PropertyDefinition } from "./PropertySheets";
 import type { Facet, Source } from "./library-api";
 
@@ -234,7 +234,7 @@ export function TagEditor({ tags, suggestions, onCommit }: { tags: string[]; sug
     <div className="kx-chips">
       {tags.map((tag) => (
         <span className="kx-chip" key={tag} title={tag}>
-          <FilterLink filter={sourceFilter.tag(tag)}>{tag}</FilterLink>
+          <TagLink tag={tag} />
           <button aria-label={`Remove tag ${tag}`} onClick={() => onCommit(tags.filter((t) => t !== tag))}>
             <Icon name="close" size={9} />
           </button>

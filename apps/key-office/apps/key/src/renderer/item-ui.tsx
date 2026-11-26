@@ -1,7 +1,7 @@
 // The same affordances for an item wherever it appears: a preview on hover, a menu on
 // right-click, a larger preview on Space, and toasts that can undo. Any element marked
 // with `itemAttrs()` (or a key:// link in a note) takes part; App mounts `ItemLayer` once.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { coverBackground, readAppearance } from "./page-appearance";
 import { GlobalDialog } from "./GlobalDrawer";
 import { useDismiss } from "@key-reader/ui/dismiss";
@@ -20,7 +20,9 @@ import {
 import { libraryChanged } from "./library-nav";
 import { itemLinks } from "./item-links";
 import { bridge, type Invoke } from "./library-api";
-import NoteEditor, { itemFromHref, itemHref, setEmbedRenderer, type DraggedItem, type ItemLink } from "./note-editor";
+import NoteEditor, { itemFromHref, itemHref, setEmbedRenderer, setMapCenterSearch, type DraggedItem, type EmbedView, type ItemLink } from "./note-editor";
+import { EntityPopover, entityChoices, isEntityKind, type EntityRef } from "./entity-ui";
+import type { MapKind, MapNode } from "./library-api";
 import { noteSources } from "./note-sources";
 import { currentTheme, highlightColor } from "./canvas/canvas-colors";
 import "./item-ui.css";
@@ -214,6 +216,48 @@ function UsedIn({ invoke, workspaceId, item }: { invoke: Invoke; workspaceId: st
 
 // ── Embeds in notes ──────────────────────────────────────────────────────────
 
+const RelationMap = lazy(() => import("./RelationMap"));
+
+/** A relation map in a note, live, with the options it was saved with; its line in the
+ * note's Markdown summarises it for other readers. */
+function MapEmbed({ item, label, view }: { item: ItemLink; label: string; view: EmbedView }) {
+  const { invoke, workspaceId } = shellContext();
+  if (!invoke || !workspaceId) return null;
+  const name = label.replace(/^Relation map of /, "").replace(/: .*$/, "");
+  return (
+    <div className="kx-embed kx-embed-map" data-kind={item.kind}>
+      <div className="kx-embed-head">
+        <Icon name="relations" size={13} />
+        <span className="kx-embed-title">Relation map</span>
+        <span className="kx-embed-sub">{name}</span>
+        {isEntityKind(item.kind) && (
+          <button
+            type="button"
+            className="kx-embed-open"
+            title="Open overview (⌥-click: beside)"
+            aria-label="Open overview"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => openItemAt(item, e.altKey ? "split" : "tab", name)}
+          >
+            <Icon name="external" size={13} />
+          </button>
+        )}
+      </div>
+      <Suspense fallback={<div className="kx-map" style={{ height: 380 }} />}>
+        <RelationMap
+          invoke={invoke}
+          workspaceId={workspaceId}
+          center={{ kind: item.kind as MapKind, id: item.id, name }}
+          variant="embed"
+          options={{ kinds: view.kinds as MapKind[] | undefined, cap: view.cap, minCount: view.minCount }}
+          onOptions={view.editable ? (options) => view.update(options) : undefined}
+          onSummary={view.editable ? (summary) => view.update({ label: summary }) : undefined}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
 /** An item embedded in a note: its header and, one level deep, its live content. */
 function EmbedBody({ item, depth, label }: { item: ItemLink; depth: number; label: string }) {
   const { invoke, workspaceId } = shellContext();
@@ -244,7 +288,15 @@ function EmbedBody({ item, depth, label }: { item: ItemLink; depth: number; labe
     </div>
   );
 }
-setEmbedRenderer((item, depth, label) => <EmbedBody item={item} depth={depth} label={label} />);
+setEmbedRenderer((item, depth, label, view) => (view?.view === "map" ? <MapEmbed item={item} label={label} view={view} /> : <EmbedBody item={item} depth={depth} label={label} />));
+// The Relation map block's picker: what this window's workspace can centre a map on.
+setMapCenterSearch(async (query) => {
+  const { invoke, workspaceId } = shellContext();
+  if (!invoke || !workspaceId || !query.trim()) return [];
+  const found = await invoke<MapNode[]>("store_map_centers", { text: query }, workspaceId).catch(() => []);
+  const label: Record<string, string> = { person: "Person", venue: "Journal", topic: "Topic", tag: "Tag" };
+  return found.map((n) => ({ id: n.id, title: n.name, itemKind: n.kind as ItemLink["kind"], detail: `${label[n.kind] ?? ""} · ${n.count} ${n.count === 1 ? "source" : "sources"}` }));
+});
 
 // ── Hover card ───────────────────────────────────────────────────────────────
 
@@ -307,15 +359,16 @@ export function showMenu(request: MenuRequest) {
 }
 
 /** The actions every item has; `extra` comes first (a view's own, like Remove from canvas). */
-export function itemMenuEntries(items: { item: ItemLink; title: string }[], extra: (MenuEntry | "-")[] = []): (MenuEntry | "-")[] {
+export function itemMenuEntries(items: { item: ItemLink; title: string }[], extra: (MenuEntry | "-")[] = [], from?: Element | null): (MenuEntry | "-")[] {
   const { invoke, workspaceId } = shellContext();
   const first = items[0];
   const sourceLike = items.some(({ item }) => item.kind === "source");
   const asDragged = items.map(({ item, title }) => ({ ...item, title }));
+  const entity = items.length === 1 && isEntityKind(first.item.kind) ? ({ kind: first.item.kind, id: first.item.id, name: first.title } as EntityRef) : undefined;
   return [
     ...extra,
     ...(extra.length ? ["-" as const] : []),
-    { label: "Open", icon: "arrowRight", shortcut: "↩", run: () => openItemAt(first.item, "tab", first.title) },
+    ...(entity ? entityChoices(entity, from) : [{ label: "Open", icon: "arrowRight" as const, shortcut: "↩", run: () => openItemAt(first.item, "tab", first.title) }]),
     { label: "Open beside", icon: "split", shortcut: "⌥↩", run: () => openItemAt(first.item, "split", first.title) },
     { label: "Quick look", icon: "search", shortcut: "Space", run: () => quickLook(first.item) },
     "-",
@@ -539,6 +592,7 @@ export function ItemLayer() {
   const [hover, setHover] = useState<{ rect: DOMRect; item: ItemLink }>();
   const [menu, setMenu] = useState<MenuRequest>();
   const [look, setLook] = useState<ItemLink>();
+  const [choice, setChoice] = useState<{ entity: EntityRef; anchor: Element }>();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const leave = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pointed = useRef<ItemLink | undefined>(undefined);
@@ -583,7 +637,7 @@ export function ItemLayer() {
       hide();
       // A row in a multiple selection acts for the selection.
       const chosen = selection.some((s) => itemHref(s) === itemHref(found.item)) && selection.length > 1 ? selection.map((s) => ({ item: s as ItemLink, title: s.title })) : [{ item: found.item, title: found.title ?? "Untitled" }];
-      setMenu({ x: e.clientX, y: e.clientY, entries: itemMenuEntries(chosen) });
+      setMenu({ x: e.clientX, y: e.clientY, entries: itemMenuEntries(chosen, [], found.el) });
     };
     const key = (e: KeyboardEvent) => {
       if (e.key !== " " || e.repeat || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(document.activeElement) || control(document.activeElement)) return;
@@ -594,8 +648,19 @@ export function ItemLayer() {
       setLook((open) => (open ? undefined : { kind: target.kind, id: target.id, anchor: target.anchor }));
     };
     const click = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      // A link to a person, journal, topic or tag offers the choice, as their chips do.
+      if (!(e.altKey || e.metaKey || e.shiftKey)) {
+        const link = (e.target as Element | null)?.closest?.<HTMLAnchorElement>("a[href^='key://']");
+        const item = link && itemFromHref(link.getAttribute("href"));
+        if (!link || !item || !isEntityKind(item.kind)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
+        setChoice({ entity: { kind: item.kind, id: item.id, name: link.textContent?.trim() || item.id }, anchor: link });
+        return;
+      }
       // ⌥-click on any item link opens it beside; ⌘-click in a new tab.
-      if (!(e.altKey || e.metaKey) || e.button !== 0) return;
       const found = itemAt(e.target);
       if (!found || found.el.tagName !== "A") return;
       e.preventDefault();
@@ -640,6 +705,7 @@ export function ItemLayer() {
       )}
       {menu && <ContextMenu request={menu} onClose={() => setMenu(undefined)} />}
       {look && <QuickLook item={look} onClose={() => setLook(undefined)} />}
+      {choice && <EntityPopover entity={choice.entity} anchor={choice.anchor} onClose={() => setChoice(undefined)} />}
       <Toasts />
     </>
   );

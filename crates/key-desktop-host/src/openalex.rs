@@ -539,6 +539,13 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         "store_person" => arg::<String>(args, "id").and_then(|id| json_output(store.person_page(&id)?)),
         "store_venue" => arg::<String>(args, "id").and_then(|id| json_output(store.venue_page(&id)?)),
         "store_topic" => arg::<String>(args, "id").and_then(|id| json_output(store.topic_page(&id)?)),
+        "store_tag" => arg::<String>(args, "id").and_then(|id| json_output(store.tag_page(&id)?)),
+        "store_map_centers" => arg::<String>(args, "text").and_then(|text| json_output(store.find_map_centers(&text, 10)?)),
+        // The relations around any of them (or a tag, collection or source), for the maps.
+        "store_relation_map" => (|| {
+            let limit = arg::<Option<usize>>(args, "limit")?.unwrap_or(8);
+            json_output(store.relation_map(&arg::<String>(args, "kind")?, &arg::<String>(args, "id")?, limit)?)
+        })(),
         "store_merge_suggestions" => store.merge_suggestions().and_then(json_output),
         "store_merge_people" => (|| json_output(store.merge_people(&arg::<String>(args, "keep")?, &arg::<String>(args, "other")?)?))(),
         "store_merge_dismiss" => (|| json_output(store.dismiss_merge(&arg::<String>(args, "personId")?, &arg::<String>(args, "otherId")?)?))(),

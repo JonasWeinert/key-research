@@ -1,0 +1,329 @@
+/* ── The relation map: one quiet SVG on the page's surface ── */
+.kx-map {
+  --kx-map-ink: var(--kx-map-source);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 12px;
+  background: var(--kx-bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+  font: 12px var(--kx-font);
+  color: var(--kx-text-2);
+}
+.kx-map [data-kind="topic"],
+.kx-map-kind[data-kind="topic"] {
+  --kx-map-ink: var(--kx-map-topic);
+}
+.kx-map [data-kind="field"],
+.kx-map-kind[data-kind="field"] {
+  --kx-map-ink: var(--kx-map-field);
+}
+.kx-map [data-kind="person"],
+.kx-map-kind[data-kind="person"] {
+  --kx-map-ink: var(--kx-map-person);
+}
+.kx-map [data-kind="venue"],
+.kx-map-kind[data-kind="venue"] {
+  --kx-map-ink: var(--kx-map-venue);
+}
+.kx-map [data-kind="tag"],
+.kx-map-kind[data-kind="tag"] {
+  --kx-map-ink: var(--kx-map-tag);
+}
+.kx-map [data-kind="collection"],
+.kx-map-kind[data-kind="collection"] {
+  --kx-map-ink: var(--kx-map-collection);
+}
+.kx-map [data-kind="source"],
+.kx-map-kind[data-kind="source"] {
+  --kx-map-ink: var(--kx-map-source);
+}
+
+/* Controls: the kinds as a legend that toggles, how strong, how many. */
+.kx-map-bar {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px 0;
+}
+.kx-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.kx-map-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+}
+.kx-map-kind:hover {
+  background: var(--kx-fill);
+}
+.kx-map-kind small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-map-kind[aria-pressed="false"] {
+  color: var(--kx-text-3);
+}
+.kx-map-kind[aria-pressed="false"] .kx-map-shape {
+  fill: transparent;
+  stroke: var(--kx-text-3);
+}
+.kx-map-back {
+  position: absolute;
+  z-index: 1;
+  top: 8px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+}
+.kx-map-back:hover {
+  background: var(--kx-fill-2);
+}
+.kx-map-strength {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kx-text-2);
+}
+.kx-map-strength input {
+  width: 84px;
+  accent-color: var(--kx-accent);
+}
+.kx-map-strength output {
+  min-width: 1.4em;
+  color: var(--kx-text);
+  font-variant-numeric: tabular-nums;
+}
+.kx-map-caps {
+  display: inline-flex;
+  padding: 1px;
+  border-radius: 6px;
+  background: var(--kx-fill);
+}
+.kx-map-caps button {
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: 11.5px var(--kx-font);
+  font-variant-numeric: tabular-nums;
+}
+.kx-map-caps button[aria-checked="true"] {
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-sm);
+  color: var(--kx-text);
+}
+
+.kx-map-stage {
+  position: relative;
+  overflow: hidden;
+}
+.kx-map-svg {
+  display: block;
+  overflow: visible;
+  user-select: none;
+}
+.kx-map-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  padding: 0 24px;
+  color: var(--kx-text-3);
+  text-align: center;
+}
+.kx-map-loading {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--kx-fill);
+  animation: kx-map-breathe 1.4s ease-in-out infinite;
+}
+@keyframes kx-map-breathe {
+  50% {
+    transform: scale(1.35);
+    opacity: 0.4;
+  }
+}
+.kx-map-caption {
+  min-height: 16px;
+  margin: 0;
+  padding: 0 12px 9px;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Spokes from the centre, ties between nodes. */
+.kx-map-spokes path {
+  fill: none;
+  stroke: var(--kx-map-ink);
+  stroke-linecap: round;
+  transition:
+    d 460ms var(--kx-ease),
+    opacity 200ms ease;
+}
+.kx-map-links path {
+  fill: none;
+  stroke: var(--kx-text-3);
+  stroke-opacity: 0.32;
+  stroke-dasharray: 2 3;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.kx-map-links path[data-lit] {
+  stroke: var(--kx-map-ink);
+  stroke-opacity: 0.7;
+  stroke-dasharray: none;
+  animation: kx-map-in 160ms ease;
+}
+.kx-map-svg[data-hovering] .kx-map-spokes path[data-dim] {
+  opacity: 0.25;
+}
+
+/* Nodes: shape and colour by kind, their place glides when the map changes. */
+.kx-map-node {
+  transition:
+    transform 460ms var(--kx-ease),
+    opacity 200ms ease;
+  animation: kx-map-in 320ms var(--kx-ease) both;
+  cursor: default;
+  outline: none;
+}
+@keyframes kx-map-in {
+  from {
+    opacity: 0;
+  }
+}
+.kx-map-hit {
+  fill: transparent;
+}
+.kx-map-shape {
+  fill: var(--kx-map-ink);
+  stroke: var(--kx-bg-sunken);
+  stroke-width: 1.5;
+  transition: transform 160ms var(--kx-spring);
+}
+.kx-map-shape[data-hollow] {
+  fill: var(--kx-bg-sunken);
+  stroke: var(--kx-map-ink);
+  stroke-width: 1.8;
+}
+.kx-map-legend .kx-map-shape {
+  stroke-width: 1;
+  stroke: var(--kx-map-ink);
+}
+.kx-map-label {
+  fill: var(--kx-text-2);
+  font: 11.5px var(--kx-font);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.kx-map-node[data-label] .kx-map-label {
+  opacity: 1;
+}
+.kx-map-node:hover .kx-map-shape,
+.kx-map-node:focus-visible .kx-map-shape {
+  transform: scale(1.22);
+}
+.kx-map-node[data-lit] .kx-map-label,
+.kx-map-node:focus-visible .kx-map-label {
+  fill: var(--kx-text);
+  font-weight: 500;
+}
+.kx-map-node:focus-visible .kx-map-hit {
+  stroke: var(--kx-accent);
+  stroke-width: 1.5;
+}
+.kx-map-svg[data-hovering] .kx-map-node[data-dim] {
+  opacity: 0.28;
+}
+
+.kx-map-center .kx-map-shape {
+  fill: color-mix(in srgb, var(--kx-map-ink) 16%, var(--kx-bg-raised));
+  stroke: var(--kx-map-ink);
+  stroke-width: 1.5;
+}
+.kx-map-halo {
+  fill: none;
+  stroke: var(--kx-map-ink);
+  stroke-opacity: 0.16;
+  stroke-width: 5;
+}
+.kx-map-center-icon {
+  display: block;
+  color: var(--kx-map-ink);
+}
+.kx-map-center-label {
+  fill: var(--kx-text);
+  font: 600 12.5px var(--kx-font);
+  paint-order: stroke;
+  stroke: var(--kx-bg-sunken);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-map-node,
+  .kx-map-spokes path {
+    transition: none;
+    animation: none;
+  }
+}
+
+/* Where it sits on pages. */
+.kx-map-section {
+  margin-top: 8px;
+}
+.kx-map-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: default;
+  list-style: none;
+}
+.kx-map-section > summary::-webkit-details-marker {
+  display: none;
+}
+.kx-map-section > summary .kx-map-chevron {
+  color: var(--kx-text-3);
+  transition: transform 160ms var(--kx-ease);
+}
+.kx-map-section[open] > summary .kx-map-chevron {
+  transform: rotate(90deg);
+}
+.kx-map-section > summary h3 {
+  margin: 0;
+}
+.kx-map-section > .kx-map {
+  margin-top: 8px;
+}

@@ -2,8 +2,8 @@ import type { Ref } from "react";
 
 /** What a link can point at. Highlights and pages are a source with an anchor; `file` is a
  * file in a linked folder. */
-export type ItemKind = "source" | "note" | "canvas" | "record" | "file" | "person" | "venue" | "topic";
-export const ITEM_KINDS: readonly ItemKind[] = ["source", "note", "canvas", "record", "file", "person", "venue", "topic"];
+export type ItemKind = "source" | "note" | "canvas" | "record" | "file" | "person" | "venue" | "topic" | "tag";
+export const ITEM_KINDS: readonly ItemKind[] = ["source", "note", "canvas", "record", "file", "person", "venue", "topic", "tag"];
 
 export interface ItemLink {
   kind: ItemKind;
@@ -74,6 +74,8 @@ export interface NoteEditorProps {
   onOpenItem?: (item: ItemLink) => void;
   /** The picker's slower sections (matches in the text and by meaning), after `searchItems`. */
   searchItemsMore?: (query: string) => Promise<SourceRef[]>;
+  /** The "Relation map" block's picker: people, journals, topics and tags to centre a map on. */
+  searchMapCenters?: (query: string) => Promise<SourceRef[]>;
   /** An in-text citation for a picked source or highlight, e.g. "(Palma et al., 2022, p. 4)". */
   citeLabel?: (ref: SourceRef, page?: number) => Promise<string | undefined>;
   placeholder?: string;

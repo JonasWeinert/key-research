@@ -11,10 +11,10 @@ export interface SuggestionMenuHandle {
   handleKey(event: KeyboardEvent): boolean;
 }
 
-const MODE_TITLE = { link: "Link to", embed: "Embed", quote: "Quote from a source", cite: "Cite or mention" } as const;
+const MODE_TITLE = { link: "Link to", embed: "Embed", quote: "Quote from a source", cite: "Cite or mention", map: "Relation map of" } as const;
 const GROUP_ORDER = ["titles", "text", "meaning"] as const;
 const refGroup = (ref: SourceRef) => ref.group ?? "titles";
-const ITEM_ICON = { note: "note", canvas: "canvas", record: "doc", file: "doc", person: "user", venue: "book", topic: "tag" } as const;
+const ITEM_ICON = { note: "note", canvas: "canvas", record: "doc", file: "doc", person: "user", venue: "book", topic: "layers", tag: "hash" } as const;
 
 function refIcon(ref: SourceRef, mode: MenuState["mode"]): IconName {
   if (mode === "quote") return "quote";

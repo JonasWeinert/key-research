@@ -3,7 +3,7 @@
 // it), then its sources in the library, the notes that mention it, and a button to write
 // one. Counts OpenAlex keeps changing are cached and fetched again when the page opens.
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { EntityLink, ENTITY_ICON, entityFilter, type EntityKind } from "./entity-ui";
+import { EntityLink, ENTITY_COMMAND, ENTITY_ICON, entityFilter, type EntityKind } from "./entity-ui";
 import { FilterLink, showInLibrary, sourceFilter } from "./filter-links";
 import { Icon } from "./icons";
 import { copyItemLink, openItemAt } from "./item-actions";
@@ -23,17 +23,19 @@ import {
   type PersonPageData,
   type Source,
   type SourcePage,
+  type TagPageData,
   type TopicPageData,
   type VenuePageData,
 } from "./library-api";
 import { itemHref } from "./note-editor";
 import { YearBars } from "./work-references";
 import MergeReview from "./MergeReview";
+import RelationMap from "./RelationMap";
 import "./entity.css";
 
-type Data = PersonPageData | VenuePageData | TopicPageData;
-const COMMAND: Record<EntityKind, string> = { person: "store_person", venue: "store_venue", topic: "store_topic" };
-const KIND_LABEL: Record<EntityKind, string> = { person: "Person", venue: "Journal", topic: "Topic" };
+type Data = PersonPageData | VenuePageData | TopicPageData | TagPageData;
+const COMMAND = ENTITY_COMMAND;
+const KIND_LABEL: Record<EntityKind, string> = { person: "Person", venue: "Journal", topic: "Topic", tag: "Tag" };
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -85,7 +87,7 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
   useEffect(() => {
     void load().then(() => {
       // Cached counts that are old are fetched again (the host decides, and respects Settings).
-      if (kind !== "topic")
+      if (kind === "person" || kind === "venue")
         void invoke<(Data & { refreshing?: boolean }) | null>("store_refresh", { kind, id }, workspaceId)
           .then((page) => {
             if (!page) return;
@@ -97,7 +99,15 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
     });
     return bridge().on("library-changed", () => void load());
   }, [load, invoke, workspaceId, kind, id]);
-  const name = !data ? "" : kind === "person" ? (data as PersonPageData).person.name : kind === "venue" ? (data as VenuePageData).venue.name : (data as TopicPageData).topic.name;
+  const name = !data
+    ? ""
+    : kind === "person"
+      ? (data as PersonPageData).person.name
+      : kind === "venue"
+        ? (data as VenuePageData).venue.name
+        : kind === "tag"
+          ? (data as TagPageData).name
+          : (data as TopicPageData).topic.name;
   useEffect(() => {
     if (name && viewId) void bridge().tabAction("content-title", { viewId, title: name });
   }, [name, viewId]);
@@ -145,7 +155,7 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
           </span>
           <span className="kx-spacer" />
           <button className="kx-page-action" onClick={showSources}>
-            <Icon name="filter" size={12} /> Show sources
+            <Icon name="search" size={12} /> Search library
           </button>
           <details className="kx-menu kx-source-more">
             <summary className="kx-icon-button" title="More" aria-label="More">
@@ -174,6 +184,7 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
                     {total} {total === 1 ? "source" : "sources"}
                     {kind === "person" ? years((data as PersonPageData).firstYear, (data as PersonPageData).lastYear) && ` · ${years((data as PersonPageData).firstYear, (data as PersonPageData).lastYear)}` : ""}
                     {kind === "venue" ? years((data as VenuePageData).firstYear, (data as VenuePageData).lastYear) && ` · ${years((data as VenuePageData).firstYear, (data as VenuePageData).lastYear)}` : ""}
+                    {kind === "tag" ? years((data as TagPageData).firstYear, (data as TagPageData).lastYear) && ` · ${years((data as TagPageData).firstYear, (data as TagPageData).lastYear)}` : ""}
                   </span>
                 </Row>
               </section>
@@ -185,6 +196,11 @@ export default function EntityPage({ invoke, workspaceId, kind, id, viewId }: { 
       title={<h1 className="kx-note-title kx-entity-title">{name}</h1>}
     >
       {error && <p className="kx-inline-error">{error}</p>}
+
+      <section className="kx-page-section kx-map-section" aria-label="Relations">
+        <h3>Relations</h3>
+        <RelationMap invoke={invoke} workspaceId={workspaceId} center={{ kind, id, name }} />
+      </section>
 
       <section className="kx-page-section" aria-label="Sources">
         <h3>
@@ -398,6 +414,7 @@ function entitySummary(kind: EntityKind, data: Data, total: number) {
     const { venue } = data as VenuePageData;
     return [venue.publisher?.name, sources].filter(Boolean).join(" · ");
   }
+  if (kind === "tag") return sources;
   const { topic } = data as TopicPageData;
   return [topic.path.map((t) => t.name).join(" › "), `${topic.sourceCount} ${topic.sourceCount === 1 ? "source" : "sources"}`].filter(Boolean).join(" · ");
 }
