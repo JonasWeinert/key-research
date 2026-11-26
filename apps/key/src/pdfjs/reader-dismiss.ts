@@ -11,12 +11,14 @@ if (typeof document !== 'undefined')
   });
 
 /** Keeps the overlay matching `selector` registered while `open`. */
-export function useReaderOverlay(open: boolean, selector: string, onDismiss: () => void) {
+/** `scroll: false` keeps it open while things scroll (a card the user pinned). */
+export function useReaderOverlay(open: boolean, selector: string, onDismiss: () => void, options: { scroll?: boolean } = {}) {
   useDismiss(open, {
     refs: [],
     inside: target => within(target, selector),
     kind: 'passive',
     escape: false,
+    scroll: options.scroll,
     onDismiss,
   });
 }

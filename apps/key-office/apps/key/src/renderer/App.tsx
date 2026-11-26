@@ -25,6 +25,7 @@ import Inspector from "./Inspector";
 import CommandCenter from "./CommandCenter";
 import type { DraggedItem } from "./note-editor";
 import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
+import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
@@ -85,7 +86,7 @@ interface TabState {
     pinned?: boolean;
     title: string;
     views: ViewState[];
-    panel?: ViewState & { ratio: number };
+    panel?: ViewState & { ratio: number; tab?: ReaderPanelTab };
   }[];
   /** The focused group's tab, and the view with focus (that tab's view, or its panel). */
   activeTabId: string;
@@ -1053,21 +1054,30 @@ export default function App() {
                       </ol>
                     </nav>
                   )}
-                  <WorkspaceContent
-                    key={v.nav ?? 0}
-                    viewId={v.id}
-                    spec={v.content || { section: "sources" }}
-                    visible={!!rect}
-                    tabs={tabs}
-                    docked={
-                      docked
-                        ? {
-                            onPopOut: () => action("panel-pop-out", { viewId: docked }),
-                            onClose: () => action("panel-close", { viewId: docked }),
-                          }
-                        : undefined
-                    }
-                  />
+                  {(() => {
+                    const content = (
+                      <WorkspaceContent
+                        key={v.nav ?? 0}
+                        viewId={v.id}
+                        spec={v.content || { section: "sources" }}
+                        visible={!!rect}
+                        tabs={tabs}
+                        docked={docked ? {} : undefined}
+                      />
+                    );
+                    if (!docked) return content;
+                    // A reader's panel: the source's details and note, or the PDF's references.
+                    return (
+                      <ReaderPanel
+                        readerId={docked}
+                        tab={(v as { tab?: ReaderPanelTab }).tab ?? "details"}
+                        details={content}
+                        onTab={(tab) => action("panel-tab", { viewId: docked, tab })}
+                        onPopOut={() => action("panel-pop-out", { viewId: docked })}
+                        onClose={() => action("panel-close", { viewId: docked })}
+                      />
+                    );
+                  })()}
                 </div>
               );
             })}

@@ -209,6 +209,18 @@ button { color: inherit; }
   animation: key-panel-enter 180ms cubic-bezier(.2,.8,.2,1);
 }
 
+/* The reader's own side panel (References when the host has no panel of its own): docked
+   on the trailing edge, full height. */
+.pdfjs-side-panel {
+  position: absolute;
+  z-index: 40;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  max-width: calc(100% - 120px);
+  border-left: 1px solid var(--key-ui-border);
+}
+
 @keyframes key-panel-enter {
   from { opacity: 0; transform: translateX(10px); }
 }

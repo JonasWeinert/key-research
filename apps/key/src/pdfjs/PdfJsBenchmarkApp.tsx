@@ -28,7 +28,6 @@ import type {
   PaperPreprocessingResult,
   ScholarlyMetadata,
   ScientificCitation,
-  ScientificReference,
 } from '../engines/types';
 import { Icon } from '../ui/Icon';
 import { MarkdownEditor, MarkdownContent } from '../ui/MarkdownEditor';
@@ -61,16 +60,12 @@ import {
   preprocessedScholarlyEntries,
   type ScholarlyEntry,
 } from './scholarly-metadata';
-import {
-  citationBibliographyLine,
-  citationLinks,
-  citationSummary,
-  isScholarlyResourceUrl,
-  isNumberedCitation,
-} from './citation-details';
+import { isScholarlyResourceUrl } from './citation-details';
 import { quoteZoom, zoomTransitionFrame } from './quote-zoom';
 import { locateQuote } from './quote-locate';
 import { CitationCardBody, ExternalWorkCardBody } from './CitationCard';
+import { ReferenceList } from './ReferenceList';
+import { SidePanel } from '../ui/SidePanel';
 import {
   HoverCardBridge,
   anchoredFloatingCardPosition,
@@ -1497,16 +1492,6 @@ function referenceForNumber(
   return analysis?.references.find(reference => reference.number === number);
 }
 
-function compactReferenceTitle(
-  reference: ScientificReference,
-  metadata?: ScholarlyMetadata,
-) {
-  if (metadata?.title) return metadata.title;
-  return reference.text
-    .replace(new RegExp(`^\\s*[[(]?${reference.number}[\\]).:]?\\s*`), '')
-    .trim();
-}
-
 function citationPreview(
   link: NativeLink & { synthetic?: boolean },
   analysis: PaperPreprocessingResult | null,
@@ -1645,6 +1630,8 @@ export interface PdfReaderHandle {
   closeSearch(): void;
   togglePanel(panel: PdfReaderPanel): void;
   closePanel(): void;
+  /** Scrolls `page` into view with `top` (a fraction down it) at the top. */
+  goTo(page: number, top?: number): void;
 }
 
 const PdfJsBenchmarkApp = forwardRef<PdfReaderHandle, PdfJsBenchmarkAppProps>(
@@ -1685,7 +1672,6 @@ function PdfJsBenchmarkApp({
   const fixtureRequestedRef = useRef(false);
   const autoRunBenchmarkRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const citationDialogRef = useRef<HTMLElement>(null);
   const citationUiId = useId().replaceAll(':', '');
   const [status, setStatus] = useState('Choose a PDF');
   const [ready, setReady] = useState(false);
@@ -2124,7 +2110,7 @@ function PdfJsBenchmarkApp({
       return;
     }
     const panel = scrollRef.current?.parentElement?.querySelector<HTMLElement>(
-      '.key-panel-shell',
+      '.key-panel-shell, .key-side-panel',
     );
     if (!panel) {
       controller?.setPanelInset(0);
@@ -2150,24 +2136,6 @@ function PdfJsBenchmarkApp({
     selectedCitationNumbers.includes(activeCitationNumber)
       ? activeCitationNumber
       : selectedCitationNumbers[0] ?? null;
-  const selectedActiveReference =
-    selectedActiveCitationNumber === null
-      ? undefined
-      : referenceForNumber(analysis, selectedActiveCitationNumber);
-  const selectedActiveEntry =
-    selectedActiveCitationNumber === null
-      ? undefined
-      : scholarly.get(selectedActiveCitationNumber);
-  const selectedActiveMetadata =
-    selectedActiveEntry?.state === 'ready'
-      ? selectedActiveEntry.metadata
-      : undefined;
-  const selectedActiveLinks = citationLinks(selectedActiveMetadata);
-  const externalCitationMetadata =
-    externalCitation?.entry.state === 'ready'
-      ? externalCitation.entry.metadata
-      : undefined;
-  const externalCitationLinks = citationLinks(externalCitationMetadata);
   const resolveHoveredLinkAnchor = useCallback(
     () =>
       hoveredLink
@@ -2208,12 +2176,6 @@ function PdfJsBenchmarkApp({
     );
     setExpandedCitationNumber(null);
   }, [citationFocus?.citation.id]);
-
-  useEffect(() => {
-    if (expandedCitationNumber === null && !externalCitationExpanded) return;
-    const frame = requestAnimationFrame(() => citationDialogRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [expandedCitationNumber, externalCitationExpanded]);
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -2744,8 +2706,14 @@ function PdfJsBenchmarkApp({
   const context = selection || activeAnnotation ? contextRect : null;
   useReaderOverlay(!!context && !commentDraft, '.pdfjs-selection-toolbar', () => setContextRect(null));
   useReaderOverlay(!!hoveredLink && !context, '.pdfjs-link-card', () => setHoveredLink(null));
-  useReaderOverlay(!!citationFocus && !context, '.pdfjs-cite-card', () => (setSelectedCitation(null), setHoveredCitation(null)));
-  useReaderOverlay(!!externalCitation && !context, '.pdfjs-cite-card', () => setExternalCitation(null));
+  // A card the user clicked (or expanded) stays while the page or the card scrolls; one that
+  // only follows the pointer goes when the page scrolls away from it.
+  useReaderOverlay(!!citationFocus && !context, '.pdfjs-cite-card', () => (setSelectedCitation(null), setHoveredCitation(null), setExpandedCitationNumber(null)), {
+    scroll: !selectedCitation && expandedCitationNumber === null,
+  });
+  useReaderOverlay(!!externalCitation && !context, '.pdfjs-cite-card', () => (setExternalCitation(null), setExternalCitationExpanded(false)), {
+    scroll: false,
+  });
   const comments = useMemo(
     () => annotations.filter(annotation => annotation.comment),
     [annotations],
@@ -2880,6 +2848,8 @@ function PdfJsBenchmarkApp({
       togglePanel: panel =>
         setActivePanel(current => (current === panel ? null : panel)),
       closePanel: () => setActivePanel(null),
+      goTo: (page, top = 0) =>
+        controllerRef.current?.scrollToBounds(page, { left: 0, right: 0, top, bottom: top }),
     }),
     [
       activateSearch,
@@ -3232,6 +3202,7 @@ function PdfJsBenchmarkApp({
       {citationFocus && !context && (
         <LiveAnchoredCard
           className="pdfjs-cite-card"
+          data-expanded={expandedCitationNumber !== null || undefined}
           role="dialog"
           aria-label={
             citationFocus.citation.numbers.length > 1
@@ -3257,7 +3228,12 @@ function PdfJsBenchmarkApp({
           <CitationCardBody
             citation={citationFocus.citation}
             active={selectedActiveCitationNumber}
-            onSelect={setActiveCitationNumber}
+            onSelect={number => {
+              setActiveCitationNumber(number);
+              setExpandedCitationNumber(current => (current === null ? null : number));
+            }}
+            expanded={expandedCitationNumber !== null}
+            onCollapse={() => setExpandedCitationNumber(null)}
             reference={number => referenceForNumber(analysis, number)}
             entry={number => scholarly.get(number)}
             onResolved={resolveScholarly}
@@ -3281,6 +3257,7 @@ function PdfJsBenchmarkApp({
                 ? () => {
                     setSelectedCitation(null);
                     setHoveredCitation(null);
+                    setExpandedCitationNumber(null);
                   }
                 : undefined
             }
@@ -3290,6 +3267,7 @@ function PdfJsBenchmarkApp({
       {externalCitation && !context && (
         <LiveAnchoredCard
           className="pdfjs-cite-card"
+          data-expanded={externalCitationExpanded || undefined}
           role="dialog"
           aria-label="Linked research"
           resolveAnchor={resolveExternalCitationAnchor}
@@ -3300,6 +3278,8 @@ function PdfJsBenchmarkApp({
             url={externalCitation.link.target.kind === 'external' ? externalCitation.link.target.url : ''}
             onResolved={resolveExternal}
             onShowMore={() => setExternalCitationExpanded(true)}
+            expanded={externalCitationExpanded}
+            onCollapse={() => setExternalCitationExpanded(false)}
             onClose={() => {
               externalCitationRequestRef.current += 1;
               setExternalCitation(null);
@@ -3424,304 +3404,40 @@ function PdfJsBenchmarkApp({
         </PanelShell>
       )}
       {activePanel === 'references' && (
-        <PanelShell
-          title="Paper references"
-          detail={
-            libraryReferences?.length
-              ? `${libraryReferences.length} references`
-              : analysis
-                ? `${analysis.references.length} references · processed in ${Math.round(analysis.processingMs)} ms`
-                : libraryReferences
-                  ? 'From your library'
-                  : 'Analysing paper structure…'
+        <SidePanel
+          label="References"
+          className="pdfjs-side-panel"
+          storageKey="key.reader.side-panel"
+          resizable={{ min: 260, max: 560, initial: 340 }}
+          sections={[
+            {
+              id: 'references',
+              title: 'References',
+              badge: (libraryReferences?.length || analysis?.references.length) || undefined,
+              render: () => (
+                <ReferenceList
+                  header={referencesHeader}
+                  references={libraryReferences?.length ? libraryReferences : analysis?.references ?? libraryReferences}
+                  aside={referenceAside}
+                  onSelect={reference =>
+                    controllerRef.current?.scrollToBounds(reference.page, {
+                      left: reference.xFraction ?? 0,
+                      right: reference.xFraction ?? 0,
+                      top: reference.yFraction ?? 0,
+                      bottom: reference.yFraction ?? 0,
+                    })
+                  }
+                />
+              ),
+            },
+          ]}
+          actions={
+            <button type="button" aria-label="Close references" title="Close" onClick={() => setActivePanel(null)}>
+              <Icon name="close" />
+            </button>
           }
-          icon="highlight"
-          onClose={() => setActivePanel(null)}
-          className="pdfjs-reader-panel references"
-        >
-          {referencesHeader}
-          {(libraryReferences?.length ? libraryReferences : analysis?.references)?.length ? (
-            <div className="pdfjs-reference-list">
-              {(libraryReferences?.length ? libraryReferences : analysis!.references).map(reference => (
-                <div className="pdfjs-reference-item" key={`${reference.number}-${reference.page}`}>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      controllerRef.current?.scrollToBounds(reference.page, {
-                        left: reference.xFraction ?? 0,
-                        right: reference.xFraction ?? 0,
-                        top: reference.yFraction ?? 0,
-                        bottom: reference.yFraction ?? 0,
-                      })
-                    }
-                  >
-                    <strong>[{reference.number}]</strong>
-                    <p>{reference.text}</p>
-                    <small>Page {reference.page + 1}</small>
-                  </button>
-                  {referenceAside?.(reference)}
-                </div>
-              ))}
-            </div>
-          ) : (analysis || libraryReferences) && (
-            <EmptyState
-              icon="highlight"
-              title="No references detected"
-              detail="No reliable reference list was found in this PDF."
-            />
-          )}
-        </PanelShell>
+        />
       )}
-      {externalCitationExpanded &&
-        externalCitation &&
-        externalCitationMetadata && (
-          <div
-            className="pdfjs-citation-modal-backdrop"
-            onPointerDown={event => {
-              if (event.target === event.currentTarget) {
-                setExternalCitationExpanded(false);
-              }
-            }}
-          >
-            <section
-              ref={citationDialogRef}
-              className="pdfjs-citation-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby={`${citationUiId}-external-citation-modal-title`}
-              tabIndex={-1}
-              onPointerDown={event => event.stopPropagation()}
-            >
-              <header>
-                <div>
-                  <span>
-                    {(externalCitationMetadata.sources?.length
-                      ? externalCitationMetadata.sources
-                      : [externalCitationMetadata.source]
-                    ).join(' + ')}
-                  </span>
-                  <h2 id={`${citationUiId}-external-citation-modal-title`}>
-                    {externalCitationMetadata.title}
-                  </h2>
-                  <p>{citationBibliographyLine(externalCitationMetadata)}</p>
-                </div>
-                <IconButton
-                  icon="close"
-                  label="Close linked research details"
-                  onClick={() => setExternalCitationExpanded(false)}
-                />
-              </header>
-              <div className="pdfjs-citation-modal-body">
-                {externalCitationMetadata.tldrText && (
-                  <section className="pdfjs-citation-modal-tldr">
-                    <span>TLDR</span>
-                    <p>{externalCitationMetadata.tldrText}</p>
-                  </section>
-                )}
-                <section className="pdfjs-citation-provenance">
-                  <h3>Source details</h3>
-                  <dl>
-                    <div>
-                      <dt>Metadata</dt>
-                      <dd>
-                        {(externalCitationMetadata.sources?.length
-                          ? externalCitationMetadata.sources
-                          : [externalCitationMetadata.source]
-                        ).join(' + ')}
-                      </dd>
-                    </div>
-                    {externalCitationMetadata.doi && (
-                      <div>
-                        <dt>DOI</dt>
-                        <dd>{externalCitationMetadata.doi}</dd>
-                      </div>
-                    )}
-                    {externalCitationMetadata.openAccess !== undefined && (
-                      <div>
-                        <dt>Access</dt>
-                        <dd>
-                          {externalCitationMetadata.openAccess
-                            ? 'Open access'
-                            : 'Not marked open access'}
-                        </dd>
-                      </div>
-                    )}
-                    <div>
-                      <dt>In this PDF</dt>
-                      <dd>External link · page {externalCitation.link.page + 1}</dd>
-                    </div>
-                  </dl>
-                </section>
-                {externalCitationMetadata.abstractText && (
-                  <section className="pdfjs-citation-modal-abstract">
-                    <h3>Abstract</h3>
-                    <p>{externalCitationMetadata.abstractText}</p>
-                  </section>
-                )}
-              </div>
-              <footer>
-                <nav aria-label="Scholarly resource links">
-                  {externalCitationLinks.map(link => (
-                    <a
-                      key={`${link.label}-${link.url}`}
-                      className={link.emphasis}
-                      href={link.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {link.label}
-                    </a>
-                  ))}
-                </nav>
-              </footer>
-            </section>
-          </div>
-        )}
-      {expandedCitationNumber !== null &&
-        selectedCitation &&
-        selectedActiveReference &&
-        selectedActiveCitationNumber === expandedCitationNumber && (
-          <div
-            className="pdfjs-citation-modal-backdrop"
-            onPointerDown={event => {
-              if (event.target === event.currentTarget) {
-                setExpandedCitationNumber(null);
-              }
-            }}
-          >
-            <section
-              ref={citationDialogRef}
-              className="pdfjs-citation-modal"
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby={`${citationUiId}-citation-modal-title`}
-              tabIndex={-1}
-              onPointerDown={event => event.stopPropagation()}
-            >
-              <header>
-                <div>
-                  <span>
-                    {citationFocus && !isNumberedCitation(citationFocus.citation.source)
-                      ? 'Reference'
-                      : `Reference [${selectedActiveCitationNumber}]`}
-                    {selectedActiveMetadata
-                      ? ` · ${(selectedActiveMetadata.sources?.length
-                          ? selectedActiveMetadata.sources
-                          : [selectedActiveMetadata.source]
-                        ).join(' + ')}`
-                      : ''}
-                  </span>
-                  <h2 id={`${citationUiId}-citation-modal-title`}>
-                    {compactReferenceTitle(
-                      selectedActiveReference,
-                      selectedActiveMetadata,
-                    )}
-                  </h2>
-                  <p>{citationBibliographyLine(selectedActiveMetadata)}</p>
-                </div>
-                <IconButton
-                  icon="close"
-                  label="Close citation details"
-                  onClick={() => setExpandedCitationNumber(null)}
-                />
-              </header>
-              <div className="pdfjs-citation-modal-body">
-                {selectedActiveMetadata?.tldrText && (
-                  <section className="pdfjs-citation-modal-tldr">
-                    <span>TLDR</span>
-                    <p>{selectedActiveMetadata.tldrText}</p>
-                  </section>
-                )}
-                <section className="pdfjs-citation-provenance">
-                  <h3>Source details</h3>
-                  <dl>
-                    {selectedActiveMetadata && (
-                      <>
-                        <div>
-                          <dt>Metadata</dt>
-                          <dd>
-                            {(selectedActiveMetadata.sources?.length
-                              ? selectedActiveMetadata.sources
-                              : [selectedActiveMetadata.source]
-                            ).join(' + ')}
-                          </dd>
-                        </div>
-                        {selectedActiveMetadata.certainty && (
-                          <div>
-                            <dt>Match</dt>
-                            <dd>{selectedActiveMetadata.certainty} confidence</dd>
-                          </div>
-                        )}
-                        {selectedActiveMetadata.doi && (
-                          <div>
-                            <dt>DOI</dt>
-                            <dd>{selectedActiveMetadata.doi}</dd>
-                          </div>
-                        )}
-                        {selectedActiveMetadata.openAccess !== undefined && (
-                          <div>
-                            <dt>Access</dt>
-                            <dd>
-                              {selectedActiveMetadata.openAccess
-                                ? 'Open access'
-                                : 'Not marked open access'}
-                            </dd>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div>
-                      <dt>In this PDF</dt>
-                      <dd>Reference list · page {selectedActiveReference.page + 1}</dd>
-                    </div>
-                  </dl>
-                </section>
-                {selectedActiveMetadata?.abstractText && (
-                  <section className="pdfjs-citation-modal-abstract">
-                    <h3>Abstract</h3>
-                    <p>{selectedActiveMetadata.abstractText}</p>
-                  </section>
-                )}
-                <section className="pdfjs-citation-original-reference">
-                  <h3>Original reference</h3>
-                  <blockquote>{selectedActiveReference.text}</blockquote>
-                </section>
-              </div>
-              <footer>
-                <nav aria-label="Citation links">
-                  {selectedActiveLinks.map(link => (
-                    <a
-                      key={`${link.label}-${link.url}`}
-                      className={link.emphasis}
-                      href={link.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {link.label}
-                    </a>
-                  ))}
-                </nav>
-                <button
-                  type="button"
-                  onClick={() => {
-                    controllerRef.current?.scrollToBounds(
-                      selectedActiveReference.page,
-                      {
-                        left: selectedActiveReference.xFraction ?? 0,
-                        right: selectedActiveReference.xFraction ?? 0,
-                        top: selectedActiveReference.yFraction ?? 0,
-                        bottom: selectedActiveReference.yFraction ?? 0,
-                      },
-                    );
-                    setExpandedCitationNumber(null);
-                  }}
-                >
-                  Go to reference
-                </button>
-              </footer>
-            </section>
-          </div>
-        )}
       {commentDraft && commentAnchorRect && (
         <LiveAnchoredCard
           className={`pdfjs-comment-anchor-card ${

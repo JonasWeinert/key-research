@@ -54,10 +54,11 @@ export interface SourceSide {
 }
 
 /** The page shown as a reader's details-and-notes panel, in the reader's tab. */
+/** Shown as the details beside a PDF; the panel around it (ReaderPanel) has its own actions. */
 export interface DockedPanel {
   /** Moves the page into a tab of its own. */
-  onPopOut: () => void;
-  onClose: () => void;
+  onPopOut?: () => void;
+  onClose?: () => void;
 }
 
 export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side, docked }: { invoke: Invoke; workspaceId: string; sourceId: string; viewId?: string; side?: SourceSide; docked?: DockedPanel }) {
@@ -548,7 +549,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               <button onClick={() => void invoke("store_index_control", { action: "reindex", ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Re-index</button>
             </div>
           </details>
-          {docked && (
+          {docked?.onClose && (
             <span className="kx-docked-actions">
               <button className="kx-icon-button" title="Open in its own tab" aria-label="Open details and notes in their own tab" onClick={docked.onPopOut}>
                 <Icon name="detach" size={14} />

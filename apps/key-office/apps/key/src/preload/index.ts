@@ -32,7 +32,7 @@ contextBridge.exposeInMainWorld("key", {
     ipcRenderer.invoke("key:tab-action", action, payload),
   readerBack: () => ipcRenderer.invoke("key:reader-back"),
   readerDismiss: () => ipcRenderer.invoke("key:reader-dismiss"),
-  readerNotes: () => ipcRenderer.invoke("key:reader-notes"),
+  readerNotes: (tab?: string) => ipcRenderer.invoke("key:reader-notes", tab),
   readerAddToNote: (passage: unknown) => ipcRenderer.invoke("key:reader-add-to-note", passage),
   readerSendTo: (highlight: unknown) => ipcRenderer.invoke("key:reader-send-to", highlight),
   readerAnalysis: () => ipcRenderer.invoke("key:reader-analysis"),

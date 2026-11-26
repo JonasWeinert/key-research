@@ -173,7 +173,7 @@ const want = (name) => !only.length || only.includes(name);
         };
       });
     let citations = {};
-    if (want("cards") || want("skeleton")) {
+    if (want("cards") || want("skeleton") || want("pinned")) {
       citations = await hoverCitations(["single", "several", "many"].filter((k) => k !== "many" || process.env.KEY_SMOKE_MANY));
       result.citations = citations;
       if (!citations.single) throw Error("No single-work citation to hover");
@@ -243,6 +243,121 @@ const want = (name) => !only.length || only.includes(name);
       await pdf.waitForFunction(() => !document.querySelector(".pdfjs-cite-unavailable, .pdfjs-cite-skeleton"), undefined, { timeout: 60000 });
       result.skeleton = { recovered: recovered.slice(0, 80), retried: await card.innerText().then((t) => t.slice(0, 80)) };
       await pdf.mouse.move(5, 5);
+    }
+
+    // 3b. A clicked citation card, expanded into its details: it stays while the page and the
+    //     card scroll, and closes on a press outside it.
+    if (want("pinned") && citations.single) {
+      await pdf.mouse.move(5, 5);
+      await scrollTo(citations.single.top);
+      await pdf.waitForTimeout(300);
+      const box = await pdf.locator(`.pdfjs-link-overlay.citation[data-id="${citations.single.id}"]`).first().boundingBox();
+      await pdf.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+      await card.waitFor({ timeout: 3000 });
+      await pdf.waitForFunction(() => !document.querySelector(".pdfjs-cite-skeleton"), undefined, { timeout: Number(process.env.KEY_SMOKE_LOOKUP_MS || 20000) }).catch(() => {});
+      const details = pdf.locator(".pdfjs-cite-card [aria-label='Show details']");
+      const expanded = await details.isVisible().catch(() => false);
+      if (expanded) {
+        await details.click();
+        await pdf.locator(".pdfjs-cite-card[data-expanded] .pdfjs-cite-details").waitFor({ timeout: 3000 });
+      }
+      const inCard = await card.boundingBox();
+      await pdf.mouse.move(inCard.x + inCard.width / 2, inCard.y + inCard.height / 2);
+      await pdf.mouse.wheel(0, 300);
+      await pdf.waitForTimeout(300);
+      if (!(await card.isVisible())) throw Error("Scrolling inside the pinned card closed it");
+      await pdf.mouse.move(inCard.x - 60 > 40 ? inCard.x - 60 : inCard.x + inCard.width + 60, inCard.y + 20);
+      for (let i = 0; i < 4; i++) await pdf.mouse.wheel(0, 60);
+      await pdf.waitForTimeout(400);
+      if (!(await card.isVisible())) throw Error("Scrolling the page closed the pinned card");
+      await themes(expanded ? "card-expanded" : "card-pinned", async () => {
+        await pdf.waitForTimeout(200);
+      });
+      result.pinned = { expanded, geometry: await card.boundingBox() };
+      await pdf.mouse.click(5, 300);
+      await pdf.waitForTimeout(300);
+      if (await card.isVisible()) throw Error("A press outside did not close the pinned card");
+    }
+
+    // 3c. The rail: wider under the pointer, chapters or thumbnails from its context menu.
+    if (want("rail")) {
+      await scrollTo(0);
+      await pdf.waitForTimeout(300);
+      const ticks = pdf.locator(".key-pdf-rail .key-preview-rail-ticks");
+      await ticks.waitFor({ timeout: 10000 });
+      const rest = await ticks.boundingBox();
+      await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2);
+      await pdf.waitForTimeout(450);
+      const wide = await ticks.boundingBox();
+      if (wide.width < rest.width * 2) throw Error(`The rail did not widen on hover: ${rest.width} → ${wide.width}`);
+      await shot(pdf, "rail-hover-light");
+      await pdf.mouse.click(rest.x + 6, rest.y + rest.height / 2, { button: "right" });
+      const menu = pdf.getByRole("menu", { name: "Rail shows" });
+      await menu.waitFor({ timeout: 3000 });
+      await themes("rail-menu");
+      const before = await pdf.locator(".key-pdf-rail").getAttribute("data-mode");
+      const other = before === "pages" ? "Chapters" : "Page thumbnails";
+      if (await menu.getByRole("menuitemradio", { name: other }).isEnabled()) {
+        await menu.getByRole("menuitemradio", { name: other }).click();
+        await pdf.waitForTimeout(200);
+        const after = await pdf.locator(".key-pdf-rail").getAttribute("data-mode");
+        if (after === before) throw Error("The rail's menu did not switch what it shows");
+        const stored = await pdf.evaluate(() => localStorage.getItem("key.pdf.rail"));
+        await pdf.mouse.move(rest.x + 6, rest.y + rest.height / 2 + 20);
+        await pdf.waitForTimeout(500);
+        await shot(pdf, `rail-${after}-light`);
+        result.rail = { rest: rest.width, wide: wide.width, before, after, stored };
+        await pdf.mouse.click(rest.x + 6, rest.y + rest.height / 2, { button: "right" });
+        await menu.getByRole("menuitemradio", { name: before === "pages" ? "Page thumbnails" : "Chapters" }).click();
+      } else {
+        await pdf.keyboard.press("Escape");
+        result.rail = { rest: rest.width, wide: wide.width, before, chapters: false };
+      }
+      await pdf.mouse.move(600, 500);
+    }
+
+    // 3d. The side panel beside the reader: References and Details in one panel, switched in
+    //     its header (the old overlay is gone).
+    if (want("panel")) {
+      await pdf.mouse.move(600, 20);
+      await pdf.getByRole("button", { name: "References", exact: true }).click();
+      const panel = shell.locator(".key-reader-panel");
+      await panel.waitFor({ timeout: 15000 });
+      if (await pdf.locator(".key-panel-shell.references").count()) throw Error("The references overlay still opens");
+      const tab = (name) => panel.getByRole("tab", { name: new RegExp(`^${name}`) });
+      await shell.waitForFunction(() => document.querySelector(".key-reader-panel [role=tab][aria-selected=true]")?.textContent?.startsWith("References"), undefined, { timeout: 5000 });
+      await panel.locator(".key-ref-list li").first().waitFor({ timeout: 90000 });
+      const rows = await panel.locator(".key-ref-list li").count();
+      const pressed = await pdf.getByRole("button", { name: "References", exact: true }).getAttribute("aria-pressed");
+      if (pressed !== "true") throw Error("The References button is not shown pressed");
+      for (const scheme of ["light", "dark"]) {
+        await shell.evaluate((t) => window.key.setAppSettings({ theme: t }), scheme);
+        await shell.emulateMedia({ colorScheme: scheme });
+        await shell.waitForTimeout(300);
+        await shot(shell, `panel-references-${scheme}`);
+      }
+      await shell.evaluate(() => window.key.setAppSettings({ theme: "system" }));
+      // A reference takes the reader to its place in the list.
+      const top = await pdf.evaluate(() => document.querySelector(".pdfjs-scroll").scrollTop);
+      await panel.locator(".key-ref-list li button").nth(Math.min(3, rows - 1)).click();
+      await pdf.waitForFunction((t) => Math.abs(document.querySelector(".pdfjs-scroll").scrollTop - t) > 200, top, { timeout: 5000 });
+      // The switch: Details shows the source's page in the same panel.
+      await tab("Details").click();
+      await shell.locator(".key-reader-panel .kx-source-page").waitFor({ timeout: 10000 });
+      await pdf.waitForFunction(() => document.querySelector("[aria-label='Details & notes']")?.getAttribute("aria-pressed") === "true", undefined, { timeout: 5000 });
+      for (const scheme of ["light", "dark"]) {
+        await shell.evaluate((t) => window.key.setAppSettings({ theme: t }), scheme);
+        await shell.emulateMedia({ colorScheme: scheme });
+        await shell.waitForTimeout(300);
+        await shot(shell, `panel-details-${scheme}`);
+      }
+      await shell.evaluate(() => window.key.setAppSettings({ theme: "system" }));
+      await shell.emulateMedia({ colorScheme: "light" });
+      await tab("References").click();
+      await shell.waitForFunction(() => document.querySelector(".key-reader-panel [role=tab][aria-selected=true]")?.textContent?.startsWith("References"), undefined, { timeout: 5000 });
+      await panel.getByRole("button", { name: "Hide details and references" }).click();
+      await panel.waitFor({ state: "detached", timeout: 5000 });
+      result.panel = { rows };
     }
 
     // 4. Cite: the selection toolbar copies the passage as a quote (no "Send to" there).

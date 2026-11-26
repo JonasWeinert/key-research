@@ -1,0 +1,19 @@
+/* ReaderPanel: the SidePanel beside a PDF fills its pane; the details page scrolls itself. */
+.key-content-pane > .key-reader-panel {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  background: var(--kx-bg);
+}
+.key-reader-panel .key-side-panel-head {
+  height: 38px;
+  border-bottom-color: var(--kx-line);
+}
+.key-reader-panel .key-side-panel-body[data-section="details"] {
+  overflow: hidden;
+}
+.key-reader-panel .key-side-panel-body[data-section="details"] > .key-shell-content {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+}

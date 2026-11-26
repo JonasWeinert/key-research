@@ -251,6 +251,92 @@
     background-position: 0 0;
   }
 }
+/* Expanded: the same card, grown in place into the work's details. The text scrolls inside
+   it; the header (works, collapse, close) and the actions stay put. */
+.pdfjs-cite-card[data-expanded] {
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(540px, calc(100vh - 24px));
+}
+.pdfjs-cite-card[data-expanded] .pdfjs-cite-body {
+  flex: 1;
+}
+.pdfjs-cite-details {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 14px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.pdfjs-cite-details h2 {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
+}
+.pdfjs-cite-authors,
+.pdfjs-cite-venue {
+  margin: 0;
+  color: var(--key-text-secondary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.pdfjs-cite-venue {
+  font-style: italic;
+}
+.pdfjs-cite-section {
+  margin-top: 10px;
+}
+.pdfjs-cite-section h3 {
+  margin: 0 0 3px;
+  color: var(--key-text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.pdfjs-cite-section p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.pdfjs-cite-printed {
+  color: var(--key-text-secondary);
+}
+.pdfjs-cite-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 12px;
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--key-hover);
+  font-size: 11.5px;
+}
+.pdfjs-cite-facts div {
+  display: contents;
+}
+.pdfjs-cite-facts dt {
+  color: var(--key-text-secondary);
+}
+.pdfjs-cite-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.pdfjs-cite-facts a {
+  color: inherit;
+  text-decoration: none;
+}
+.pdfjs-cite-facts a:hover {
+  text-decoration: underline;
+}
+.pdfjs-cite-action.pdfjs-cite-primary {
+  color: var(--key-accent);
+}
 @media (prefers-reduced-motion: reduce) {
   .pdfjs-cite-card,
   .pdfjs-cite-skeleton i {

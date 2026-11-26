@@ -62,18 +62,23 @@ const { tmpdir } = require("node:os");
     await pdf.screenshot({ path: path.join(temp, "pdf.png") });
     console.log("PDF", await pdf.locator("body").innerText());
     // The structure rail: hovering a tick previews it, clicking jumps there. With chapters
-    // (the outline or the headings analysis found) a switch beneath it picks contents or
+    // (the outline or the headings analysis found) the rail's context menu picks contents or
     // page thumbnails; thumbnails are what this check looks at.
     const ticks = pdf.locator('.key-pdf-rail [data-slot="preview-rail-item"]');
     await ticks.first().waitFor({ timeout: 30000 });
-    const thumbnails = pdf.getByRole("radio", { name: "Page thumbnails" });
-    if (await thumbnails.count()) {
-      await pdf.getByRole("radio", { name: "Contents" }).click();
+    const menu = pdf.getByRole("menu", { name: "Rail shows" });
+    await ticks.first().click({ button: "right" });
+    await menu.waitFor({ timeout: 5000 });
+    const chapters = menu.getByRole("menuitemradio", { name: "Chapters" });
+    if (await chapters.isEnabled()) {
+      await chapters.click();
       await ticks.first().hover();
       await pdf.locator(".key-pdf-rail-preview[data-mode=contents]").waitFor({ timeout: 5000 });
       await pdf.mouse.move(600, 300);
-      await thumbnails.click();
+      await ticks.first().click({ button: "right" });
     }
+    await menu.getByRole("menuitemradio", { name: "Page thumbnails" }).click();
+    await menu.waitFor({ state: "detached", timeout: 5000 });
     const labels = await ticks.evaluateAll((items) =>
       items.map((item) => item.getAttribute("aria-label")),
     );

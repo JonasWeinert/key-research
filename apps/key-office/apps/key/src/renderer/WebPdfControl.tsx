@@ -3,7 +3,8 @@ import { Icon } from "./icons";
 import "./web-pdf-control.css";
 
 /** What the reader learns about a PDF from the web (main's reader-ready). */
-export type WebPdfInfo = { url: string; host: string; inLibrary?: boolean } | { notice: "added" | "exists" };
+/** `referrer` is the page that led to the PDF, which the source pill opens in the browser. */
+export type WebPdfInfo = { url: string; host: string; referrer?: string; inLibrary?: boolean } | { notice: "added" | "exists" };
 interface WebPdfBridge {
   readerAddToLibrary?(): Promise<{ status: string }>;
   readerOpenInLibrary?(): Promise<void>;
@@ -44,7 +45,7 @@ export function WebPdfControl({ info }: { info?: WebPdfInfo }) {
   };
   return (
     <div className="key-web-pdf" role="toolbar" aria-label="PDF from the web">
-      <button type="button" className="key-web-pdf-source" title={`Open ${info.url}`} onClick={() => run(() => bridge().readerOpenPage?.())}>
+      <button type="button" className="key-web-pdf-source" title={info.referrer ? `Back to ${info.referrer}` : `Open ${info.host || "the site"} in the browser`} onClick={() => run(() => bridge().readerOpenPage?.())}>
         <Icon name="globe" size={13} />
         <span>{info.host || "Web"}</span>
       </button>

@@ -3,12 +3,14 @@
 // of authors · year · venue, an optional one-line summary, and a small row of actions. Several
 // works show as chips that scroll sideways inside the card, never past it. While metadata is
 // on its way (or a provider is rate limited and the lookup is being retried) the text is a
-// skeleton; a work no index knows shows the reference as printed.
+// skeleton; a work no index knows shows the reference as printed. Expanded (Details), the
+// same card grows in place into the work's details: summary, abstract, identifiers and links;
+// it then stays until a press outside it or Escape.
 import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { ScholarlyMetadata, ScientificCitation, ScientificReference } from '../engines/types';
 import { Icon } from '../ui/Icon';
-import { citationAuthorsSnippet, citationLinks, citationSummary, isNumberedCitation } from './citation-details';
+import { citationAuthorsSnippet, citationLinks, citationSummary, isNumberedCitation, type CitationLink } from './citation-details';
 import { isTauri } from './reader-model';
 import { classifyLookupError, lookupFaultPending } from './remote-retry';
 import type { ScholarlyEntry } from './scholarly-metadata';
@@ -93,12 +95,110 @@ function WorkBody({
   );
 }
 
-function ActionLink({ href, icon, children }: { href: string; icon: 'external' | 'document'; children: ReactNode }) {
+function ActionLink({ href, icon, children, primary }: { href: string; icon: 'external' | 'document'; children: ReactNode; primary?: boolean }) {
   return (
-    <a className="pdfjs-cite-action" href={href} target="_blank" rel="noreferrer">
+    <a className={`pdfjs-cite-action${primary ? ' pdfjs-cite-primary' : ''}`} href={href} target="_blank" rel="noreferrer">
       <Icon name={icon} />
       {children}
     </a>
+  );
+}
+
+const sourcesOf = (metadata: ScholarlyMetadata) => (metadata.sources?.length ? metadata.sources : [metadata.source]).join(', ');
+
+/** The expanded card: everything known about the work, scrolling inside the card. */
+function WorkDetails({
+  metadata,
+  title,
+  printed,
+  page,
+}: {
+  metadata?: ScholarlyMetadata;
+  title: string;
+  /** The reference as the paper prints it. */
+  printed?: string;
+  /** Where the reference list has it, 0-based. */
+  page?: number;
+}) {
+  const authors = metadata?.authors ?? [];
+  const venue = [metadata?.journal ?? metadata?.journalShort, metadata?.year].filter(Boolean).join(' · ');
+  const facts: Array<[string, ReactNode]> = [];
+  if (metadata?.doi)
+    facts.push([
+      'DOI',
+      <a href={`https://doi.org/${metadata.doi}`} target="_blank" rel="noreferrer">
+        {metadata.doi}
+      </a>,
+    ]);
+  if (metadata?.openAccess !== undefined) facts.push(['Access', metadata.openAccess ? 'Open access' : 'Not marked open access']);
+  if (page !== undefined) facts.push(['In this PDF', `Reference list, page ${page + 1}`]);
+  if (metadata) facts.push(['Found in', `${sourcesOf(metadata)}${metadata.certainty ? ` · ${metadata.certainty} confidence` : ''}`]);
+  return (
+    <div className="pdfjs-cite-details">
+      <h2>{title}</h2>
+      {authors.length > 0 && (
+        <p className="pdfjs-cite-authors" title={authors.join(', ')}>
+          {citationAuthorsSnippet(authors, 6)}
+        </p>
+      )}
+      {venue && <p className="pdfjs-cite-venue">{venue}</p>}
+      {metadata?.tldrText?.trim() && (
+        <section className="pdfjs-cite-section">
+          <h3>TLDR</h3>
+          <p>{metadata.tldrText.trim()}</p>
+        </section>
+      )}
+      {metadata?.abstractText?.trim() && (
+        <section className="pdfjs-cite-section">
+          <h3>Abstract</h3>
+          <p>{metadata.abstractText.trim()}</p>
+        </section>
+      )}
+      {facts.length > 0 && (
+        <dl className="pdfjs-cite-facts">
+          {facts.map(([term, value]) => (
+            <div key={term}>
+              <dt>{term}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {printed && printed !== title && (
+        <section className="pdfjs-cite-section">
+          <h3>As cited</h3>
+          <p className="pdfjs-cite-printed">{printed}</p>
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** The expanded card's links, the full text first. */
+function DetailLinks({ links }: { links: CitationLink[] }) {
+  return (
+    <>
+      {links.slice(0, 3).map(link => (
+        <ActionLink key={link.url} href={link.url} icon="external" primary={link.emphasis === 'primary'}>
+          {link.label}
+        </ActionLink>
+      ))}
+    </>
+  );
+}
+
+function ExpandToggle({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className="pdfjs-cite-close"
+      aria-label={expanded ? 'Show less' : 'Show details'}
+      title={expanded ? 'Show less' : 'Details'}
+      aria-expanded={expanded}
+      onClick={onToggle}
+    >
+      <Icon name={expanded ? 'collapse' : 'expand'} />
+    </button>
   );
 }
 
@@ -210,6 +310,9 @@ export interface CitationCardProps {
   /** Opens the work in the library when the host knows it is there. */
   libraryAction?: (number: number) => (() => void) | null | undefined;
   onClose?: () => void;
+  /** Grown into the work's details (after Show details). */
+  expanded?: boolean;
+  onCollapse?: () => void;
   uiId: string;
 }
 
@@ -225,6 +328,8 @@ export function CitationCardBody({
   onShowMore,
   libraryAction,
   onClose,
+  expanded = false,
+  onCollapse,
   uiId,
 }: CitationCardProps) {
   const number = active ?? citation.numbers[0] ?? null;
@@ -248,12 +353,13 @@ export function CitationCardBody({
         : 'missing';
   const several = citation.numbers.length > 1;
   const summary = citationSummary(metadata)?.text;
-  const link = citationLinks(metadata).find(candidate => candidate.url.includes('doi.org')) ?? citationLinks(metadata)[0];
+  const links = citationLinks(metadata);
+  const link = links.find(candidate => candidate.url.includes('doi.org')) ?? links[0];
   const openInLibrary = number === null ? null : libraryAction?.(number);
   const id = (value: number) => `${uiId}-cite-${value}`;
   return (
     <>
-      {(several || onClose) && (
+      {(several || onClose || expanded) && (
         <header className="pdfjs-cite-head">
           {several ? (
             <WorkChips
@@ -269,6 +375,7 @@ export function CitationCardBody({
           ) : (
             <span className="pdfjs-cite-kicker">{citation.source}</span>
           )}
+          {expanded && onCollapse && <ExpandToggle expanded onToggle={onCollapse} />}
           {onClose && (
             <button type="button" className="pdfjs-cite-close" aria-label="Close citation" onClick={onClose}>
               <Icon name="close" />
@@ -276,7 +383,34 @@ export function CitationCardBody({
           )}
         </header>
       )}
-      {reference && number !== null ? (
+      {reference && number !== null && expanded ? (
+        <article className="pdfjs-cite-body" id={id(number)} role={several ? 'tabpanel' : undefined} key={number}>
+          {state === 'loading' ? (
+            <Skeleton />
+          ) : (
+            <WorkDetails
+              metadata={metadata}
+              title={metadata?.title ?? printedReference(reference)}
+              printed={printedReference(reference)}
+              page={reference.page}
+            />
+          )}
+          <footer className="pdfjs-cite-actions">
+            {openInLibrary && (
+              <button type="button" className="pdfjs-cite-action" onClick={openInLibrary}>
+                <Icon name="book" />
+                In library
+              </button>
+            )}
+            <DetailLinks links={links} />
+            <span className="pdfjs-cite-spacer" />
+            <button type="button" className="pdfjs-cite-action" title="Go to the reference list" onClick={() => onGoToReference(reference)}>
+              p. {reference.page + 1}
+              <Icon name="next" />
+            </button>
+          </footer>
+        </article>
+      ) : reference && number !== null ? (
         <article className="pdfjs-cite-body" id={id(number)} role={several ? 'tabpanel' : undefined} key={number}>
           <WorkBody
             state={state}
@@ -336,11 +470,15 @@ export function ExternalWorkCardBody({
   onResolved,
   onShowMore,
   onClose,
+  expanded = false,
+  onCollapse,
 }: {
   url: string;
   onResolved: (metadata: ScholarlyMetadata | null) => void;
   onShowMore: () => void;
   onClose: () => void;
+  expanded?: boolean;
+  onCollapse?: () => void;
 }) {
   const [lookup, retry] = useRetryingLookup<ScholarlyMetadata>(
     isTauri() ? url : null,
@@ -367,10 +505,21 @@ export function ExternalWorkCardBody({
     <>
       <header className="pdfjs-cite-head">
         <span className="pdfjs-cite-kicker">{host}</span>
+        {expanded && onCollapse && <ExpandToggle expanded onToggle={onCollapse} />}
         <button type="button" className="pdfjs-cite-close" aria-label="Close linked research" onClick={onClose}>
           <Icon name="close" />
         </button>
       </header>
+      {expanded && metadata ? (
+        <article className="pdfjs-cite-body">
+          <WorkDetails metadata={metadata} title={metadata.title} />
+          <footer className="pdfjs-cite-actions">
+            <DetailLinks links={citationLinks(metadata)} />
+            <span className="pdfjs-cite-spacer" />
+            <ActionLink href={url} icon="external">Open link</ActionLink>
+          </footer>
+        </article>
+      ) : (
       <article className="pdfjs-cite-body">
         <WorkBody
           state={state}
@@ -397,6 +546,7 @@ export function ExternalWorkCardBody({
           }
         />
       </article>
+      )}
     </>
   );
 }

@@ -5,6 +5,7 @@ import type {
   PdfReaderRailPosition,
 } from "@key-reader/pdfjs/PdfJsBenchmarkApp";
 import { PreviewRail, type PreviewRailItem } from "./motion/PreviewRail";
+import { useDismiss } from "@key-reader/ui/dismiss";
 import { Icon } from "./icons";
 import "./pdf-rail.css";
 
@@ -18,8 +19,11 @@ interface Stop {
   until: number;
 }
 
-const MIN_SECTION = 7;
-const MIN_PAGE = 4;
+// Dense: the rail packs its ticks close and spreads them out under the pointer.
+const MIN_SECTION = 4;
+const MIN_PAGE = 3;
+const MAX_SECTION = 14;
+const MAX_PAGE = 10;
 type Mode = "contents" | "pages";
 const MODE_KEY = "key.pdf.rail";
 const after = (a: { page: number; top: number }, b: PdfReaderRailPosition) =>
@@ -44,13 +48,13 @@ export function railStops(rail: Pick<PdfReaderRail, "sections" | "pageCount">, h
       depth: s.depth,
       until: sections[i + 1]?.page ?? rail.pageCount - 1,
     }));
-    return { stops, size: Math.min(24, Math.max(MIN_SECTION, Math.floor(height / stops.length))), thinned: sections.length < rail.sections.length };
+    return { stops, size: Math.min(MAX_SECTION, Math.max(MIN_SECTION, Math.floor(height / stops.length))), thinned: sections.length < rail.sections.length };
   }
   const step = Math.max(1, Math.ceil((rail.pageCount * MIN_PAGE) / Math.max(height, 1)));
   const stops: Stop[] = [];
   for (let page = 0; page < rail.pageCount; page += step)
     stops.push({ id: `p${page}`, page, top: 0, depth: 0, until: Math.min(rail.pageCount - 1, page + step - 1) });
-  return { stops, size: Math.min(20, Math.max(MIN_PAGE, Math.floor(height / Math.max(stops.length, 1)))), thinned: false };
+  return { stops, size: Math.min(MAX_PAGE, Math.max(MIN_PAGE, Math.floor(height / Math.max(stops.length, 1)))), thinned: false };
 }
 
 function Thumbnail({ rail, page }: { rail: PdfReaderRail; page: number }) {
@@ -71,7 +75,7 @@ function Thumbnail({ rail, page }: { rail: PdfReaderRail; page: number }) {
 }
 
 /** The reader's structure rail: chapters (the outline, else the headings layout analysis
- *  found) or pages, the current place, and marks. A switch beneath it picks which. */
+ *  found) or pages, the current place, and marks. Right-click picks which. */
 export function PdfRail({ rail: given, detected }: { rail: PdfReaderRail; detected?: { title: string; page: number; top: number }[] }) {
   const sections = useMemo(
     () => (given.sections.length ? given.sections : (detected ?? []).filter((s) => s.page < given.pageCount).map((s) => ({ ...s, depth: 0 }))),
@@ -92,6 +96,16 @@ export function PdfRail({ rail: given, detected }: { rail: PdfReaderRail; detect
     } catch {}
   };
   const contents = mode === "contents" && sections.length > 0;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, { refs: [menuRef], onDismiss: () => setMenu(null) });
+  useEffect(() => {
+    if (menu) menuRef.current?.querySelector<HTMLElement>('[aria-checked="true"], [role^=menuitem]:not(:disabled)')?.focus();
+  }, [menu]);
+  const pick = (next: Mode) => {
+    choose(next);
+    setMenu(null);
+  };
   const host = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => {
@@ -144,7 +158,17 @@ export function PdfRail({ rail: given, detected }: { rail: PdfReaderRail; detect
   const byId = new Map(stops.map((stop) => [stop.id, stop]));
 
   return (
-    <div ref={host} className="key-pdf-rail">
+    <div
+      ref={host}
+      className="key-pdf-rail"
+      data-mode={contents ? "contents" : "pages"}
+      data-menu={menu ? "" : undefined}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        const box = host.current!.getBoundingClientRect();
+        setMenu({ x: event.clientX - box.left + 2, y: Math.min(event.clientY - box.top, box.height - 110) });
+      }}
+    >
       {height > 0 && stops.length > 0 ? (
         <PreviewRail
           label={contents ? "Contents" : "Pages"}
@@ -188,14 +212,49 @@ export function PdfRail({ rail: given, detected }: { rail: PdfReaderRail; detect
           }}
         />
       ) : null}
-      {sections.length > 0 && (
-        <div className="key-pdf-rail-mode" role="radiogroup" aria-label="Rail shows">
-          <button type="button" role="radio" aria-checked={contents} aria-label="Contents" title="Contents" onClick={() => choose("contents")}>
+      {menu && (
+        <div
+          ref={menuRef}
+          className="key-pdf-rail-menu"
+          role="menu"
+          aria-label="Rail shows"
+          style={{ left: menu.x, top: menu.y }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            const items = [...(menuRef.current?.querySelectorAll<HTMLElement>("[role^=menuitem]:not(:disabled)") ?? [])];
+            const at = items.indexOf(document.activeElement as HTMLElement);
+            items[(at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+          }}
+        >
+          <button type="button" role="menuitemradio" aria-checked={contents} disabled={!sections.length} onClick={() => pick("contents")}>
+            <Icon name="check" className="key-pdf-rail-menu-check" />
             <Icon name="list" />
+            <span>Chapters</span>
+            {!sections.length && <small>None in this PDF</small>}
           </button>
-          <button type="button" role="radio" aria-checked={!contents} aria-label="Page thumbnails" title="Page thumbnails" onClick={() => choose("pages")}>
+          <button type="button" role="menuitemradio" aria-checked={!contents} onClick={() => pick("pages")}>
+            <Icon name="check" className="key-pdf-rail-menu-check" />
             <Icon name="grid" />
+            <span>Page thumbnails</span>
           </button>
+          {sections.length > 0 && (
+            <>
+              <hr />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  rail.openOutline();
+                }}
+              >
+                <span className="key-pdf-rail-menu-check" />
+                <span className="key-pdf-rail-menu-gap" />
+                <span>Table of contents…</span>
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
