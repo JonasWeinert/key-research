@@ -303,6 +303,62 @@ ignored). `tools/connectors/test --record` refreshes them from the live service.
 
 Tests must use generic topics. Never put a private project's search strings in a spec.
 
+## Further keys (all supported by engine 1.0.0)
+
+Top level and politeness:
+- `guide`: `{ "summary", "coverage", "fields", "limits": [], "credentials", "tips": [] }`, plain
+  language for researchers, passed to the app as `ConnectorInfo.guide`.
+- `politeness.quota`: `{ "remainingHeader", "resetHeader", "exhaustedBody" }`. Progress shows the
+  remaining quota; a 429 with 0 remaining (or `exhaustedBody` in an error answer) stops with
+  "quota used up" instead of retrying.
+- `politeness.maxResponseBytes`: default 8 MB, at most 64 MB.
+
+Options: `free: true` lets the user type a value, checked against `pattern` (a regex) when given.
+An empty option value counts as missing for `{opt.x?}`.
+
+Query: `maxTerms` and `maxOperators` (or-split also when a query has more terms or operators);
+`proximity` may be `{ "wordJoin": " W/{n} " }` (the term's words joined by the operator, then the
+field template). A filter with `"var": "name"` sets `{name}` for the request instead of joining
+into the native string; without `values`, the neutral value is `{v}`. In `terms`/`harvest` mode
+and with `localFilter`, years, types and languages are also checked on the record (records
+without a year are kept and counted).
+
+Requests: a param or form value may be `{ "join": ",", "parts": [templates] }` (empty parts left
+out; no parts left: no parameter). In `body`, a string that is exactly `"{var}"` becomes a JSON
+number when the value is an integer. Any param, header or form value is a template (wrapping
+`{query}` is fine). `format: "csv"`: items are the rows, a path is a column header as written.
+
+Plans: `itemsWhere` (keep items where that path is non-empty); `pageSize` may be a template
+("{opt.pageSize}"); `paging.start` (offset or page of the first request); `paging.stopWhenNoNew`
+(stop when a page brings no new sourceIds); `paging.stopWhenNoLocalMatch` (relevance-ranked
+services: stop paging a term when no record of a page passes the local filter); `sanity`:
+`{ "maxTotal": n, "error": "..." }` fails loudly when the reported total is implausible.
+A `lookup` plan without `record` reuses the search's record mapping.
+
+Detail per record: `"detail": { "perRecord": true, "when": { "field": "abstract", "minLength": 290 },
+"request": { "url": "{record.url}", "format": "html" }, "record": { ... } }`: one request per
+record (only to `hosts`), its non-empty fields merged in (a longer abstract wins). `{record.<field>}`
+is available in its templates. The local filter runs after it.
+
+Extraction: rule keys run in this order: path/first -> `drop` (exact values, any case) -> `split`
+(a literal separator, or `re:<regex>`) -> `regex` -> `replace` -> `template` -> `map` -> `type`.
+With `all: true` each value goes through them. `template` may read other paths of the item:
+`"https://europepmc.org/article/{$.source}/{value}"`. `type: "doi"` keeps only real DOIs (also
+from a doi.org link); `type: "inverted-index"` turns an OpenAlex abstract index into text.
+`extras` is `{ "fields": { "name": extractor } }`.
+
+Paths: JSON `[*]` iterates array elements or an object's values; `[#]` is "array elements, or a
+lone value as a one-item list"; `[?key=value]` keeps elements whose child equals the value (a lone
+object is tested itself); `[0]` on a lone object is the object. HTML selectors also take
+`:contains(text)`, `:first-child`, `:nth-of-type(n)`, comma lists, and `:scope` / `$` for the item
+itself. XML predicates: `[@a='v']`, `[@a]`, `[child='v']`, `[n]` (from 1).
+
+Tests: `options` (the connector's option values), `maxRecords` (records read, and per-record
+detail calls), `offlineOnly` (skipped by the live health check).
+
+Robots: the engine is for documented APIs and does not read robots.txt; say in `terms` why the
+route is allowed (for example an API that robots.txt lists but the provider documents).
+
 ## Limits
 
 - At most 200 KB per spec; at most 64 record fields; templates at most 4 KB.
