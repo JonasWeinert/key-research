@@ -425,14 +425,23 @@ const want = (name) => !only.length || only.includes(name);
       await pdf.waitForTimeout(300);
       // Text runs are words: drag from "Each" to "patients".
       await pdf.waitForFunction(() => document.querySelectorAll(".pdfjs-text-run").length > 100, undefined, { timeout: 15000 });
-      const span = await pdf.evaluate(() => {
-        const runs = [...document.querySelectorAll(".pdfjs-text-run")];
-        const words = runs.map((r) => r.textContent.trim());
-        const at = words.findIndex((w, i) => w === "Each" && words.slice(i, i + 5).join(" ") === "Each nurse scanned 30 patients");
-        if (at < 0) return null;
-        runs[at].scrollIntoView({ block: "center" });
-        return at;
-      });
+      // The page's text layer can still be re-rendering after the panel closed: wait for the passage.
+      const span = await pdf
+        .waitForFunction(
+          () => {
+            const runs = [...document.querySelectorAll(".pdfjs-text-run")];
+            const words = runs.map((r) => r.textContent.trim());
+            const at = words.findIndex((w, i) => w === "Each" && words.slice(i, i + 5).join(" ") === "Each nurse scanned 30 patients");
+            if (at < 0) return false;
+            runs[at].scrollIntoView({ block: "center" });
+            return { at };
+          },
+          undefined,
+          { timeout: 20000 },
+        )
+        .then((h) => h.jsonValue())
+        .then((v) => v.at)
+        .catch(() => null);
       if (span === null) throw Error("The passage to cite is not on the page");
       await pdf.waitForTimeout(400);
       const box = (i) => pdf.locator(".pdfjs-text-run").nth(i).boundingBox();
