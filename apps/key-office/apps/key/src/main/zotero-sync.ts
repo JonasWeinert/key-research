@@ -5,6 +5,7 @@ import { app, ipcMain } from "electron";
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { installPlugin, installStatus, openZotero, restartZotero, settleInstall } from "./zotero-install";
 
 const BASE = 15_000;
 const MAX = 5 * 60_000;
@@ -93,7 +94,17 @@ export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
       await wake();
       return null;
     }
-    return { file: zoteroPluginFile() };
+    const file = zoteroPluginFile();
+    if (action === "status") return { file, install: settleInstall(file) };
+    if (action === "install" || action === "restart" || action === "open") {
+      try {
+        const install = action === "install" ? installPlugin(file) : action === "restart" ? await restartZotero(file) : await openZotero(file);
+        return { file, install };
+      } catch (e) {
+        return { file, install: installStatus(file), error: e instanceof Error ? e.message : String(e) };
+      }
+    }
+    return { file };
   });
   timer = setTimeout(() => void tick(), 4_000);
   return { wake };

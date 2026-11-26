@@ -10,6 +10,7 @@ import {
   bridge,
   type Invoke,
   type WorkspaceSummary,
+  type ZoteroInstall,
   type ZoteroItem,
   type ZoteroOptions,
   type ZoteroPreview,
@@ -176,7 +177,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
           : "Reading your Zotero library…"
         : "Changes made in Zotero come to Key while both apps are open; edits made in Key are kept.";
   return (
-    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title}>
+    <div className="key-property-editor kx-zotero-import" role="dialog" aria-label={title} data-step={result || running ? "done" : step} data-scope={choice.scope}>
       <header>
         <h2>{title}</h2>
         <p>{lede}</p>
@@ -209,7 +210,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
             />
           </div>
         ) : (
-          <>
+          <div className="kx-zotero-scope">
             {mode === "sync" && (
               <PluginPanel
                 probe={probe}
@@ -219,7 +220,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
                 onCheck={() => void probeNow(token.trim() || undefined)}
               />
             )}
-            <section className="kx-form-section">
+            <section className="kx-form-section kx-zotero-what">
               <div className="kx-zotero-scope-head">
                 <h3>What to {verb}</h3>
                 {mode === "sync" && connected && probe!.libraries.length > 1 && (
@@ -238,7 +239,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
               )}
               {choice.scope === "papers" && <PaperPicker items={items} chosen={choice.papers} onChange={(papers) => setChoice({ ...choice, papers })} />}
             </section>
-            <section className="kx-form-section">
+            <section className="kx-form-section kx-zotero-bring">
               <h3>Bring along</h3>
               <div className="kx-form-group">
                 <Toggle label="PDFs and other files" detail="Linked where Zotero keeps them; nothing is copied." checked={choice.bring.attachments} onChange={(attachments) => setChoice({ ...choice, bring: { ...choice.bring, attachments } })} />
@@ -247,7 +248,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
                 <Toggle label="Zotero collections" detail="Recreated as Key collections, with items filed in them." checked={choice.bring.mirrorCollections} onChange={(mirrorCollections) => setChoice({ ...choice, bring: { ...choice.bring, mirrorCollections } })} />
               </div>
             </section>
-          </>
+          </div>
         )}
         {error && !running && <p className="kx-inline-error">{error}</p>}
       </div>
@@ -356,10 +357,6 @@ function PluginPanel({ probe, token, onToken, onPair, onCheck }: { probe?: Zoter
         </span>
       </div>
     );
-  const reveal = async () => {
-    const plugin = await bridge().zoteroPlugin?.();
-    if (plugin?.file) await bridge().revealPath(plugin.file);
-  };
   return (
     <div className="kx-zotero-plugin" role="status" aria-live="polite">
       <span className="kx-zotero-plugin-icon">
@@ -379,35 +376,129 @@ function PluginPanel({ probe, token, onToken, onPair, onCheck }: { probe?: Zoter
               </button>
             </div>
           </>
-        ) : (
+        ) : state === "error" ? (
           <>
-            <strong>{state === "not-running" ? "Open Zotero to keep it in sync" : state === "plugin-missing" ? "Install the Key Sync plugin in Zotero" : "Zotero did not answer"}</strong>
-            <span>
-              {state === "not-running"
-                ? "Key reaches Zotero while it runs. If the Key Sync plugin is not installed yet:"
-                : state === "plugin-missing"
-                  ? "Zotero is running, but without the plugin that tells Key about changes."
-                  : probe?.message}
-            </span>
-            {state !== "error" && (
-              <ol>
-                <li>Show the plugin file in Finder.</li>
-                <li>In Zotero, choose Tools → Plugins and drag “key-sync.xpi” onto that window.</li>
-                <li>Come back here. Key notices the plugin by itself.</li>
-              </ol>
-            )}
+            <strong>Zotero did not answer</strong>
+            <span>{probe?.message}</span>
             <div className="kx-zotero-plugin-actions">
-              <button className="kx-settings-button" onClick={() => void reveal()}>
-                Show plugin in Finder
-              </button>
               <button className="kx-settings-button" onClick={onCheck}>
                 Check again
               </button>
             </div>
           </>
+        ) : (
+          <PluginInstall probe={probe} onCheck={onCheck} />
         )}
       </div>
     </div>
+  );
+}
+
+type InstallAction = "install" | "restart" | "open";
+
+/** Installing Key Sync into Zotero from here: install, then restart or open Zotero. */
+function PluginInstall({ probe, onCheck }: { probe?: ZoteroProbe; onCheck: () => void }) {
+  const [install, setInstall] = useState<ZoteroInstall>();
+  const [busy, setBusy] = useState<InstallAction>();
+  const [error, setError] = useState("");
+  const [manual, setManual] = useState(false);
+  // Read again after every probe: Zotero may have been started, quit or restarted meanwhile.
+  useEffect(() => {
+    if (busy) return;
+    let stale = false;
+    void bridge()
+      .zoteroPlugin?.("status")
+      .then((r) => !stale && r?.install && setInstall(r.install))
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [probe, busy]);
+  const act = async (action: InstallAction) => {
+    setBusy(action);
+    setError("");
+    try {
+      const r = await bridge().zoteroPlugin?.(action);
+      if (r?.install) setInstall(r.install);
+      if (r?.error) {
+        setError(r.error);
+        if (action === "install") setManual(true);
+      }
+    } catch (e) {
+      setError(message(e));
+      if (action === "install") setManual(true);
+    } finally {
+      setBusy(undefined);
+      onCheck();
+    }
+  };
+  const reveal = async () => {
+    const plugin = await bridge().zoteroPlugin?.();
+    if (plugin?.file) await bridge().revealPath(plugin.file);
+  };
+  const running = probe?.connection === "plugin-missing" || !!install?.running;
+  const s = install?.state;
+  const version = install?.bundledVersion ? ` ${install.bundledVersion}` : "";
+  let title: string;
+  let detail: string;
+  let primary: { action: InstallAction; label: string } | undefined;
+  if (!install) {
+    title = running ? "Install the Key Sync plugin in Zotero" : "Open Zotero to keep it in sync";
+    detail = "Checking Zotero…";
+  } else if (s === "no-zotero") {
+    title = "Zotero is not set up on this Mac";
+    detail = "Key could not find a Zotero profile. Install Zotero and open it once, or add the plugin by hand.";
+  } else if (s === "not-installed" || s === "outdated") {
+    title = s === "outdated" ? `Update Key Sync to${version}` : "Install the Key Sync plugin in Zotero";
+    detail =
+      s === "outdated"
+        ? `Zotero has Key Sync ${install.installedVersion ?? ""}. The update comes with Key.`
+        : "It tells Key what changes in Zotero. Key adds it to Zotero for you; it only reads your library.";
+    primary = { action: "install", label: s === "outdated" ? "Update in Zotero" : "Install in Zotero" };
+  } else if (s === "pending") {
+    title = running ? "Restart Zotero to finish" : "Open Zotero to finish";
+    detail = running ? "Key Sync is in place. Zotero turns it on when it starts again; it may ask you to save first." : "Key Sync is in place. Zotero turns it on when it starts.";
+    primary = running ? { action: "restart", label: "Restart Zotero" } : { action: "open", label: "Open Zotero" };
+  } else if (s === "disabled") {
+    title = "Turn on Key Sync in Zotero";
+    detail = "The plugin is installed but switched off. In Zotero, choose Tools → Plugins and enable Key Sync.";
+    if (!running) primary = { action: "open", label: "Open Zotero" };
+  } else if (running) {
+    title = "Zotero is starting Key Sync…";
+    detail = "Key Sync is installed. If this does not change, restart Zotero.";
+    primary = { action: "restart", label: "Restart Zotero" };
+  } else {
+    title = "Open Zotero to keep it in sync";
+    detail = "Key Sync is installed. Key reaches Zotero while it runs.";
+    primary = { action: "open", label: "Open Zotero" };
+  }
+  const label = busy === "install" ? "Installing…" : busy === "restart" ? "Restarting Zotero…" : busy === "open" ? "Opening Zotero…" : primary?.label;
+  return (
+    <>
+      <strong>{title}</strong>
+      <span>{detail}</span>
+      {(manual || s === "no-zotero") && (
+        <ol>
+          <li>Show the plugin file in Finder.</li>
+          <li>In Zotero, choose Tools → Plugins and drag “key-sync.xpi” onto that window.</li>
+          <li>Come back here. Key notices the plugin by itself.</li>
+        </ol>
+      )}
+      {error && <span className="kx-zotero-plugin-error">{error}</span>}
+      <div className="kx-zotero-plugin-actions">
+        {primary && (
+          <button className="kx-settings-button kx-zotero-plugin-primary" disabled={!!busy} onClick={() => void act(primary!.action)}>
+            {label}
+          </button>
+        )}
+        <button className="kx-settings-button" disabled={!!busy} onClick={() => void reveal()}>
+          Show plugin file
+        </button>
+        <button className="kx-settings-button" disabled={!!busy} onClick={onCheck}>
+          Check again
+        </button>
+      </div>
+    </>
   );
 }
 

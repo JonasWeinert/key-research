@@ -1,12 +1,71 @@
 /* Zotero sheet: mode, scope (collections or papers), plugin status, collection tree, options, progress and summary. */
 .kx-zotero-import {
   width: 100%;
+  container-type: inline-size;
 }
-/* Step one: import once or keep in sync. */
-.kx-zotero-modes {
+/* A wider sheet than the app's default; with a list to pick from it takes most of the
+   window's height, and the list grows with it. */
+.key-global-drawer.key-global-sheet:has(.kx-zotero-import) {
+  width: min(820px, calc(100vw - 48px));
+  margin-left: calc(min(820px, 100vw - 48px) / -2);
+}
+.key-global-drawer.key-global-sheet:has(.kx-zotero-import[data-step="scope"]:not([data-scope="library"])) {
+  height: min(780px, calc(100vh - 72px));
+}
+.key-global-sheet:has(.kx-zotero-import[data-step="scope"]:not([data-scope="library"])) .key-drawer-slide:first-child {
+  height: 100%;
+}
+.kx-zotero-import .key-property-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+}
+/* Step two: what to bring on the left, growing; the plugin and options on the right. */
+.kx-zotero-scope {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 22px;
+  min-height: 0;
+}
+.kx-zotero-scope > .kx-zotero-plugin {
+  grid-column: 1 / -1;
+}
+.kx-zotero-what {
+  display: flex;
+  flex-direction: column;
+  grid-row: 2;
+  min-height: 0;
+}
+.kx-zotero-bring {
+  grid-row: 2;
+  align-self: start;
+}
+.kx-zotero-what > .kx-zotero-tree {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 220px;
+}
+.kx-zotero-what > .kx-zotero-tree > :is([role="tree"], [role="listbox"]) {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+@container (max-width: 660px) {
+  .kx-zotero-scope {
+    display: flex;
+    flex-direction: column;
+  }
+  .kx-zotero-what > .kx-zotero-tree > :is([role="tree"], [role="listbox"]) {
+    max-height: 300px;
+  }
+}
+/* Step one: import once or keep in sync, side by side. */
+.kx-zotero-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
   margin-top: 6px;
 }
 .kx-zotero-mode {
@@ -112,12 +171,18 @@
 }
 .kx-zotero-toggle > span {
   display: flex;
+  flex: 1;
   flex-direction: column;
+  gap: 1px;
   min-width: 0;
 }
 .kx-zotero-toggle small {
   color: var(--kx-text-3);
   font-size: 11.5px;
+  line-height: 1.35;
+}
+.kx-zotero-toggle .kx-switch {
+  flex: none;
 }
 /* The plugin: what Zotero still needs, or a quiet confirmation. */
 .kx-zotero-plugin {
@@ -165,6 +230,19 @@
   display: flex;
   gap: 8px;
   margin-top: 6px;
+}
+.kx-settings-button.kx-zotero-plugin-primary {
+  background: var(--kx-accent);
+  box-shadow: 0 0.5px 1px var(--kx-line-strong);
+  color: var(--kx-accent-ink);
+}
+.kx-settings-button.kx-zotero-plugin-primary:hover:not(:disabled) {
+  background: var(--kx-accent);
+  filter: brightness(1.06);
+}
+.kx-zotero-plugin-text > .kx-zotero-plugin-error {
+  color: var(--kx-red);
+  font-size: 12px;
 }
 .kx-zotero-token input {
   flex: 1;
