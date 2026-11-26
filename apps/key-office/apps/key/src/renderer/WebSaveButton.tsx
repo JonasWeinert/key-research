@@ -44,7 +44,7 @@ export function WebSaveButton({ viewId, url, loading, doi }: { viewId: string; u
     return (
       <span className="key-web-saved">
         <button type="button" className="key-web-save" data-saved title="Open the saved copy" onClick={() => openWebPage(workspaceId, found.id)}>
-          <Icon name="bookmark" size={12} fill="currentColor" />
+          <Icon name="bookmark" size={12} filled />
           <span>In library</span>
         </button>
         <button type="button" className="key-web-save key-web-resave" title="Save the page again as it is now" aria-label="Save again" disabled={busy} onClick={() => void save()}>

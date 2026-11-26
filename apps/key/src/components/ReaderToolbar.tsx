@@ -1,3 +1,4 @@
+import { Icon } from '../ui/Icon';
 import { useState } from 'react';
 import { ZoomMode, useZoom } from '@embedpdf/plugin-zoom/react';
 import { useScroll } from '@embedpdf/plugin-scroll/react';
@@ -41,7 +42,7 @@ export function ReaderToolbar({
   return (
     <div className="reader-toolbar">
       <div className="toolbar-group">
-        <button onClick={() => zoom.provides?.zoomOut()} aria-label="Zoom out">−</button>
+        <button onClick={() => zoom.provides?.zoomOut()} aria-label="Zoom out"><Icon name="zoom_out" size={14} /></button>
         <button
           className="zoom-value"
           onClick={() => zoom.provides?.requestZoom(ZoomMode.FitWidth)}
@@ -49,14 +50,14 @@ export function ReaderToolbar({
         >
           {Math.round(zoom.state.currentZoomLevel * 100)}%
         </button>
-        <button onClick={() => zoom.provides?.zoomIn()} aria-label="Zoom in">+</button>
+        <button onClick={() => zoom.provides?.zoomIn()} aria-label="Zoom in"><Icon name="zoom_in" size={14} /></button>
       </div>
       <div className="toolbar-group page-counter">
-        <button onClick={() => scroll.provides?.scrollToPreviousPage('smooth')}>‹</button>
+        <button onClick={() => scroll.provides?.scrollToPreviousPage('smooth')} aria-label="Previous page"><Icon name="previous" size={14} /></button>
         <span>
           {scroll.state.currentPage} / {documents.provides?.getDocument(documentId)?.pageCount ?? scroll.state.totalPages}
         </span>
-        <button onClick={() => scroll.provides?.scrollToNextPage('smooth')}>›</button>
+        <button onClick={() => scroll.provides?.scrollToNextPage('smooth')} aria-label="Next page"><Icon name="next" size={14} /></button>
       </div>
       <form
         className="search-box"

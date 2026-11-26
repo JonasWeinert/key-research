@@ -31,7 +31,7 @@ type Variant = "page" | "paper" | "embed";
 
 const HEIGHT: Record<Variant, number> = { page: 440, paper: 300, embed: 380 };
 const CAPS = [5, 8, 14];
-const KIND_ICON: Record<MapKind, IconName> = { topic: "layers", field: "layers", person: "user", venue: "book", tag: "hash", collection: "folder", source: "doc" };
+const KIND_ICON: Record<MapKind, IconName> = { topic: "topic", field: "topic", person: "person", venue: "journal", tag: "tag", collection: "collection", source: "doc" };
 
 // Answers are kept while the library is unchanged, so re-centring back is instant.
 const cache = new Map<string, Promise<RelationMapData | null>>();

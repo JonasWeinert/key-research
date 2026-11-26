@@ -55,7 +55,7 @@ export interface ItemInfo {
 }
 
 const KIND_LABEL: Record<string, string> = { pdf: "PDF", web: "Web page", video: "Video", audio: "Audio", image: "Image", book: "Book", reference: "Reference", file: "File" };
-const SOURCE_ICON: Record<string, IconName> = { pdf: "doc", web: "globe", video: "video", audio: "audio", image: "image", book: "book", reference: "quote" };
+const SOURCE_ICON: Record<string, IconName> = { pdf: "filePdf", web: "globe", video: "video", audio: "audio", image: "image", book: "book", reference: "quote" };
 export function itemIcon(item: Pick<ItemLink, "kind" | "anchor">, sourceKind?: string): IconName {
   if (item.anchor?.startsWith("highlight:")) return "quote";
   if (item.kind === "note") return "note";

@@ -523,7 +523,7 @@ export interface ZoteroStatus {
 export const bridge = () => (window as unknown as { key: Bridge }).key;
 
 export const KIND_ICON: Record<string, IconName> = {
-  pdf: "doc",
+  pdf: "filePdf",
   web: "globe",
   video: "video",
   audio: "audio",

@@ -456,10 +456,10 @@ export function WebPageReader({
           </button>
         )}
         <button type="button" className="kx-icon-button" title="Details and notes" aria-label="Details and notes" aria-pressed={panelTab === "details"} data-active={panelTab === "details" || undefined} onClick={() => showPanel("details")}>
-          <Icon name="info" size={14} />
+          <Icon name="info" size={14} filled={panelTab === "details"} />
         </button>
         <button type="button" className="kx-icon-button" title={panelTab ? "Hide the panel" : "Show highlights"} aria-label="Highlights" aria-pressed={panelTab === "highlights"} data-active={panelTab === "highlights" || undefined} onClick={() => showPanel(panelTab ? panelTab : "highlights")}>
-          <Icon name="panelRight" size={14} />
+          <Icon name="panelRight" size={14} filled={!!panelTab} />
         </button>
       </header>
       <div className="kx-web-reader-body" ref={body}>

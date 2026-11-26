@@ -648,7 +648,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             )
           )}
           <button className="kx-icon-button" data-active={source.starred} aria-pressed={source.starred} title={source.starred ? "Unstar" : "Star"} onClick={() => void save({ starred: !source.starred })}>
-            <Icon name="star" size={14} fill={source.starred ? "currentColor" : "none"} />
+            <Icon name="star" size={14} filled={!!source.starred} />
           </button>
           <details className="kx-menu kx-source-more">
             <summary className="kx-icon-button" title="More" aria-label="More">

@@ -1004,7 +1004,7 @@ function SourceRow({
           onMouseDown={(e) => e.stopPropagation()}
           onClick={onStar}
         >
-          <Icon name="star" size={13} fill={source.starred ? "currentColor" : "none"} />
+          <Icon name="star" size={13} filled={!!source.starred} />
         </button>
       </span>
     </div>

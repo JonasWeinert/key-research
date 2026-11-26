@@ -32,15 +32,8 @@ function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLE
 
 const TONE_LABEL: Record<CalloutTone, string> = { info: "Info", tip: "Tip", warning: "Warning", note: "Note" };
 
-const WarningGlyph = ({ size = 16 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M8 2.4 14.2 13H1.8ZM8 6.6v3M8 11.4h.01" />
-  </svg>
-);
-
 export function ToneIcon({ tone, size = 16 }: { tone: CalloutTone; size?: number }): ReactNode {
-  if (tone === "warning") return <WarningGlyph size={size} />;
-  const name: IconName = tone === "tip" ? "sparkle" : tone === "note" ? "note" : "info";
+  const name: IconName = tone === "warning" ? "warning" : tone === "tip" ? "sparkle" : tone === "note" ? "note" : "info";
   return <Icon name={name} size={size} />;
 }
 

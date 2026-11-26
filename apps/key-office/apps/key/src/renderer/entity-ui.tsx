@@ -18,7 +18,7 @@ import { useDismiss } from "@key-reader/ui/dismiss";
 export type EntityKind = "person" | "venue" | "topic" | "tag";
 export const ENTITY_KINDS: readonly EntityKind[] = ["person", "venue", "topic", "tag"];
 export const isEntityKind = (kind: string): kind is EntityKind => (ENTITY_KINDS as readonly string[]).includes(kind);
-export const ENTITY_ICON: Record<EntityKind, IconName> = { person: "user", venue: "book", topic: "layers", tag: "hash" };
+export const ENTITY_ICON: Record<EntityKind, IconName> = { person: "person", venue: "journal", topic: "topic", tag: "tag" };
 export const ENTITY_COMMAND: Record<EntityKind, string> = { person: "store_person", venue: "store_venue", topic: "store_topic", tag: "store_tag" };
 
 export interface EntityRef {
