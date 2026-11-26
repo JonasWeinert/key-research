@@ -158,6 +158,8 @@ const assert = require("node:assert/strict");
     await sourcePage.waitFor();
     if (!(await sourcePage.locator(".kx-page-details").count())) await sourcePage.locator(".kx-page-details-toggle").click();
     await sourcePage.locator(".kx-chip .kx-filter-link", { hasText: "covid" }).click();
+    // A tag asks where to go: search the library, or its overview.
+    await page.locator(".kx-entity-popover").getByRole("button", { name: /Search library/ }).click();
     await waitKind("library");
     const library = page.locator(".kx-library:visible");
     await library.locator('.kx-token[data-field="tag"]', { hasText: "covid" }).waitFor();
