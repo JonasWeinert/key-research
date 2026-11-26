@@ -3314,9 +3314,8 @@ else
             w.state = reorderWorkspaceTab(w.state, p.tabId, Number(p.index));
             tabsChanged(w);
             return snapshot(w);
+          // A press on the tab strip: the dismiss relay already closes other views' menus.
           case "chrome-pressed":
-            for (const record of views.values())
-              record.view?.webContents.send("app:chrome-pressed");
             return snapshot(w);
           // The strip's tab list: a group's tabs.
           case "tab-menu": {

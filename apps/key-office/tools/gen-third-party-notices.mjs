@@ -159,12 +159,11 @@ BSD-style and other licences: see LICENSES.chromium.html next to this file.
 
 out += section("0. Key") + entry("Key: MIT") + MIT + "\n";
 
-// GenOffice-derived AI packages still bundled until Key's own AI client replaces them.
-const genOffice = ["agent-core", "ai-provider"].filter((p) => existsSync(join(ROOT, "packages", p)));
-if (genOffice.length)
-  out +=
-    entry(`Agent packages (${genOffice.map((p) => `packages/${p}`).join(", ")}): Apache-2.0`) +
-    "Derived from GenOffice (https://github.com/genspark-ai/genoffice), Copyright 2026 Mainfunc, Inc.,\nmodified by Key. They stay under the Apache License 2.0 (text in section 5).\n";
+// Upstream-derived AI packages, still bundled until Key's own AI client replaces them.
+// Each carries a NOTICE with its origin; the Apache-2.0 text is in section 5.
+const pending = ["agent-core", "ai-provider"].filter((p) => existsSync(join(ROOT, "packages", p, "NOTICE")));
+if (pending.length)
+  out += entry(`Agent packages (${pending.map((p) => `packages/${p}`).join(", ")}): Apache-2.0`) + read(join(ROOT, "packages", pending[0], "NOTICE")) + "\n";
 
 const { shipped, missing } = shippedPackages();
 out += section(`1. npm packages (${shipped.length})`);

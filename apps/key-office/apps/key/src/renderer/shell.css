@@ -259,7 +259,7 @@ textarea:focus-visible {
 .key-shell-content {
   background: var(--surface, #fff);
 }
-/* DOM content shares the same pane geometry as native PDF / Office views. */
+/* DOM content shares the same pane geometry as native PDF and web views. */
 .key-content-panes {
   flex: 1;
   min-width: 0;
