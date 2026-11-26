@@ -208,16 +208,13 @@ const assert = require("node:assert/strict");
     await library.locator('.kx-token[data-field="doi"]', { hasText: "10.5555/interaction.2022" }).waitFor();
     assert.equal(await search.inputValue(), "see", "the rest of the query stays");
     await search.fill("");
-    // The store narrows by identifier once it knows the doi filter (key-store filters.rs).
-    const all = (await call("store_sources", { filters: [], limit: 50 })).items.length;
+    // The store narrows by identifier (key-store filters.rs).
     const byDoi = (await call("store_sources", { filters: [{ field: "doi", op: "is", value: "10.5555/interaction.2022" }], limit: 50 })).items.length;
-    if (byDoi < all) {
-      assert.equal(byDoi, 1);
-      await page.waitForFunction(() => {
-        const rows = [...document.querySelectorAll(".kx-library .kx-row strong")].filter((r) => r.offsetParent);
-        return rows.length === 1 && rows[0].textContent.includes("Interaction study");
-      });
-    } else console.warn("store has no doi filter yet: DOI results not checked");
+    assert.equal(byDoi, 1);
+    await page.waitForFunction(() => {
+      const rows = [...document.querySelectorAll(".kx-library .kx-row strong")].filter((r) => r.offsetParent);
+      return rows.length === 1 && rows[0].textContent.includes("Interaction study");
+    });
     await library.getByRole("button", { name: "Clear search" }).click();
 
     await search.fill('"Interaction budgets elsewhere"');
