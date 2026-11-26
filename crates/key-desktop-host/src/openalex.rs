@@ -394,6 +394,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         "store_person" => arg::<String>(args, "id").and_then(|id| json_output(store.person_page(&id)?)),
         "store_venue" => arg::<String>(args, "id").and_then(|id| json_output(store.venue_page(&id)?)),
         "store_topic" => arg::<String>(args, "id").and_then(|id| json_output(store.topic_page(&id)?)),
+        "store_tag" => arg::<String>(args, "id").and_then(|id| json_output(store.tag_page(&id)?)),
         // The relations around any of them (or a tag, collection or source), for the maps.
         "store_relation_map" => (|| {
             let limit = arg::<Option<usize>>(args, "limit")?.unwrap_or(8);

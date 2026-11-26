@@ -179,7 +179,30 @@ fn name_of(db: &Connection, kind: &str, id: &str) -> Result<Option<String>> {
     db.query_row(sql, [id], |r| r.get(0)).optional().map_err(e)
 }
 
+/// A tag as a page of its own: how many sources carry it, and the years they span.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagPage {
+    pub name: String,
+    pub source_count: i64,
+    pub first_year: Option<i64>,
+    pub last_year: Option<i64>,
+}
+
 impl Store {
+    /// `None` when no source in the library (outside the Trash) has the tag.
+    pub fn tag_page(&self, name: &str) -> Result<Option<TagPage>> {
+        let db = self.read()?;
+        let (count, first, last): (i64, Option<i64>, Option<i64>) = db
+            .query_row(
+                "SELECT count(DISTINCT s.id), min(s.year), max(s.year) FROM sources s, json_each(s.tags) j WHERE j.value = ?1 AND s.trashed_at IS NULL",
+                [name],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .map_err(e)?;
+        Ok((count > 0).then(|| TagPage { name: name.into(), source_count: count, first_year: first, last_year: last }))
+    }
+
     /// The map around a person, journal, topic, tag, collection or source; `limit` of each
     /// kind at most. `None` when it is not in the library.
     pub fn relation_map(&self, kind: &str, id: &str, limit: usize) -> Result<Option<RelationMap>> {
@@ -383,6 +406,8 @@ mod tests {
 
         let tag = store.relation_map("tag", "graphs", 8).unwrap().unwrap();
         assert_eq!(tag.center.count, 2);
+        assert_eq!(store.tag_page("graphs").unwrap().unwrap().source_count, 2);
+        assert!(store.tag_page("nothing").unwrap().is_none());
         assert!(tag.nodes.iter().all(|n| !(n.kind == "tag" && n.id == "graphs")));
 
         let paper = store.relation_map("source", &a, 8).unwrap().unwrap();
