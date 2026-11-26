@@ -222,7 +222,8 @@ const assert = require("node:assert/strict");
     await gone(toolbar, "the reader's selection toolbar (press in the shell)");
     await select();
     await pdf.mouse.move(Math.min(300, pdfBounds.width / 2), Math.min(500, pdfBounds.height - 40));
-    await pdf.mouse.wheel(0, 240);
+    // It follows its passage while it scrolls and closes once the passage is out of view.
+    await pdf.mouse.wheel(0, 1600);
     await gone(toolbar, "the reader's selection toolbar (scrolling the page)");
     report.readerToolbar = true;
 

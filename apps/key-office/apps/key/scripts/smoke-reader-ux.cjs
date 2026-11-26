@@ -495,6 +495,84 @@ const want = (name) => !only.length || only.includes(name);
       await shot(pdf, "quote-focused");
     }
 
+    // 6. Highlights: the selection toolbar follows a small scroll and closes once the passage
+    //    is out of view; a highlight gets a margin marker whose card shows its comment first
+    //    and the notes that quote it (the note above, after Cite).
+    if (want("highlight")) {
+      const selectPassage = async () => {
+        await scrollTo(0);
+        await pdf.waitForTimeout(300);
+        await pdf.waitForFunction(() => document.querySelectorAll(".pdfjs-text-run").length > 100, undefined, { timeout: 15000 });
+        const span = await pdf.evaluate(() => {
+          const runs = [...document.querySelectorAll(".pdfjs-text-run")];
+          const words = runs.map((r) => r.textContent.trim());
+          const at = words.findIndex((w, i) => w === "Each" && words.slice(i, i + 5).join(" ") === "Each nurse scanned 30 patients");
+          if (at < 0) return null;
+          runs[at].scrollIntoView({ block: "center" });
+          return at;
+        });
+        if (span === null) throw Error("The passage to highlight is not on the page");
+        await pdf.waitForTimeout(400);
+        const box = (i) => pdf.locator(".pdfjs-text-run").nth(i).boundingBox();
+        const first = await box(span);
+        const last = await box(span + 4);
+        await pdf.mouse.move(first.x + 1, first.y + first.height / 2);
+        await pdf.mouse.down();
+        await pdf.mouse.move(last.x + last.width - 2, first.y + first.height / 2, { steps: 15 });
+        await pdf.mouse.up();
+      };
+      const toolbar = pdf.getByRole("toolbar", { name: "Text selection actions" });
+      const scrollBy = (dy) => pdf.evaluate((dy) => document.querySelector(".pdfjs-scroll").scrollBy({ top: dy, behavior: "instant" }), dy);
+      await selectPassage();
+      await toolbar.waitFor({ timeout: 5000 });
+      const y0 = (await toolbar.boundingBox()).y;
+      await scrollBy(40);
+      await pdf.waitForTimeout(250);
+      const y1 = (await toolbar.boundingBox())?.y;
+      if (y1 === undefined || Math.abs(y0 - y1 - 40) > 6) throw Error(`The toolbar does not follow its passage: ${y0} -> ${y1}`);
+      await scrollBy(1400);
+      await toolbar.waitFor({ state: "detached", timeout: 3000 });
+      result.toolbarScroll = { followed: Math.round(y0 - y1) };
+
+      await selectPassage();
+      await toolbar.waitFor({ timeout: 5000 });
+      await toolbar.getByRole("button", { name: "green highlight" }).click();
+      const marker = pdf.locator(".pdfjs-highlight-marker.color-green").first();
+      await marker.waitFor({ timeout: 5000 });
+      await pdf.keyboard.press("Escape");
+      await pdf.waitForTimeout(200);
+      await marker.click();
+      const info = pdf.locator(".key-highlight-info");
+      await info.waitFor({ timeout: 5000 });
+      await info.getByRole("button", { name: "Add comment" }).click();
+      const editor = pdf.getByRole("dialog", { name: "Comment editor" });
+      await editor.waitFor({ timeout: 5000 });
+      await pdf.keyboard.type("Thirty patients each: a small sample.");
+      await editor.getByRole("button", { name: "Save comment" }).click();
+      await editor.waitFor({ state: "detached", timeout: 5000 });
+      await pdf.waitForTimeout(300);
+      await marker.click();
+      await info.waitFor({ timeout: 5000 });
+      if (want("cite")) await info.locator(".key-highlight-info-uses li").first().waitFor({ timeout: 8000 });
+      const card = await info.evaluate((el) => {
+        const text = el.querySelector(".key-annotation-text");
+        const size = (q) => parseFloat(getComputedStyle(text.querySelector(q)).fontSize);
+        return {
+          lead: text.firstElementChild.className,
+          comment: size(".key-annotation-comment"),
+          quote: size(".key-annotation-quote"),
+          meta: el.querySelector(".key-highlight-info-meta")?.textContent,
+          uses: [...el.querySelectorAll(".key-highlight-info-uses li")].map((li) => li.textContent),
+        };
+      });
+      if (!/key-annotation-comment/.test(card.lead) || !(card.quote < card.comment)) throw Error(`The comment does not lead: ${JSON.stringify(card)}`);
+      result.highlightInfo = card;
+      await pdf.waitForTimeout(250);
+      await themes("highlight-info", async () => {
+        await pdf.waitForTimeout(150);
+      });
+    }
+
     console.log(JSON.stringify({ ok: true, result, temp, shots }, null, 1));
   } catch (error) {
     for (const page of app.windows()) {

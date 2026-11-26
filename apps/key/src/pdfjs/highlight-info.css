@@ -247,3 +247,10 @@
   opacity: 1;
   background-color: rgb(var(--annotation-color) / 95%);
 }
+.pdfjs-marker-layer {
+  position: absolute;
+  z-index: 6;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

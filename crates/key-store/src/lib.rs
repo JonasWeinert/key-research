@@ -25,7 +25,7 @@ pub use openalex::{EnrichJob, abstract_text};
 pub use properties::PropertyOption;
 pub use relations::{MapLink, MapNode, RelationMap, TagPage};
 pub use linked::{LinkedDir, LinkedEntries, LinkedFile, LinkedFolder, MAX_PDF_BYTES, MAX_TEXT_BYTES, SyncReport, file_kind};
-pub use links::{Canvas, CanvasSummary, ItemLinks, ItemRef, Link, LinkEnd, LinkInput, LinkTarget, canvas_links, note_title};
+pub use links::{Canvas, CanvasSummary, HighlightUse, ItemLinks, ItemRef, Link, LinkEnd, LinkInput, LinkTarget, canvas_links, note_title};
 pub use search::{FileHit, NoteHit, SearchHit, SearchPassage, SearchQuery, SearchResult};
 
 use rusqlite::{Connection, OptionalExtension, Row, params, params_from_iter, types::Value};

@@ -1,4 +1,5 @@
-// Where a highlight is used: notes that quote or link it, canvases that hold it. Read from
+// Where a highlight is used: notes that quote or link it, canvases that hold it. Asked of the
+// host; for an older host, read from
 // the links notes and canvases already write (`store_links`), plus the source's own notes,
 // which the link list leaves out, searched for the highlight's link or its words.
 import { itemLinks } from "./item-links";
@@ -29,6 +30,12 @@ function around(text: string, probe: string) {
 }
 
 export async function highlightUsage(invoke: Invoke, workspaceId: string, sourceId: string, highlight: { id: string; text: string }): Promise<HighlightUse[]> {
+  // The host answers this (key-store `highlight_uses`); a host from before it falls back here.
+  try {
+    return await invoke<HighlightUse[]>("store_highlight_uses", { sourceId, highlightId: highlight.id }, workspaceId);
+  } catch {
+    /* an older host */
+  }
   const anchor = `highlight:${highlight.id}`;
   const probe = probeOf(highlight.text);
   const [links, notes] = await Promise.all([
