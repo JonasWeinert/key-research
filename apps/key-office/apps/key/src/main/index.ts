@@ -89,6 +89,8 @@ type OwnedView = {
   kind: "home" | "pdf" | "web" | OfficeKind;
   /** A browser tab's page: where it is and what its bar shows. */
   web?: WebTabState;
+  /** The title of the page a browser tab was opened from. */
+  referrer?: string;
   /** A PDF opened from the browser: kept for a while in the browser's cache, not in a library. */
   temp?: { url: string; hash: string };
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
@@ -588,7 +590,7 @@ registerNativeKind("web", {
       open(url, background) {
         const w = shellOfView(record.id) ?? focusedShell();
         const found = w && findViewTab(w.state, record.id);
-        openLink(url, w, found ? { groupId: found.group.id, index: found.index + 1, background } : { background });
+        openLink(url, w, found ? { groupId: found.group.id, index: found.index + 1, background, referrer: record.title } : { background, referrer: record.title });
       },
       external: (url) => void systemShell.openExternal(url),
       window: () => record.host?.window,
@@ -616,7 +618,7 @@ function webView(url: string, title?: string): OwnedView {
 }
 /** Every web link in the app comes here: http(s) opens as a browser tab in the focused group
  * (or at `options`), mail and phone links go to the system, anything else is ignored. */
-function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean } = {}) {
+function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string } = {}) {
   const web = webUrl(url);
   if (!web) {
     const external = systemUrl(url);
@@ -625,7 +627,9 @@ function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), opt
   }
   if (!w) return void systemShell.openExternal(web);
   const previous = options.background ? activeWorkspaceTab(w.state)?.id : undefined;
-  add(webView(web), w, { groupId: options.groupId, index: options.index });
+  const record = webView(web);
+  record.referrer = options.referrer;
+  add(record, w, { groupId: options.groupId, index: options.index });
   if (previous && findTab(w.state, previous)) {
     w.state = activateWorkspaceTab(w.state, previous);
     layout(w);
@@ -661,7 +665,8 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
   const from = contents && [...views.values()].find((v) => v.kind === "web" && v.view?.webContents === contents);
   const w = (from && shellOfView(from.id)) ?? focusedShell();
   try {
-    const entry = await tempPdfs.add(file.path, file.url, pdfTitle(file.filename, file.url));
+    const page = from && (from.web?.committed ? from.web.title : from.referrer);
+    const entry = await tempPdfs.add(file.path, file.url, pdfTitle(file.filename, file.url, page));
     const record = await tempPdfView(entry);
     if (!w || w.closed) return;
     if (views.has(record.id) && shellOfView(record.id)) return focus(record.id);

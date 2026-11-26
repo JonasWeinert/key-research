@@ -52,14 +52,25 @@ export function looksLikePdf(mime: string | undefined, filename: string | undefi
   return /^application\/(x-)?pdf\b/i.test(mime ?? "") || /\.pdf$/i.test(filename ?? "");
 }
 
-/** A readable title for a PDF from its file name or URL ("1706.03762v7" from ".../pdf/1706.03762v7"). */
-export function pdfTitle(filename: string | undefined, url: string | undefined) {
+const GENERIC = /^(download|file|pdf|document|view|content|fulltext|printable|article|paper)$/i;
+/** A page's title without the site's name ("Article | PLOS One") or an arXiv id ("[1706.03762] …"). */
+export function pageTitle(title: string | undefined) {
+  return (title ?? "")
+    .replace(/^\s*\[[^\]]{3,40}\]\s*/, "")
+    .replace(/\s+[|–—-]\s+[^|–—-]{2,40}$/, "")
+    .trim();
+}
+/** A readable title for a PDF: the page that led to it when the file's own name is generic
+ * or just an identifier ("1706.03762v7"), else that name, else the URL's last part. */
+export function pdfTitle(filename: string | undefined, url: string | undefined, fromPage?: string) {
   const fromName = (filename ?? "").replace(/\.pdf$/i, "").trim();
-  if (fromName && !/^(download|file|pdf|document|view)$/i.test(fromName)) return fromName.slice(0, 200);
+  const page = pageTitle(fromPage);
+  if (page && (!fromName || GENERIC.test(fromName) || !/[a-z]{3,}[\s_-]+[a-z]{3,}/i.test(fromName))) return page.slice(0, 200);
+  if (fromName && !GENERIC.test(fromName)) return fromName.slice(0, 200);
   try {
     const parts = new URL(url ?? "").pathname.split("/").filter(Boolean);
     const last = decodeURIComponent(parts.at(-1) ?? "").replace(/\.pdf$/i, "");
-    if (last && !/^(download|pdf|view|content)$/i.test(last)) return last.slice(0, 200);
+    if (last && !GENERIC.test(last)) return last.slice(0, 200);
     return hostLabel(url) || "PDF";
   } catch {
     return fromName || "PDF";

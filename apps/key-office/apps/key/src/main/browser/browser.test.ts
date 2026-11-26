@@ -28,7 +28,10 @@ describe("browser URLs", () => {
     expect(looksLikePdf("application/octet-stream", "paper.PDF")).toBe(true);
     expect(looksLikePdf("text/html", "index.html")).toBe(false);
     expect(pdfTitle("1706.03762v7.pdf", "https://arxiv.org/pdf/1706.03762v7")).toBe("1706.03762v7");
-    expect(pdfTitle("download.pdf", "https://journals.plos.org/article/file?id=10.1371/x&type=printable")).toBe("file");
+    expect(pdfTitle("download.pdf", "https://journals.plos.org/article/file?id=10.1371/x&type=printable")).toBe("journals.plos.org");
+    expect(pdfTitle("1706.03762v7.pdf", "https://arxiv.org/pdf/1706.03762v7", "[1706.03762] Attention Is All You Need")).toBe("Attention Is All You Need");
+    expect(pdfTitle("file.pdf", "https://x.org/file", "Sharing Detailed Research Data | PLOS One")).toBe("Sharing Detailed Research Data");
+    expect(pdfTitle("Vaswani attention transformer.pdf", "https://x.org/a.pdf", "Some page")).toBe("Vaswani attention transformer");
     expect(safeFileName("a/b:c?.pdf")).toBe("a_b_c_.pdf");
     expect(uniqueName("a.pdf", (n) => n === "a.pdf" || n === "a (2).pdf")).toBe("a (3).pdf");
     expect(citationPdfUrl('<meta name="citation_pdf_url" content="/doi/pdf/10.1/x?a=1&amp;b=2">', "https://pub.org/doi/10.1/x")).toBe("https://pub.org/doi/pdf/10.1/x?a=1&b=2");
