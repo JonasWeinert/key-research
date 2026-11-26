@@ -15,6 +15,7 @@ import "./shell.css";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
 import CollectionTree from "./CollectionTree";
 import { sidebarClick } from "./sidebar-intent";
+import { dismissAll, useDismiss, within } from "@key-reader/ui/dismiss";
 import { ROW_PX } from "./sidebar-budget";
 import WorkspaceSection, { type WorkspaceEntry } from "./WorkspaceSection";
 import { hasExternalDrop, hasItemDrag, importDrop, inboxCollection, readItemDrag, setItemDrag } from "./item-links";
@@ -253,24 +254,12 @@ export default function App() {
     [dialog, setDialog] = useState<"project" | "folder" | null>(null),
     [dialogValue, setDialogValue] = useState("");
 
-  useEffect(() => {
-    if (!createMenu) return;
-    const close = (event: Event) => {
-      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
-      if (
-        event instanceof PointerEvent &&
-        (event.target as Element).closest?.(".key-create-menu, [aria-label='Create item']")
-      )
-        return;
-      setCreateMenu(false);
-    };
-    document.addEventListener("pointerdown", close);
-    document.addEventListener("keydown", close);
-    return () => {
-      document.removeEventListener("pointerdown", close);
-      document.removeEventListener("keydown", close);
-    };
-  }, [createMenu]);
+  useDismiss(createMenu, {
+    refs: [],
+    inside: (target) => within(target, ".key-create-menu, [aria-label='Create item']"),
+    anchor: () => document.querySelector("[aria-label='Create item']"),
+    onDismiss: () => setCreateMenu(false),
+  });
   const invoke = useCallback(
     <T,>(command: string, args?: Record<string, unknown>, id?: string) =>
       api().invoke<T>(command, args, id),
@@ -508,6 +497,9 @@ export default function App() {
   });
   // The shared item layer acts in this window's workspace and focused pane.
   useEffect(() => setShellContext({ invoke, workspaceId, viewId: tabs.activeViewId }), [invoke, workspaceId, tabs.activeViewId]);
+  // Switching a group's tab (by keyboard, menu or code) closes menus and popovers.
+  const shownTabs = tabs.groups.map((g) => g.activeTabId).join();
+  useEffect(() => dismissAll("switch"), [shownTabs]);
   // A pane that gains focus is what's selected until something inside it is.
   useEffect(() => {
     const own = paneItem(activeView?.content, activeView?.title?.replace(/ •$/, ""));

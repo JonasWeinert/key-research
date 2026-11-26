@@ -256,14 +256,6 @@ export default function LibraryHome({
     document.addEventListener("keydown", focusSearch);
     return () => document.removeEventListener("keydown", focusSearch);
   }, [active, sourceKind]);
-  useEffect(() => {
-    const closeTools = (event: PointerEvent) => {
-      const menu = libraryRoot.current?.querySelector<HTMLDetailsElement>(".key-library-tools-menu[open]");
-      if (menu && !menu.contains(event.target as Node)) menu.open = false;
-    };
-    document.addEventListener("pointerdown", closeTools);
-    return () => document.removeEventListener("pointerdown", closeTools);
-  }, []);
 
   const [removed, setRemoved] = useState<LibrarySource>();
   const request = useRef(0);

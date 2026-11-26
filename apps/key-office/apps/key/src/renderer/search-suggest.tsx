@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNod
 import { Icon, type IconName } from "./icons";
 import type { Invoke } from "./library-api";
 import { Highlight, prefixPattern } from "./search-highlight";
+import { useDismiss } from "@key-reader/ui/dismiss";
 
 export interface SearchFilter {
   /** creator | container | title | notes | fulltext | tag | collection | year | property */
@@ -160,6 +161,10 @@ export default function SearchField({
   }, [suggestions, typed, filters, pattern]);
   useEffect(() => setIndex(-1), [typed]);
   const showMenu = open && items.length > 0;
+  // The list closes on blur already; scrolling away or a press in another view closes it
+  // too. The field handles Escape itself.
+  const formRef = useRef<HTMLFormElement>(null);
+  useDismiss(showMenu, { refs: [formRef], kind: "passive", escape: false, anchor: formRef, onDismiss: () => setOpen(false) });
 
   const pick = (item: MenuItem) => {
     onFilters([...filters, item.filter]);
@@ -191,6 +196,7 @@ export default function SearchField({
 
   return (
     <form
+      ref={formRef}
       className="kx-search"
       role="search"
       data-tokens={filters.length > 0}

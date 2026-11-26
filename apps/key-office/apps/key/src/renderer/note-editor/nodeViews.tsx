@@ -12,6 +12,7 @@ import { getRuntime } from "./runtime";
 import { peekSource, subscribeSources } from "./sourceCache";
 import { CALLOUT_TONES, itemFromHref } from "./types";
 import type { CalloutTone, ItemLink, SourceRef } from "./types";
+import { useDismiss as useSharedDismiss } from "@key-reader/ui/dismiss";
 
 function useSource(editor: Editor, id: string): SourceRef | null | undefined {
   const [, bump] = useReducer((n: number) => n + 1, 0);
@@ -22,22 +23,9 @@ function useSource(editor: Editor, id: string): SourceRef | null | undefined {
   return id ? peekSource(id) : null;
 }
 
+/** Outside presses, scrolling away and Escape close the menu (ui/dismiss). */
 function useDismiss(open: boolean, close: () => void, ref: React.RefObject<HTMLElement | null>) {
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) close();
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") close();
-    };
-    document.addEventListener("mousedown", onDown, true);
-    document.addEventListener("keydown", onKey, true);
-    return () => {
-      document.removeEventListener("mousedown", onDown, true);
-      document.removeEventListener("keydown", onKey, true);
-    };
-  }, [open, close, ref]);
+  useSharedDismiss(open, { refs: [ref], onDismiss: close });
 }
 
 // ── Callout ────────────────────────────────────────────────────────────────

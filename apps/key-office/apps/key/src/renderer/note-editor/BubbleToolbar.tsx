@@ -5,6 +5,7 @@ import { NodeSelection } from "@tiptap/pm/state";
 import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 import { Icon } from "../icons";
+import { useDismiss } from "@key-reader/ui/dismiss";
 
 type BlockKind = "paragraph" | "h1" | "h2" | "h3" | "quote";
 const BLOCK_LABEL: Record<BlockKind, string> = { paragraph: "Text", h1: "Heading 1", h2: "Heading 2", h3: "Heading 3", quote: "Quote" };
@@ -74,6 +75,10 @@ export function BubbleToolbar({ editor }: { editor: Editor }) {
     }),
   });
 
+  // The "Turn into" menu closes on outside presses, scrolling away and Escape (ui/dismiss).
+  const blockRef = useRef<HTMLDivElement>(null);
+  useDismiss(blockOpen, { refs: [blockRef], onDismiss: () => setBlockOpen(false) });
+
   // a new selection closes the sub-panels
   useEffect(() => {
     setLinkOpen(false);
@@ -142,7 +147,7 @@ export function BubbleToolbar({ editor }: { editor: Editor }) {
         </div>
       ) : (
         <div className="ne-bubble-row">
-          <div className="ne-bubble-block">
+          <div className="ne-bubble-block" ref={blockRef}>
             <button
               type="button"
               className="ne-tool ne-tool-text"

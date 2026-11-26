@@ -3,6 +3,7 @@
 // table columns the user can show, hide, reorder, resize and pin, sorted on several levels.
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
+import { useDismiss } from "@key-reader/ui/dismiss";
 import {
   forwardRef,
   useCallback,
@@ -109,7 +110,7 @@ export function DatabaseToolbar<T>({
   );
 }
 
-/** A popover that closes on outside clicks and Escape. */
+/** A popover that closes on outside clicks, scrolling away and Escape (ui/dismiss). */
 function Popover({
   label,
   summary,
@@ -123,24 +124,7 @@ function Popover({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const down = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", down, true);
-    document.addEventListener("keydown", key, true);
-    return () => {
-      document.removeEventListener("pointerdown", down, true);
-      document.removeEventListener("keydown", key, true);
-    };
-  }, [open]);
+  useDismiss(open, { refs: [ref], anchor: ref, onDismiss: () => setOpen(false) });
   return (
     <div className="kx-menu" ref={ref}>
       <button className="kx-control" aria-label={label} aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(!open)}>
@@ -718,7 +702,7 @@ function TableHead<T>({
   );
 }
 
-/** A floating menu at a point, closed by outside clicks, Escape or choosing an item. */
+/** A floating menu at a point, closed by outside clicks, scrolling away, Escape or choosing an item. */
 export function ContextMenu({
   x,
   y,
@@ -739,26 +723,10 @@ export function ContextMenu({
     if (!rect) return;
     setPlace({ x: Math.min(x, window.innerWidth - rect.width - 8), y: Math.min(y, window.innerHeight - rect.height - 8) });
   }, [x, y]);
+  useDismiss(true, { refs: [ref], onDismiss: onClose });
   useEffect(() => {
-    const down = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("pointerdown", down, true);
-    document.addEventListener("keydown", key, true);
-    window.addEventListener("blur", onClose);
     ref.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
-    return () => {
-      document.removeEventListener("pointerdown", down, true);
-      document.removeEventListener("keydown", key, true);
-      window.removeEventListener("blur", onClose);
-    };
-  }, [onClose]);
+  }, []);
   // Drawn on the body: inside the sidebar (or any pane with a transform or filter) a fixed
   // menu would be framed and clipped by that pane.
   return createPortal(

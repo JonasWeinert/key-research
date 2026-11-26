@@ -4,6 +4,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { coverBackground, readAppearance } from "./page-appearance";
 import { GlobalDialog } from "./GlobalDrawer";
+import { useDismiss } from "@key-reader/ui/dismiss";
 import { Icon, type IconName } from "./icons";
 import {
   copyCitation,
@@ -260,10 +261,12 @@ function placeNear(rect: DOMRect, box: HTMLElement | null): CSSProperties {
   return { top, left };
 }
 
-function HoverCard({ target, onEnter, onLeave }: { target: { rect: DOMRect; item: ItemLink }; onEnter: () => void; onLeave: () => void }) {
+function HoverCard({ target, onEnter, onLeave, onDismiss }: { target: { rect: DOMRect; item: ItemLink }; onEnter: () => void; onLeave: () => void; onDismiss: () => void }) {
   const { invoke, workspaceId } = shellContext();
   const info = useItemInfo(invoke, workspaceId, target.item);
   const box = useRef<HTMLDivElement>(null);
+  // Passive: a press elsewhere goes through; scrolling inside the card keeps it.
+  useDismiss(true, { refs: [box], kind: "passive", onDismiss });
   const [style, setStyle] = useState<CSSProperties>({ visibility: "hidden" });
   useLayoutEffect(() => setStyle(placeNear(target.rect, box.current)), [target.rect, info]);
   if (!invoke || !workspaceId) return null;
@@ -366,26 +369,13 @@ function ContextMenu({ request, onClose }: { request: MenuRequest; onClose: () =
     });
     el.focus();
   }, [request]);
+  // Outside presses (here or in another view), scrolling away and Escape: ui/dismiss.
+  useDismiss(true, { refs: [box], onDismiss: onClose });
+  // Moving to another tab or pane, or resizing the window, closes it too.
   useEffect(() => {
-    const close = (e: Event) => {
-      if (e instanceof PointerEvent && box.current?.contains(e.target as Node)) return;
-      onClose();
-    };
-    document.addEventListener("pointerdown", close, true);
-    // Escape closes it wherever focus is, and so does moving to another tab or pane.
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", key, true);
-    window.addEventListener("blur", onClose);
     window.addEventListener("resize", onClose);
     const offTabs = bridge().on("tabs-changed", onClose);
     return () => {
-      document.removeEventListener("pointerdown", close, true);
-      window.removeEventListener("keydown", key, true);
-      window.removeEventListener("blur", onClose);
       window.removeEventListener("resize", onClose);
       offTabs();
     };
@@ -615,7 +605,9 @@ export function ItemLayer() {
     document.addEventListener("pointerover", over);
     document.addEventListener("pointerdown", hide, true);
     document.addEventListener("dragstart", hide, true);
-    document.addEventListener("wheel", hide, { passive: true, capture: true });
+    // Scrolling cancels a pending preview; a shown card follows ui/dismiss (scrolling away).
+    const wait = () => clearTimeout(timer.current);
+    document.addEventListener("wheel", wait, { passive: true, capture: true });
     document.addEventListener("contextmenu", context);
     document.addEventListener("click", click, true);
     window.addEventListener("keydown", key);
@@ -624,7 +616,7 @@ export function ItemLayer() {
       document.removeEventListener("pointerover", over);
       document.removeEventListener("pointerdown", hide, true);
       document.removeEventListener("dragstart", hide, true);
-      document.removeEventListener("wheel", hide, { capture: true });
+      document.removeEventListener("wheel", wait, { capture: true });
       document.removeEventListener("contextmenu", context);
       document.removeEventListener("click", click, true);
       window.removeEventListener("keydown", key);
@@ -639,6 +631,10 @@ export function ItemLayer() {
           onEnter={() => clearTimeout(leave.current)}
           onLeave={() => {
             leave.current = setTimeout(() => setHover(undefined), 180);
+          }}
+          onDismiss={() => {
+            clearTimeout(timer.current);
+            setHover(undefined);
           }}
         />
       )}
