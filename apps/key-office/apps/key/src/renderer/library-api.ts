@@ -48,6 +48,14 @@ export interface Source extends CitableSource {
   oaStatus?: string;
   oaUrl?: string;
   retracted?: number;
+  /** A Crossref notice: retraction | withdrawal | expression_of_concern | correction …, its DOI and date. */
+  retractionKind?: string;
+  retractionNotice?: string;
+  retractionDate?: string;
+  retractionCheckedAt?: number;
+  retractionDismissed?: number;
+  /** Fields the user set by hand: lookups leave them alone. */
+  editedFields?: string[];
   citedByCount?: number;
   fwci?: number;
   metricsAt?: number;
@@ -210,6 +218,8 @@ export interface Counts {
   ready: number;
   indexing: number;
   attention: number;
+  /** Flagged as retracted and not dismissed. */
+  retracted?: number;
 }
 export interface SourcePage {
   items: Source[];

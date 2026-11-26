@@ -1,0 +1,421 @@
+/* Library hygiene: the "N sources" editor, the duplicates view and merge sheet, the
+   metadata update sheet and retraction badges. Tokens only (native.css). */
+
+/* ── The "N sources" editor in the details panel ─────────── */
+.kx-batch {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  padding: 18px 18px 24px;
+  overflow-y: auto;
+}
+.kx-batch-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.kx-batch-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.kx-batch-head h2 {
+  margin: 0;
+  font: 650 20px/1.2 var(--kx-font-display);
+  letter-spacing: -0.3px;
+}
+.kx-batch-head p {
+  margin: 3px 0 0;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-batch-fields .kx-field-row[data-mixed] > input::placeholder {
+  color: var(--kx-text-3);
+  font-style: italic;
+}
+.kx-batch-select {
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+}
+.kx-batch-select:hover,
+.kx-batch-select:focus {
+  background: var(--kx-fill);
+  outline: none;
+}
+.kx-chip.kx-tri-chip > button.kx-tri-chip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  border-radius: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.kx-tri-chip[data-partial] {
+  border-style: dashed;
+  color: var(--kx-text-2);
+}
+.kx-chip.kx-tri-chip[data-partial] > button.kx-tri-chip-label {
+  cursor: pointer;
+}
+.kx-chip.kx-tri-chip > button.kx-tri-chip-label:hover {
+  background: transparent;
+}
+.kx-tri-chip small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--kx-line);
+}
+.kx-batch-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--kx-line);
+  border-radius: 7px;
+  background: var(--kx-bg);
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+}
+.kx-batch-actions button:hover {
+  background: var(--kx-fill);
+}
+
+/* ── Duplicates view ─────────────────────────────────────── */
+.kx-dup-view {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 24px 32px;
+  overflow-y: auto;
+}
+.kx-dup-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 12px;
+}
+.kx-dup-head p {
+  flex: 1;
+  margin: 0;
+  color: var(--kx-text-2);
+  font-size: 13px;
+}
+.kx-dup-groups {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-dup-group {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--kx-line);
+  border-radius: 10px;
+  background: var(--kx-bg);
+}
+.kx-dup-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.kx-dup-kind {
+  padding: 1px 8px;
+  border-radius: 9px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font: 500 11px/18px var(--kx-font);
+}
+.kx-dup-kind[data-kind="exact"] {
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+}
+.kx-dup-reason {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-dup-members {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-dup-member {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  color: var(--kx-text-2);
+}
+.kx-dup-member > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.kx-dup-member strong {
+  overflow: hidden;
+  color: var(--kx-text);
+  font: 500 13px/1.35 var(--kx-font);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kx-dup-member small {
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ── Merge sheet for sources ─────────────────────────────── */
+.key-global-drawer.key-global-sheet:has(.kx-source-merge) {
+  --kx-modal-width: 860px;
+}
+.kx-source-merge-cards .kx-merge-name {
+  font-size: 14px;
+}
+.kx-merge-fields {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  table-layout: fixed;
+}
+.kx-merge-fields th,
+.kx-merge-fields td {
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--kx-line);
+  text-align: left;
+  vertical-align: top;
+}
+.kx-merge-fields thead th {
+  color: var(--kx-text-3);
+  font-weight: 500;
+}
+.kx-merge-fields tbody th {
+  width: 110px;
+  color: var(--kx-text-2);
+  font-weight: 400;
+}
+.kx-merge-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.kx-merge-choice > span {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.kx-merge-choice[data-empty] {
+  color: var(--kx-text-3);
+}
+.kx-merge-choice small,
+.kx-metadata-field small {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.kx-banner.kx-banner-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-amber) 14%, transparent);
+  color: var(--kx-text);
+  font-size: 12.5px;
+}
+.kx-confirm-sheet header p {
+  color: var(--kx-text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ── Update metadata sheet ───────────────────────────────── */
+.key-global-drawer.key-global-sheet:has(.kx-metadata-sheet) {
+  --kx-modal-width: 720px;
+}
+.kx-metadata-sheet .key-property-body {
+  display: grid;
+  gap: 12px;
+  max-height: 62vh;
+  padding: 4px 20px 8px;
+  overflow-y: auto;
+}
+.kx-metadata-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 0;
+  color: var(--kx-text-2);
+}
+.kx-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--kx-line-strong);
+  border-top-color: var(--kx-accent);
+  border-radius: 50%;
+  animation: kx-spin 800ms linear infinite;
+}
+@keyframes kx-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.kx-metadata-source h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 6px;
+  font: 600 13.5px/1.35 var(--kx-font);
+}
+.kx-metadata-source h3 small {
+  color: var(--kx-text-3);
+  font-weight: 400;
+  font-size: 11.5px;
+}
+.kx-metadata-changes {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-metadata-changes label {
+  display: grid;
+  grid-template-columns: 18px 130px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.kx-metadata-changes label:hover {
+  background: var(--kx-fill);
+}
+.kx-metadata-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--kx-text-2);
+}
+.kx-metadata-diff {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kx-metadata-diff del {
+  color: var(--kx-text-3);
+}
+.kx-metadata-diff ins {
+  color: var(--kx-text);
+  text-decoration: none;
+}
+.kx-metadata-diff i {
+  color: var(--kx-text-3);
+}
+.kx-metadata-published {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--kx-accent-soft);
+  font-size: 12.5px;
+}
+.kx-metadata-published > span {
+  flex: 1;
+  min-width: 0;
+}
+.kx-metadata-published em {
+  color: var(--kx-text-2);
+  font-style: normal;
+}
+.kx-metadata-rest {
+  margin: 0;
+  color: var(--kx-text-2);
+  font-size: 12.5px;
+}
+
+/* ── Retraction notices ──────────────────────────────────── */
+.kx-row-retracted {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--kx-red) 12%, transparent);
+  color: var(--kx-red);
+  font: 600 10.5px/17px var(--kx-font);
+}
+.kx-retracted a {
+  color: inherit;
+}
+.kx-retracted button {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: 12px var(--kx-font);
+}
+.kx-retracted button:hover {
+  background: var(--kx-fill);
+}
+.kx-retracted[data-tone="info"] {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+.kx-versions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 10px;
+  color: var(--kx-text-2);
+  font-size: 12.5px;
+}
+.kx-versions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--kx-accent);
+  font: inherit;
+}
+.kx-versions button:hover {
+  text-decoration: underline;
+}
+.kx-row[aria-selected="true"] .kx-row-retracted {
+  background: var(--kx-bg);
+}

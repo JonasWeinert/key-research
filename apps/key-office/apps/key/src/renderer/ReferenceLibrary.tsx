@@ -50,6 +50,10 @@ import {
 } from "./PropertySheets";
 import { DatabaseToolbar, DatabaseView, useDatabaseViewState, type DatabaseViewHandle } from "./DatabaseView";
 import { DEFAULT_SORTS, SOURCE_SORTS, SourceCard, legacyColumnSettings, useSourceColumns } from "./library-columns";
+import BatchEditor from "./BatchEditor";
+import { DuplicatesView, SourceMergeSheet } from "./DuplicatesView";
+import MetadataUpdateSheet from "./MetadataUpdateSheet";
+import { retractionOf, stepJournal, useHygiene } from "./library-hygiene";
 import "./reference-library.css";
 
 const PAGE = 300;
@@ -59,6 +63,8 @@ const SCOPES: [string, string][] = [
   ["starred", "Starred"],
   ["unfiled", "Unfiled"],
   ["attention", "Needs attention"],
+  ["retracted", "Retracted"],
+  ["duplicates", "Duplicates"],
   ["trashed", "Trash"],
 ];
 
@@ -120,6 +126,10 @@ export default function ReferenceLibrary({
   const [tagManager, setTagManager] = useState(false);
   /** Add by identifier is open (with this text prefilled). */
   const [identifier, setIdentifier] = useState<string | false>(false);
+  // Library hygiene: "Update metadata…" and the merge review for a selection.
+  const [metadataIds, setMetadataIds] = useState<string[]>();
+  const [mergeIds, setMergeIds] = useState<string[]>();
+  const hygiene = useHygiene(invoke, workspaceId, active, refreshKey);
   // Layout, columns and sorting are remembered per workspace library.
   const [viewState, setViewState] = useDatabaseViewState(`library:${workspaceId}`, {
     layout: (() => {
@@ -304,7 +314,16 @@ export default function ReferenceLibrary({
   // indexed; the bar's own work item covers that) how much is searchable.
   const matching = search?.result?.hits.length ?? 0;
   const pdfRun = useFindPdfRun();
+  const duplicateCount = hygiene.duplicates?.count ?? 0;
+  const flagged = hygiene.retractions?.unseen ?? 0;
   useStatusItems(viewId, [
+    // Quiet notices, only when there is something: possible duplicates, newly flagged retractions.
+    ...(duplicateCount > 0
+      ? [{ id: "duplicates", label: `${duplicateCount.toLocaleString()} possible ${duplicateCount === 1 ? "duplicate" : "duplicates"}`, icon: "layers", priority: 40, title: "Review possible duplicates" }]
+      : []),
+    ...(flagged > 0
+      ? [{ id: "retractions", label: `${flagged} newly retracted`, icon: "warning", tone: "warning" as const, priority: 45, title: "Sources in your library were retracted or flagged. Click to see them." }]
+      : []),
     {
       id: "count",
       label: search ? `${matching.toLocaleString()} matching ${matching === 1 ? "source" : "sources"}` : `${total.toLocaleString()} ${total === 1 ? "item" : "items"}`,
@@ -318,7 +337,14 @@ export default function ReferenceLibrary({
     ...(status && !isActive(activity) && !activity?.paused
       ? [{ id: "searchable", label: `${status.counts.ready.toLocaleString()} searchable`, icon: "search", text: true, priority: 30, title: "Sources searchable by their full text" }]
       : []),
-  ], (id) => id === "find-pdfs" && cancelFindPdfs());
+  ], (id) => {
+    if (id === "find-pdfs") cancelFindPdfs();
+    if (id === "duplicates") setScope("duplicates");
+    if (id === "retractions") {
+      setScope("retracted");
+      void invoke("store_retractions_seen", {}, workspaceId).then(hygiene.reload);
+    }
+  });
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId);
 
   // While searching, selection, arrow keys and bulk actions work on the results, in the
@@ -366,7 +392,7 @@ export default function ReferenceLibrary({
     collections,
     zotero,
     onCommit: (source, name, value) =>
-      void invoke<Source>("store_update", { id: source.id, patch: { properties: { [name]: value } } }, workspaceId).then(updateSource),
+      void invoke<Source>("store_update", { id: source.id, patch: { properties: { [name]: value } }, byHand: true }, workspaceId).then(updateSource),
     onEditProperty: (definition) => setSheet({ mode: "edit", definition, targets: [] }),
   });
 
@@ -508,6 +534,27 @@ export default function ReferenceLibrary({
       else setFocusId(undefined);
     }
   };
+  // ⌘Z / ⇧⌘Z undo and redo library operations (edits, tags, collections, trash, merges)
+  // when no text field has the focus; fields keep their own undo.
+  useEffect(() => {
+    if (!active) return;
+    const step = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== "z") return;
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.("input, textarea, select, [contenteditable='true'], [contenteditable=''], .cm-editor, .ProseMirror")) return;
+      if (!libraryRef.current?.isConnected || document.querySelector(".key-global-drawer")) return;
+      e.preventDefault();
+      void stepJournal(invoke, workspaceId, !e.shiftKey)
+        .then((text) => {
+          setToast({ text: text ?? "" });
+          void load(0);
+          libraryChanged();
+        })
+        .catch((error) => setError(String(error)));
+    };
+    document.addEventListener("keydown", step);
+    return () => document.removeEventListener("keydown", step);
+  }, [active, invoke, workspaceId, load]);
   useEffect(() => {
     if (!active) return;
     const focusSearch = (e: KeyboardEvent) => {
@@ -582,7 +629,14 @@ export default function ReferenceLibrary({
   // A clicked tag, author, year … joins the search's filter tokens.
   const addFilter = useCallback((filter: SearchFilter) => setFilters((current) => withFilter(current, filter)), []);
   const collectionName = collections.find((c) => c.id === collectionId)?.name;
-  const title = scope === "trashed" ? "Trash" : collectionName ?? (scope === "starred" ? "Starred" : scope === "unfiled" ? "Unfiled" : scope === "attention" ? "Needs attention" : "All sources");
+  const title =
+    scope === "trashed"
+      ? "Trash"
+      : scope === "duplicates"
+        ? "Duplicates"
+        : scope === "retracted"
+          ? "Retracted"
+          : collectionName ?? (scope === "starred" ? "Starred" : scope === "unfiled" ? "Unfiled" : scope === "attention" ? "Needs attention" : "All sources");
 
   return (
     <FilterLinks.Provider value={addFilter}>
@@ -685,7 +739,8 @@ export default function ReferenceLibrary({
             value={scope}
             onChange={setScope}
             tabs={SCOPES.flatMap(([value, label]) => {
-              const count = value === "all" ? counts?.all : value === "trashed" ? counts?.trashed : value === "starred" ? counts?.starred : value === "unfiled" ? counts?.unfiled : counts?.attention;
+              const count =
+                value === "all" ? counts?.all : value === "trashed" ? counts?.trashed : value === "starred" ? counts?.starred : value === "unfiled" ? counts?.unfiled : value === "retracted" ? counts?.retracted : value === "duplicates" ? duplicateCount : counts?.attention;
               if (value !== "all" && value !== "trashed" && !count && scope !== value) return [];
               return [{ id: value, label, badge: count ? count.toLocaleString() : undefined }];
             })}
@@ -732,6 +787,8 @@ export default function ReferenceLibrary({
         {search ? (
           <SearchResults search={search} focusId={focusId} selected={selected} handlers={resultHandlers}
           />
+        ) : scope === "duplicates" ? (
+          <DuplicatesView invoke={invoke} workspaceId={workspaceId} onChanged={() => void load(0)} onToast={(text) => setToast({ text })} />
         ) : (
           <DatabaseView
             rowAttrs={(source: Source) => itemAttrs({ kind: "source", id: source.id, title: source.title || "Untitled" })}
@@ -762,7 +819,7 @@ export default function ReferenceLibrary({
                 onPointer={(e) => select(source.id, e)}
                 onOpen={() => open(source)}
                 onStar={() =>
-                  void invoke<Source>("store_update", { id: source.id, patch: { starred: !source.starred } }, workspaceId).then(updateSource)
+                  void invoke<Source>("store_update", { id: source.id, patch: { starred: !source.starred }, byHand: true }, workspaceId).then(updateSource)
                 }
                 onDragStart={(e) => dragSources(source, e)}
               />
@@ -785,7 +842,7 @@ export default function ReferenceLibrary({
               setToast({ text: `Added ${selected.size} to ${collections.find((c) => c.id === id)?.name}` });
             }}
             onStar={async () => {
-              for (const id of selected) await invoke("store_update", { id, patch: { starred: true } }, workspaceId);
+              await invoke("store_edit", { ids: [...selected], edit: { patch: { starred: true } }, label: `Star ${selected.size} sources` }, workspaceId);
               await load(0);
             }}
             definitions={definitions}
@@ -843,7 +900,40 @@ export default function ReferenceLibrary({
           }}
         />
       )}
-      {inspector && (
+      {inspector && selected.size > 1 ? (
+        // Several selected: one editor for all of them.
+        <aside className="kx-inspector kx-inspector-page" aria-label="Selected sources">
+          <BatchEditor
+            invoke={invoke}
+            workspaceId={workspaceId}
+            sources={rows.filter((s) => selected.has(s.id))}
+            total={selected.size}
+            collections={collections}
+            tagSuggestions={facets.tags}
+            definitions={definitions}
+            onEdited={(text) => {
+              setToast({ text });
+              void load(0);
+              libraryChanged();
+            }}
+            onClear={() => setSelected(new Set())}
+            onAction={(action) => {
+              const ids = [...selected];
+              if (action === "metadata") setMetadataIds(ids);
+              else if (action === "merge") setMergeIds(ids);
+              else if (action === "trash") void trash(ids, scope !== "trashed");
+              else
+                void invoke<{ checked: number; flagged: number }>("store_retraction_check", { ids }, workspaceId)
+                  .then((r) => {
+                    setToast({ text: r.flagged ? `${r.flagged} of ${r.checked} flagged as retracted` : `Checked ${r.checked}: no retractions` });
+                    hygiene.reload();
+                    void load(0);
+                  })
+                  .catch((e) => setError(String(e)));
+            }}
+          />
+        </aside>
+      ) : inspector && (
         // The details panel is the source's page, the same component as its own tab.
         <aside className="kx-inspector kx-inspector-page" aria-label="Source details">
           <SourceItemPage
@@ -896,6 +986,34 @@ export default function ReferenceLibrary({
           workspaceId={workspaceId}
           onClose={() => setTagManager(false)}
           onSaved={() => void load(0)}
+        />
+      )}
+      {metadataIds && (
+        <MetadataUpdateSheet
+          invoke={invoke}
+          workspaceId={workspaceId}
+          ids={metadataIds}
+          onClose={() => setMetadataIds(undefined)}
+          onDone={(text) => {
+            setMetadataIds(undefined);
+            setToast({ text });
+            void load(0);
+          }}
+        />
+      )}
+      {mergeIds && (
+        <SourceMergeSheet
+          invoke={invoke}
+          workspaceId={workspaceId}
+          ids={mergeIds}
+          onClose={() => setMergeIds(undefined)}
+          onDone={(op) => {
+            setMergeIds(undefined);
+            setSelected(new Set());
+            if (op.entry) setToast({ text: op.entry.label });
+            void load(0);
+            libraryChanged();
+          }}
         />
       )}
       {identifier !== false && (
@@ -987,6 +1105,11 @@ function SourceRow({
         </span>
       </span>
       <span className="kx-row-end">
+        {retractionOf(source) && (
+          <span className="kx-row-retracted" title={source.retractionNotice ? `Notice: ${source.retractionNotice}` : "Flagged in OpenAlex"}>
+            {retractionOf(source)}
+          </span>
+        )}
         {zotero && isZoteroSource(source) && <ZoteroMark status={zotero} what="Item" />}
         {(source.noteCount > 0 || source.annotationCount > 0) && (
           <span className="kx-row-badge" title={`${source.noteCount} notes, ${source.annotationCount} highlights`}>

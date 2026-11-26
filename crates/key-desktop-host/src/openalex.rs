@@ -70,7 +70,7 @@ pub enum Fail {
     Unlisted { doi: String, score: f64 },
 }
 impl Fail {
-    fn message(&self) -> String {
+    pub(crate) fn message(&self) -> String {
         match self {
             Fail::NotFound => "OpenAlex has no record of this work".into(),
             Fail::Unlisted { doi, .. } => format!("OpenAlex has no record of {doi}"),
@@ -183,7 +183,7 @@ impl OpenAlex {
 
 // ── Requests ────────────────────────────────────────────────
 
-fn fixtures() -> Option<PathBuf> {
+pub(crate) fn fixtures() -> Option<PathBuf> {
     std::env::var_os("KEY_OPENALEX_FIXTURES").map(PathBuf::from).filter(|p| p.is_dir())
 }
 
@@ -356,6 +356,9 @@ fn fixture(dir: &std::path::Path, path: &str, query: &[(&str, &str)]) -> Result<
             let ids: Vec<&str> = ids.split('|').collect();
             let mut seen = std::collections::HashSet::new();
             records().into_iter().filter(|r| ids.contains(&short(r).as_str()) && seen.insert(short(r))).collect()
+        } else if let Some(dois) = filter.strip_prefix("doi:") {
+            let dois: Vec<String> = dois.split('|').map(str::to_ascii_lowercase).collect();
+            records().into_iter().filter(|r| r.get("doi").and_then(Json::as_str).is_some_and(|d| dois.iter().any(|x| d.to_ascii_lowercase().ends_with(x.as_str())))).collect()
         } else if let Some(title) = filter.strip_prefix("title.search:") {
             // Like OpenAlex's search, loose: what to accept is the caller's decision.
             records().into_iter().filter(|r| r.get("display_name").and_then(Json::as_str).is_some_and(|t| title_similarity(t, title) >= 0.6)).take(5).collect()
@@ -394,7 +397,7 @@ fn bare_doi(doi: &str) -> String {
 /// The work for a source: by OpenAlex id, DOI (as read from an added PDF, then its other
 /// readings) or PMID, else by title. A title search result is accepted only when it is
 /// clearly the same work (key_store::accept_title); the second value is that match's score.
-fn find_work(job: &EnrichJob, options: &Options, record: Option<&Identification>, surnames: &[String]) -> Result<(Json, Option<(f64, &'static str)>), Fail> {
+pub(crate) fn find_work(job: &EnrichJob, options: &Options, record: Option<&Identification>, surnames: &[String]) -> Result<(Json, Option<(f64, &'static str)>), Fail> {
     let fields = [("select", WORK_FIELDS)];
     let doi = job.doi.as_deref().map(bare_doi).filter(|d| d.starts_with("10."));
     let alternates = record.filter(|r| r.doi.is_some() && r.doi == doi).map(|r| r.alternates.clone()).unwrap_or_default();

@@ -335,6 +335,10 @@ export function insertSource(editor: Editor, range: Range, ref: SourceRef, mode:
   const at = mode === "cite" && wholeSource && page !== undefined ? { ...item, anchor: `page:${page}` } : item;
   const label = mentionLabel(ref);
   const href = itemHref(at);
+  // Citing a retracted (or flagged) work: say so once, quietly.
+  const flag = ref.flag;
+  if (flag && item.kind === "source")
+    void import("../item-actions").then(({ toast }) => toast(`${ref.title.slice(0, 60)}: ${flag.toLowerCase()}. Check it before citing.`));
   editor
     .chain()
     .focus()

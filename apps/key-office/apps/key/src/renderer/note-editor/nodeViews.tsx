@@ -176,6 +176,11 @@ export function SourceEmbedView({ node, editor, selected }: ReactNodeViewProps) 
         </span>
         <span className="ne-source-card-text">
           <span className="ne-source-card-title">{ref ? ref.title : fallback}</span>
+          {ref?.flag && (
+            <span className="ne-source-flag" title="Check this work before relying on it">
+              <Icon name="warning" size={11} /> {ref.flag}
+            </span>
+          )}
           {ref?.detail ? (
             <span className="ne-source-card-detail">{ref.detail}</span>
           ) : ref === null ? (
@@ -264,6 +269,11 @@ export function SourceQuoteView({ node, editor }: ReactNodeViewProps) {
         >
           <Icon name="quote" size={12} />
           <span>{parts.join(" · ")}</span>
+          {ref?.flag && (
+            <span className="ne-source-flag" title="Check this work before relying on it">
+              <Icon name="warning" size={11} /> {ref.flag}
+            </span>
+          )}
         </button>
       </figcaption>
     </NodeViewWrapper>

@@ -27,6 +27,8 @@ import { findPdf as findPdfFor, findPdfMessage } from "./find-pdf";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
+import MetadataUpdateSheet from "./MetadataUpdateSheet";
+import { RetractionNotice, VersionsLine } from "./source-notices";
 
 interface Highlight {
   id: string;
@@ -79,6 +81,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const [collections, setCollections] = useState<Collection[]>([]);
   const [tagSuggestions, setTagSuggestions] = useState<Facet[]>([]);
   const [moreFields, setMoreFields] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [abstractOpen, setAbstractOpen] = useState(false);
   /** People, journal, topics, citations: the metadata graph around the source. */
   const [graph, setGraph] = useState<SourceGraph>();
@@ -197,7 +200,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const save = async (patch: Record<string, unknown>) => {
     setError("");
     try {
-      const next = await invoke<Source>("store_update", { id: sourceId, patch }, workspaceId);
+      const next = await invoke<Source>("store_update", { id: sourceId, patch, byHand: true }, workspaceId);
       setSource(next);
       side?.onChanged(next);
       libraryChanged();
@@ -671,6 +674,10 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
+              <button onClick={() => setUpdating(true)}>Update metadata…</button>
+              {source.doi && (
+                <button onClick={() => void invoke("store_retraction_check", { ids: [sourceId] }, workspaceId).then(() => void loadSource())}>Check for retraction</button>
+              )}
               <button onClick={reindex}>Re-index</button>
             </div>
           </details>
@@ -699,13 +706,22 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
       titleText={source.title || ""}
       details={{ summary: foldedSummary, content: details }}
       notice={
-        source.retracted === 1 && (
-          <div className="kx-retracted" role="alert">
-            <Icon name="info" size={14} />
-            Retracted
-            <span>OpenAlex lists this work as retracted. Check before citing it.</span>
-          </div>
-        )
+        <>
+          <RetractionNotice invoke={invoke} workspaceId={workspaceId} source={source} onChanged={() => void loadSource()} />
+          <VersionsLine invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} />
+          {updating && (
+            <MetadataUpdateSheet
+              invoke={invoke}
+              workspaceId={workspaceId}
+              ids={[sourceId]}
+              onClose={() => setUpdating(false)}
+              onDone={() => {
+                setUpdating(false);
+                void loadSource();
+              }}
+            />
+          )}
+        </>
       }
       title={<AutoText className="kx-inspector-title kx-source-page-title kx-note-title" label="Title" value={source.title || ""} placeholder="Untitled" onCommit={(title) => void save({ title })} />}
     >

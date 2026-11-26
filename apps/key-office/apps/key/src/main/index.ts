@@ -2518,6 +2518,13 @@ else
               "workspace_set_project_membership",
               "store_tag_apply",
               "store_tag_restore",
+              // The operations journal, merges and metadata updates (see the host's hygiene.rs).
+              "store_undo",
+              "store_redo",
+              "store_edit",
+              "store_merge_sources",
+              "store_merge_exact",
+              "store_apply_metadata",
             ].includes(command)
           )
             emit("library-changed");
@@ -2528,7 +2535,7 @@ else
           if (command === "store_note_save" || command === "store_note_meta" || command === "store_note_delete")
             emit("note-changed", { workspaceId: targetWorkspace, noteId: (result as any)?.id ?? args?.id, sourceId: (result as any)?.sourceId ?? args?.sourceId });
           // Backlinks are rewritten by these saves, and titles they show change with renames.
-          if (["store_note_save", "store_note_delete", "store_canvas_save", "store_canvas_delete", "store_update", "store_delete", "library_apply_annotations", "library_save_annotations"].includes(command))
+          if (["store_note_save", "store_note_delete", "store_canvas_save", "store_canvas_delete", "store_update", "store_delete", "store_undo", "store_redo", "store_merge_sources", "store_merge_exact", "library_apply_annotations", "library_save_annotations"].includes(command))
             emit("links-changed", { workspaceId: targetWorkspace, command });
           if (["library_apply_annotations", "library_save_annotations", "library_import_annotations"].includes(command))
             emit("annotations-changed", { workspaceId: targetWorkspace });
