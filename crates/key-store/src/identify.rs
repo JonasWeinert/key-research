@@ -522,6 +522,10 @@ pub fn plausible_title(text: &str, placeholder: Option<&str>) -> Option<String> 
 /// reads like a title (a journal's name above it is too short or too large to be one).
 fn typeset_title(page: &EvidencePage, placeholder: Option<&str>) -> Option<String> {
     let lines: Vec<&EvidenceLine> = page.lines.iter().filter(|l| l.size > 0.0 && l.text.chars().filter(|c| c.is_alphabetic()).count() >= 2).collect();
+    // Text without geometry: the first line that reads like a title.
+    if lines.is_empty() {
+        return page.lines.iter().take(5).find_map(|l| plausible_title(&l.text, placeholder));
+    }
     let mut sizes: Vec<f32> = lines.iter().map(|l| l.size).collect();
     sizes.sort_by(|a, b| b.total_cmp(a));
     sizes.dedup_by(|a, b| (*a - *b).abs() <= *b * 0.12);
@@ -800,6 +804,17 @@ impl Store {
         }
         self.delete(&[from.to_string()])?;
         Ok(())
+    }
+
+    /// Queues a lookup for a source without identifiers (by the titles of its record).
+    pub fn queue_lookup(&self, id: &str) -> Result<()> {
+        self.db()?
+            .execute(
+                "UPDATE sources SET enrich_status = 'pending', enrich_error = NULL, enrich_attempts = 0, enrich_after = NULL WHERE id = ? AND enrich_status IS NULL",
+                [id],
+            )
+            .map(|_| ())
+            .map_err(e)
     }
 
     /// Gives a source the title of the work it was identified as, when its title is still

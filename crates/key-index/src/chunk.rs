@@ -103,6 +103,20 @@ fn lines(chars: &[TextChar]) -> Vec<Line> {
     lines
 }
 
+/// A page's lines in reading order with their heights (as a fraction of the page; 0 for
+/// text without geometry), for identifying the document.
+pub fn page_lines(page: &PageText) -> Vec<(String, f32)> {
+    if !page.chars.iter().any(|c| c.bounds.is_some()) {
+        let text: String = page.chars.iter().map(|c| c.value.as_str()).collect();
+        return text.lines().map(|l| (l.trim().to_string(), 0.0)).filter(|(l, _)| !l.is_empty()).collect();
+    }
+    lines(&page.chars)
+        .into_iter()
+        .map(|l| (text_of(&page.chars, l.glyphs.clone()), l.height()))
+        .filter(|(text, _)| !text.is_empty())
+        .collect()
+}
+
 fn text_of(chars: &[TextChar], range: Range<usize>) -> String {
     let text: String = chars[range].iter().map(|c| c.value.as_str()).collect();
     text.split_whitespace().collect::<Vec<_>>().join(" ")
