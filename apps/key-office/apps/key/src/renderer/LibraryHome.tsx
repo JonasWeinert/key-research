@@ -13,7 +13,6 @@ import { mergePropertyColumns, type PropertyDefinition } from "./property-column
 import { preparePropertyDraft } from "./property-draft";
 import PropertyManager from "./PropertyManager";
 import PropertyEditor, { type PropertyDraft } from "./PropertyEditor";
-import { evaluatePropertyFormula } from "./property-formula";
 import LibraryTable, {
   defaultColumns,
   LiteralMatches,
@@ -644,13 +643,12 @@ export default function LibraryHome({
               { hash: d.documentHash },
               d,
             );
-            next = evaluatePropertyFormula(formulaToCalculate, {
-              ...meta.properties,
-              title: d.title,
-              year: d.year ?? null,
-              pages: d.pageCount,
-              authors: d.authors?.join("; ") || "",
-            });
+            const result = await call<{ value?: unknown; error?: string }>("store_formula_evaluate", {
+              formula: formulaToCalculate,
+              properties: { ...meta.properties, title: d.title, year: d.year ?? null, pages: d.pageCount ?? null, authors: d.authors?.join("; ") || "" },
+            }, d);
+            if (result.error) throw Error(result.error);
+            next = result.value;
           }
           calculated.push({ d, value: next });
         }
@@ -1374,7 +1372,7 @@ export default function LibraryHome({
                 <Button disabled={busy}>Save labels</Button>
               </form>
               <h3>Properties</h3>
-              <div className="key-source-property-rows">{Array.from(new Set([...columns.filter(c=>c.id.startsWith('property:')).map(c=>c.property!),...Object.keys(details.properties)])).map(name=>{const column=columns.find(c=>c.property===name)||{id:`property:${name}`,property:name,label:name,width:150,type:typeof details.properties[name]==='number'?'number':typeof details.properties[name]==='boolean'?'boolean':'text'};let value=details.properties[name];if(column.type==='formula'){try{value=evaluatePropertyFormula(column.formula||'', {...details.properties,Title:selected.title,Year:selected.year??null,Pages:selected.pageCount});}catch(e){value=String(e);}}return <div key={name}><Button disabled={!workspaceId} onClick={()=>editProperty(column)}>{column.type==='formula'?'ƒ ':column.type==='number'?'# ':'Aa '}{name}</Button><Button title="Edit property and apply a value to this source" disabled={!workspaceId} onClick={()=>{setChecked(new Set());editProperty(column,true);}}>{value===undefined||value===null||value===''?'Empty':String(value)}</Button>{column.type!=='formula'&&<Button title={`Fill ${name} for this source`} disabled={!workspaceId} onClick={()=>{setChecked(new Set());setAgentProperty(name);setAgentDialog(true);}}>✧</Button>}</div>;})}</div>
+              <div className="key-source-property-rows">{Array.from(new Set([...columns.filter(c=>c.id.startsWith('property:')).map(c=>c.property!),...Object.keys(details.properties)])).map(name=>{const column=columns.find(c=>c.property===name)||{id:`property:${name}`,property:name,label:name,width:150,type:typeof details.properties[name]==='number'?'number':typeof details.properties[name]==='boolean'?'boolean':'text'};let value=details.properties[name];return <div key={name}><Button disabled={!workspaceId} onClick={()=>editProperty(column)}>{column.type==='formula'?'ƒ ':column.type==='number'?'# ':'Aa '}{name}</Button><Button title="Edit property and apply a value to this source" disabled={!workspaceId} onClick={()=>{setChecked(new Set());editProperty(column,true);}}>{value===undefined||value===null||value===''?'Empty':String(value)}</Button>{column.type!=='formula'&&<Button title={`Fill ${name} for this source`} disabled={!workspaceId} onClick={()=>{setChecked(new Set());setAgentProperty(name);setAgentDialog(true);}}>✧</Button>}</div>;})}</div>
               <Button disabled={!workspaceId} onClick={newProperty}>＋ Add a property</Button>
             </>
           )}

@@ -3,7 +3,6 @@ import { Checkbox } from "./motion/Checkbox";
 import { useColumnReorder } from "./motion/table/use-column-reorder";
 import { Table } from "./motion/table/Table";
 import { useEffect, useState, useRef, type ReactNode } from "react";
-import { evaluatePropertyFormula } from "./property-formula";
 import type { LibrarySource } from "./LibraryHome";
 import { Icon } from "./icons";
 
@@ -461,24 +460,12 @@ export default function LibraryTable({
   );
 }
 
+// A formula column shows the result saved with the source ("Use result"); the host works
+// formulas out (formula.ts).
 function formulaValue(
   column: SourceColumn,
-  document: LibrarySource,
+  _document: LibrarySource,
   properties: Record<string, unknown>,
 ) {
-  try {
-    return String(
-      column.type === "formula" && column.formula
-        ? evaluatePropertyFormula(column.formula, {
-            ...properties,
-            title: document.title,
-            year: document.year ?? null,
-            pages: document.pageCount,
-            authors: document.authors?.join("; ") || "",
-          })
-        : (properties[column.property!] ?? "—"),
-    );
-  } catch (e) {
-    return `⚠ ${String(e).replace(/^Error: /, "")}`;
-  }
+  return String(properties[column.property!] ?? "—");
 }

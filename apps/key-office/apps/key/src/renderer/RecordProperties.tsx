@@ -1,6 +1,6 @@
 import { Button, Input, Select } from "@key/design-system";
 import { useEffect, useId, useState } from "react";
-import { evaluatePropertyFormula } from "./property-formula";
+import { formulaEvaluator, useFormulaPreview, type FormulaEval } from "./formula";
 import PropertyEditor, { type PropertyDraft } from "./PropertyEditor";
 import "./record-properties.css";
 
@@ -56,6 +56,7 @@ export function RecordProperties({
   } | null>(null);
   const [savingDefinition, setSavingDefinition] = useState(false);
   const [error, setError] = useState("");
+  const evaluate = formulaEvaluator(invoke as Parameters<typeof formulaEvaluator>[0], workspaceId, { properties: value });
 
   useEffect(() => {
     let active = true;
@@ -180,8 +181,11 @@ export function RecordProperties({
         if (draft.type === "boolean") next = draft.value === "true";
         if (draft.type === "select" && !options.includes(draft.value))
           throw Error("Choose one of the select options.");
-        if (draft.type === "formula")
-          next = evaluatePropertyFormula(draft.formula, value);
+        if (draft.type === "formula") {
+          const result = await evaluate(draft.formula);
+          if (result.error) throw Error(result.error);
+          next = result.value;
+        }
       }
       let renamedFormula = draft.formula;
       if (renaming) {
@@ -259,18 +263,6 @@ export function RecordProperties({
               : raw !== null && typeof raw === "object"
                 ? "structured"
                 : "text");
-        let formulaValue: unknown,
-          formulaError = "";
-        if (kind === "formula") {
-          try {
-            formulaValue = evaluatePropertyFormula(
-              definition?.formula || "",
-              value,
-            );
-          } catch (reason) {
-            formulaError = String(reason);
-          }
-        }
         return (
           <div className="key-record-property-row" key={key}>
             <label htmlFor={`${instanceId}-property-${key}`} title={key}>
@@ -286,23 +278,13 @@ export function RecordProperties({
             </label>
             <div className="key-record-property-value">
               {kind === "formula" ? (
-                <div className="key-record-formula">
-                  <code>{definition?.formula}</code>
-                  <output>
-                    {formulaError || String(formulaValue ?? "Empty")}
-                  </output>
-                  <Button
-                    type="button"
-                    disabled={disabled || !!formulaError}
-                    onClick={() => update(key, formulaValue)}
-                  >
-                    Use result
-                  </Button>
-                  <small>
-                    Recalculate after changing inputs. The result is saved with
-                    this item.
-                  </small>
-                </div>
+                <RecordFormula
+                  formula={definition?.formula || ""}
+                  evaluate={evaluate}
+                  inputs={value}
+                  disabled={disabled}
+                  onUse={(result) => update(key, result)}
+                />
               ) : kind === "boolean" ? (
                 <Input
                   id={`${instanceId}-property-${key}`}
@@ -395,6 +377,7 @@ export function RecordProperties({
           error={error}
           targetCount={1}
           properties={value}
+          evaluate={evaluate}
           previewTitle="This item"
           allowAgent={false}
           targetLabel="item"
@@ -408,5 +391,20 @@ export function RecordProperties({
         />
       )}
     </section>
+  );
+}
+
+/** A formula property's current result (worked out by the host) and "Use result". */
+function RecordFormula({ formula, evaluate, inputs, disabled, onUse }: { formula: string; evaluate: FormulaEval; inputs: unknown; disabled?: boolean; onUse: (value: unknown) => void }) {
+  const result = useFormulaPreview(evaluate, formula, inputs);
+  return (
+    <div className="key-record-formula">
+      <code>{formula}</code>
+      <output>{result?.error || (result ? result.text || "Empty" : "…")}</output>
+      <Button type="button" disabled={disabled || !result || !!result.error} onClick={() => onUse(result?.value)}>
+        Use result
+      </Button>
+      <small>Recalculate after changing inputs. The result is saved with this item.</small>
+    </div>
   );
 }

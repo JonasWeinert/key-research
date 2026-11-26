@@ -7,7 +7,7 @@ import { Icon } from "./icons";
 import type { Invoke, Source } from "./library-api";
 import PropertyEditor, { type PropertyDraft } from "./PropertyEditor";
 import { preparePropertyDraft, renamedOptions } from "./property-draft";
-import { evaluatePropertyFormula } from "./property-formula";
+import { formulaEvaluator, formulaText } from "./formula";
 import TagManagerDialog from "./TagManagerDialog";
 
 export interface PropertyDefinition {
@@ -45,13 +45,9 @@ export function formulaContext(source: Source) {
   };
 }
 
+/** A formula property's value on a source, as the host computed it with the listing. */
 export function formulaValue(definition: PropertyDefinition, source: Source): string {
-  try {
-    const value = evaluatePropertyFormula(definition.formula || "", formulaContext(source));
-    return value === null || value === undefined ? "" : String(value);
-  } catch (e) {
-    return `⚠ ${String(e).replace(/^Error: /, "")}`;
-  }
+  return formulaText(source.formulaValues?.[definition.name]);
 }
 
 export type PropertySheetState =
@@ -112,14 +108,10 @@ export function PropertySheet({
         for (const [from, to] of renamedOptions(editing.options ?? [], (config as { options?: string[] }).options ?? []))
           await invoke("store_rename_property_option", { name, from, to }, workspaceId);
       await invoke("workspace_save_attribute", { name, config }, workspaceId);
-      if (draft.applyValues) {
-        for (const target of state.targets) {
-          const next =
-            draft.type === "formula"
-              ? formulaValue({ name, type: "formula", formula: draft.formula }, target)
-              : value;
-          await invoke("store_update", { id: target.id, patch: { properties: { [name]: next } }, byHand: true }, workspaceId);
-        }
+      if (draft.applyValues && state.targets.length) {
+        // One journaled edit; a formula is worked out per source by the host.
+        const edit = draft.type === "formula" ? { formulas: { [name]: draft.formula } } : { patch: { properties: { [name]: value } } };
+        await invoke("store_edit", { ids: state.targets.map((t) => t.id), edit, label: null }, workspaceId);
       }
       onSaved();
       if (!editing) onCreated?.(name);
@@ -140,6 +132,7 @@ export function PropertySheet({
       targetCount={state.targets.length}
       targetLabel="source"
       properties={single ? formulaContext(single) : {}}
+      evaluate={formulaEvaluator(invoke, workspaceId, single ? { id: single.id } : { properties: {} })}
       previewTitle={single?.title}
       onClose={onClose}
       onSave={(draft, agent) => void save(draft, agent)}

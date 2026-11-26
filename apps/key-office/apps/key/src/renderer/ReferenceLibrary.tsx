@@ -766,7 +766,7 @@ export default function ReferenceLibrary({
                 state={{ ...viewState, sorts }}
                 onChange={setViewState}
                 columns={columns}
-                sortFields={[...SOURCE_SORTS, ...definitions.filter((d) => d.type !== "formula").map<[string, string]>((d) => [`property:${d.name}`, d.name])]}
+                sortFields={[...SOURCE_SORTS, ...definitions.map<[string, string]>((d) => [`property:${d.name}`, d.name])]}
                 columnFooter={
                   <button onClick={() => setSheet({ mode: "new", targets: [] })}>
                     <Icon name="plus" size={13} /> New property…
@@ -1627,7 +1627,7 @@ function BulkBar({
             }}
           >
             <option value="">Set property…</option>
-            {definitions.filter((d) => d.type !== "formula").map((d) => (
+            {definitions.map((d) => (
               <option key={d.name} value={d.name}>
                 {d.name}
               </option>
