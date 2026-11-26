@@ -35,6 +35,7 @@ import { fatal, installErrorHandlers, serveNotices } from "./app-notices";
 import { serveStatusItems } from "./status-items";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
 import { registerMediaScheme, routeEmbeddedMedia, serveNoteMedia } from "./note-media";
+import { deliverDeepLinks, listenForDeepLinks } from "./deep-links";
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
@@ -2232,6 +2233,7 @@ function baseMenu() {
 startupMark("main-evaluated");
 app.setName("Key");
 registerMediaScheme();
+listenForDeepLinks();
 if (process.env.KEY_USER_DATA)
   app.setPath("userData", process.env.KEY_USER_DATA);
 installErrorHandlers();
@@ -2347,6 +2349,21 @@ else
       startupMark("state-loaded");
       const first = createShell({ load: false, workspaceId: knownWorkspaces[0]?.id, saved: restoring[0] });
       startupMark("window-created");
+      // key:// links from other apps, once the shell has had a moment to listen.
+      first.window.webContents.once("did-finish-load", () =>
+        setTimeout(
+          () =>
+            deliverDeepLinks((url) => {
+              const w = focusedShell();
+              if (!w || w.window.isDestroyed()) return false;
+              w.window.show();
+              w.window.focus();
+              emitTo(w, "open-item-link", url);
+              return true;
+            }),
+          1200,
+        ),
+      );
       configureOfficeEditors(first.window, {
         extractPdfText: async (bytes) => {
           if (bytes.byteLength > 32 * 1024 * 1024)
@@ -2610,8 +2627,12 @@ else
         } else home(w);
       });
       // A file to read or write (bibliography import, export and auto-export targets).
-      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save"; title?: string; defaultPath?: string; extensions?: string[] }) => {
+      ipcMain.handle("key:choose-path", async (event, request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }) => {
         const w = shell(event.sender.id);
+        if (request.mode === "folder") {
+          const result = await dialog.showOpenDialog(w.window, { title: request.title, defaultPath: request.defaultPath, buttonLabel: "Choose", properties: ["openDirectory", "createDirectory"] });
+          return result.canceled ? null : result.filePaths[0] ?? null;
+        }
         const filters = request.extensions?.length ? [{ name: "Bibliography", extensions: request.extensions }, { name: "All files", extensions: ["*"] }] : undefined;
         if (request.mode === "save") {
           const result = await dialog.showSaveDialog(w.window, { title: request.title, defaultPath: request.defaultPath, filters, properties: ["createDirectory", "showOverwriteConfirmation"] });

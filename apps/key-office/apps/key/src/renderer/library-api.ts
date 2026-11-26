@@ -415,7 +415,7 @@ export interface Bridge {
    *  and "open" report and drive installing the plugin into Zotero's profile. */
   zoteroPlugin(action?: "wake" | "status" | "install" | "restart" | "open"): Promise<{ file: string | null; install?: ZoteroInstall; error?: string } | null>;
   /** A file chosen in an open or save panel, or null. */
-  choosePath(request: { mode: "open" | "save"; title?: string; defaultPath?: string; extensions?: string[] }): Promise<string | null>;
+  choosePath(request: { mode: "open" | "save" | "folder"; title?: string; defaultPath?: string; extensions?: string[] }): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealPath(path: string): Promise<void>;
   writeClipboard?(data: { text: string; html?: string; rtf?: string }): Promise<void>;

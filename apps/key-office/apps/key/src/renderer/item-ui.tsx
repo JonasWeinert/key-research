@@ -20,6 +20,7 @@ import {
   type Toast,
 } from "./item-actions";
 import { libraryChanged } from "./library-nav";
+import { openFileRename, openHighlightExport } from "./export-events";
 import { itemLinks } from "./item-links";
 import { bridge, type Invoke } from "./library-api";
 import NoteEditor, { itemFromHref, itemHref, setEmbedRenderer, setMapCenterSearch, type DraggedItem, type EmbedView, type ItemLink } from "./note-editor";
@@ -380,12 +381,24 @@ export function itemMenuEntries(items: { item: ItemLink; title: string }[], extr
       ? [
           { label: "Copy reference", icon: "quote" as const, shortcut: "⌘⇧C", run: () => invoke && workspaceId && void copyCitation(invoke, workspaceId, items.map((i) => i.item)) },
           { label: "Copy in-text citation", icon: "quote" as const, shortcut: "⌘⇧A", run: () => invoke && workspaceId && void copyInTextCitation(invoke, workspaceId, items.map((i) => i.item)) },
+          ...sourceFileEntries(items, workspaceId),
         ]
       : []),
     "-",
     { label: "Send to canvas or note…", icon: "canvas", shortcut: "⌘⇧S", run: () => sendTo(asDragged) },
     { label: "Show in inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => showInInspector(asDragged) },
     ...trashEntries(items),
+  ];
+}
+
+/** Export highlights and rename files, for whole sources. */
+function sourceFileEntries(items: { item: ItemLink; title: string }[], workspaceId?: string): MenuEntry[] {
+  const ids = items.filter(({ item }) => item.kind === "source" && !item.anchor).map(({ item }) => item.id);
+  if (!ids.length) return [];
+  const title = ids.length === 1 ? items.find(({ item }) => item.id === ids[0])?.title : undefined;
+  return [
+    { label: "Export highlights…", icon: "fileMarkdown", run: () => openHighlightExport({ workspaceId, ids, title }) },
+    { label: ids.length > 1 ? "Rename files…" : "Rename file…", icon: "doc", run: () => openFileRename({ workspaceId, ids }) },
   ];
 }
 

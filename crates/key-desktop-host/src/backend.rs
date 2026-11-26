@@ -13,6 +13,8 @@ mod cite_commands;
 mod core_commands;
 #[path = "biblio_commands.rs"]
 mod biblio_commands;
+#[path = "export_commands.rs"]
+mod export_commands;
 #[path = "openalex.rs"]
 mod openalex;
 #[path = "hygiene.rs"]

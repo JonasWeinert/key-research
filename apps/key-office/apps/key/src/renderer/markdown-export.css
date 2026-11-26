@@ -1,0 +1,224 @@
+/* Markdown export (markdown-export.tsx) and file naming (file-names.tsx). */
+.kx-md-code,
+.kx-files-name {
+  color: var(--kx-text);
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+}
+input.kx-settings-select.kx-md-pattern,
+input.kx-settings-select.kx-files-template {
+  width: 260px;
+  font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+}
+.kx-md-fields {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 340px;
+}
+.kx-md-fields button {
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  color: var(--kx-text-2);
+  font: 11.5px var(--kx-font);
+}
+.kx-md-fields button[aria-pressed="true"] {
+  background: var(--kx-accent-soft);
+  box-shadow: inset 0 0 0 0.5px var(--kx-accent);
+  color: var(--kx-accent);
+}
+.kx-md-fields button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+
+/* Template editor beside its live preview. */
+.kx-md-template {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+.kx-md-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.kx-md-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.kx-md-pane-head > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kx-md-pane textarea,
+.kx-md-preview {
+  box-sizing: border-box;
+  height: 300px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  font: 11.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.kx-md-pane textarea {
+  background: var(--kx-bg);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  color: var(--kx-text);
+  resize: vertical;
+  tab-size: 2;
+}
+.kx-md-pane textarea:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--kx-accent), 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-md-preview {
+  overflow: auto;
+  background: var(--kx-bg-sunken);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+  color: var(--kx-text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.kx-md-error {
+  margin: 0;
+  color: var(--kx-red);
+  font-size: 11.5px;
+}
+.kx-md-pre {
+  white-space: pre-line;
+}
+
+/* The Export highlights sheet. */
+.key-global-drawer.key-global-sheet:has(.kx-md-export),
+.key-global-drawer.key-global-sheet:has(.kx-files-rename) {
+  --kx-modal-width: 560px;
+}
+.kx-md-export,
+.kx-files-rename {
+  width: 100%;
+}
+.kx-md-export-choices {
+  display: grid;
+  gap: 8px;
+}
+.kx-md-export-choices button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--kx-fill);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+  color: var(--kx-accent);
+  font: inherit;
+  text-align: left;
+}
+.kx-md-export-choices button:hover:not(:disabled) {
+  background: var(--kx-hover);
+}
+.kx-md-export-choices button:disabled {
+  opacity: 0.5;
+}
+.kx-md-export-choices span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.kx-md-export-choices strong {
+  color: var(--kx-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.kx-md-export-choices small {
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* File names: live examples and the rename confirmation. */
+.kx-files-examples {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-files-examples li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.4fr);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+}
+.kx-files-examples li + li {
+  border-top: 0.5px solid var(--kx-line);
+}
+.kx-files-examples .kx-files-from {
+  overflow: hidden;
+  color: var(--kx-text-3);
+  font: 11px ui-monospace, "SF Mono", Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-files-examples .kx-files-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-files-examples svg {
+  color: var(--kx-text-3);
+}
+.kx-files-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.kx-files-rename-list {
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 9px;
+  background: var(--kx-fill);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+}
+.kx-files-rename-note {
+  margin: 10px 2px 0;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.kx-files-confirm {
+  margin-bottom: 20px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong), var(--kx-shadow-lift);
+}
+.kx-files-confirm h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.kx-files-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

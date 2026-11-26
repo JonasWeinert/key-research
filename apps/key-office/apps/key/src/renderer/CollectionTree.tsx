@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ROW_PX, rowsThatFit } from "./sidebar-budget";
 import { ContextMenu } from "./DatabaseView";
+import { openHighlightExport } from "./export-events";
 import { Icon } from "./icons";
 import type { Collection, Invoke } from "./library-api";
 import { hasExternalDrop, hasItemDrag, importDrop, readItemDrag } from "./item-links";
@@ -426,6 +427,7 @@ export default function CollectionTree({
               item("Rename", "doc", () => setRenaming(menuCollection.id)),
               menuCollection.parentId && item("Move to top level", "arrowRight", () => place(menuCollection.id, null, "inside")),
               workspaceId && item("Copy bibliography", "quote", () => void copyCollectionBibliography(invoke, workspaceId, menuCollection.id, menuCollection.name)),
+              workspaceId && item("Export highlights…", "fileMarkdown", () => openHighlightExport({ workspaceId, collectionId: menuCollection.id, title: `“${menuCollection.name}”` })),
               <hr key="rule" />,
               item("Delete collection…", "trash", () => remove(menuCollection)),
             ];

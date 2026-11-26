@@ -56,6 +56,7 @@ import MetadataUpdateSheet from "./MetadataUpdateSheet";
 import { retractionOf, stepJournal, useHygiene } from "./library-hygiene";
 import "./reference-library.css";
 import { isBibliographyPath, openBibExport, openBibImport } from "./BiblioSheets";
+import { readablePaths } from "./file-names";
 
 const PAGE = 300;
 const ROW = 58;
@@ -595,7 +596,8 @@ export default function ReferenceLibrary({
     // ⌥-drag takes the files themselves out of the app (to Finder, Mail …).
     if (e.altKey && files.length) {
       e.preventDefault();
-      bridge().startFileDrag(files);
+      // Files Key stores itself go out under their readable names.
+      void readablePaths(invoke, workspaceId, ids, files).then((paths) => bridge().startFileDrag(paths));
       return;
     }
     e.dataTransfer.setData(SOURCE_DRAG_TYPE, JSON.stringify(ids));
