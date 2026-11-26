@@ -10,6 +10,7 @@ import type { CSSProperties, ReactElement, ReactNode } from "react";
 import "./tabbar.css";
 import { Icon } from "./icons";
 import type { GroupSide, Rect } from "../shared/tab-model";
+import { FirstUseTip } from "./explain";
 export interface TabSummary {
   id: string;
   title: string;
@@ -295,6 +296,7 @@ export function TabBar({
     >
       <div className="tab-bar-drag-spacer" />
       {chromeControl}
+      {first && <FirstUseTip help="tip.split-tabs" anchor='.tab-bar[data-first] [role="tablist"]' when={tabs.length > 2} delay={2500} />}
       <div
         className={`tab-strip ${dragVisual ? "dragging" : ""} ${settling ? "settling" : ""} ${dragVisual?.away ? "targeting" : ""}`}
         ref={stripRef}

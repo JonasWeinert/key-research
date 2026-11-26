@@ -26,7 +26,7 @@ import {
 } from "./library-api";
 import { ago, blocker, choiceOf, filterItems, optionsOf, syncLine, type Choice, type Mode, type Scope } from "./zotero-sheet-model";
 import "./zotero-import.css";
-import { Explain } from "./explain";
+import { Explain, Hint } from "./explain";
 
 
 type Collection = ZoteroPreview["collections"][number];
@@ -347,6 +347,7 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
                   </select>
                 )}
               </div>
+              <Hint help="zotero.scope" />
               <ScopePicker scope={choice.scope} preview={preview} onChange={(scope) => setChoice({ ...choice, scope })} />
               {choice.scope === "collections" && preview && (
                 <CollectionTree collections={preview.collections} chosen={choice.collections} onChange={(collections) => setChoice({ ...choice, collections })} />

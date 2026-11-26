@@ -159,7 +159,6 @@ export const HELP = {
     ],
     { example: "www-nature-com.ezproxy.uni.edu or go.openathens.net/redirector/uni.edu" },
   ),
-  "settings.web.transparent": hint("Articles on a remembered proxy’s sites open through it without asking."),
   "settings.web.proxy-add": explain(
     "Adding your library’s proxy",
     [
@@ -173,22 +172,6 @@ export const HELP = {
       ],
       example: "https://ezproxy.uni.edu/login?url=",
     },
-  ),
-  "settings.web.zotero-proxies": hint("Proxies you set up in Zotero or its browser connector can be copied here."),
-  "browser.via-proxy": explain(
-    "Via proxy",
-    [
-      "This page opened through your library’s proxy, so you see it with your library’s access. The address shows the proxy’s name in it.",
-      "If the page asks you to sign in, use your library or university account.",
-    ],
-    { privacy: "Your sign-in goes only to your library." },
-  ),
-  "browser.save-vs-add": explain(
-    "Save page or add to library",
-    [
-      "Add to library adds the work this page is about (an article, book or preprint) as a reference, with its metadata, and attaches the PDF when one is open to you.",
-      "Save page keeps a copy of the web page itself, such as a blog post or report, so you can read, highlight and cite it later even if it changes or goes away.",
-    ],
   ),
 
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
@@ -230,8 +213,6 @@ export const HELP = {
       links: [{ label: "Request a key at semanticscholar.org", url: "https://www.semanticscholar.org/product/api#api-key-form" }],
     },
   ),
-  "settings.services.storage": hint("Keys are encrypted on this Mac. They never appear on a page or in a log."),
-  "settings.services.mode": hint("Only when needed sends the key when a request without it is limited or refused; Always sends it every time."),
 
   // ── Settings: AI ─────────────────────────────────────────────────────────────────────
   "settings.ai.provider": explain(
@@ -287,8 +268,6 @@ export const HELP = {
     ],
     { example: "APA: Smith, J. (2020). Title. Journal, 4(2), 1–9.\nChicago: Smith, Jane. 2020. “Title.” Journal 4 (2): 1–9." },
   ),
-  "settings.citations.locale": hint("The language for words like “and”, “edited by” and month names."),
-  "settings.citations.quick-copy": hint("What Copy citation puts on the clipboard, ready to paste into Word, Pages or an email."),
   "settings.keys.what": explain(
     "Citation keys and auto-export",
     [
@@ -418,7 +397,7 @@ export const HELP = {
     ],
     { privacy: "Only the work’s DOI or title is sent." },
   ),
-  "reading.status": hint("Unread, reading or read, so you can see where you are. Key marks a source as reading when you open it."),
+  "reading.status": hint("Unread, in progress or read: Key moves it along as you read, unless you set it yourself."),
 
   // ── Tags, relation map ──────────────────────────────────────────────────────────────
   "tags.suggestions": explain(
@@ -444,12 +423,13 @@ export const HELP = {
     ],
   ),
   "search.syntax": explain(
-    "Search filters",
+    "Searching",
     [
-      "Type words to search titles, authors, full text and notes. Key also searches by meaning, so related wording is found.",
-      "Narrow it down with filters, or use the Web tab to look for works you do not have yet.",
+      "Type words to search titles, authors, the full text of your PDFs and your notes. Key also searches by meaning, so passages that use other words for the same idea are found.",
+      "Key recognises what you type: a DOI, arXiv ID or link finds or adds that work, a year or a range of years narrows by year, and a tag, collection or kind (notes, highlights) is offered as a filter. Pick the suggestion to apply it.",
+      "Web looks for works you do not have yet in scholarly catalogues such as OpenAlex. With Web off, nothing leaves this Mac.",
     ],
-    { example: "author:smith  year:2018..2022  tag:methods\n\"exact phrase\"  -exclude  type:article" },
+    { example: "sleep memory 2018-2022\n10.1038/nature12373\n\"a quoted title\"" },
   ),
 
   // ── Empty states: library and reader ────────────────────────────────────────────────
@@ -457,12 +437,10 @@ export const HELP = {
   "empty.results": empty("No matches", "Nothing in this view matches your search or filters.", "Try fewer words, clear a filter, or search the web for works you do not have."),
   "empty.scope": empty("Nothing here yet", "This view gathers sources by how you marked them, such as starred, to read or recently read.", "Sources appear here as you mark or read them."),
   "empty.collection": empty("This collection is empty", "A collection groups sources, for example for one project or chapter. A source can be in several.", "Drag sources onto the collection in the sidebar, or add files straight into it."),
-  "empty.notes": empty("No notes yet", "Notes are your own writing: summaries, ideas and drafts, linked to the sources they cite.", "Create a note, or take one from a highlight in a PDF."),
   "empty.highlights": empty("No highlights yet", "Highlights and comments you make in PDFs and web pages collect here.", "Open a PDF, select text and choose a colour."),
   "empty.trash": empty("Trash is empty", "Sources, notes and collections you delete wait here before they are gone for good.", "Nothing to do. Items in the Trash can be put back."),
-  "empty.references": empty("No references found", "Key looks for the reference list at the end of a PDF and links each entry to the work it names.", "This PDF may have no reference list, or it is a scan without text."),
-  "empty.analysis-pending": empty("Reading this PDF", "Key is reading the text and layout of this PDF on this Mac.", "References and outline appear here when it is done, usually within a minute."),
-  "empty.model-missing": empty("The search model is not downloaded", "Search by meaning and PDF analysis need a small model that runs on this Mac.", "Download it once from Settings, Search & indexing."),
+  "empty.references": empty("No reference list found", "Key looks for a numbered or author–year reference list near the end of a paper and links each entry to the work it names.", "This PDF may have none, or it is a scanned image without text."),
+  "empty.references-page": empty("No references on this page", "Key looks for a list of references or links to scholarly works on a saved page.", "Pages like blog posts and news often have none."),
   "model.download": explain(
     "Model download",
     [
@@ -472,14 +450,9 @@ export const HELP = {
     { privacy: "Downloading is a plain file download. Nothing about you or your library is sent, and the models never send anything." },
   ),
 
-  // ── Onboarding ──────────────────────────────────────────────────────────────────────
-  "onboarding.library": hint("Key keeps everything in a folder on this Mac. You can add more libraries later."),
-  "onboarding.zotero": hint("Bring your Zotero library across, or skip this. Key never changes your Zotero library."),
-  "onboarding.appearance": hint("You can change this any time in Settings."),
-
   // ── First-use tips ──────────────────────────────────────────────────────────────────
-  "tip.cite": tip("Cite while you write", "Cite copies a formatted citation, or inserts one into a note, in your citation style."),
-  "tip.citation-hover": tip("Look up a citation", "Hover over a citation like [12] or (Smith, 2020) in a PDF to see the work it points to, and add it with one click."),
+  "tip.cite": tip("Cite what you select", "Cite copies the passage as a quote with its source and page, ready to paste into a note or a document."),
+  "tip.citation-hover": tip("Look up a citation", "In the PDF, point at a citation like [12] or (Smith, 2020) to see the work it names, and add it to your library."),
   "tip.note-cite": tip("Cite in notes", "Type @ in a note and start typing a title or author to cite a source from your library."),
   "tip.split-tabs": tip("Read side by side", "Drag a tab to the left or right edge of the window to show two things side by side."),
   "tip.map-legend": tip("Filter the map", "Click a kind in the legend, such as People or Topics, to show only that kind. Click it again to show all."),

@@ -16,6 +16,7 @@ import { stepJournal } from "./library-hygiene";
 import { SourceListItem } from "./source-list";
 import "./entity.css";
 import "./reading.css";
+import { hintText } from "./help-content";
 
 export type ReadingStatus = "unread" | "reading" | "read";
 export const STATUS_LABEL: Record<ReadingStatus, string> = { unread: "Unread", reading: "In progress", read: "Read" };
@@ -88,7 +89,7 @@ export function ReadingStatusControl({
         data-compact={compact || undefined}
         aria-haspopup="menu"
         aria-label={`Reading status: ${label}`}
-        title={`${label}${manual ? " (set by you)" : mixed ? "" : " · follows your reading"}. Click to change.`}
+        title={`${label}${manual ? " (set by you)" : mixed ? "" : " · follows your reading"}. ${hintText("reading.status")} Click to change.`}
         onClick={(e) => {
           e.stopPropagation();
           const r = e.currentTarget.getBoundingClientRect();
