@@ -310,6 +310,7 @@
 }
 .kx-fill-item-value {
   display: grid;
+  justify-items: start;
   gap: 2px;
 }
 .kx-fill-item-value input {

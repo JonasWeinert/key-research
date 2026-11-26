@@ -250,7 +250,7 @@ export class AiService {
       const models = await listModels({ protocol: info.protocol, baseUrl, apiKey, local: info.local }, { fetch: this.deps.fetch, name: info.name });
       this.modelCache.set(provider, { at: Date.now(), models });
       if (info.local && !models.length) return { ok: false, message: `${info.name} is running but has no models yet`, models };
-      return { ok: true, message: info.local ? `${info.name} is running with ${models.length} model${models.length === 1 ? "" : "s"}` : `${info.name} accepted the key`, models };
+      return { ok: true, message: info.local ? `${info.name} is running with ${models.length} model${models.length === 1 ? "" : "s"}` : apiKey ? `${info.name} accepted the key` : `The server answered with ${models.length} model${models.length === 1 ? "" : "s"}`, models };
     } catch (error) {
       return { ok: false, message: (error as Error).message };
     }

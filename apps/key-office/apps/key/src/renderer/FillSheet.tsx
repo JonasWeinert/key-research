@@ -369,8 +369,12 @@ export function FillReview({ invoke, workspaceId, runId, onSaved }: { invoke: In
               item={item}
               recipe={run.recipe}
               review
-              onAccept={(edited) => void act("store_fill_review", edited === undefined ? { accept: [item.sourceId] } : { edits: { [item.sourceId]: edited } })}
-              onReject={() => void act("store_fill_review", { reject: [item.sourceId] })}
+              onAccept={(edited) =>
+                void act("store_fill_review", edited === undefined ? { accept: [item.sourceId] } : { edits: { [item.sourceId]: edited } }, (r) =>
+                  r.changedSince ? `“${item.title}” changed since the proposal and was left alone` : `Saved ${plural(r.accepted, "value")}`,
+                )
+              }
+              onReject={() => void act("store_fill_review", { reject: [item.sourceId] }, () => `Rejected the value for “${item.title}”`)}
               loadPassages={() => invoke<Passage[]>("store_fill_run_passages", { runId, sourceId: item.sourceId }, workspaceId)}
             />
           ))
