@@ -36,7 +36,7 @@ All-workspace results retain workspace identity and per-workspace rank; local sc
 
 ## Deliberate limits / roadmap
 
-The supplied design's AI metadata-fill workflows, DOI/BibTeX/RIS acquisition, richer media sources and advanced column controls remain labelled previews. Database formulas, rollups, typed schema editors, relation editors and automatic filesystem watchers are future work. Basic saved filtered views and arbitrary JSON properties are implemented.
+DOI identification, Add by identifier, and BibTeX/BibLaTeX/RIS/CSL-JSON/CSV import and export are implemented in the Rust host (`smoke-identify`, `smoke-find-pdf`, `smoke-import-export`). The supplied design's AI metadata-fill workflows and richer media sources (OCR, transcription) remain labelled previews. Formula dependencies and relation rollups are future work.
 
 Linked-folder scans are explicit and bounded; they report truncation rather than silently claiming a complete scan. Open/attention filters and sorting currently apply to the loaded source page. Workspace records and property-filtered database views are paginated; this is not an arbitrary database-query language.
 
@@ -57,5 +57,7 @@ Startup stays light by loading on first use what most sessions never open: the O
 ## Verification
 
 `npm run typecheck -w @key/electron` and `npm test -w @key/electron` validate the shell. Scripts in `scripts/` exercise real Electron windows and real Rust IPC, using isolated temporary workspace/profile directories: library/record persistence, PDF ownership and rendering, canonical search highlights, Office view loading, unsaved-close/save, saved database filters, and repeated PDF interaction. Backend storage tests cover workspace membership, file registration and migration invariants.
+
+`node scripts/record-screenshots.cjs [--only=library,reader] [--out=dir]` records the root README's screenshots into `assets/readme/` from an invented demo library (`scripts/screenshot-demo.cjs`: made-up people, journals and 10.5555 test DOIs, PDFs rendered from HTML by the app). OpenAlex answers are recorded fixtures, the web services, a journal site behind an EZproxy-style login, a feed and a blog are a local mock (Chromium maps `*.example` to it), the reader's citation lookups are seeded into the workspace's lookup cache, and other requests from the host go to a dead proxy. Windows are 1440×860 points (2× on Retina); reader and browser views are composited onto the shell, and ImageMagick (if installed) recompresses the PNGs.
 
 Measured stress evidence is in `apps/key/docs/electron-stress-validation-2026-09-12.json`; storage and design decisions are in the adjacent Electron workspace/design documents.
