@@ -1606,6 +1606,16 @@
 .kx-token button:hover {
   background: color-mix(in srgb, var(--kx-accent) 18%, transparent);
 }
+/* A tag token's scope switches between the tag with its children and the tag only. */
+.kx-token button.kx-token-scope-toggle {
+  display: inline;
+  width: auto;
+  height: auto;
+  padding: 0 1px;
+  font: inherit;
+  color: color-mix(in srgb, var(--kx-accent) 75%, var(--kx-text-2));
+  cursor: default;
+}
 .kx-suggest {
   position: absolute;
   top: calc(100% + 6px);

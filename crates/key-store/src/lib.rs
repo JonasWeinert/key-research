@@ -262,6 +262,9 @@ pub struct ListQuery {
     pub collection_id: Option<String>,
     #[serde(default)]
     pub tag: Option<String>,
+    /// Only `tag` itself, not the tags under it in the tag tree.
+    #[serde(default)]
+    pub tag_exact: bool,
     #[serde(default)]
     pub kind: Option<String>,
     #[serde(default)]
@@ -1689,7 +1692,7 @@ fn where_clause(query: &ListQuery) -> (String, Vec<Value>) {
         values.push(Value::Text(collection.clone()));
     }
     if let Some(tag) = &query.tag {
-        conditions.push("EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value = ?)".into());
+        conditions.push(if query.tag_exact { "EXISTS (SELECT 1 FROM json_each(s.tags) t WHERE t.value = ?)".into() } else { tag_ops::tag_family_condition("?") });
         values.push(Value::Text(tag.clone()));
     }
     if let Some(kind) = &query.kind {

@@ -76,6 +76,32 @@ pub struct TagResult {
     pub undo: TagSnapshot,
 }
 
+/// SQL for "source `s` carries tag `param` or a tag under it in the tag tree" (children,
+/// grandchildren …, case-insensitively). `param` is the placeholder (`?`, `?1`).
+pub(crate) fn tag_family_condition(param: &str) -> String {
+    format!(
+        "EXISTS (WITH RECURSIVE fam(name) AS (SELECT {param} UNION SELECT t.key FROM json_each(coalesce((SELECT value FROM meta WHERE key = '{TREE_KEY}'), '{{}}')) t, fam \
+         WHERE json_extract(t.value, '$.parent') = fam.name COLLATE NOCASE) SELECT 1 FROM json_each(s.tags) j, fam WHERE j.value = fam.name COLLATE NOCASE)"
+    )
+}
+
+/// The tag and every tag under it in the tree.
+pub fn tag_family(db: &Connection, tag: &str) -> Result<Vec<String>> {
+    let tree = read_tree(db)?;
+    let mut out = vec![tag.to_string()];
+    let mut i = 0;
+    while i < out.len() && out.len() < 10_000 {
+        let parent = out[i].clone();
+        for (name, entry) in &tree {
+            if entry.get("parent").and_then(Json::as_str).is_some_and(|p| same_tag(p, &parent)) && !out.iter().any(|t| same_tag(t, name)) {
+                out.push(name.clone());
+            }
+        }
+        i += 1;
+    }
+    Ok(out)
+}
+
 fn read_tree(db: &Connection) -> Result<Map<String, Json>> {
     let text: Option<String> = db.query_row("SELECT value FROM meta WHERE key = ?", [TREE_KEY], |r| r.get(0)).optional().map_err(e)?;
     Ok(text.and_then(|t| serde_json::from_str::<Json>(&t).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default())
@@ -379,5 +405,30 @@ mod tests {
         store.restore_tags(&result.undo).unwrap();
         assert_eq!(store.property_definitions().unwrap().len(), 1);
         assert!(store.source(&a).unwrap().unwrap().properties.get("Important").is_none());
+    }
+
+    #[test]
+    fn a_parent_tag_includes_its_children_unless_exact() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let parent = source(&store, "Survey of methods", &["Methods"]);
+        let child = source(&store, "Deep nets", &["machine learning"]);
+        let grandchild = source(&store, "Transformers", &["Attention"]);
+        source(&store, "Unrelated", &["Other"]);
+        store.apply_tags(&op(json!({"tree": {"Machine learning": {"parent": "Methods"}, "Attention": {"parent": "machine learning"}}}))).unwrap();
+        let ids = |q: Json| {
+            let mut ids: Vec<String> = store.list_sources(&serde_json::from_value(q).unwrap()).unwrap().items.into_iter().map(|s| s.id).collect();
+            ids.sort();
+            ids
+        };
+        let mut all = vec![parent.clone(), child.clone(), grandchild.clone()];
+        all.sort();
+        assert_eq!(ids(json!({"filters": [{"field": "tag", "op": "is", "value": "methods"}]})), all);
+        assert_eq!(ids(json!({"tag": "Methods"})), all);
+        assert_eq!(ids(json!({"filters": [{"field": "tag", "op": "exact", "value": "Methods"}]})), vec![parent.clone()]);
+        assert_eq!(ids(json!({"tag": "Methods", "tagExact": true})), vec![parent]);
+        assert_eq!(store.tag_page("Methods").unwrap().unwrap().source_count, 3);
+        let map = store.relation_map("tag", "Methods", 10).unwrap().unwrap();
+        assert!(!map.nodes.is_empty());
     }
 }

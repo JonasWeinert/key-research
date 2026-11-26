@@ -11,7 +11,8 @@ import { parseQuery, type DetectedKind, type Detection } from "./smart-query";
 export interface SearchFilter {
   /** creator | container | title | notes | fulltext | tag | collection | year | property */
   field: string;
-  op?: "is" | "contains" | "gt" | "gte" | "lt" | "lte";
+  /** For a tag, `is` includes the tags under it in the tag tree; `exact` is that tag only. */
+  op?: "is" | "exact" | "contains" | "gt" | "gte" | "lt" | "lte";
   value: string;
   /** The property name, for `field = "property"`. */
   key?: string;
@@ -327,7 +328,18 @@ export default function SearchField({
           return (
           <span key={filterKey(f)} className="kx-token" data-field={f.field} data-value={f.value} data-inactive={note ? true : undefined} title={note ? `${tokenScope(f)} ${f.label}: ${note}` : `${tokenScope(f)} ${f.label}`}>
             <Icon name={(FIELD[f.field] ?? FIELD.property).icon} size={11} />
-            <span className="kx-token-scope">{tokenScope(f)}</span>
+            {f.field === "tag" ? (
+              <button
+                type="button"
+                className="kx-token-scope kx-token-scope-toggle"
+                title={f.op === "exact" ? "Only this tag. Click to include the tags under it" : "This tag and the tags under it. Click for this tag only"}
+                onClick={() => onFilters(filters.map((other) => (other === f ? { ...f, op: f.op === "exact" ? "is" : "exact" } : other)))}
+              >
+                {tokenScope(f)}
+              </button>
+            ) : (
+              <span className="kx-token-scope">{tokenScope(f)}</span>
+            )}
             <span className="kx-token-value">{f.label}</span>
             <button
               type="button"
@@ -406,5 +418,6 @@ function tokenScope(f: SearchFilter) {
   // The label says it all: "Cited more than 100 times", "Retracted".
   if (f.field === "citations" || f.field === "retracted") return "";
   const field = f.field === "property" ? (f.key ?? "Property") : (FIELD[f.field]?.label ?? f.field);
+  if (f.field === "tag" && f.op === "exact") return `${field} only`;
   return !f.op || f.op === "contains" ? `${field} contains` : field;
 }
