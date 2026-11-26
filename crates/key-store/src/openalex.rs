@@ -257,15 +257,23 @@ impl Store {
 
     /// "Enrich": looks these sources up next, whether or not automatic enrichment is on.
     pub fn request_enrichment(&self, ids: &[String]) -> Result<usize> {
-        let db = self.db()?;
+        // Thousands of ids at once: small transactions, with a user's edit let in between.
         let mut changed = 0;
-        for id in ids {
-            changed += db
-                .execute(
-                    "UPDATE sources SET enrich_status = 'requested', enrich_error = NULL, enrich_attempts = 0, enrich_after = NULL WHERE id = ? AND trashed_at IS NULL",
-                    [id],
-                )
-                .map_err(e)?;
+        for (batch, list) in ids.chunks(crate::WRITE_BATCH).enumerate() {
+            if batch > 0 {
+                crate::priority::yield_if_needed();
+            }
+            let db = self.db()?;
+            let tx = db.unchecked_transaction().map_err(e)?;
+            {
+                let mut statement = tx
+                    .prepare_cached("UPDATE sources SET enrich_status = 'requested', enrich_error = NULL, enrich_attempts = 0, enrich_after = NULL WHERE id = ? AND trashed_at IS NULL")
+                    .map_err(e)?;
+                for id in list {
+                    changed += statement.execute([id]).map_err(e)?;
+                }
+            }
+            tx.commit().map_err(e)?;
         }
         Ok(changed)
     }

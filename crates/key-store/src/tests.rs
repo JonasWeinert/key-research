@@ -1019,3 +1019,23 @@ fn renaming_a_select_value_renames_it_on_every_source() {
     let options = store.property_options("State").unwrap();
     assert_eq!(options.iter().map(|o| (o.value.as_str(), o.count)).collect::<Vec<_>>(), vec![("Done", 2), ("Later", 0)]);
 }
+
+#[test]
+fn long_documents_and_bulk_requests_are_written_in_batches() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    let a = store.insert_source(input(json!({"kind": "pdf", "title": "A long book", "doi": "10.1/book"}))).unwrap();
+    let chunks: Vec<ChunkInput> = (0..WRITE_BATCH * 2 + 17).map(|i| ChunkInput { page: Some(i as i64 / 10), text: format!("Passage {i}"), ..Default::default() }).collect();
+    store.replace_chunks(&a.id, &chunks).unwrap();
+    // Written again (a re-index): the old passages go first, every batch keeps its order.
+    store.replace_chunks(&a.id, &chunks[..WRITE_BATCH + 3]).unwrap();
+    let db = store.read().unwrap();
+    let (count, last): (i64, i64) = db.query_row("SELECT count(*), max(seq) FROM chunks WHERE source_id = ?", [&a.id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!((count, last), (WRITE_BATCH as i64 + 3, WRITE_BATCH as i64 + 2));
+    let text: String = db.query_row("SELECT text FROM chunks WHERE source_id = ? AND seq = ?", params![a.id, WRITE_BATCH as i64 + 1], |r| r.get(0)).unwrap();
+    assert_eq!(text, format!("Passage {}", WRITE_BATCH + 1));
+    drop(db);
+    let mut ids: Vec<String> = (0..WRITE_BATCH * 2).map(|i| format!("missing-{i}")).collect();
+    ids.push(a.id.clone());
+    assert_eq!(store.request_enrichment(&ids).unwrap(), 1);
+}
