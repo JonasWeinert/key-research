@@ -71,6 +71,10 @@ const assert = require("node:assert/strict");
     await page
       .getByRole("menuitem", { name: "Add workspace…", exact: true })
       .click();
+    // A newly added workspace asks where to open; stay in this one.
+    await page.locator(".key-workspace-choice").waitFor();
+    await page.getByRole("menuitem", { name: "Cancel", exact: true }).click();
+    await page.keyboard.press("Escape");
     await page.locator(".key-workspace-dropdown").waitFor({ state: "hidden" });
     const entries = await page.evaluate(() => window.key.workspaces());
     assert.equal(entries.find((w) => w.id === workspace.id).icon, "🔬");
