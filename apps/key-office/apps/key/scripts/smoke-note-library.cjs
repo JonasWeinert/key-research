@@ -72,7 +72,7 @@ const assert = require("node:assert/strict");
     const panel = notePage.getByRole("complementary", { name: "Library" });
     await panel.waitFor();
     const search = panel.getByRole("combobox", { name: "Search the library" });
-    await page.waitForFunction(() => document.activeElement?.closest(".kx-note-library") && document.activeElement.tagName === "INPUT");
+    await page.waitForFunction(() => document.activeElement?.closest(".kx-note-library") && document.activeElement.matches(".kx-search-input"));
     await panel.locator(".kx-found-hit", { hasText: "Health versus income" }).waitFor();
     await panel.locator(".kx-found-hit", { hasText: "Interaction study" }).waitFor();
     await panel.locator(".kx-found-hit", { hasText: "Okafor · 2019" }).waitFor();
@@ -105,7 +105,7 @@ const assert = require("node:assert/strict");
     // A passage found in the PDF goes in as a quote with its source and page.
     for (let i = 0; i < 120 && (await call("store_source", { id: pdf.id })).indexStatus !== "ready"; i++) await page.waitForTimeout(250);
     await page.keyboard.press("Meta+Shift+L");
-    await page.waitForFunction(() => document.activeElement?.closest(".kx-note-library") && document.activeElement.tagName === "INPUT");
+    await page.waitForFunction(() => document.activeElement?.closest(".kx-note-library") && document.activeElement.matches(".kx-search-input"));
     await search.fill("compare exactly");
     await search.press("Escape");
     const passage = panel.locator(".kx-found-hit", { hasText: "Interaction study" }).locator(".kx-passage").first();
