@@ -49,7 +49,7 @@ const assert = require("node:assert/strict");
     await editor.waitFor();
     await editor.getByRole("heading", { name: "3 sources selected" }).waitFor();
     // The overview: facts, the years, and the copy of the first source found among them.
-    await editor.locator(".kx-selection-fact", { hasText: "Missing DOI" }).waitFor();
+    await editor.locator(".kx-selection-overview:not([data-stale]) .kx-selection-fact", { hasText: "Missing DOI" }).waitFor();
     assert.equal(await editor.locator(".kx-selection-fact", { hasText: "Missing DOI" }).locator("strong").textContent(), "3");
     assert.match(await editor.locator(".kx-selection-chart", { hasText: "Years" }).textContent(), /2006–2015/);
     await editor.locator(".kx-selection-dupes", { hasText: "2 of these look like the same work" }).waitFor();

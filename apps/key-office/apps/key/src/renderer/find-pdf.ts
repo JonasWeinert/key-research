@@ -103,6 +103,7 @@ export async function findPdfs(invoke: Invoke, workspaceId: string, sources: Pic
       ? `Found ${found === 1 ? "a PDF" : `all ${found} PDFs`}`
       : `Found ${found} of ${wanted.length} PDFs${rest && pages ? `; ${pages === 1 ? "one needs" : `${pages} need`} the publisher’s page (Find PDF on each)` : ""}`,
   );
+  return { found, total: wanted.length };
 }
 
 /** After an add: Find PDF when the workspace's settings say to (off by default). Silent. */

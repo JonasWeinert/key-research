@@ -685,6 +685,8 @@ export default function ReferenceLibrary({
       ref={libraryRef}
       className={`kx-library ${dropping ? "dropping" : ""}`}
       data-overlay={overlay}
+      // A narrow list puts the search and Add on their own row, so the field has room to wrap.
+      data-stacked={libraryWidth > 0 && libraryWidth - (!overlay && (inspector || selected.size > 1) ? inspectorWidth : 0) < STACK_HEAD}
       style={{ "--kx-inspector-width": `${inspectorWidth}px` } as React.CSSProperties}
       aria-label="Library"
       onKeyDown={onKeyDown}
@@ -938,6 +940,7 @@ export default function ReferenceLibrary({
               hygiene.reload();
               void load(0);
             }}
+            onNewProperty={() => setSheet({ mode: "new", targets: rows.filter((s) => selected.has(s.id)) })}
           />
         </aside>
       ) : inspector && (
@@ -1155,6 +1158,7 @@ const DEFAULT_INSPECTOR = 440;
 const MIN_INSPECTOR = 320;
 const MAX_INSPECTOR = 900;
 const MIN_LIST = 380;
+const STACK_HEAD = 720;
 
 const waitingToIndex = (s: Source) => s.indexStatus === "pending" || s.indexStatus === "indexing";
 

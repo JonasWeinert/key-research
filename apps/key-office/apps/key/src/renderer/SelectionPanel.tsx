@@ -77,7 +77,7 @@ const asText = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
 /** The overview of `ids`, read again when the selection or the library changes. */
 export function useSelectionOverview(invoke: Invoke, workspaceId: string, ids: string[]) {
-  const [overview, setOverview] = useState<SelectionOverview>();
+  const [answer, setAnswer] = useState<{ key: string; overview: SelectionOverview }>();
   const [version, setVersion] = useState(0);
   const key = useRef(`selection:${Math.random().toString(36).slice(2)}`);
   const idsKey = ids.join("\n");
@@ -87,7 +87,7 @@ export function useSelectionOverview(invoke: Invoke, workspaceId: string, ids: s
     // A short wait while the selection is still being extended (⇧-arrows, ⌘-clicks).
     const t = setTimeout(() => {
       void invoke<SelectionOverview>("store_selection_overview", { ids: idsKey ? idsKey.split("\n") : [], $supersede: key.current }, workspaceId)
-        .then((o) => live && setOverview(o))
+        .then((overview) => live && setAnswer({ key: idsKey, overview }))
         .catch(() => {});
     }, 90);
     return () => {
@@ -95,7 +95,8 @@ export function useSelectionOverview(invoke: Invoke, workspaceId: string, ids: s
       clearTimeout(t);
     };
   }, [invoke, workspaceId, idsKey, version]);
-  return { overview, reload: () => setVersion((v) => v + 1) };
+  // An answer for an earlier selection stays shown (dimmed) until this one's arrives.
+  return { overview: answer?.overview, stale: !!answer && answer.key !== idsKey, reload: () => setVersion((v) => v + 1) };
 }
 
 type Notice = { text: string; tone: "busy" | "done" | "error"; undo?: boolean };
@@ -118,6 +119,7 @@ export default function SelectionPanel({
   onOpen,
   onFill,
   onRetractionsChecked,
+  onNewProperty,
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -140,8 +142,10 @@ export default function SelectionPanel({
   /** The AI fill sheet, for when no feature registers its own action. */
   onFill: (targets: Source[]) => void;
   onRetractionsChecked: () => void;
+  /** The property sheet, creating a property with a value for all of them. */
+  onNewProperty: () => void;
 }) {
-  const { overview } = useSelectionOverview(invoke, workspaceId, ids);
+  const { overview, stale } = useSelectionOverview(invoke, workspaceId, ids);
   const [notice, setNotice] = useState<Notice>();
   const [newTag, setNewTag] = useState("");
   const scroller = useRef<HTMLDivElement>(null);
@@ -185,13 +189,20 @@ export default function SelectionPanel({
   // Find PDFs reports its progress here while it runs for this panel.
   const findingHere = useRef(false);
   useEffect(() => {
-    if (!findingHere.current || !pdfRun) return;
-    if (pdfRun.running) setNotice({ text: `Finding PDFs ${pdfRun.done} of ${pdfRun.total} · ${pdfRun.found} found`, tone: "busy" });
-    else {
-      findingHere.current = false;
-      say(`Found ${plural(pdfRun.found, "PDF")} for ${plural(pdfRun.total, "source")}`);
-    }
+    if (findingHere.current && pdfRun?.running) setNotice({ text: `Finding PDFs ${pdfRun.done} of ${pdfRun.total} · ${pdfRun.found} found`, tone: "busy" });
   }, [pdfRun]);
+  const findPdfsHere = async () => {
+    findingHere.current = true;
+    try {
+      const result = await findPdfs(invoke, workspaceId, loaded);
+      if (result) say(`Found ${plural(result.found, "PDF")} for ${plural(result.total, "source")}`);
+      else setNotice(undefined);
+    } catch (e) {
+      say(errorText(e), "error");
+    } finally {
+      findingHere.current = false;
+    }
+  };
 
   const names = useMemo(() => new Map(collections.map((c) => [c.id, c.name])), [collections]);
   const field = (name: string): Shared => overview?.fields[name] ?? { mixed: false, value: null, filled: 0 };
@@ -292,7 +303,7 @@ export default function SelectionPanel({
           </div>
         )}
 
-        <section className="kx-selection-section" aria-label="Overview">
+        <section className="kx-selection-section kx-selection-overview" aria-label="Overview" data-stale={stale || undefined}>
           {!overview ? (
             <div className="kx-selection-loading">
               <div className="kx-skeleton-line" />
@@ -427,10 +438,7 @@ export default function SelectionPanel({
                   label={withoutFile ? `Find PDFs (${withoutFile.toLocaleString()})` : "Find PDFs"}
                   title={withoutFile ? `Look for open-access PDFs for the ${plural(withoutFile, "source")} without a file` : "Every selected source has its file"}
                   disabled={!withoutFile || !!pdfRun?.running}
-                  onClick={() => {
-                    findingHere.current = true;
-                    void findPdfs(invoke, workspaceId, loaded);
-                  }}
+                  onClick={() => void findPdfsHere()}
                 />
                 <ActionButton icon="sync" label="Refresh metadata…" title="Compare with the sources' identifiers and choose what to update" onClick={() => onMetadata(ids)} />
                 <ActionButton
@@ -559,8 +567,10 @@ export default function SelectionPanel({
                   );
                 })}
               </div>
+              <div className="kx-selection-buttons">
+                <ActionButton icon="plus" label="New property…" title="Define a property and set its value on all of them" onClick={onNewProperty} />
+              </div>
             </section>
-
           </>
         )}
 

@@ -178,10 +178,11 @@ const PUBMED = {
     await page.getByRole("heading", { name: "All sources", exact: true }).waitFor();
     await page.locator(".kx-row", { hasText: "Bulk with a link" }).click();
     await page.locator(".kx-row", { hasText: "Bulk without any copy" }).click({ modifiers: ["Meta"] });
-    const bulk = page.locator(".kx-bulk-bar");
+    const bulk = page.locator(".kx-selection");
     await bulk.waitFor();
-    await bulk.getByRole("button", { name: "Find PDFs" }).click();
+    await bulk.getByRole("button", { name: /^Find PDFs/ }).click();
     await page.waitForFunction(() => [...document.querySelectorAll(".kx-toast")].some((t) => t.textContent.includes("Found 1 of 2 PDFs")), undefined, { timeout: 30000 });
+    await bulk.locator(".kx-selection-notice", { hasText: "Found 1 PDF for 2 sources" }).waitFor();
     await shot(page, "bulk-find-pdfs-light");
     assert.ok(await hasFile(d.id));
     assert.ok(!(await hasFile(e.id)));
