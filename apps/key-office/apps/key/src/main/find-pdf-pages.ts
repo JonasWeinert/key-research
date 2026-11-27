@@ -39,6 +39,9 @@ export interface FindPdfBanner {
   stage: "looking" | "landed" | "saving" | "attached" | "saved";
   /** The page's own PDF link (or download control) Key points at, by what it says. */
   pointer?: { label: string };
+  /** The site the attempt landed on first, and whether the tab is now somewhere else. */
+  home?: string;
+  away?: boolean;
   links: { url: string; label: string }[];
   wall: boolean;
   signIn?: string;
@@ -206,10 +209,12 @@ export class FindPdfPages {
     return { path, title: snapshot.meta.title, url: properUrlOf(snapshot.meta.url), capturedAt: snapshot.capturedAt, meta: snapshot.meta, abstractOnly: !!landing?.abstractOnly, fullText: !!landing?.fullText };
   }
 
-  /** Removes snapshots older than the retention limit (and strays). */
-  async cleanup(ttlMs = PAGE_TTL_MS) {
+  /** Removes snapshots older than the retention limit (and strays), never one whose attempt is
+   *  still open in a tab (`open`: workspace and source ids). */
+  async cleanup(ttlMs = PAGE_TTL_MS, open: { workspaceId: string; sourceId: string }[] = []) {
+    const keep = new Set(open.map((o) => `${keyOf(o.workspaceId, o.sourceId)}.json`));
     const names = await readdir(this.dir).catch(() => [] as string[]);
-    for (const name of names.filter((n) => n.endsWith(".json"))) {
+    for (const name of names.filter((n) => n.endsWith(".json") && !keep.has(n))) {
       try {
         const kept = JSON.parse(await readFile(join(this.dir, name), "utf8")) as Kept;
         if (this.now() - kept.at > ttlMs) await this.discard(kept.workspaceId, kept.sourceId);

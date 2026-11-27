@@ -12,6 +12,8 @@ export interface FindPdfBannerState {
   links: { url: string; label: string }[];
   /** The page's own PDF link Key points at on the page. */
   pointer?: { label: string };
+  /** The tab is on another site than the publisher's, with nothing to point at. */
+  away?: boolean;
   wall: boolean;
   signIn?: string;
   proxy?: string;
@@ -76,10 +78,13 @@ export function FindPdfBanner({ state, style, onOp }: { state: FindPdfBannerStat
   const pointing = !!state.pointer;
   // No link to point at: the one most likely next step, if there is one.
   const next = pointing ? undefined : state.wall ? "sign-in" : state.proxy ? "proxy" : undefined;
-  const lead = state.stage === "looking" ? "Opening the publisher’s page…" : pointing ? "Click the highlighted PDF link on this page" : "Look for a PDF or Download button on this page";
+  const lead =
+    state.stage === "looking" ? "Opening the publisher’s page…" : pointing ? "Click the highlighted PDF link on this page" : state.away ? <>Still watching for the PDF for {title}</> : "Look for a PDF or Download button on this page";
   const quiet =
     state.error ??
-    (pointing
+    (state.away
+      ? "Open the PDF from any page and Key saves it; go back to reach the publisher’s page."
+      : pointing
       ? <>Key couldn’t download it directly. The PDF you open here is saved to {title}.</>
       : state.stage === "looking"
         ? <>Key couldn’t download the PDF for {title} directly.</>
