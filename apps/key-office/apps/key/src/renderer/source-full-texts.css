@@ -100,3 +100,36 @@
 .kx-review-link:hover {
   color: var(--kx-text);
 }
+.kx-review-link-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* A review record that may be this source (review-link-sync): confirm or reject here. */
+.kx-review-maybe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--kx-bg-sunken);
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-review-maybe > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.kx-review-maybe strong {
+  color: var(--kx-text);
+  font-weight: 500;
+}
+.kx-review-maybe small {
+  color: var(--kx-text-3);
+}
+.kx-review-links-status {
+  margin: 4px 0;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}

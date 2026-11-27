@@ -222,7 +222,7 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
     return a.mine.evidence.filter((e) => e.text && e.page != null).map((e) => ({ id: `rob|${e.id}`, page: e.page ?? -1, rects: e.rects ?? [], text: e.text, tone: "evidence", label: `Support: ${name(e.domain)}` }));
   }, [a]);
   const marks = marksShown ? allMarks : [];
-  const mirror = useMemo(() => mirrorOf(props.summary, allMarks), [props.summary, allMarks]);
+  const mirror = useMemo(() => mirrorOf(props.summary, allMarks, { recordId: study, stage: "rob" }), [props.summary, allMarks, study]);
   const markActions = useCallback(
     (mark: ReaderMark): ReaderMarkMenu | null => {
       const e = a?.mine.evidence.find((x) => `rob|${x.id}` === mark.id);

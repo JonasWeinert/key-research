@@ -30,6 +30,7 @@ const names = {
   external: 'external',
   retry: 'retry',
   inbox: 'inbox',
+  checklist: 'checklist',
 } as const satisfies Record<string, GlyphName>;
 
 export type IconName = keyof typeof names;

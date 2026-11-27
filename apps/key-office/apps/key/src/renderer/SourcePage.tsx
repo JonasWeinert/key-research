@@ -43,6 +43,8 @@ interface Highlight {
   color?: string;
   range?: { start?: { page?: number } };
   anchor?: { pages?: { page?: number }[] };
+  /** A review mark kept as this highlight: where it comes from (the review opens there). */
+  reviewLink?: { reviewId: string; reviewName?: string; recordId?: string; stage?: string; page?: number; quote?: string; markId?: string; label?: string };
 }
 const bridge = () =>
   (window as unknown as {
@@ -855,6 +857,14 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                       {isSavedPage && (
                         <button onClick={() => readPage(h.id)}>
                           <Icon name="globe" size={11} /> Show on page
+                        </button>
+                      )}
+                      {h.reviewLink?.reviewId && (
+                        <button
+                          title={`From review “${h.reviewLink.reviewName ?? ""}”: open it at this record and passage`}
+                          onClick={() => void bridge().tabAction("open-content", { section: "review", workspaceId, entityId: h.reviewLink!.reviewId, title: h.reviewLink!.reviewName || "Review", recordId: h.reviewLink!.recordId, stage: h.reviewLink!.stage, page: h.reviewLink!.page, quote: h.reviewLink!.quote, markId: h.reviewLink!.markId })}
+                        >
+                          <Icon name="checklist" size={11} /> In review
                         </button>
                       )}
                     </footer>

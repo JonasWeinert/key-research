@@ -8,6 +8,8 @@ import { hintText } from "./help-content";
 import { libraryChanged, onLibraryChanged } from "./library-nav";
 import type { Invoke } from "./library-api";
 import "./source-full-texts.css";
+import { DiffChip, LinkDiffSheet } from "./review/review-link-sync";
+import { savedViewer } from "./review/review-api";
 
 export interface FullText {
   hash: string;
@@ -83,29 +85,97 @@ export function FullTextList({ invoke, workspaceId, sourceId, fullTexts, onChang
   );
 }
 
-/** Where this source is in the workspace's reviews (linked records share its full text). */
+/** Where this source is in the workspace's reviews (linked records share its full text): each
+ *  link with a quiet "N fields differ" chip that compares the two descriptions, and review
+ *  records that may be this work, to confirm or reject here. Changes made here are undone with
+ *  the library's ⌘Z (both sides together). */
 export function ReviewLinks({ invoke, workspaceId, sourceId }: { invoke: Invoke; workspaceId: string; sourceId: string }) {
-  const [links, setLinks] = useState<{ reviewId: string; reviewName: string; recordId: string; state: string }[]>([]);
-  const load = useCallback(() => void invoke<typeof links>("review_links_for_source", { sourceId }, workspaceId).then((l) => setLinks(l ?? []), () => setLinks([])), [invoke, workspaceId, sourceId]);
+  type Link = { reviewId: string; reviewName: string; recordId: string; state: string; differ?: number };
+  type Maybe = { reviewId: string; reviewName: string; recordId: string; kind: string; reason: string; record: { title: string; byline: string } };
+  const [links, setLinks] = useState<Link[]>([]);
+  const [maybe, setMaybe] = useState<Maybe[]>([]);
+  const [comparing, setComparing] = useState<Link>();
+  const [status, setStatus] = useState("");
+  const load = useCallback(() => {
+    void invoke<Link[]>("review_links_for_source", { sourceId }, workspaceId).then((l) => setLinks(l ?? []), () => setLinks([]));
+    void invoke<Maybe[]>("review_link_suggestions_for_source", { sourceId }, workspaceId).then((l) => setMaybe(l ?? []), () => setMaybe([]));
+  }, [invoke, workspaceId, sourceId]);
   useEffect(load, [load]);
   useEffect(() => onLibraryChanged(load), [load]);
-  useEffect(() => (window as unknown as { key: { on?(e: string, f: () => void): () => void } }).key.on?.("review-changed", load), [load]);
-  if (!links.length) return null;
+  useEffect(() => {
+    const on = (window as unknown as { key: { on?(e: string, f: () => void): () => void } }).key.on;
+    const offs = ["review-changed", "source-metadata-changed", "library-changed"].map((e) => on?.(e, load));
+    return () => offs.forEach((o) => o?.());
+  }, [load]);
+  const actor = (reviewId: string) => savedViewer(reviewId) ?? "library";
+  const say = (text: string) => {
+    setStatus(text);
+    setTimeout(() => setStatus(""), 5000);
+  };
+  const decide = async (m: Maybe, yes: boolean) => {
+    try {
+      await invoke(yes ? "review_link_confirm" : "review_link_reject", { reviewId: m.reviewId, recordId: m.recordId, sourceId, origin: "library", actor: actor(m.reviewId) }, workspaceId);
+      say(yes ? `Linked with the record in ${m.reviewName}. ⌘Z undoes it.` : "Marked as a different work. ⌘Z undoes it.");
+      libraryChanged();
+      load();
+    } catch (e) {
+      say(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, ""));
+    }
+  };
+  if (!links.length && !maybe.length) return null;
+  const open = (reviewId: string, reviewName: string, recordId?: string) =>
+    void (window as unknown as { key: { tabAction(a: string, p: unknown): Promise<unknown> } }).key.tabAction("open-content", { section: "review", workspaceId, entityId: reviewId, title: reviewName, recordId, stage: "ta" });
   return (
-    <p className="kx-review-links">
-      {links.map((l) => (
-        <button
-          key={`${l.reviewId}:${l.recordId}`}
-          type="button"
-          className="kx-review-link"
-          title="Open the review (this record shares the source's full text)"
-          onClick={() => void (window as unknown as { key: { tabAction(a: string, p: unknown): Promise<unknown> } }).key.tabAction("open-content", { section: "review", workspaceId, entityId: l.reviewId, title: l.reviewName })}
-        >
-          <Icon name="checklist" size={11} />
-          In review {l.reviewName} — {l.state}
-        </button>
+    <div className="kx-review-links-block">
+      {links.length > 0 && (
+        <p className="kx-review-links">
+          {links.map((l) => (
+            <span key={`${l.reviewId}:${l.recordId}`} className="kx-review-link-item">
+              <button type="button" className="kx-review-link" title="Open the review (this record shares the source's full text)" onClick={() => open(l.reviewId, l.reviewName)}>
+                <Icon name="checklist" size={11} />
+                In review {l.reviewName} — {l.state}
+              </button>
+              <DiffChip count={l.differ ?? 0} onClick={() => setComparing(l)} />
+            </span>
+          ))}
+        </p>
+      )}
+      {maybe.map((m) => (
+        <div key={`${m.reviewId}:${m.recordId}`} className="kx-review-maybe" data-possible-source="">
+          <Icon name="checklist" size={12} />
+          <span>
+            Possibly in review {m.reviewName}: <strong>{m.record.title || "Untitled"}</strong> <small>{m.record.byline}</small>
+          </span>
+          <button type="button" className="kx-page-action" onClick={() => void decide(m, false)}>
+            Different work
+          </button>
+          <button type="button" className="kx-page-action kx-page-action-primary" onClick={() => void decide(m, true)}>
+            Same work — link
+          </button>
+        </div>
       ))}
-    </p>
+      {status && (
+        <p className="kx-review-links-status" role="status">
+          {status}
+        </p>
+      )}
+      {comparing && (
+        <LinkDiffSheet
+          invoke={invoke}
+          workspaceId={workspaceId}
+          reviewId={comparing.reviewId}
+          recordId={comparing.recordId}
+          actor={actor(comparing.reviewId)}
+          origin="library"
+          onClose={() => setComparing(undefined)}
+          onDone={(message) => {
+            say(`${message}. ⌘Z undoes it.`);
+            libraryChanged();
+            load();
+          }}
+        />
+      )}
+    </div>
   );
 }
 

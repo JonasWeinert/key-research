@@ -18,6 +18,7 @@ import { Btn, Confirm, MenuButton, StatusPill, errorText, formatDate, useLoad } 
 import { provenance } from "./review-screen";
 import { OriginFields, reportText } from "./review-sources";
 import type { StageProps } from "./ReviewPage";
+import { DiffChip, LinkDiffSheet, PossibleChip, PossibleMatchesSheet, linkApi, useLinkChanges, usePossibleCount } from "./review-link-sync";
 
 const ROW = 52;
 const PAGE = 200;
@@ -96,6 +97,10 @@ export function RecordsTable(props: StageProps) {
   const [removing, setRemoving] = useState<string[]>();
   const [origin, setOrigin] = useState<string[]>();
   const [adding, setAdding] = useState(false);
+  // Linked records whose details differ from the library, and records possibly in it.
+  const [differ, setDiffer] = useState<Record<string, number>>({});
+  const [matching, setMatching] = useState(false);
+  const possible = usePossibleCount(props.invoke, props.workspaceId, props.reviewId, summary.events);
   const box = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
   const loaded = useRef(new Set<number>());
@@ -133,6 +138,13 @@ export function RecordsTable(props: StageProps) {
     const t = setTimeout(restart, text ? 200 : 0);
     return () => clearTimeout(t);
   }, [restart, text, summary.events]);
+  const loadDiffer = useCallback(() => void linkApi(props.invoke, props.workspaceId, props.reviewId).pending().then(setDiffer, () => {}), [props.invoke, props.workspaceId, props.reviewId]);
+  useEffect(loadDiffer, [loadDiffer, summary.events]);
+  // A linked source edited in the library: its row shows the new details at once.
+  useLinkChanges(props.invoke, props.workspaceId, props.reviewId, () => {
+    restart();
+    loadDiffer();
+  });
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -251,6 +263,7 @@ export function RecordsTable(props: StageProps) {
               <Btn small icon="sparkle" onClick={() => void allIds().then(setCompleting)} title="Look up every record shown and compare field by field">
                 Complete metadata…
               </Btn>
+              <PossibleChip count={possible} onClick={() => setMatching(true)} />
               <span className="kx-rv-spacer" />
               <MenuButton
                 label="Columns"
@@ -309,6 +322,11 @@ export function RecordsTable(props: StageProps) {
                                 {c.text}
                               </span>
                             ))}
+                            {differ[row.id] ? (
+                              <span className="kx-rv-pill" data-tone="amber" data-differ="" title="Its details differ from the same work in your library: open the record to compare">
+                                {differ[row.id] === 1 ? "1 field differs" : `${differ[row.id]} fields differ`}
+                              </span>
+                            ) : null}
                             {row.filled?.abstractText && <em className="kx-rv-provenance">abstract from {provenance(row.filled.abstractText)}</em>}
                           </span>
                         </button>
@@ -350,6 +368,7 @@ export function RecordsTable(props: StageProps) {
         />
       )}
       {origin && <RecordOriginSheet {...props} ids={origin} onClose={() => setOrigin(undefined)} onDone={restart} />}
+      {matching && <PossibleMatchesSheet invoke={props.invoke} workspaceId={props.workspaceId} reviewId={props.reviewId} actor={viewer} notify={notify} onClose={() => setMatching(false)} onChanged={() => (onChanged(), restart(), loadDiffer())} />}
       {adding && <AddRecordSheet {...props} onClose={() => setAdding(false)} onDone={(id) => (restart(), setOpen(id))} />}
     </div>
   );
@@ -419,8 +438,16 @@ function RecordPanel(props: StageProps & { recordId: string; onClose: () => void
   const [linking, setLinking] = useState(false);
   const [origin, setOrigin] = useState(false);
   const [over, setOver] = useState(false);
+  const [comparing, setComparing] = useState(false);
+  const [differ, setDiffer] = useState(0);
   const file = useRef<HTMLInputElement>(null);
   const v = view.value;
+  const linked = v?.sourceId;
+  useEffect(() => {
+    if (!linked) return setDiffer(0);
+    void linkApi(invoke, workspaceId, props.reviewId).diff(recordId).then((d) => setDiffer(d?.diff.pending ?? 0), () => setDiffer(0));
+  }, [invoke, workspaceId, props.reviewId, recordId, linked, v]);
+  useLinkChanges(invoke, workspaceId, props.reviewId, (records, all) => (all || records[recordId]) && view.reload());
   useEffect(() => {
     if (v) setDraft(Object.fromEntries(EDITABLE.map(([k]) => [k, shown(v.meta, k)])));
   }, [v]);
@@ -557,6 +584,34 @@ function RecordPanel(props: StageProps & { recordId: string; onClose: () => void
           if (f) attach(f);
         }}
       >
+        {v.sourceId && (
+          <p className="kx-rv-inline" data-linked="">
+            <span className="kx-rv-muted">
+              <Icon name="books" size={11} /> In your library
+            </span>
+            <DiffChip count={differ} onClick={() => setComparing(true)} />
+            {!differ && (
+              <Btn small quiet onClick={() => setComparing(true)}>
+                Compare…
+              </Btn>
+            )}
+          </p>
+        )}
+        {comparing && (
+          <LinkDiffSheet
+            invoke={invoke}
+            workspaceId={workspaceId}
+            reviewId={props.reviewId}
+            recordId={recordId}
+            actor={viewer}
+            origin="review"
+            onClose={() => setComparing(false)}
+            onDone={(message, undo) => {
+              notify(message, "ok", undo ? { label: "Undo", run: () => void Promise.resolve(undo()).then(() => setTimeout(after, 150)) } : undefined);
+              after();
+            }}
+          />
+        )}
         <h4>Full text</h4>
         {v.fulltext.file ? (
           <p>

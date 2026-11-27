@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { Icon } from "../icons";
 import type { ReaderMark } from "./review-reader";
+import { useMyHighlights } from "./review-my-highlights";
 import type { Criterion, Evidence, ExtractionView, Form, SourcePos } from "./review-api";
 
 export const evidenceKey = (e: Evidence) => ["ev", e.kind ?? "", e.criterion ?? "", e.page ?? "", (e.quote || e.text || "").slice(0, 80)].join("|");
@@ -88,8 +89,10 @@ const NAMES: Record<Kind, string> = { notMet: "Not met", met: "Met", evidence: "
 
 /** The marks in the sidebar: the layer's switch, the legend (each colour filters the list) and
  *  the list itself; a row shows its passage in the text, × removes it where that is offered. */
-export function MarksLegend({ kinds, shown, onShown, count, marks, onShow, onRemove }: { kinds: Kind[]; shown: boolean; onShown: (on: boolean) => void; count: number; marks?: ReaderMark[]; onShow?: (id: string) => void; onRemove?: (id: string) => void }) {
+export function MarksLegend({ kinds, shown, onShown, count, marks, onShow, onRemove, recordId, onShowPassage }: { kinds: Kind[]; shown: boolean; onShown: (on: boolean) => void; count: number; marks?: ReaderMark[]; onShow?: (id: string) => void; onRemove?: (id: string) => void; recordId?: string; onShowPassage?: (page: number, quote: string) => void }) {
   const [only, setOnly] = useState<Kind | null>(null);
+  // The user's own highlights in this full text (the library's, or kept with the review).
+  const mine = useMyHighlights(recordId);
   const present = kinds.filter((k) => !marks || marks.some((m) => m.tone === k));
   const list = (marks ?? []).filter((m) => !only || m.tone === only);
   return (
@@ -127,16 +130,34 @@ export function MarksLegend({ kinds, shown, onShown, count, marks, onShow, onRem
           ))}
         </ul>
       )}
+      {mine.length > 0 && (
+        <div className="kx-rv-my-highlights" data-my-highlights="">
+          <h5>My highlights ({mine.length})</h5>
+          <ul>
+            {mine.map((h) => (
+              <li key={h.id} data-kind="mine">
+                <button type="button" className="kx-rv-evidence-jump" onClick={() => onShowPassage?.(h.page, h.text)} title="Show it in the full text">
+                  {h.comment && <strong>{h.comment}</strong>}
+                  <span>“{h.text.slice(0, 200)}”</span>
+                  {h.page >= 0 && <small>p. {h.page + 1}</small>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
 
 /** The review's marks as the user's highlights on a library copy (Setup › rules › mirror). */
-export const mirrorOf = (summary: { review: { id: string; name: string }; protocol: { rules: { mirrorMarks?: boolean } } }, marks: ReaderMark[]) => ({
+export const mirrorOf = (summary: { review: { id: string; name: string }; protocol: { rules: { mirrorMarks?: boolean } } }, marks: ReaderMark[], at?: { recordId: string; stage: string }) => ({
   scope: summary.review.id,
   note: `review “${summary.review.name}”`,
   enabled: !!summary.protocol.rules.mirrorMarks,
   marks,
+  // Each mirrored highlight links back to the review at this record and passage.
+  link: at ? { reviewId: summary.review.id, reviewName: summary.review.name, recordId: at.recordId, stage: at.stage } : undefined,
 });
 
 /** Brings a sidebar row (a criterion, a field) into view and flashes it. */

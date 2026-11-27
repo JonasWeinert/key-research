@@ -5,7 +5,7 @@ import "./web-pdf-control.css";
 /** What the reader learns about a PDF from the web (main's reader-ready). */
 /** `referrer` is the page that led to the PDF, which the source pill opens in the browser. */
 /** `attachTo`: Find PDF opened the page for this source, so the PDF becomes its file. */
-export type WebPdfInfo = { url: string; host: string; referrer?: string; inLibrary?: boolean; attachTo?: string } | { notice: "added" | "exists" };
+export type WebPdfInfo = { url: string; host: string; referrer?: string; inLibrary?: boolean; attachTo?: string } | { notice: "added" | "exists" | "replaced" };
 interface WebPdfBridge {
   readerAddToLibrary?(): Promise<{ status: string }>;
   readerOpenInLibrary?(): Promise<void>;
@@ -33,7 +33,7 @@ export function WebPdfControl({ info }: { info?: WebPdfInfo }) {
       <div className="key-web-pdf" role="status" data-gone={gone || undefined}>
         <span className="key-web-pdf-done">
           <Icon name="check" size={13} />
-          {info.notice === "added" ? "Added to library" : "In library"}
+          {info.notice === "added" ? "Added to library" : info.notice === "replaced" ? "The full text was replaced: showing the new file" : "In library"}
         </span>
       </div>
     );

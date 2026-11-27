@@ -1,0 +1,168 @@
+/* Linked records and the library (review-link-sync.tsx): the difference chip, the comparison
+   sheet and the possible matches. */
+.kx-link-diff-chip,
+.kx-link-possible-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--kx-line-strong);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: 500 11px var(--kx-font);
+  white-space: nowrap;
+  cursor: default;
+}
+.kx-link-diff-chip::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--kx-amber);
+}
+.kx-link-diff-chip:hover,
+.kx-link-possible-chip:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+
+.kx-link-diff {
+  width: min(860px, calc(100vw - 80px));
+}
+.kx-link-diff-grid {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) minmax(0, 1fr) auto;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  border: 1px solid var(--kx-line-strong);
+  border-radius: 10px;
+}
+.kx-link-diff-head,
+.kx-link-diff-row {
+  display: contents;
+}
+.kx-link-diff-head > span {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--kx-line-strong);
+  background: var(--kx-bg-raised);
+  color: var(--kx-text-2);
+  font: 600 11px var(--kx-font);
+}
+.kx-link-diff-all {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.kx-link-diff-all > span {
+  margin-right: 4px;
+  font-weight: 500;
+}
+.kx-link-diff-all-btn {
+  height: 20px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-accent);
+  font: 500 11px var(--kx-font);
+}
+.kx-link-diff-all-btn:hover {
+  background: var(--kx-accent-soft);
+}
+.kx-link-diff-row > span {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--kx-line-strong);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.kx-link-diff-row:last-child > span {
+  border-bottom: 0;
+}
+.kx-link-diff-row > span[data-chosen] {
+  background: var(--kx-accent-soft);
+}
+.kx-link-diff-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--kx-text-2);
+  font-weight: 500;
+}
+.kx-link-diff-label small {
+  color: var(--kx-text-3);
+  font-weight: 400;
+}
+.kx-link-diff-row[data-pending] .kx-link-diff-label {
+  color: var(--kx-text);
+}
+.kx-link-diff-value {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  color: var(--kx-text);
+}
+.kx-link-diff-value[data-open] {
+  display: block;
+}
+.kx-link-diff-empty {
+  color: var(--kx-text-3);
+  font-style: italic;
+}
+.kx-link-diff-seg > button:disabled {
+  opacity: 0.35;
+}
+
+.kx-link-matches {
+  width: min(720px, calc(100vw - 80px));
+}
+.kx-link-match-why {
+  display: flex;
+  justify-content: space-between;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-link-match-reason {
+  color: var(--kx-text-3);
+}
+.kx-link-match-extra {
+  color: var(--kx-green);
+}
+.kx-link-match-nav {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* The reader's notices: a shared file replaced, highlights to carry over. */
+.kx-link-reader-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--kx-line-strong);
+  background: var(--kx-bg-raised);
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-link-reader-bar > span {
+  flex: 1 1 auto;
+}
+
+/* The Marks list's "My highlights" (review-marks.tsx). */
+.kx-rv-my-highlights h5 {
+  margin: 10px 0 4px;
+  color: var(--kx-text-2);
+  font: 600 11px var(--kx-font);
+}
+.kx-rv-my-highlights ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}

@@ -133,6 +133,19 @@ export function OriginFields({ batch, onChange, names }: { batch: Partial<Batch>
   );
 }
 
+/** After an import: records that look like works already in the library are offered for
+ *  confirmation in Records (never linked by themselves). */
+export function notifyPossible(api: StageProps["api"], notify: StageProps["notify"]) {
+  setTimeout(
+    () =>
+      void api
+        .possibleCount()
+        .then((n) => n > 0 && notify(`${plural(n, "record")} may already be in your library: confirm them in Records › Possibly in your library`))
+        .catch(() => {}),
+    1500,
+  );
+}
+
 export function reportText(r: ImportReport) {
   const parts = [`Added ${plural(r.added, "record")}`];
   if (r.duplicates) parts.push(`${plural(r.duplicates, "duplicate")} removed`);
@@ -440,6 +453,7 @@ function ImportSheet({ api, viewer, notify, onChanged, file, onClose, invoke, wo
             .importFile(file.text, file.name, batch, viewer)
             .then(({ report }) => {
               notify(reportText(report), "ok");
+              notifyPossible(api, notify);
               onChanged();
               onClose();
             })
@@ -562,6 +576,7 @@ function ManualSheet({ api, viewer, notify, onChanged, onClose, invoke, workspac
             .importRecords([{ ...rest, authors, year: rest.year ? Number(rest.year) : null }], batch, viewer)
             .then(({ report }) => {
               notify(reportText(report), "ok");
+              notifyPossible(api, notify);
               onChanged();
               onClose();
             })

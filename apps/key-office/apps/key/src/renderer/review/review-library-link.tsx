@@ -11,6 +11,7 @@ import type { RecordView } from "./review-api";
 import { Btn, errorText } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
 import { fullTextChanged } from "./review-browser";
+import { DiffChip, LinkDiffSheet, linkApi, useLinkChanges } from "./review-link-sync";
 
 type Conflict = { recordId: string; sourceId: string; libraryMime?: string };
 let asking: Conflict | undefined;
@@ -38,6 +39,23 @@ export function LibraryLink({ view, reload, invoke, workspaceId, reviewId, viewe
   const [busy, setBusy] = useState(false);
   const sourceId = view.sourceId;
   const recordId = view.meta.id;
+  // How many details still differ from the library, and the comparison sheet.
+  const [differ, setDiffer] = useState(0);
+  const [comparing, setComparing] = useState(false);
+  const loadDiff = () => {
+    if (!sourceId) return setDiffer(0);
+    void linkApi(invoke, workspaceId, reviewId)
+      .diff(recordId)
+      .then((d) => setDiffer(d?.diff.pending ?? 0), () => setDiffer(0));
+  };
+  useEffect(loadDiff, [invoke, workspaceId, reviewId, recordId, sourceId, view.meta]);
+  // The source edited in the library (an abstract, its authors …): this record follows at once.
+  useLinkChanges(invoke, workspaceId, reviewId, (records, all) => {
+    if (all || records[recordId]) {
+      reload();
+      loadDiff();
+    }
+  });
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const follow = () => {
@@ -91,6 +109,23 @@ export function LibraryLink({ view, reload, invoke, workspaceId, reviewId, viewe
         >
           <Icon name="books" size={11} /> In your library
         </button>
+      )}
+      {sourceId && <DiffChip count={differ} onClick={() => setComparing(true)} />}
+      {comparing && (
+        <LinkDiffSheet
+          invoke={invoke}
+          workspaceId={workspaceId}
+          reviewId={reviewId}
+          recordId={recordId}
+          actor={viewer}
+          origin="review"
+          onClose={() => setComparing(false)}
+          onDone={(message, undo) => {
+            notify(message, "ok", undo ? { label: "Undo", run: () => void Promise.resolve(undo()).then(() => setTimeout(() => (reload(), loadDiff()), 150)) } : undefined);
+            reload();
+            loadDiff();
+          }}
+        />
       )}
       {ask && ask.recordId === view.meta.id && (
         <GlobalDialog label="Two full texts for this work" onClose={() => set(undefined)} busy={busy}>

@@ -31,6 +31,8 @@ export interface Rules {
   sourceDefault: SourceRule;
   /** Also keep the review's marks as highlights on library copies of the full texts. */
   mirrorMarks?: boolean;
+  /** Linked records whose details differ from the library: ask | library | review. */
+  linkedSync?: "ask" | "library" | "review";
 }
 export type SourceRule = "none" | "encouraged" | "required";
 /** When a field or section is shown: conditions on other answers (all or any). */
@@ -587,6 +589,7 @@ export interface ExportFile {
 export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string) {
   const call = <T>(command: string, args: Record<string, unknown> = {}) => invoke<T>(command, { reviewId, ...args }, workspaceId);
   return {
+    reviewId,
     summary: (viewer: string) => call<Summary>("review_get", { viewer }),
     rename: (name: string, actor: string) => call("review_rename", { name, actor }),
     archive: (archived: boolean, actor: string) => call("review_archive", { archived, actor }),
@@ -614,7 +617,8 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     record: (recordId: string, stage: Stage, viewer: string) => call<RecordView>("review_record", { recordId, stage, viewer }),
     decide: (recordIds: string[], stage: Stage, value: Choice, reasons: string[], note: string, actor: string, evidence: Evidence[] = [], other = "") =>
       call<string[]>("review_decide", { recordIds, stage, value, reasons, other, note, evidence, actor }),
-    undo: (actor: string) => call<{ recordId: string; stage: Stage } | null>("review_undo", { actor }),
+    /** The latest decision, or link change made here (`link`: what it was). */
+    undo: (actor: string) => call<{ recordId: string; stage?: Stage; link?: string } | null>("review_undo", { actor }),
     retract: (recordId: string, eventId: string, actor: string) => call("review_retract", { recordId, eventId, actor }),
     resolve: (recordId: string, stage: Stage, value: Choice, reasons: string[], note: string, actor: string, other = "") => call("review_resolve", { recordId, stage, value, reasons, other, note, actor }),
     reopen: (recordId: string, stage: Stage, actor: string) => call("review_reopen", { recordId, stage, actor }),
@@ -622,6 +626,8 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     labels: (recordIds: string[], add: string[], remove: string[], actor: string) => call("review_labels", { recordIds, add, remove, actor }),
     clearFlags: (recordIds: string[], stage: Stage, actor: string) => call("review_flags_clear", { recordIds, stage, actor }),
     fulltext: (recordId: string, change: { status?: string; reason?: string; sourceId?: string | null }, actor: string) => call("review_fulltext", { recordId, ...change, actor }),
+    /** Records likely in the library already (to confirm in Records, review-link-sync.tsx). */
+    possibleCount: () => call<{ count: number }>("review_link_suggestions").then((r) => r.count),
     linkLibrary: (recordIds: string[], actor: string) => call<Record<string, string>>("review_link_library", { recordIds, actor }),
     pilotCreate: (stage: Stage, size: number, reviewers: string[], name: string, actor: string) => call<Pilot>("review_pilot_create", { stage, size, reviewers, name, actor }),
     pilotSet: (pilotId: string, open: boolean, actor: string) => call("review_pilot_set", { pilotId, open, actor }),
@@ -651,7 +657,7 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     attach: (recordId: string, path: string, name: string, origin: string, actor: string, ownedTemp = false) =>
       call<{ linked?: string; file?: FileRef; hash: string }>("review_fulltext_attach", { recordId, path, name, origin, ownedTemp, actor }),
     detach: (recordId: string, actor: string) => call("review_fulltext_detach", { recordId, actor }),
-    fulltextInfo: (recordId: string) => call<{ path: string; mime: string; exists: boolean }>("review_fulltext_info", { recordId }),
+    fulltextInfo: (recordId: string) => call<{ path: string; mime: string; exists: boolean; hash?: string | null }>("review_fulltext_info", { recordId }),
     fulltextBytes: (recordId: string) => call<Uint8Array>("review_fulltext_bytes", { recordId }),
     toLibrary: (recordId: string, actor: string) => call<{ sourceId: string }>("review_fulltext_to_library", { recordId, actor }),
     outcomes: () => call<{ outcome: string; timepoint: string; kind: string; studies: number }[]>("review_outcomes"),

@@ -126,8 +126,8 @@ export function HighlightInfo({ text, comment, color, colors, createdAt, updated
             <ul>
               {uses.map(use => (
                 <li key={`${use.kind}:${use.id}`}>
-                  <button type="button" onClick={use.open} title={`Open ${use.kind === 'canvas' ? 'the canvas' : 'the note'} there`}>
-                    <Icon name={use.kind === 'canvas' ? 'split' : 'note'} />
+                  <button type="button" onClick={use.open} title={`Open ${use.kind === 'canvas' ? 'the canvas' : use.kind === 'review' ? 'the review at this record and passage' : 'the note'} there`}>
+                    <Icon name={use.kind === 'canvas' ? 'split' : use.kind === 'review' ? 'checklist' : 'note'} />
                     <span>
                       <strong>{use.title || 'Untitled'}</strong>
                       {use.context && <small>{oneLine(use.context)}</small>}

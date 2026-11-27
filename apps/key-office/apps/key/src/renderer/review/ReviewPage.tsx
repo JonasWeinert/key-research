@@ -100,6 +100,20 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
     if (active) check();
     return () => off?.();
   }, [active, invoke, reviewId, workspaceId, reload]);
+  // Opened at a record and passage (a review mark kept as a highlight in the library).
+  useEffect(
+    () =>
+      bridge().on?.("review-reveal", (v) => {
+        const r = v as import("./review-reveal").Reveal | undefined;
+        if (!r || r.reviewId !== reviewId || !r.recordId) return;
+        void import("./review-reveal").then(({ setReveal }) => {
+          setReveal(r);
+          setStage(r.stage === "ta" || r.stage === "extract" || r.stage === "rob" ? (r.stage as StageId) : "ft");
+        });
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reviewId],
+  );
   // The tab shows the review's name.
   useEffect(() => {
     if (summary?.review.name) void (window as any).key?.tabAction?.("content-title", { viewId, title: summary.review.name });

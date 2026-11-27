@@ -17,11 +17,13 @@ import { highlightPage, type Highlight } from "../item-actions";
 import { GlobalDialog } from "../GlobalDrawer";
 import { CHOICE_LABEL, ELEMENT_LABEL, STAGE_LABEL, asks, plural, reasonText, type Choice, type Criterion, type DecisionInfo, type Evidence, type ListRow, type ReasonRule, type RecordView, type Stage } from "./review-api";
 import { Btn, Highlighted, MenuButton, StatusPill, errorText, formatDate, type MenuItem } from "./review-ui";
+import "./review-link-sync.css";
 import { afterDecision, boundKeys, counter, criterionKeys, current as sessionCurrent, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step as sessionStep, toggle, type Session } from "./review-session";
 import type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
 import { MarksLegend, evidenceKey, evidenceLabel, evidenceMarks, flashRow, mirrorOf, useMarksShown } from "./review-marks";
 import { FullTexts, attachFiles } from "./review-fulltexts";
 import type { StageProps } from "./ReviewPage";
+import { onReveal, takePassage, takeReveal } from "./review-reveal";
 
 const ReviewReader = lazy(() => import("./review-reader").then((m) => ({ default: m.ReviewReader })));
 const ReviewBrowser = lazy(() => import("./review-browser").then((m) => ({ default: m.ReviewBrowser })));
@@ -37,6 +39,19 @@ export function Screening(props: StageProps & { stage: Stage }) {
   const [mode, setMode] = useState<Mode>("screen");
   const [focus, setFocus] = useState<string>();
   const [queueFilter, setQueueFilter] = useState("");
+  // Opened at a record from the library (review-reveal.ts): screen it, fresh.
+  const [revealed, setRevealed] = useState(0);
+  useEffect(() => {
+    const take = () => {
+      const r = takeReveal(props.reviewId);
+      if (!r) return;
+      setFocus(r.recordId);
+      setMode("screen");
+      setRevealed((n) => n + 1);
+    };
+    take();
+    return onReveal(take);
+  }, [props.reviewId]);
   const conflicts = counts.conflicts;
   if (!summary.active) {
     return <EmptyState help="empty.review.screen" icon="checklist" action={{ label: "Add records", icon: "plus", onClick: () => props.go("sources") }} learnMore="review.screening" />;
@@ -91,7 +106,7 @@ export function Screening(props: StageProps & { stage: Stage }) {
           }}
         />
       ) : (
-        <SingleRecord key={`${mode}:${queueFilter}`} {...props} stage={stage} filter={mode === "conflicts" ? "conflicts" : queueFilter} focus={focus} onFocused={() => setFocus(undefined)} />
+        <SingleRecord key={`${mode}:${queueFilter}:${revealed}`} {...props} stage={stage} filter={mode === "conflicts" ? "conflicts" : queueFilter} focus={focus} onFocused={() => setFocus(undefined)} />
       )}
     </div>
   );
@@ -159,6 +174,20 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
   // Each criterion's key: 1–9, then letters nothing else here uses (review-session.ts).
   const critKeys = useMemo(() => criterionKeys(reasonsFor.length, boundKeys(protocol.shortcuts, protocol.labelKeys ?? {})), [reasonsFor.length, protocol.shortcuts, protocol.labelKeys]);
   const current = session ? sessionCurrent(session) : undefined;
+  // A passage asked for from the library: shown once the record's full text has opened.
+  useEffect(() => {
+    if (!view?.meta.id) return;
+    const p = takePassage(view.meta.id);
+    if (!p || p.page == null) return;
+    let tries = 0;
+    const timer = setInterval(() => {
+      if (reader.current || ++tries > 20) {
+        clearInterval(timer);
+        setTimeout(() => reader.current?.show(p.page!, p.quote), 600);
+      }
+    }, 300);
+    return () => clearInterval(timer);
+  }, [view?.meta.id]);
 
   useEffect(() => {
     if (!viewer) return;
@@ -248,7 +277,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
       setSession((s) => (s ? showRecord(s, back.recordId) : startSession([back.recordId])));
       load(back.recordId);
       onChanged();
-      notify(`Took back your decision`, "ok");
+      notify(back.link ? `Undid: ${back.link}` : "Took back your decision", "ok");
     } catch (e) {
       notify(errorText(e), "error");
     }
@@ -446,7 +475,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
   );
   const allMarks = useMemo<ReaderMark[]>(() => evidenceMarks(evidence, reasonsFor), [evidence, reasonsFor]);
   const marks = marksShown ? allMarks : [];
-  const mirror = useMemo(() => mirrorOf(summary, allMarks), [summary, allMarks]);
+  const mirror = useMemo(() => mirrorOf(summary, allMarks, current ? { recordId: current, stage } : undefined), [summary, allMarks, current, stage]);
   /** A mark clicked in the page: change its verdict or criterion, or remove it. */
   const markActions = useCallback(
     (mark: ReaderMark): ReaderMarkMenu | null => {
@@ -594,6 +623,8 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
             const e = evidence.find((x) => evidenceKey(x) === id);
             if (e) removeMark(e);
           }}
+          recordId={view.meta.id}
+          onShowPassage={(page, quote) => reader.current?.show(page, quote)}
         />
       )}
       <label className="kx-rv-note">
@@ -988,31 +1019,96 @@ function FullTextMenu({ api, view, viewer, notify, reload, onChanged, invoke, wo
   );
 }
 
-function ReaderFor({ api, view, notify, readerRef, actions, mode, marks, markActions, mirror, invoke, workspaceId }: StageProps & { view: RecordView; readerRef: React.RefObject<ReviewReaderHandle | null>; actions: ReaderSelectionAction[]; mode?: ReaderSelectionMode; marks?: ReaderMark[]; markActions?: (mark: ReaderMark) => ReaderMarkMenu | null; mirror?: ReturnType<typeof mirrorOf> }) {
-  const [mime, setMime] = useState<string>();
-  const version = view.fulltext.file?.hash ?? view.sourceId ?? "";
+function ReaderFor({ api, view, notify, readerRef, actions, mode, marks, markActions, mirror, invoke, workspaceId, reviewId, viewer }: StageProps & { view: RecordView; readerRef: React.RefObject<ReviewReaderHandle | null>; actions: ReaderSelectionAction[]; mode?: ReaderSelectionMode; marks?: ReaderMark[]; markActions?: (mark: ReaderMark) => ReaderMarkMenu | null; mirror?: ReturnType<typeof mirrorOf> }) {
+  const [info, setInfo] = useState<{ mime: string; hash: string }>();
+  // A shared file replaced in the library (or here): the reader follows it, from the top.
+  const [replaced, setReplaced] = useState(false);
+  const [carry, setCarry] = useState(0);
+  const recordId = view.meta.id;
+  const fileKey = view.fulltext.file?.hash ?? view.sourceId ?? "";
+  const shown = useRef<string>("");
+  const read = useCallback(() => {
+    void api
+      .fulltextInfo(recordId)
+      .then((i) => {
+        const next = { mime: i.exists ? i.mime : "", hash: i.hash ?? fileKey };
+        if (shown.current && next.hash && shown.current !== next.hash) setReplaced(true);
+        if (next.hash) shown.current = next.hash;
+        setInfo((old) => (old && old.mime === next.mime && old.hash === next.hash ? old : next));
+      })
+      .catch(() => setInfo({ mime: "", hash: "" }));
+  }, [api, recordId, fileKey]);
   useEffect(() => {
-    let live = true;
-    api
-      .fulltextInfo(view.meta.id)
-      .then((info) => live && setMime(info.exists ? info.mime : ""))
-      .catch(() => live && setMime(""));
-    return () => {
-      live = false;
+    shown.current = "";
+    setReplaced(false);
+  }, [recordId]);
+  useEffect(read, [read]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const kick = () => {
+      clearTimeout(timer);
+      timer = setTimeout(read, 200);
     };
-  }, [api, view.meta.id, version]);
-  if (mime === undefined) return <div className="kx-rv-reader" aria-busy="true" />;
+    const offs = ["library-changed", "review-changed"].map((e) => bridge().on?.(e, kick));
+    return () => {
+      clearTimeout(timer);
+      offs.forEach((o) => o?.());
+    };
+  }, [read]);
+  // Highlights made here before the file was shared with the library: offer to move them.
+  const readsLibrary = !!view.sourceId && !view.fulltext.file;
+  useEffect(() => {
+    if (!readsLibrary) return setCarry(0);
+    void import("./review-link-sync").then(({ linkApi }) =>
+      linkApi(invoke, workspaceId, reviewId)
+        .carry(recordId, false, viewer)
+        .then((r) => setCarry(r.count), () => setCarry(0)),
+    );
+  }, [readsLibrary, invoke, workspaceId, reviewId, recordId, viewer, info?.hash]);
+  const moveHighlights = () =>
+    void import("./review-link-sync").then(({ linkApi }) =>
+      linkApi(invoke, workspaceId, reviewId)
+        .carry(recordId, true, viewer)
+        .then(
+          (r) => {
+            setCarry(0);
+            notify(`${plural(r.count, "highlight")} moved to the library copy`, "ok", { label: "Undo", run: () => void linkApi(invoke, workspaceId, reviewId).undo(viewer).then(() => setCarry(r.count)) });
+            setInfo((i) => (i ? { ...i } : i));
+          },
+          (e) => notify(errorText(e), "error"),
+        ),
+    );
+  const mime = info?.mime;
+  if (info === undefined) return <div className="kx-rv-reader" aria-busy="true" />;
   if (!mime) return <div className="kx-rv-reader-empty"><p className="kx-inline-error">The full text's file is missing on this Mac.</p></div>;
   return (
     <Suspense fallback={<div className="kx-rv-reader" aria-busy="true" />}>
+      {(replaced || carry > 0) && (
+        <div className="kx-link-reader-bar" role="status" data-reader-notice="">
+          <span>
+            {replaced
+              ? "The full text was replaced (in your library or this review): showing the new file from the top."
+              : `${plural(carry, "highlight")} you made here before this file was shared with your library ${carry === 1 ? "is" : "are"} kept with the review.`}
+          </span>
+          {!replaced && carry > 0 && (
+            <Btn small onClick={moveHighlights} title="Your highlights then live on the library copy, where every reader of this work sees them">
+              Move to the library copy
+            </Btn>
+          )}
+          <button type="button" className="kx-rv-icon" aria-label="Dismiss" onClick={() => (setReplaced(false), setCarry(0))}>
+            <Icon name="close" size={11} />
+          </button>
+        </div>
+      )}
       <ReviewReader
         ref={readerRef}
         api={api}
-        recordId={view.meta.id}
-        version={version}
+        recordId={recordId}
+        version={info.hash}
         title={view.meta.title}
         mime={mime}
         sourceId={view.fulltext.file ? null : view.sourceId}
+        actor={viewer}
         invoke={(command, args) => invoke(command, args as Record<string, unknown>, workspaceId)}
         actions={actions}
         mode={mode}

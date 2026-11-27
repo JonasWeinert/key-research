@@ -1613,7 +1613,9 @@ interface PdfJsBenchmarkAppProps {
    *  library) while `enabled`: one per mark, ids under `scope`, the mark's label (+ `note`) as
    *  the comment; they follow the marks (changed, removed or taken back with them), and all of
    *  the scope's go when it is turned off. Other scopes' are left alone. */
-  mirrorMarks?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[] } | null;
+  /** `link`: where the marks come from (a review and record), kept on each mirrored highlight
+   *  as `reviewLink` so the library's reader can open the review there. */
+  mirrorMarks?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[]; link?: Record<string, unknown> } | null;
   /** Where this document's highlights live when the host knows better than the reader (a
    *  library copy opened inside another view): load and save them there. */
   annotationStore?: { load(): Promise<ReaderAnnotation[]>; save(annotations: ReaderAnnotation[], deleted: string[]): Promise<void> } | null;
@@ -1624,7 +1626,7 @@ interface PdfJsBenchmarkAppProps {
   /** Lets the citation cards add a cited work to the library in one click. */
   libraryWorks?: LibraryWorks;
   /** Where a highlight is used (notes quoting it, canvases holding it), for its info card. */
-  highlightUsage?: (annotation: { id: string; text: string; page: number }) => Promise<HighlightUsage[]>;
+  highlightUsage?: (annotation: { id: string; text: string; page: number; reviewLink?: Record<string, unknown> }) => Promise<HighlightUsage[]>;
   /** Height of a toolbar floating over the top of the document: pages start below it. */
   topInset?: number;
   /** References kept by the host's library; when given they replace the reader's own analysis. */
@@ -2868,7 +2870,7 @@ function PdfJsBenchmarkApp({
   const annotationUsage = useMemo(() => {
     const annotation = annotations.find(a => a.id === activeAnnotationId);
     if (!highlightUsage || !annotation) return undefined;
-    return () => highlightUsage({ id: annotation.id, text: annotation.text, page: annotation.range.start.page });
+    return () => highlightUsage({ id: annotation.id, text: annotation.text, page: annotation.range.start.page, reviewLink: (annotation as { reviewLink?: Record<string, unknown> }).reviewLink });
   }, [activeAnnotationId, highlightUsage]);
   const context = selection || activeAnnotation ? contextRect : null;
   // The menu follows its passage while it scrolls and closes once it leaves the view.
@@ -2887,6 +2889,7 @@ function PdfJsBenchmarkApp({
   const mirrorNote = mirrorMarks?.note ?? '';
   const mirrorOn = !!mirrorMarks?.enabled;
   const mirrored = mirrorMarks?.marks;
+  const mirrorLink = mirrorMarks?.link ? JSON.stringify(mirrorMarks.link) : '';
   useEffect(() => {
     const overlay = overlayRef.current;
     const documentId = documentIdRef.current;
@@ -2902,9 +2905,11 @@ function PdfJsBenchmarkApp({
         const id = `${mirrorScope}${mark.id}`;
         const comment = `${mark.label}${mirrorNote ? ` (${mirrorNote})` : ''}`;
         const color = tone[mark.tone] ?? 'orange';
-        const have = next.find(a => a.id === id);
+        const reviewLink = mirrorLink ? { ...JSON.parse(mirrorLink), markId: mark.id, page: mark.page, quote: mark.text.slice(0, 300), label: mark.label } : undefined;
+        const have = next.find(a => a.id === id) as (ReaderAnnotation & { reviewLink?: unknown }) | undefined;
         if (have) {
-          if (have.comment !== comment || have.color !== color) next = next.map(a => (a.id === id ? { ...a, comment, color, updatedAt: new Date().toISOString() } : a));
+          const linkChanged = !!reviewLink && JSON.stringify(have.reviewLink ?? null) !== JSON.stringify(reviewLink);
+          if (have.comment !== comment || have.color !== color || linkChanged) next = next.map(a => (a.id === id ? ({ ...a, comment, color, ...(reviewLink ? { reviewLink } : {}), updatedAt: new Date().toISOString() } as ReaderAnnotation) : a));
           continue;
         }
         await overlay.ensurePage(mark.page).catch(() => undefined);
@@ -2913,7 +2918,7 @@ function PdfJsBenchmarkApp({
         const range = page ? locateQuote(page, mark.text) : null;
         if (!range) continue;
         const now = new Date().toISOString();
-        next = [...next, { id, documentId, range, text: mark.text, color, comment, createdAt: now, updatedAt: now }];
+        next = [...next, { id, documentId, range, text: mark.text, color, comment, createdAt: now, updatedAt: now, ...(reviewLink ? { reviewLink } : {}) } as ReaderAnnotation];
       }
       if (cancelled) return;
       const same = next.length === current.length && next.every((a, i) => a === current[i]);
@@ -2923,7 +2928,7 @@ function PdfJsBenchmarkApp({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, readerIdentity, mirrored, mirrorScope, mirrorNote, mirrorOn]);
+  }, [ready, readerIdentity, mirrored, mirrorScope, mirrorNote, mirrorOn, mirrorLink]);
   // A finished selection the host takes (no menu): after the pointer is up.
   const interceptRef = useRef(pickSelection);
   interceptRef.current = pickSelection;

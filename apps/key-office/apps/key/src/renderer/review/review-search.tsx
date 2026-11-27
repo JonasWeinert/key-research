@@ -16,7 +16,7 @@ import { countText } from "../db-ui";
 import { Icon } from "../icons";
 import { plural, type Protocol } from "./review-api";
 import { Btn, errorText, formatDate } from "./review-ui";
-import { reportText } from "./review-sources";
+import { reportText, notifyPossible } from "./review-sources";
 import type { StageProps } from "./ReviewPage";
 import "../db-search.css";
 import "../db-boolean.css";
@@ -126,6 +126,7 @@ async function runAndImport(props: StageProps, api: DbSearchApi, s: ReviewSearch
   const { report } = await review.importDbRun(runId, { name: s.name || "Database search" }, viewer, undefined, { searchId: s.id, onlyNew: update && (s.runs?.length ?? 0) > 0 });
   status(undefined);
   notify(report.added ? reportText(report) : "Nothing new since the last run", report.added ? "ok" : undefined);
+  if (report.added) notifyPossible(review, notify);
   onChanged();
 }
 

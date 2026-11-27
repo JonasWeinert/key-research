@@ -15,6 +15,7 @@ import ReadingMode, { useTypography, type ReadingModeHandle } from "../ReadingMo
 import { Icon } from "../icons";
 import type { ReviewApi } from "./review-api";
 import { errorText } from "./review-ui";
+import { setMyHighlights } from "./review-my-highlights";
 
 export type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderPassage, ReaderSelectionAction, ReaderSelectionActions, ReaderSelectionMode };
 
@@ -38,6 +39,8 @@ interface Props {
   /** The library source behind the PDF: reading mode reads its stored structure. */
   sourceId?: string | null;
   invoke?: <T>(command: string, args?: unknown) => Promise<T>;
+  /** Who is reading: highlights on a file kept with the review are logged as theirs. */
+  actor?: string;
   actions: ReaderSelectionActions;
   mode?: ReaderSelectionMode;
   marks?: ReaderMark[];
@@ -45,12 +48,12 @@ interface Props {
   pickSelection?: ((passage: ReaderPassage) => void) | null;
   /** The review's marks also kept as the user's highlights on a library copy (Setup › rules):
    *  all of them (shown or not), the review's id as their scope. */
-  mirror?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[] } | null;
+  mirror?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[]; link?: Record<string, unknown> } | null;
   onError: (text: string) => void;
 }
 
 export const ReviewReader = forwardRef<ReviewReaderHandle, Props>(function ReviewReader(props, ref) {
-  const { api, recordId, version, title, mime, actions, mode, marks, markActions, pickSelection, onError, sourceId, invoke, mirror } = props;
+  const { api, recordId, version, title, mime, actions, mode, marks, markActions, pickSelection, onError, sourceId, invoke, mirror, actor } = props;
   const [file, setFile] = useState<File | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState("");
@@ -61,16 +64,22 @@ export const ReviewReader = forwardRef<ReviewReaderHandle, Props>(function Revie
   const [typography] = useTypography();
   const [notice, setNotice] = useState("");
   const canRead = !!sourceId && !!invoke && !mime.includes("html");
-  // A library source's highlights are the library's: made here, they are there too.
+  // A library source's highlights are the library's: made here, they are there too. On a
+  // file kept with the review they are the review's own (logged with it, exported with it).
   const annotationStore = useMemo(
     () =>
       sourceId && invoke
         ? {
-            load: () => invoke<ReaderAnnotationLike[]>("library_annotations", { hash: sourceId }),
-            save: (annotations: ReaderAnnotationLike[], deleted: string[]) => invoke<void>("library_apply_annotations", { hash: sourceId, upserts: annotations, deleted }),
+            load: () => invoke<ReaderAnnotationLike[]>("library_annotations", { hash: sourceId }).then((a) => (setMyHighlights(recordId, a ?? []), a)),
+            save: (annotations: ReaderAnnotationLike[], deleted: string[]) => (setMyHighlights(recordId, annotations), invoke<void>("library_apply_annotations", { hash: sourceId, upserts: annotations, deleted })),
           }
-        : null,
-    [sourceId, invoke],
+        : invoke && actor
+          ? {
+              load: () => invoke<ReaderAnnotationLike[]>("review_highlights", { reviewId: api.reviewId, recordId }).then((a) => (setMyHighlights(recordId, a ?? []), a ?? [])),
+              save: (annotations: ReaderAnnotationLike[], deleted: string[]) => (setMyHighlights(recordId, annotations), invoke<void>("review_highlights_apply", { reviewId: api.reviewId, recordId, upserts: annotations, deleted, actor })),
+            }
+          : null,
+    [sourceId, invoke, actor, api, recordId],
   );
   useImperativeHandle(ref, () => ({
     show(p, quote) {

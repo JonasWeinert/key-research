@@ -122,7 +122,7 @@ type OwnedView = {
    * placed where that view's renderer says, for one review record's Find PDF attempt. */
   embedded?: EmbeddedBrowser;
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
-  libraryNotice?: "added" | "exists";
+  libraryNotice?: "added" | "exists" | "replaced";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
   panel?: { viewId: string; ratio: number; focused?: boolean; tab?: PanelTab };
   /** The panel's share when it was last open, so it comes back the same size. */
@@ -515,6 +515,8 @@ const REVIEW_READS = new Set([
   "review_form_templates", "review_criteria_suggestions", "review_protocol_impact", "review_duplicates", "review_fulltexts", "review_fulltext_match",
   "review_fulltext_csv_read", "review_fulltext_info", "review_fulltext_bytes", "review_parse_selection", "review_form_preview", "review_agreement",
   "review_ai_request", "review_ai_extract_request", "review_lookup",
+  // Linked records and the library (reads).
+  "review_link_diff", "review_link_pending", "review_link_suggestions", "review_link_suggestions_for_source", "review_link_changes", "review_highlights", "review_reader_follow",
   // std-B: citation searching, AI use, conduct checks, extraction pilots, contacts (reads).
   "review_chase_view", "review_chase_status", "review_chase_start", "review_chase_cancel", "review_ai_use", "review_conduct", "review_xpilots", "review_contacts",
   // std-A: reporting reads
@@ -529,7 +531,35 @@ const REVIEW_READS = new Set([
 /** Review commands that may change the library too (a full text shared with a linked source). */
 /** Library writes a review linked to a source must hear of (its file, a merge, the trash). */
 const LIBRARY_FILE_WRITES = new Set(["store_attach_file", "store_full_text_add", "store_full_text_primary", "store_full_text_remove", "store_trash", "store_restore", "store_merge_sources", "store_merge_exact", "store_delete"]);
-const REVIEW_LIBRARY_WRITES = new Set(["review_fulltext_attach", "review_fulltext_detach", "review_fulltext_reconcile", "review_fulltext_to_library", "review_link_library", "review_links_refresh"]);
+const REVIEW_LIBRARY_WRITES = new Set(["review_fulltext_attach", "review_fulltext_detach", "review_fulltext_reconcile", "review_fulltext_to_library", "review_link_library", "review_links_refresh",
+  // Linked records (review_commands/library_sync.rs): confirmed, unlinked, details taken, undone, highlights moved.
+  "review_link_take", "review_link_confirm", "review_link_unlink", "review_link_undo", "review_highlights_carry", "review_undo"]);
+/** Library readers open on a file their source no longer reads (a linked pair's shared file
+ * replaced in the library or the review): each becomes a reader of the new file, from the top,
+ * saying so. Which files moved is the host's answer (review_reader_follow). */
+async function followSharedFiles(workspaceId: string) {
+  const open = [...views.values()].filter((v) => v.kind === "pdf" && !v.temp && v.workspaceId === workspaceId);
+  if (!open.length) return;
+  const hashes = open.map((v) => v.source?.hash ?? v.id.split(":").at(-1)).filter((h): h is string => !!h);
+  const moved = await registry.invoke<Record<string, { sourceId: string; hash: string }>>("review_reader_follow", { hashes }, workspaceId).catch(() => ({}) as Record<string, { sourceId: string; hash: string }>);
+  for (const v of open) {
+    const old = v.source?.hash ?? v.id.split(":").at(-1) ?? "";
+    const to = moved[old];
+    const w = shellOfView(v.id);
+    if (!to || !w) continue;
+    const id = `pdf:${workspaceId}:${to.hash}`;
+    if (views.has(id) && shellOfView(id)) continue;
+    const info: any = await registry.invoke("library_source_info", { hash: to.hash }, workspaceId).catch(() => undefined);
+    if (!info) continue;
+    const record: OwnedView = { id, kind: "pdf", title: info.title || v.title, workspaceId, source: info, libraryNotice: "replaced", lastUsed: Date.now() };
+    views.set(id, record);
+    w.state = replaceWorkspaceView(w.state, v.id, id);
+    disposePdf(v);
+    views.delete(v.id);
+    layout(w);
+    tabsChanged(w);
+  }
+}
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {
   for (const w of liveShells()) w.window.webContents.send(event, value);
@@ -2986,6 +3016,12 @@ else
             emit("review-changed", { workspaceId: targetWorkspace, reviewId: args?.reviewId ?? args?.id ?? (result as any)?.reviewId });
           // Linked records share their full text with the library: its views follow.
           if (LIBRARY_FILE_WRITES.has(command)) emit("library-changed");
+          // The library's undo may take back a link change made on a source's page: reviews follow.
+          if (command === "store_undo" || command === "store_redo") emit("review-changed", { workspaceId: targetWorkspace });
+          // A source's details edited: open reviews with records linked to it compare again.
+          if (["store_update", "store_edit", "store_apply_metadata", "store_undo", "store_redo"].includes(command)) emit("source-metadata-changed", { workspaceId: targetWorkspace });
+          // A linked pair's shared file replaced: open readers of it follow (host: review_reader_follow).
+          if (LIBRARY_FILE_WRITES.has(command) || REVIEW_LIBRARY_WRITES.has(command) || command === "store_undo" || command === "store_redo") void followSharedFiles(targetWorkspace);
           if (REVIEW_LIBRARY_WRITES.has(command) && !(command === "review_links_refresh" && !(result as any)?.linked && !(result as any)?.repointed)) emit("library-changed");
           if (
             [
@@ -3443,10 +3479,16 @@ else
         await openSourcePage(shellOfView(v.id) ?? focusedShell(), { workspaceId: v.workspaceId, sourceId: String(sourceId) });
       });
       // A highlight's "Used in" row: the note (at the quote) or canvas that uses it.
-      ipcMain.handle("key:reader-open-item", async (event, item: { kind?: string; id?: string; title?: string; reveal?: string }) => {
+      ipcMain.handle("key:reader-open-item", async (event, item: { kind?: string; id?: string; title?: string; reveal?: string; recordId?: string; stage?: string; page?: number; quote?: string; markId?: string }) => {
         const v = bound(event.sender.id);
         if (v?.kind !== "pdf" || !v.workspaceId) throw Error("Not a PDF reader");
         const w = shellOfView(v.id) ?? focusedShell();
+        // A review mark kept as a highlight: the review opens at its record and passage.
+        if (item?.kind === "review" && typeof item.id === "string") {
+          await openContent(w, { section: "review", workspaceId: v.workspaceId, entityId: item.id, title: item.title || "Review" });
+          emitTo(w, "review-reveal", { reviewId: item.id, recordId: item.recordId, stage: item.stage, page: item.page, quote: item.quote, markId: item.markId });
+          return;
+        }
         if (!w || typeof item?.id !== "string" || !["note", "canvas"].includes(String(item.kind))) throw Error("Choose a note or canvas");
         const p = item.kind === "note" ? { section: "note", noteId: item.id } : { section: "canvas", canvasId: item.id };
         await openContent(w, { ...p, workspaceId: v.workspaceId, title: item.title });
@@ -3660,6 +3702,8 @@ else
             await withPlacement(p, () => openContent(w, p));
             // A note opened at a passage (renderer/note-reveal.ts).
             if (p.section === "note" && typeof p.reveal === "string" && p.reveal) emitTo(w, "note-reveal", { noteId: p.noteId, text: p.reveal.slice(0, 600) });
+            // A review opened at a record and passage (a mirrored highlight on the source's page).
+            if (p.section === "review" && typeof p.recordId === "string") emitTo(w, "review-reveal", { reviewId: p.entityId, recordId: p.recordId, stage: p.stage, page: p.page, quote: p.quote, markId: p.markId });
             break;
           case "history":
             stepHistory(w, String(p.viewId ?? activeViewId(w) ?? ""), Number(p.step) < 0 ? -1 : 1);

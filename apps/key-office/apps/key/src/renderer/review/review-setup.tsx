@@ -358,6 +358,18 @@ function TeamSection({ summary, api, viewer, notify, onChanged, draft, change }:
         <Row label="Also keep review marks as my highlights on library copies" hint="Off by default. Evidence, value sources and support passages in full texts that are library sources also become your highlights there, labelled with what they are for; they follow the marks when those change or go.">
           <Toggle label="Mirror review marks" checked={!!r.mirrorMarks} onChange={(v) => change((p) => void (p.rules.mirrorMarks = v))} />
         </Row>
+        <Row label="Keep linked records in step with my library" hint="When a record and the same work in your library describe it differently. Ask: a quiet “fields differ” chip lets you compare and choose. Library wins: the library’s details replace the record’s. Review keeps its own: differences are not shown.">
+          <Segmented
+            label="Linked records"
+            value={(r.linkedSync as "ask" | "library" | "review" | undefined) ?? "ask"}
+            options={[
+              ["ask", "Ask"],
+              ["library", "Library wins"],
+              ["review", "Review keeps its own"],
+            ]}
+            onChange={(v) => change((p) => void (p.rules.linkedSync = v))}
+          />
+        </Row>
         <Row label="Go to the next record after a decision" hint="Off: the record stays until Enter or J, to check what was recorded.">
           <Toggle label="Auto-advance" checked={r.autoAdvance !== false} onChange={(v) => change((p) => void (p.rules.autoAdvance = v))} />
         </Row>

@@ -314,7 +314,7 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
   // The values' sources as marks in the page (one per passage); a click shows the field(s).
   const sources = useMemo(() => (view.value ? sourceMarks(view.value, view.value.forms) : { marks: [], byField: new Map<string, string>() }), [view.value]);
   const marks = marksShown ? sources.marks : [];
-  const mirror = useMemo(() => mirrorOf(props.summary, sources.marks), [props.summary, sources.marks]);
+  const mirror = useMemo(() => mirrorOf(props.summary, sources.marks, r ? { recordId: r.meta.id, stage: "extract" } : undefined), [props.summary, sources.marks, r]);
   const markActions = useCallback(
     (mark: ReaderMark): ReaderMarkMenu | null => {
       const v = latest.current.v;
@@ -412,7 +412,7 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
           reload={view.reload}
         />
       ))}
-      {mime && <MarksLegend kinds={["source"]} shown={marksShown} onShown={setMarksShown} count={sources.marks.length} marks={sources.marks} onShow={(id) => reader.current?.showMark(id)} />}
+      {mime && <MarksLegend kinds={["source"]} shown={marksShown} onShown={setMarksShown} count={sources.marks.length} marks={sources.marks} onShow={(id) => reader.current?.showMark(id)} recordId={r?.meta.id} onShowPassage={(page, quote) => reader.current?.show(page, quote)} />}
       <Hint help="review.extraction.quotes" />
       {v.forms.some((f) => f.kind === "outcomes") && <Hint help="review.outcomes.table" />}
     </div>

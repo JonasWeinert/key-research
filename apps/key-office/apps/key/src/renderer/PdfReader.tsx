@@ -264,15 +264,29 @@ export default function PdfReader() {
     if (!initial || (initial.web && "url" in initial.web) || !call || !bridge().readerOpenItem) return undefined;
     const invoke = <T,>(command: string, args?: Record<string, unknown>) => call<T>(command, args);
     let sourceId: Promise<string | undefined> | undefined;
-    return async (annotation: { id: string; text: string }): Promise<HighlightUsage[]> => {
+    return async (annotation: { id: string; text: string; reviewLink?: Record<string, unknown> }): Promise<HighlightUsage[]> => {
+      // A review mark kept as a highlight: its label links back to the review there.
+      const link = annotation.reviewLink;
+      const back: HighlightUsage[] =
+        link && typeof link.reviewId === "string"
+          ? [
+              {
+                kind: "review",
+                id: link.reviewId,
+                title: `Review “${String(link.reviewName ?? "")}”${link.label ? `: ${String(link.label)}` : ""}`,
+                context: "Open the review at this record and passage",
+                open: () => void bridge().readerOpenItem?.({ kind: "review", id: String(link.reviewId), title: String(link.reviewName ?? ""), recordId: link.recordId, stage: link.stage, page: link.page, quote: link.quote, markId: link.markId } as never),
+              },
+            ]
+          : [];
       sourceId ??= invoke<{ items: { id: string }[] }>("store_sources", { ids: [initial.source.hash], limit: 1, scope: "all" }).then((found) => found.items[0]?.id);
       const id = await sourceId;
-      if (!id) return [];
+      if (!id) return back;
       const uses = await highlightUsage(invoke, initial.workspaceId ?? "", id, annotation);
-      return uses.map((use) => ({
+      return back.concat(uses.map((use) => ({
         ...use,
         open: () => void bridge().readerOpenItem?.({ kind: use.kind, id: use.id, title: use.title, reveal: use.kind === "note" ? annotation.text : undefined }),
-      }));
+      })));
     };
   }, [document]);
   const latestState = useRef<PdfJsViewState | undefined>(undefined);
