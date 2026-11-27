@@ -1,8 +1,10 @@
-// Runs in every frame of Key's browser profile (session.registerPreloadScript). It only tells
-// the app when a page starts and ends a passkey request (navigator.credentials get/create with
-// `publicKey`, not the quiet autofill kind), so the bar can say what is going on instead of an
-// endless wait, and lets the person stop waiting: the page then hears NotAllowedError, as if
-// they had cancelled a browser's passkey dialog. The request itself is passed on unchanged.
+// Runs at document start in every frame of Key's browser profile, iframes included
+// (session.registerPreloadScript with nodeIntegrationInSubFrames). It only tells the app when a
+// page starts and ends a passkey request (navigator.credentials get/create with `publicKey`;
+// not the quiet autofill kind, `mediation: "conditional"`, which waits by design), so Key can
+// offer its sign-in window instead of an endless wait, and lets the person stop waiting: the
+// page then hears NotAllowedError, as if they had cancelled a browser's passkey dialog. The
+// request itself is passed on unchanged.
 import { contextBridge, ipcRenderer } from "electron";
 
 const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;

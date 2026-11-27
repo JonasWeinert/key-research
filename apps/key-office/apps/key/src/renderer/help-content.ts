@@ -216,13 +216,26 @@ export const HELP = {
     "Passkeys and sign-ins",
     [
       "A passkey replaces a password: your phone, your Mac or a security key proves it is you, with your fingerprint, face or PIN. Many universities now ask for one when you sign in.",
-      "Key’s browser can use a USB or NFC security key. It can’t show the QR code for signing in with your phone, or reach passkeys saved in iCloud Keychain or a password manager: macOS offers those only to web browsers Apple has approved. A signed copy of Key can also keep passkeys on this Mac, with Touch ID.",
-      "When a sign-in waits for a passkey, the bar says so. Continue in your browser opens the page there; once you are signed in, Bring sign-in over copies the cookies of just the sites that sign-in went through. Key lists them and asks first.",
+      "Key’s browser can use a USB or NFC security key. It can’t show the QR code for signing in with your phone, or reach passkeys saved in iCloud Keychain or a password manager: macOS offers those only to web browsers Apple has approved.",
+      "So when a site asks for a passkey, Key offers a small sign-in window of Google Chrome, Microsoft Edge or Brave, if one is on this Mac. That window can show the QR code for your phone. Once you are signed in there, Key copies the sign-in into its own browser and closes the window.",
+      "The window has its own profile that belongs to Key, so your usual browser, its bookmarks and saved passwords are not touched. It remembers your sign-in, so next time you often need not use your phone again. Forget sign-ins clears it.",
+      "Without one of those browsers, finish the sign-in in Safari or Firefox and choose Bring sign-in over: Key copies just that sign-in’s cookies, after showing you which sites.",
     ],
-    { privacy: "Only the cookies of the listed sites are read, from a copy of your browser’s cookie file. Nothing is sent anywhere, and nothing in your browser changes." },
+    { privacy: "Only cookies of the sites the sign-in went through are copied, between the two browsers on this Mac. Nothing is sent anywhere, and Key never sees your password or passkey." },
   ),
-  "settings.web.signin-browser": hint("Where Continue in your browser opens the sign-in, and whose cookies Bring sign-in over reads."),
-  "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or continue in your browser."),
+  "settings.web.signin-browser": hint("The browser whose small window Key opens for passkey sign-ins. Safari and Firefox can’t be driven by Key: with them you finish the sign-in yourself and bring it over."),
+  "settings.web.signin-forget": hint("Signs the sign-in window out of every site and deletes its profile. Key’s own browser keeps the sign-ins it already has."),
+  "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or sign in in a small browser window where your phone works."),
+  "browser.signin.offer": hint("Sign in on this page in a small Chrome or Edge window, where your phone’s QR code and saved passkeys work. Key brings the sign-in back by itself."),
+  "browser.signin.window": explain(
+    "Signing in with a passkey",
+    [
+      "A passkey replaces a password: your phone, your Mac or a security key proves it is you, with your fingerprint, face or PIN.",
+      "Key’s built-in browser can’t show the window that lets you scan a QR code with your phone, so Key opens the sign-in in a small window of a browser on this Mac that can. Sign in there as you usually would.",
+      "When you are back on the site, Key copies the sign-in into its own browser, closes the window and opens the page here, signed in.",
+    ],
+    { privacy: "The window uses a separate profile that belongs to Key, not your own browser profile. Only the sign-in’s cookies are copied, and nothing leaves this Mac." },
+  ),
   "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
 
   // ── Settings: Database connectors ───────────────────────────────────────────────────
@@ -888,7 +901,7 @@ export const HELP = {
   "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss. x selects several."),
   "tip.tag-suggestions": tip("Tidy your tags", "Key suggests merging duplicates and nesting related tags. Nothing changes until you apply one."),
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),
-  "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Continue in your browser to use those."),
+  "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Sign in in a small browser window to use those."),
   "tip.proxies": tip("Library access", "This site can open through your library’s proxy, so you see articles your library pays for."),
   "tip.reading-mode": tip("Read as text", "Reading mode shows this PDF as clean text in your font and size. Highlights you make there are kept on the PDF."),
 

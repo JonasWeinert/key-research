@@ -4,7 +4,7 @@
 // PDF; Find, the contents and the typography popover work; and the text reads well (screenshots
 // in light and dark) for a two-column paper, a paper with tables and figures, and a simple
 // single-column document. KEY_READING_PDFS=a.pdf,b.pdf picks other fixtures.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, copyFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

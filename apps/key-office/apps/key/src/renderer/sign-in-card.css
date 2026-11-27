@@ -1,0 +1,173 @@
+/* The passkey sign-in card over a browser tab's page (SignInCard.tsx). */
+.kx-signin-card-layer {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow: auto;
+  background: var(--kx-bg-sunken);
+}
+.kx-signin-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(440px, 100%);
+  padding: 28px 28px 18px;
+  border-radius: 14px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-card), inset 0 0 0 0.5px var(--kx-line);
+  color: var(--kx-text);
+  font: 13px/1.5 var(--kx-font);
+  text-align: center;
+  animation: kx-signin-in 220ms var(--kx-ease) both;
+}
+@keyframes kx-signin-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kx-signin-card {
+    animation: none;
+  }
+}
+.kx-signin-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 14px;
+  border-radius: 13px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+}
+.kx-signin-icon[data-warn] {
+  background: color-mix(in srgb, var(--kx-amber) 16%, transparent);
+  color: var(--kx-amber);
+}
+/* The window is open: a slow ring says Key is waiting for it. */
+.kx-signin-icon[data-busy]::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border: 1.5px solid transparent;
+  border-top-color: var(--kx-accent);
+  border-radius: 16px;
+  animation: kx-signin-spin 1.2s linear infinite;
+}
+@keyframes kx-signin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kx-signin-icon[data-busy]::after {
+    animation: none;
+  }
+}
+.kx-signin-card h2 {
+  margin: 0 0 6px;
+  font: 600 15px/1.3 var(--kx-font-display);
+  overflow-wrap: anywhere;
+}
+.kx-signin-card p {
+  max-width: 380px;
+  margin: 0 0 12px;
+  color: var(--kx-text-2);
+}
+.kx-signin-card p b {
+  color: var(--kx-text);
+  font-weight: 500;
+}
+.kx-signin-card .kx-signin-quiet {
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+.kx-signin-steps {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 360px;
+  margin: 2px 0 18px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--kx-fill);
+  list-style: none;
+  text-align: left;
+}
+.kx-signin-steps li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--kx-text);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.kx-signin-step-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line);
+  color: var(--kx-accent);
+}
+.kx-signin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.kx-signin-actions .kx-settings-button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong), 0 0.5px 1px var(--kx-line);
+  color: var(--kx-text);
+  font: 500 13px var(--kx-font);
+  white-space: nowrap;
+}
+.kx-signin-actions .kx-settings-button:hover {
+  background: color-mix(in srgb, var(--kx-bg-raised), var(--kx-text) 5%);
+}
+.kx-signin-actions button:focus-visible,
+.kx-signin-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+.kx-signin-card .kx-signin-foot {
+  margin: 0 0 6px;
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+.kx-signin-link {
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--kx-accent-text);
+  font: inherit;
+}
+.kx-signin-link:hover {
+  text-decoration: underline;
+}
+/* "Sign in with passkey…" in the browser bar on a sign-in page. */
+.key-web-signin[data-offer-window] > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--kx-text-2);
+  font-weight: 400;
+}
+.kx-signin-explain {
+  margin-top: 4px;
+  font-size: 12px;
+}

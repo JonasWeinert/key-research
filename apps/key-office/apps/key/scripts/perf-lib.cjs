@@ -1,7 +1,7 @@
 // Shared pieces of the performance benchmark (bench-electron.cjs) and the perf budget smoke
 // (perf-budget.cjs): launching Key on a temp profile, the process tree with RSS, macOS
 // physical footprint and cumulative CPU per process, and in-page timing helpers.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { execFileSync } = require("node:child_process");
 const path = require("node:path");
 

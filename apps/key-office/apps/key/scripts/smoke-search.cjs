@@ -3,7 +3,7 @@
 // only, its kind chips count every kind, and it opens as its own tab. In that tab the
 // sidebar filters instead of navigating (a collection, Sources, a note; a second click
 // opens), and a tag clicked on a source page lands on the library filtered by it.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

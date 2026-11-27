@@ -2,7 +2,7 @@
 // a reader contributes items over the bridge and gets their clicks back; main-process errors
 // show as a quiet notice (and in userData/logs/key.log) instead of a modal box; under a
 // smoke run message boxes answer themselves with their cancel button.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

@@ -18,7 +18,9 @@ export function pagePreferences(): WebPreferences {
     sandbox: true,
     contextIsolation: true,
     nodeIntegration: false,
-    nodeIntegrationInSubFrames: false,
+    // Sandboxed, so no Node either way: this only makes the session's frame preload
+    // (web-signin, passkey requests) run in iframes too, where sign-in pages may ask.
+    nodeIntegrationInSubFrames: true,
     webSecurity: true,
     allowRunningInsecureContent: false,
     webviewTag: false,

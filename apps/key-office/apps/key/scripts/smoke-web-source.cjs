@@ -5,7 +5,7 @@
 // reader reopens, show in the panel and on the source's page, and Cite pastes into a note as
 // a source quote whose link scrolls the reader to the passage. Screenshots land in the temp
 // folder it prints.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
