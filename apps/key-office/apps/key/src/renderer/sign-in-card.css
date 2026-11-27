@@ -197,6 +197,33 @@
   box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
 }
 
+/* "Signed in — brought over for …": stands out for a few seconds, then settles. */
+.key-web-signin[data-imported] {
+  animation: kx-signin-brought 7s var(--kx-ease) both;
+}
+@keyframes kx-signin-brought {
+  0%,
+  70% {
+    background: var(--kx-accent);
+    color: var(--kx-accent-ink);
+  }
+}
+.key-web-signin[data-imported] > svg {
+  animation: kx-signin-brought-icon 7s var(--kx-ease) both;
+}
+@keyframes kx-signin-brought-icon {
+  0%,
+  70% {
+    color: var(--kx-accent-ink);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .key-web-signin[data-imported],
+  .key-web-signin[data-imported] > svg {
+    animation: none;
+  }
+}
+
 /* "Sign in with passkey…" in the browser bar on a sign-in page. */
 .key-web-signin[data-offer-window] > button {
   display: inline-flex;
