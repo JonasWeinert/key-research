@@ -434,15 +434,18 @@ mod tests {
     fn background_yields_while_a_user_action_runs_and_resumes_after() {
         let done = Arc::new(AtomicBool::new(false));
         let d = done.clone();
+        // The action starts first; the worker says when it reaches its checkpoint, since a
+        // background-class thread can be slow to start or wake on a busy machine.
+        let action = begin(Class::Interactive);
+        let (ready, at_checkpoint) = std::sync::mpsc::channel();
         let worker = std::thread::spawn(move || {
             set_thread_class(Class::Background);
-            // Let the action start first.
-            std::thread::sleep(Duration::from_millis(20));
+            ready.send(()).unwrap();
             let paused = yield_if_needed();
             d.store(true, Ordering::SeqCst);
             paused
         });
-        let action = begin(Class::Interactive);
+        at_checkpoint.recv().unwrap();
         std::thread::sleep(Duration::from_millis(120));
         assert!(!done.load(Ordering::SeqCst), "background work went on during a user action");
         drop(action);
