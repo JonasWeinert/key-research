@@ -3,12 +3,16 @@
 // test. Every number comes from Rust; this file only lays them out.
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState, Explain, Hint } from "../explain";
-import { ForestPlot, FunnelPlot, type ForestRow } from "../charts/charts";
+import { ForestPlot, FunnelPlot, type ForestPlotProps, type ForestRow } from "../charts/charts";
 import { pngBlob, saveFile, svgMarkup } from "../charts/export";
 import { formatNumber } from "../charts/scale";
 import type { Analysis, Pooled } from "./review-api";
 import { MenuButton, Segmented, Toggle, errorText, useLoad } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
+// std-C: risk of bias in the analysis (forest plot columns, sensitivity, subgroups) and GRADE.
+import { RateCertainty, RobControl, RobFlags, useRobAnalysis } from "./review-rob-analysis";
+import "./review-rob.css";
+// end std-C
 
 const MEASURES: Record<string, [string, string][]> = {
   dichotomous: [
@@ -38,7 +42,8 @@ interface Input {
   sd2?: number | null;
 }
 
-export function AnalysisView({ api, summary, notify, go }: StageProps) {
+export function AnalysisView(stageProps: StageProps) {
+  const { api, summary, notify, go } = stageProps;
   const outcomes = useLoad(() => api.outcomes(), [api, summary.events]);
   const [choice, setChoice] = useState(0);
   const chosen = outcomes.value?.[choice];
@@ -55,13 +60,16 @@ export function AnalysisView({ api, summary, notify, go }: StageProps) {
     () => (chosen ? api.analyse({ outcome: chosen.outcome, timepoint: chosen.timepoint, options: { measure, method, hartungKnapp: hk, level: 0.95 }, subgroups }) : Promise.resolve(undefined)),
     [api, chosen?.outcome, chosen?.timepoint, measure, method, hk, subgroups, summary.events],
   );
+  // std-C
+  const rob = useRobAnalysis(stageProps, chosen, { measure, method, hartungKnapp: hk, level: 0.95 }, subgroups);
   const forest = useRef<SVGSVGElement>(null);
   const funnel = useRef<SVGSVGElement>(null);
   if (!summary.included) return <EmptyState help="empty.review.analysis" icon="activity" learnMore="review.meta" />;
   if (outcomes.value && !outcomes.value.length)
     return <EmptyState help="empty.review.outcomes" icon="table" action={{ label: "Add an outcome data form in Setup", onClick: () => go("setup") }} learnMore="review.meta" />;
-  const a = result.value?.analysis;
-  const input = (result.value?.input ?? []) as Input[];
+  const shown = rob.override ?? result.value; // std-C: with a risk-of-bias option on
+  const a = shown?.analysis;
+  const input = (shown?.input ?? []) as Input[];
   const base = `${(chosen?.outcome ?? "outcome").replace(/[^\w]+/g, "-").toLowerCase()}`;
   return (
     <div className="kx-rv-analysis">
@@ -99,12 +107,15 @@ export function AnalysisView({ api, summary, notify, go }: StageProps) {
           <span>Subgroups</span>
           <Toggle label="Subgroups" checked={subgroups} onChange={setSubgroups} />
         </label>
+        <RobControl rob={rob} />
         <Explain help="review.meta" />
+        {a && <RateCertainty rob={rob} />}
       </div>
       {result.error && <p className="kx-inline-error">{result.error}</p>}
       {a && (
         <>
           <Headline a={a} />
+          <RobFlags rob={rob} ratio={a.ratio} />
           <section className="kx-rv-section">
             <div className="kx-rv-section-head">
               <h2>Forest plot</h2>
@@ -117,7 +128,7 @@ export function AnalysisView({ api, summary, notify, go }: StageProps) {
                 ]}
               />
             </div>
-            <ForestFigure ref={forest} a={a} input={input} kind={kind} />
+            <ForestFigure ref={forest} a={a} input={input} kind={kind} marks={rob.marks} />
             {a.skipped.length > 0 && (
               <p className="kx-rv-muted">
                 Left out: {a.skipped.map(([s, why]) => `${s} (${why.replace(`${s}: `, "")})`).join("; ")}
@@ -221,7 +232,7 @@ function Headline({ a }: { a: Analysis }) {
 }
 
 
-const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; kind: string }>(function ForestFigure({ a, input, kind }, ref) {
+const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; kind: string; marks?: ForestPlotProps["marks"] }>(function ForestFigure({ a, input, kind, marks }, ref) {
   const rows = useMemo(() => {
     const byId = new Map(input.map((s) => [s.id, s]));
     const columns = (id: string) => {
@@ -247,5 +258,5 @@ const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; ki
     return out;
   }, [a, input, kind]);
   const headers = kind === "dichotomous" ? ["Events/total (1)", "Events/total (2)"] : kind === "continuous" ? ["Mean (SD) n (1)", "Mean (SD) n (2)"] : [];
-  return <ForestPlot ref={ref} rows={rows} columnHeaders={headers} log={a.ratio} axisLabel={a.measureLabel} favours={["Favours group 1", "Favours group 2"]} label={`Forest plot: ${a.measureLabel}`} />;
+  return <ForestPlot ref={ref} rows={rows} columnHeaders={headers} log={a.ratio} axisLabel={a.measureLabel} favours={["Favours group 1", "Favours group 2"]} label={`Forest plot: ${a.measureLabel}`} marks={marks} width={marks ? 760 + marks.headers.length * 18 + 10 : 760} />;
 });

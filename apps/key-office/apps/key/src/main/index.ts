@@ -520,6 +520,8 @@ const REVIEW_READS = new Set([
   // std-A: reporting reads
   "review_checklist", "review_protocol_doc", "review_search_report", "review_report_export",
   "review_ai_request", "review_ai_extract_request", "review_fulltext_check", "review_links_for_source",
+  // std-C: risk of bias and certainty reads (key_review::certainty::READS).
+  "review_rob_tools", "review_rob_overview", "review_rob_assessment", "review_rob_plots", "review_rob_analyse", "review_grade_overview", "review_grade_outcome", "review_grade_preview", "review_grade_sof",
 ]);
 /** Review commands that may change the library too (a full text shared with a linked source). */
 /** Library writes a review linked to a source must hear of (its file, a merge, the trash). */

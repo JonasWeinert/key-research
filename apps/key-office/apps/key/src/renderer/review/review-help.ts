@@ -143,7 +143,7 @@ export const REVIEW_HELP = {
   },
   "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text and choose Use for a field, or press ⌥S with the field focused." },
   "review.outcomes.table": { kind: "hint", text: "Not a RevMan import file: one row per study and outcome, laid out for typing into RevMan or another tool." },
-  "review.forms": { kind: "hint", text: "The risk-of-bias templates summarise each tool's domains in Key's words; use the official guidance documents when judging." },
+  "review.forms": { kind: "hint", text: "Risk of bias has its own stage with dual assessment, plots and use in analyses." },
   "review.meta": {
     kind: "explain",
     title: "Meta-analysis",
@@ -224,4 +224,54 @@ export const REVIEW_HELP = {
     ],
     links: [{ label: "PRISMA-S", url: "https://www.prisma-statement.org/extensions" }],
   },
+  // std-C: risk of bias and certainty of evidence.
+  "review.rob": {
+    kind: "explain",
+    title: "Risk of bias",
+    body: [
+      "Risk of bias asks whether a study's design or conduct could have pushed its result away from the truth. Each tool splits this into domains, such as how groups were formed or how outcomes were measured.",
+      "For RoB 2, ROBINS-I, ROBINS-E, Newcastle–Ottawa and QUADAS-2, Key provides the assessment structure; the questions are in the official tool. Answer them there, then record each domain's judgement, its basis and supporting passages here. RoB 2 and ROBINS-I judge each result, so one study can be rated per outcome.",
+      "Key's own basic checklist has questions of its own, and Key suggests a judgement from them; a judgement that differs needs a reason.",
+    ],
+    links: [{ label: "RoB 2 and ROBINS tools", url: "https://www.riskofbias.info" }, { label: "Cochrane Handbook, chapter 8", url: "https://training.cochrane.org/handbook/current/chapter-08" }],
+  },
+  "review.rob.dual": {
+    kind: "explain",
+    title: "Two assessors, independently",
+    body: [
+      "Cochrane expects two people to assess risk of bias independently. With blind on, neither sees the other's answers until both have marked theirs complete.",
+      "Then judgements that differ are conflicts, listed under Conflicts. Agree on each one together, or let the tie-breaker decide, as the review's rules say.",
+    ],
+  },
+  "review.rob.plots": {
+    kind: "explain",
+    title: "Traffic-light and summary plots",
+    body: [
+      "The traffic-light plot shows each study's agreed judgement per domain, as a colour and a symbol, so it reads in print and without colour.",
+      "The summary plot shows, per domain, the share of studies at each level. Choose a result to also see it weighted by each study's weight in that outcome's analysis, which says more about how much the pooled result depends on studies at risk.",
+    ],
+  },
+  "review.rob.keys": { kind: "hint", text: "↑ ↓ move, a number answers, Enter takes the suggestion, ⌥S uses the selection as support, ⌘↩ completes, ⌥↓ goes on." },
+  "review.rob.weighted": { kind: "hint", text: "Choose a result with outcome data to weight the summary by each study's weight in its analysis." },
+  "review.rob.licence": { kind: "hint", text: "Key ships the official tools' structure only; their questions stay with their authors. Build a tool, or import one you may use." },
+  "review.rob.import": { kind: "hint", text: "Import tool definition (JSON): a tool file you or your institution may use, with its questions; it stays in this review." },
+  "review.rob.analysis": { kind: "hint", text: "Risk of bias from the Risk of bias stage: leave out studies at high risk, or compare studies by their overall judgement." },
+  "empty.review.rob": { kind: "empty", title: "No included studies yet", what: "Studies included at full text are assessed for risk of bias here.", todo: "Include studies at full-text screening." },
+  "empty.review.rob.conflicts": { kind: "empty", title: "No conflicts", what: "When assessors' judgements differ once both are done, the domain is listed here to settle.", todo: "Nothing to do here for now." },
+  "empty.review.rob.plots": { kind: "empty", title: "No agreed judgements yet", what: "The plots show judgements that the assessors agreed or settled.", todo: "Finish assessments in Assess." },
+  "review.grade": {
+    kind: "explain",
+    title: "Certainty of the evidence (GRADE)",
+    body: [
+      "GRADE rates how sure you can be about each outcome's pooled result: high, moderate, low or very low. Evidence from randomised trials starts high, from non-randomised studies low.",
+      "Rate down for risk of bias, inconsistency, indirectness, imprecision or publication bias; non-randomised evidence can also be rated up. Key suggests each judgement from the data with its reasons, and never applies one for you.",
+      "Each judgement that rates down or up needs a footnote: it explains the Summary of findings table.",
+    ],
+    links: [{ label: "GRADE handbook", url: "https://gdt.gradepro.org/app/handbook/handbook.html" }, { label: "Cochrane Handbook, chapter 14", url: "https://training.cochrane.org/handbook/current/chapter-14" }],
+  },
+  "review.grade.statement": { kind: "hint", text: "Key words the statement from the size of the effect and its certainty: “probably” for moderate, “may” for low." },
+  "review.grade.levels": { kind: "hint", text: "High: the true effect is close to the estimate. Moderate: probably close. Low: may differ a lot. Very low: likely to differ a lot." },
+  "review.grade.gradepro": { kind: "hint", text: "GRADEpro has no public import format for this table; it imports RevMan data packages. Export for Word, Markdown or CSV." },
+  "empty.review.sof": { kind: "empty", title: "No outcomes rated yet", what: "Each outcome you rate in Rate outcomes becomes a row of the Summary of findings table.", todo: "Rate the certainty of an outcome first." },
+  // end std-C
 } satisfies Record<string, HelpEntry>;

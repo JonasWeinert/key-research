@@ -16,11 +16,15 @@ import { Sources } from "./review-sources";
 import { Screening } from "./review-screen";
 import { Extraction } from "./review-extract";
 import { AnalysisView } from "./review-analysis";
+// std-C: risk of bias and certainty of evidence.
+import { RiskOfBias } from "./review-rob";
+import { Certainty } from "./review-grade";
+// end std-C
 import "./review.css";
 // std-A
 import { setFocus } from "./review-reporting-api";
 
-export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis";
+export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis" | /* std-C */ "rob" | "certainty";
 const stageKey = (id: string) => `key.review.stage:${id}`;
 
 export interface StageProps {
@@ -114,6 +118,10 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
     { id: "extract", label: "Extraction", badge: summary.included ? `${summary.extraction.mine}/${summary.included}` : undefined, title: `${summary.included} included studies` },
     { id: "analysis", label: "Analysis" },
   ];
+  // std-C: Risk of bias before Analysis, Certainty after it.
+  tabs.splice(tabs.findIndex((t) => t.id === "analysis"), 0, { id: "rob", label: "Risk of bias", title: "Risk of bias of the included studies and their results" });
+  tabs.splice(tabs.findIndex((t) => t.id === "analysis") + 1, 0, { id: "certainty", label: "Certainty", title: "Certainty of the evidence (GRADE) and the Summary of findings" });
+  // end std-C
   const props: StageProps = { api, summary, viewer, invoke, workspaceId, reviewId, active, onChanged: reload, notify: show, go: setStage };
   const exportFile = (kind: string) =>
     api
@@ -191,6 +199,9 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
         {(stage === "ta" || stage === "ft") && <Screening {...props} stage={stage} />}
         {stage === "extract" && <Extraction {...props} />}
         {stage === "analysis" && <AnalysisView {...props} />}
+        {/* std-C */}
+        {stage === "rob" && <RiskOfBias {...props} />}
+        {stage === "certainty" && <Certainty {...props} />}
       </main>
       {notice}
       {deleting && (

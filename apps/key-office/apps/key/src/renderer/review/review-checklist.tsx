@@ -14,7 +14,7 @@ import type { StageId, StageProps } from "./ReviewPage";
 import "./review-reporting.css";
 
 /** Stages a link may open (a part of Key not in this build shows as plain text). */
-export const KNOWN_STAGES = ["overview", "setup", "sources", "ta", "ft", "extract", "analysis"];
+export const KNOWN_STAGES = ["overview", "setup", "sources", "ta", "ft", "extract", "analysis", /* std-C */ "rob", "certainty"];
 
 export type OverviewView = "flow" | "checklist" | "search";
 
