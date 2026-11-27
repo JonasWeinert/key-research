@@ -9,7 +9,7 @@
 // 3. Settings › Forget sign-ins removes Key's sign-in profile.
 // Needs Google Chrome (or KEY_SIGNIN_CHROMIUM=<a Chromium program>). Never opens a window on
 // screen and never touches a real browser profile: Chrome runs headless with a temp profile.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, stat } = require("node:fs/promises");
 const { existsSync } = require("node:fs");
 const http = require("node:http");
