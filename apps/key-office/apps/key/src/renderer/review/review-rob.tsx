@@ -18,7 +18,7 @@ import { plural } from "./review-api";
 import { certaintyApi, type CertaintyApi, type RobAssessment, type RobDomain, type RobEvidence, type RobLevel, type RobOverview, type RobTool } from "./review-certainty-api";
 import { Btn, MenuButton, Segmented, Toggle, errorText, useLoad } from "./review-ui";
 import type { ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
-import { MarksLegend, flashRow, useMarksShown } from "./review-marks";
+import { MarksLegend, flashRow, mirrorOf, useMarksShown } from "./review-marks";
 import type { StageProps } from "./ReviewPage";
 import "./review-rob.css";
 
@@ -216,11 +216,13 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
   }, [a, focusDomain, addEvidence]);
   const robMode = useMemo<ReaderSelectionMode>(() => ({ id: "rob", label: "Use as support", filter: (a?.tool.domains.length ?? 0) > 5 ? "Filter domains" : undefined, hint: focusDomain ? "S the domain in focus · numbers another" : "Numbers pick the domain" }), [a, focusDomain]);
   const [marksShown, setMarksShown] = useMarksShown();
-  const marks = useMemo<ReaderMark[]>(() => {
-    if (!a || !marksShown) return [];
+  const allMarks = useMemo<ReaderMark[]>(() => {
+    if (!a) return [];
     const name = (id: string) => a.tool.domains.find((d) => d.id === id)?.name ?? id;
     return a.mine.evidence.filter((e) => e.text && e.page != null).map((e) => ({ id: `rob|${e.id}`, page: e.page ?? -1, rects: e.rects ?? [], text: e.text, tone: "evidence", label: `Support: ${name(e.domain)}` }));
-  }, [a, marksShown]);
+  }, [a]);
+  const marks = marksShown ? allMarks : [];
+  const mirror = useMemo(() => mirrorOf(props.summary, allMarks), [props.summary, allMarks]);
   const markActions = useCallback(
     (mark: ReaderMark): ReaderMarkMenu | null => {
       const e = a?.mine.evidence.find((x) => `rob|${x.id}` === mark.id);
@@ -329,6 +331,7 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
               mode={robMode}
               marks={marks}
               markActions={markActions}
+              mirror={mirror}
               onError={(t) => notify(t, "error")}
             />
           </Suspense>
@@ -377,7 +380,7 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
             {a.blind && !a.canSeeOthers ? " Blind: others' judgements show once everyone has finished." : ""}
           </p>
         )}
-        {mime && <MarksLegend kinds={["evidence"]} shown={marksShown} onShown={setMarksShown} count={a.mine.evidence.length} />}
+        {mime && <MarksLegend kinds={["evidence"]} shown={marksShown} onShown={setMarksShown} count={a.mine.evidence.length} marks={allMarks} onShow={(id) => reader.current?.showMark(id)} />}
         {domains.map((d) => {
           const isOverall = d.id === "overall";
           const mine = a.mine.judgements[d.id];

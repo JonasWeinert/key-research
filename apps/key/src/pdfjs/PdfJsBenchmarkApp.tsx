@@ -1609,6 +1609,11 @@ interface PdfJsBenchmarkAppProps {
   /** The host's marks in the page (not the user's highlights); a click opens `markActions`. */
   marks?: ReaderMark[];
   markActions?: (mark: ReaderMark) => ReaderMarkMenu | null;
+  /** A host's marks also kept as real highlights of this document (the user's own, in the
+   *  library) while `enabled`: one per mark, ids under `scope`, the mark's label (+ `note`) as
+   *  the comment; they follow the marks (changed, removed or taken back with them), and all of
+   *  the scope's go when it is turned off. Other scopes' are left alone. */
+  mirrorMarks?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[] } | null;
   /** While set, the next finished selection goes straight here, with no menu (a field's "pick"). */
   pickSelection?: ((passage: ReaderPassage) => void) | null;
   /** Opens a cited work in the library when the host has it there (the citation card's action). */
@@ -1747,6 +1752,7 @@ function PdfJsBenchmarkApp({
   selectionMode,
   marks: hostMarks,
   markActions,
+  mirrorMarks,
   pickSelection,
   referenceInLibrary,
   libraryWorks,
@@ -2868,6 +2874,49 @@ function PdfJsBenchmarkApp({
   useEffect(() => {
     if (markMenu && !hostMarks?.some(m => m.id === markMenu.mark.id)) setMarkMenu(null);
   }, [hostMarks, markMenu]);
+  // Host marks kept as the user's own highlights (a review's "also keep as my highlights"): one
+  // annotation per mark, its id derived from the mark's, placed by the mark's words on its page.
+  const mirrorScope = mirrorMarks ? `review-mark:${mirrorMarks.scope}:` : null;
+  const mirrorNote = mirrorMarks?.note ?? '';
+  const mirrorOn = !!mirrorMarks?.enabled;
+  const mirrored = mirrorMarks?.marks;
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const documentId = documentIdRef.current;
+    if (!ready || !overlay || !documentId || !mirrorScope) return;
+    let cancelled = false;
+    const tone: Record<string, HighlightColor> = { notMet: 'pink', met: 'green', evidence: 'blue', source: 'purple' };
+    const wanted = mirrorOn ? (mirrored ?? []).filter(m => m.page >= 0 && m.text.trim()) : [];
+    void (async () => {
+      const current = annotationSnapshotRef.current;
+      const keep = new Set(wanted.map(m => `${mirrorScope}${m.id}`));
+      let next = current.filter(a => !(a.id.startsWith(mirrorScope) && !keep.has(a.id)));
+      for (const mark of wanted) {
+        const id = `${mirrorScope}${mark.id}`;
+        const comment = `${mark.label}${mirrorNote ? ` (${mirrorNote})` : ''}`;
+        const color = tone[mark.tone] ?? 'orange';
+        const have = next.find(a => a.id === id);
+        if (have) {
+          if (have.comment !== comment || have.color !== color) next = next.map(a => (a.id === id ? { ...a, comment, color, updatedAt: new Date().toISOString() } : a));
+          continue;
+        }
+        await overlay.ensurePage(mark.page).catch(() => undefined);
+        if (cancelled) return;
+        const page = overlay.textPages.get(mark.page);
+        const range = page ? locateQuote(page, mark.text) : null;
+        if (!range) continue;
+        const now = new Date().toISOString();
+        next = [...next, { id, documentId, range, text: mark.text, color, comment, createdAt: now, updatedAt: now }];
+      }
+      if (cancelled) return;
+      const same = next.length === current.length && next.every((a, i) => a === current[i]);
+      if (!same) updateAnnotations(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, readerIdentity, mirrored, mirrorScope, mirrorNote, mirrorOn]);
   // A finished selection the host takes (no menu): after the pointer is up.
   const interceptRef = useRef(pickSelection);
   interceptRef.current = pickSelection;

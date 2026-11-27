@@ -146,11 +146,14 @@ pub struct Rules {
     /// Where an extracted value came from in the document: none | encouraged | required, for
     /// fields that do not set their own.
     pub source_default: String,
+    /// The review's marks (evidence, value sources, support) also kept as the user's own
+    /// highlights on full texts that are library sources.
+    pub mirror_marks: bool,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Self { ta: StageRule::ta(), ft: StageRule::ft(), blind: true, conflicts: "consensus".into(), quote_required: false, extractors: 1, ai_assist: false, suggestions: true, auto_advance: true, source_default: "none".into() }
+        Self { ta: StageRule::ta(), ft: StageRule::ft(), blind: true, conflicts: "consensus".into(), quote_required: false, extractors: 1, ai_assist: false, suggestions: true, auto_advance: true, source_default: "none".into(), mirror_marks: false }
     }
 }
 

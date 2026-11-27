@@ -122,6 +122,8 @@ const menuGeometry = () => {
       { id: "c-setting", element: "other", label: "Community or clinic setting", reason: "Wrong setting", guidance: "", stages: ["ft"] },
     ];
     protocol.rules.ft.reasons = "first";
+    // Marks are also kept as highlights on library copies (Pilates' PDF is one).
+    protocol.rules.mirrorMarks = true;
     const num = (id, label) => ({ id, label, kind: "number", guidance: "", required: false, quote: false, options: [], unit: "", columns: [], role: "", source: "encouraged" });
     protocol.forms = [
       {
@@ -202,6 +204,10 @@ const menuGeometry = () => {
         await page.locator(".kx-rv-reader .pdfjs-host-mark.tone-notMet").first().waitFor();
         await page.locator(".ksm[data-mode=follow]").getByRole("button", { name: /Exclude and go to next/ }).waitFor();
         await geometry("the follow-up");
+        // Kept as the user's own highlight on the library copy, labelled.
+        const mirrored = () => call("library_annotations", { hash: pilates.id }).then((list) => list.filter((a) => a.id.startsWith("review-mark:")));
+        const copy = await until(async () => (await mirrored())[0], "the mark mirrored as a highlight");
+        assert(/Not met: Community or clinic setting/.test(copy.comment) && /Selection \(smoke\)/.test(copy.comment), JSON.stringify(copy));
         await themed(page, "03-screen-marked");
         await page.keyboard.press("Escape");
         await page.locator(".ksm").waitFor({ state: "detached" });
@@ -219,6 +225,7 @@ const menuGeometry = () => {
         await page.keyboard.press("Meta+z");
         await chip("c-setting", "notMet").waitFor({ state: "detached" });
         await page.locator(".kx-rv-reader .pdfjs-host-mark").first().waitFor({ state: "detached" });
+        await until(async () => (await mirrored()).length === 0, "the mirrored highlight taken back with the mark");
         // Reading mode: the same menu over the reflowed text; the mark is placed in the PDF.
         if (report.readingModeReady) {
           await page.getByRole("button", { name: "Reading mode", exact: true }).click();
@@ -255,6 +262,10 @@ const menuGeometry = () => {
         await page.keyboard.press("2");
         await chip("c-population", "notMet").waitFor();
         await page.locator(".kx-rv-reader .pdfjs-host-mark.tone-notMet").first().waitFor();
+        await page.locator(".ksm[data-mode=follow]").waitFor();
+        // The marks list filters by purpose.
+        const marksList = page.locator(".kx-rv-marks li");
+        assert((await marksList.count()) >= 1);
         await page.locator(".ksm[data-mode=follow]").waitFor();
         await page.keyboard.press("Enter");
         await page.waitForFunction((b) => document.querySelector(".kx-rv-compact .kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), title);

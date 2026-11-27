@@ -355,6 +355,9 @@ function TeamSection({ summary, api, viewer, notify, onChanged, draft, change }:
         <Row label="AI assistance" hint="Off by default. A suggestion with its rationale from the AI provider in Key Settings; never a decision, never a reviewer. Titles and abstracts are sent to that provider.">
           <Toggle label="AI assistance" checked={r.aiAssist} onChange={(v) => change((p) => void (p.rules.aiAssist = v))} />
         </Row>
+        <Row label="Also keep review marks as my highlights on library copies" hint="Off by default. Evidence, value sources and support passages in full texts that are library sources also become your highlights there, labelled with what they are for; they follow the marks when those change or go.">
+          <Toggle label="Mirror review marks" checked={!!r.mirrorMarks} onChange={(v) => change((p) => void (p.rules.mirrorMarks = v))} />
+        </Row>
         <Row label="Go to the next record after a decision" hint="Off: the record stays until Enter or J, to check what was recorded.">
           <Toggle label="Auto-advance" checked={r.autoAdvance !== false} onChange={(v) => change((p) => void (p.rules.autoAdvance = v))} />
         </Row>

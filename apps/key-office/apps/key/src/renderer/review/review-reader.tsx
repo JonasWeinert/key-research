@@ -40,11 +40,14 @@ interface Props {
   marks?: ReaderMark[];
   markActions?: (mark: ReaderMark) => ReaderMarkMenu | null;
   pickSelection?: ((passage: ReaderPassage) => void) | null;
+  /** The review's marks also kept as the user's highlights on a library copy (Setup › rules):
+   *  all of them (shown or not), the review's id as their scope. */
+  mirror?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[] } | null;
   onError: (text: string) => void;
 }
 
 export const ReviewReader = forwardRef<ReviewReaderHandle, Props>(function ReviewReader(props, ref) {
-  const { api, recordId, version, title, mime, actions, mode, marks, markActions, pickSelection, onError, sourceId, invoke } = props;
+  const { api, recordId, version, title, mime, actions, mode, marks, markActions, pickSelection, onError, sourceId, invoke, mirror } = props;
   const [file, setFile] = useState<File | null>(null);
   const [html, setHtml] = useState<string | null>(null);
   const [failed, setFailed] = useState("");
@@ -114,6 +117,7 @@ export const ReviewReader = forwardRef<ReviewReaderHandle, Props>(function Revie
           selectionMode={mode}
           marks={marks}
           markActions={markActions}
+          mirrorMarks={sourceId && mirror ? mirror : null}
           pickSelection={readingAt ? null : pickSelection}
         />
         {readingAt && invoke && sourceId && (
