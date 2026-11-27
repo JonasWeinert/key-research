@@ -604,7 +604,8 @@ export default function FillSheet({
                       <div key={r.id} className="kx-fill-stale-row" data-recipe={r.name}>
                         <Icon name="clock" size={12} />
                         <span>
-                          <strong>{r.property}</strong> · {plural(r.ids.length, "value")} from “{r.name}” {r.ids.length === 1 ? "is" : "are"} out of date{targets.length ? " in the selection" : ""}
+                          <strong>{r.property}</strong> · {plural(r.ids.length, "value")}
+                          {r.name !== r.property ? ` from “${r.name}”` : ""} {r.ids.length === 1 ? "is" : "are"} out of date{targets.length ? " in the selection" : ""}
                         </span>
                         <button type="button" className="kx-settings-button" onClick={() => fillAgain(r)}>
                           Fill again…

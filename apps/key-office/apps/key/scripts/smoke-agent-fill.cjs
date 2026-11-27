@@ -237,9 +237,36 @@ const ABSTRACTS = {
     report.fillAgain = true;
 
     // 9. Automatic: the recipe fills again by itself; a value the user edited is left alone.
-    const recipe = (await call("store_fill_recipes")).find((r) => r.name === "Study design");
-    await call("store_fill_recipe_save", { recipe: { ...recipe, onChange: "refill" } });
+    // A value goes out of date; the fill sheet lists it for the selection.
     await call("store_edit", { ids: [ids["Long-run effects of microcredit"]], edit: { patch: { abstract: "A randomised trial of microcredit with 2,000 borrowers." } } });
+    await tableRow("Long-run effects of microcredit").locator('.kx-fill-mark[data-mark="stale"]').waitFor();
+    await tableRow("Long-run effects of microcredit").locator(".kx-cell-title").click();
+    await tableRow("Teaching at the right level").locator(".kx-cell-title").click({ modifiers: ["Meta"] });
+    await page.getByRole("button", { name: "Fill with AI" }).click();
+    await sheet.waitFor();
+    const staleRow = sheet.locator('.kx-fill-stale-row[data-recipe="Study design"]', { hasText: "1 value" });
+    await staleRow.waitFor();
+    // Let the sheet finish opening before looking at it.
+    await page.waitForTimeout(700);
+    await page.screenshot({ path: path.join(temp, "fill-stale-list.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: path.join(temp, "fill-stale-list-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+    // Fill again… opens the run step on the out-of-date value; choose automatic and save.
+    await staleRow.getByRole("button", { name: "Fill again…" }).click();
+    assert.equal(await sheet.getByRole("combobox", { name: "Run on" }).inputValue(), "again");
+    await sheet.locator(".kx-fill-estimate", { hasText: "to fill again" }).waitFor();
+    await sheet.locator('[data-onchange="refill"]').click();
+    assert.equal(await sheet.locator('[data-onchange="refill"] input').isChecked(), true);
+    await sheet.getByRole("combobox", { name: "Daily limit" }).waitFor();
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: path.join(temp, "fill-onchange-refill.png") });
+    await sheet.getByRole("button", { name: "Save changes" }).click();
+    await sheet.locator(".kx-fill-message", { hasText: "Saved" }).waitFor();
+    assert.equal((await call("store_fill_recipes")).find((r) => r.name === "Study design").onChange, "refill");
+    await sheet.locator(".kx-sheet-close").click();
+    await sheet.waitFor({ state: "detached" });
     await call("store_edit", { ids: [ids["Village savings groups"]], edit: { patch: { abstract: "A randomised trial of savings groups." } } });
     for (let i = 0; i < 150 && (await value("Long-run effects of microcredit")) !== "Randomised controlled trial"; i++) await page.waitForTimeout(200);
     assert.equal(await value("Long-run effects of microcredit"), "Randomised controlled trial", "filled again automatically");
