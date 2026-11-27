@@ -46,6 +46,14 @@ describe("applyPrediction", () => {
     ]);
     expect(both.tags.map((t) => t.name)).toEqual(["ML"]);
   });
+  it("builds children and totals from the tree", () => {
+    const tree = buildTree(index);
+    expect(tree.nodes.get("methods")?.children.map((c) => c.name)).toEqual(["ML"]);
+    // Items a and b hold ML; a and c hold Methods: three distinct items under Methods.
+    expect(tree.nodes.get("methods")?.total).toBe(3);
+    expect(tree.nodes.get("ml")?.total).toBe(tree.nodes.get("ml")?.count);
+  });
+
   it("sorts names naturally", () => {
     const tree = buildTree({ ...index, tags: [{ name: "b10", count: 1 }, { name: "B2", count: 1 }, { name: "a", count: 1 }], items: [], tree: {} });
     expect(sortTree(tree.roots, "name").map((n) => n.name)).toEqual(["a", "B2", "b10"]);
