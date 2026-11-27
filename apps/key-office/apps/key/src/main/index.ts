@@ -858,7 +858,7 @@ async function findPdfPageCommand(command: string, args: any, workspaceId: strin
   if (command === "embedded_browser_pdf") {
     const pdf = views.get(String(args?.id ?? ""))?.embedded?.pdf;
     if (!pdf) throw Error("No PDF is waiting");
-    return { path: pdf.path, name: pdf.name, size: pdf.size, url: pdf.url, bytes: pdf.size <= 60 * 1024 * 1024 && args?.bytes !== false ? await readFile(pdf.path) : null };
+    return { path: pdf.path, name: pdf.name, size: pdf.size, url: pdf.url, base64: pdf.size <= 60 * 1024 * 1024 && args?.bytes !== false ? (await readFile(pdf.path)).toString("base64") : null };
   }
   const sourceId = args?.sourceId ? String(args.sourceId) : "";
   if (command === "find_pdf_page") {

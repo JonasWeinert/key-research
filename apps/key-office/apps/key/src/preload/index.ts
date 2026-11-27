@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld("key", {
         "status-items",
         "app-notice",
         "proxies-changed",
+        "embedded-browser",
         "add-from-source",
         "full-screen",
         "open-item-link",

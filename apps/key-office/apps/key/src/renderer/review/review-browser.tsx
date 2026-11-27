@@ -148,15 +148,15 @@ export function ReviewBrowser(props: StageProps & { view: RecordView; url: strin
     handled.current = `${id}:${pdf.url}:${pdf.size}`;
     void (async () => {
       try {
-        const caught = await invoke<{ path: string; name: string; size: number; bytes: Uint8Array | null }>("embedded_browser_pdf", { id }, workspaceId);
-        if (caught.size > LARGE || !caught.bytes) return setQuestion({ kind: "large", text: `This PDF is large (${Math.round(caught.size / 1024 / 1024)} MB).`, detail: "Attach it anyway, or keep looking for a smaller copy." });
+        const caught = await invoke<{ path: string; name: string; size: number; base64: string | null }>("embedded_browser_pdf", { id }, workspaceId);
+        if (caught.size > LARGE || !caught.base64) return setQuestion({ kind: "large", text: `This PDF is large (${Math.round(caught.size / 1024 / 1024)} MB).`, detail: "Attach it anyway, or keep looking for a smaller copy." });
         const { pdfFirstPages } = await import("@key-reader/pdfjs/pdf-first-pages");
-        const bytes = caught.bytes instanceof Uint8Array ? caught.bytes : new Uint8Array(caught.bytes as ArrayBuffer);
-        const read = await pdfFirstPages(bytes.slice().buffer as ArrayBuffer).catch(() => ({ title: "", text: "", pages: 0 }));
+        const bytes = Uint8Array.from(atob(caught.base64), (c) => c.charCodeAt(0));
+        const read = await pdfFirstPages(bytes.buffer as ArrayBuffer).catch(() => ({ title: "", text: "", pages: 0 }));
         const doi = /\b10\.\d{4,9}\/[^\s"<>]+/.exec(read.text)?.[0]?.replace(/[.,;)\]]+$/, "") ?? "";
         const check = await invoke<{ verdict: string; foundTitle: string; foundDoi: string; otherRecord?: { title: string } }>(
           "review_fulltext_check",
-          { reviewId, recordId: view.meta.id, file: { name: caught.name, path: caught.path, title: read.title, doi, text: read.text } },
+          { reviewId, recordId: view.meta.id, file: { name: "", path: caught.path, title: read.title, doi, text: read.text } },
           workspaceId,
         ).catch(() => ({ verdict: "unknown", foundTitle: "", foundDoi: "", otherRecord: undefined }));
         if (check.verdict === "other")
@@ -238,7 +238,7 @@ export function ReviewBrowser(props: StageProps & { view: RecordView; url: strin
         </Btn>
       </div>
       {web && <BrowserBar state={web} style={{ width: "100%" }} onStep={(step) => void tab("history", { viewId: id, step })} onPage={(op: WebPageOp) => void tab("web-page", { viewId: id, op })} />}
-      {web?.findPdf && <FindPdfBanner state={web.findPdf} style={{ width: "100%" }} onOp={onBanner} />}
+      {web?.findPdf && !question && <FindPdfBanner state={web.findPdf} style={{ width: "100%" }} onOp={onBanner} />}
       {question && (
         <div className="kx-rv-browser-question" role="alert" data-kind={question.kind}>
           <Icon name="warning" size={14} />
