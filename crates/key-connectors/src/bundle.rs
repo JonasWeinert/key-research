@@ -1,8 +1,11 @@
-// Signed connector bundles: an index (ids, versions, hashes, engine version, sequence) signed
-// with Ed25519, the spec files it lists, and the certificates of the signing keys. The app
-// trusts root public keys (connectors/trust.json, compiled in); a root signs signing keys for a
-// period (key rotation), a signing key signs the index. Nothing unsigned, tampered, expired,
-// revoked, older than what is active, or needing a newer engine is ever activated.
+// Connector bundles: an index (ids, versions, hashes, engine version, sequence), optionally
+// signed with Ed25519, the spec files it lists, and the certificates of the signing keys. The
+// app trusts root public keys (connectors/trust.json, compiled in); a root signs signing keys
+// for a period (key rotation), a signing key signs the index. While no root is trusted (signing
+// is postponed), unsigned bundles are accepted and labelled unsigned; once a root is added (or
+// `requireSignature` is set) nothing unsigned is activated. A bundle that is tampered (hashes),
+// carries a signature that does not verify against a trusted root, is expired, revoked, older
+// than what is active, or needs a newer engine is never activated.
 //
 // On disk (<dir>): active/ (the verified bundle in use), previous/ (the one before, for
 // rollback), staging-<n>/ (a download being checked), state.json (last check, ETag, errors).
@@ -95,6 +98,9 @@ pub struct Trust {
     /// Where updates are published (index.json, index.sig, keys.json, specs/...).
     #[serde(default)]
     pub update_url: String,
+    /// Whether bundles must be signed. Unset: required as soon as a root is trusted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub require_signature: Option<bool>,
 }
 
 impl Trust {
@@ -108,8 +114,14 @@ impl Trust {
         trust
     }
 
+    /// Updates can be checked (an update address is set).
     pub fn configured(&self) -> bool {
-        !self.roots.is_empty()
+        !self.update_url.trim().is_empty()
+    }
+
+    /// Only signed bundles are accepted.
+    pub fn requires_signature(&self) -> bool {
+        self.require_signature.unwrap_or(!self.roots.is_empty())
     }
 }
 
@@ -248,22 +260,37 @@ pub struct Verified {
     pub index: Index,
     pub specs: Vec<(Spec, String)>,
     pub warnings: Vec<String>,
+    /// The index signature was verified against a trusted root (false: an unsigned bundle,
+    /// accepted because signatures are not required yet).
+    pub signed: bool,
+    /// The key that signed it, when signed.
+    pub key_id: Option<String>,
 }
 
 /// Checks a bundle read through `read` (a path relative to the bundle root -> bytes).
 /// `active_sequence`: what is in use now (an older bundle is refused, the same one accepted).
 pub fn verify(read: &dyn Fn(&str) -> Option<Vec<u8>>, trust: &Trust, now: i64, active_sequence: Option<u64>) -> Result<Verified, String> {
     let index_bytes = read("index.json").ok_or("index.json is missing")?;
-    let sig: IndexSignature = serde_json::from_slice(&read("index.sig").ok_or("index.sig is missing")?).map_err(|e| format!("index.sig: {e}"))?;
-    let keys: Keys = match read("keys.json") {
-        Some(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("keys.json: {e}"))?,
-        None => Keys::default(),
+    let sig_bytes = read("index.sig").filter(|b| !b.iter().all(u8::is_ascii_whitespace));
+    let required = trust.requires_signature();
+    // A signature is checked whenever a root could verify it; without roots it cannot be.
+    let (signed, key_id_) = match sig_bytes {
+        Some(bytes) if !trust.roots.is_empty() => {
+            let sig: IndexSignature = serde_json::from_slice(&bytes).map_err(|e| format!("index.sig: {e}"))?;
+            let keys: Keys = match read("keys.json") {
+                Some(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("keys.json: {e}"))?,
+                None => Keys::default(),
+            };
+            let key = signer(trust, &keys, &sig.key_id, now)?;
+            let signature = Signature::from_slice(&unb64(&sig.signature)?).map_err(|_| "a bad index signature")?;
+            let mut message = INDEX_CONTEXT.to_vec();
+            message.extend_from_slice(&index_bytes);
+            key.verify(&message, &signature).map_err(|_| "the index signature does not verify")?;
+            (true, Some(sig.key_id))
+        }
+        _ if required => return Err("index.sig is missing (this app only accepts signed connector bundles)".into()),
+        _ => (false, None),
     };
-    let key = signer(trust, &keys, &sig.key_id, now)?;
-    let signature = Signature::from_slice(&unb64(&sig.signature)?).map_err(|_| "a bad index signature")?;
-    let mut message = INDEX_CONTEXT.to_vec();
-    message.extend_from_slice(&index_bytes);
-    key.verify(&message, &signature).map_err(|_| "the index signature does not verify")?;
     let index: Index = serde_json::from_slice(&index_bytes).map_err(|e| format!("index.json: {e}"))?;
     if index.bundle != BUNDLE_FORMAT {
         return Err(format!("bundle format {} is not supported", index.bundle));
@@ -306,7 +333,10 @@ pub fn verify(read: &dyn Fn(&str) -> Option<Vec<u8>>, trust: &Trust, now: i64, a
         }
         specs.push((spec, entry.sha256.clone()));
     }
-    Ok(Verified { index, specs, warnings })
+    if !signed {
+        warnings.push("This connector bundle is unsigned".into());
+    }
+    Ok(Verified { index, specs, warnings, signed, key_id: key_id_ })
 }
 
 pub fn read_dir(dir: &Path) -> impl Fn(&str) -> Option<Vec<u8>> + '_ {
@@ -467,8 +497,18 @@ impl Store {
         std::fs::create_dir_all(staging.join("specs")).map_err(|e| e.to_string())?;
         let write = |rel: &str, bytes: &[u8]| std::fs::write(staging.join(rel), bytes).map_err(|e| e.to_string());
         write("index.json", &index_bytes)?;
-        write("index.sig", &fetch("index.sig")?.ok_or("index.sig is missing")?)?;
-        if let Some(keys) = fetch("keys.json")? {
+        // Unsigned bundles have no index.sig; verify() decides whether that is acceptable.
+        let has_sig = match fetch("index.sig") {
+            Ok(Some(sig)) => {
+                write("index.sig", &sig)?;
+                true
+            }
+            Ok(None) => false,
+            Err(e) if trust.requires_signature() => return Err(e),
+            Err(_) => false,
+        };
+        let keys = if has_sig { fetch("keys.json")? } else { fetch("keys.json").ok().flatten() };
+        if let Some(keys) = keys {
             write("keys.json", &keys)?;
         }
         // Spec files unchanged since the active bundle are copied, not downloaded again.
@@ -583,8 +623,13 @@ mod tests {
     #[test]
     fn untrusted_tampered_expired_revoked_and_older_bundles_are_refused() {
         let files = bundle(2, SPEC, WINDOW);
-        // Not trusted without the dev root.
-        assert!(verify(&reader(&files), &Trust::default(), now(), None).is_err());
+        // Signatures required, but the signer is not certified by a trusted root.
+        let strict = Trust { require_signature: Some(true), ..Trust::default() };
+        assert!(verify(&reader(&files), &strict, now(), None).is_err());
+        let mut other_root = Trust::default();
+        let rogue_root = SigningKey::from_bytes(&[9u8; 32]);
+        other_root.roots.push(TrustedKey { key_id: key_id(&rogue_root.verifying_key()), public_key: b64(rogue_root.verifying_key().as_bytes()), not_before: None, not_after: None, note: None });
+        assert!(verify(&reader(&files), &other_root, now(), None).unwrap_err().contains("certified"));
         // A changed spec no longer matches its hash.
         let mut tampered = files.clone();
         tampered.insert("specs/demo.json".into(), SPEC.replace("Demo", "Evil").into_bytes());
@@ -680,8 +725,73 @@ mod tests {
         assert_eq!(store2.load(&trust, now()).unwrap().index.sequence, 1);
     }
 
+    fn unsigned(sequence: u64, spec: &str) -> HashMap<String, Vec<u8>> {
+        let mut files = bundle(sequence, spec, WINDOW);
+        files.remove("index.sig");
+        files.remove("keys.json");
+        files
+    }
+
+    /// The trust of a build with no root key yet (signing postponed).
+    fn no_roots() -> Trust {
+        Trust { update_url: "https://example.org/connectors".into(), ..Trust::default() }
+    }
+
     #[test]
-    fn without_a_trusted_root_updates_are_not_configured() {
+    fn unsigned_bundles_are_accepted_and_labelled_while_no_root_is_trusted() {
+        let files = unsigned(1, SPEC);
+        let v = verify(&reader(&files), &no_roots(), now(), None).unwrap();
+        assert!(!v.signed && v.key_id.is_none());
+        assert!(v.warnings.iter().any(|w| w.contains("unsigned")), "{:?}", v.warnings);
+        // A signed bundle without a trusted root cannot be checked: it counts as unsigned.
+        let v = verify(&reader(&bundle(1, SPEC, WINDOW)), &no_roots(), now(), None).unwrap();
+        assert!(!v.signed);
+        // Hashes still guard the spec files.
+        let mut tampered = files.clone();
+        tampered.insert("specs/demo.json".into(), SPEC.replace("Demo", "Evil").into_bytes());
+        assert!(verify(&reader(&tampered), &no_roots(), now(), None).unwrap_err().contains("hash"));
+        // Older than the active one: still refused.
+        assert!(verify(&reader(&files), &no_roots(), now(), Some(2)).unwrap_err().contains("older"));
+    }
+
+    #[test]
+    fn signatures_are_required_once_a_root_is_trusted_or_asked_for() {
+        let files = unsigned(1, SPEC);
+        assert!(dev_trust().requires_signature() && !no_roots().requires_signature());
+        assert!(verify(&reader(&files), &dev_trust(), now(), None).unwrap_err().contains("index.sig"));
+        let strict = Trust { require_signature: Some(true), ..no_roots() };
+        assert!(verify(&reader(&files), &strict, now(), None).is_err());
+        // A signed bundle with the trusted root is labelled signed.
+        let v = verify(&reader(&bundle(1, SPEC, WINDOW)), &dev_trust(), now(), None).unwrap();
+        assert!(v.signed && v.key_id.as_deref() == Some(key_id(&dev_signing().verifying_key()).as_str()));
+        assert!(!v.warnings.iter().any(|w| w.contains("unsigned")));
+        // With a root trusted but signatures not required, a bad signature still fails.
+        let lenient = Trust { require_signature: Some(false), ..dev_trust() };
+        let mut tampered = bundle(2, SPEC, WINDOW);
+        let index = String::from_utf8(tampered["index.json"].clone()).unwrap().replace("\"sequence\":2", "\"sequence\":9");
+        tampered.insert("index.json".into(), index.into_bytes());
+        assert!(verify(&reader(&tampered), &lenient, now(), None).unwrap_err().contains("signature"));
+        assert!(verify(&reader(&unsigned(1, SPEC)), &lenient, now(), None).is_ok());
+    }
+
+    #[test]
+    fn the_store_activates_unsigned_bundles_without_a_signature_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path().join("connectors"));
+        let trust = no_roots();
+        let files = unsigned(4, SPEC);
+        let index = files["index.json"].clone();
+        let serve = move |p: &str| -> Result<Option<Vec<u8>>, String> { files.get(p).cloned().map(Some).ok_or_else(|| format!("{p} was not found at the update address")) };
+        let r = store.check(&trust, &serve, now(), true, &|_| Ok(Some((index.clone(), None))));
+        assert_eq!(r.state, "updated", "{r:?}");
+        let v = store.load(&trust, now()).unwrap();
+        assert_eq!((v.index.sequence, v.signed), (4, false));
+        // The same unsigned folder is refused by a build that requires signatures.
+        assert!(store.load(&dev_trust(), now()).is_none());
+    }
+
+    #[test]
+    fn without_an_update_address_updates_are_not_configured() {
         let tmp = tempfile::tempdir().unwrap();
         let store = Store::new(tmp.path());
         let r = store.check(&Trust::default(), &|_| Ok(None), now(), true, &|_| Ok(None));
