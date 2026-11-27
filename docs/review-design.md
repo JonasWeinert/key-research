@@ -205,7 +205,32 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
 - **Analysis**: pick an outcome; effect measure (RR, OR, RD, MD, SMD/Hedges' g, generic inverse
   variance); fixed and random effects (DerSimonian–Laird, REML; Hartung–Knapp); heterogeneity (Q,
   I², τ², prediction interval); subgroups; leave-one-out; Egger's test; forest and funnel plots
-  (`src/renderer/charts/`), exportable.
+  (`src/renderer/charts/`), exportable. More effect sizes: correlations (r, Fisher's z), partial
+  correlations from t and df (metafor's variance or the economics SE), response ratio, incidence
+  rate ratio, proportions (logit, Freeman–Tukey with Miller's back-transformation), standardised
+  mean change, hazard ratios.
+- **More analyses** (`synthesis.rs`, UI `review-synthesis.tsx`): several estimates per study
+  (correlated and hierarchical effects with CR2 robust SEs and Satterthwaite df, a three-level
+  REML model, or aggregation; `dependence.rs`, `multilevel.rs`); meta-regression with continuous
+  and categorical moderators, REML, Knapp–Hartung, R², permutation test and bubble plot
+  (`metareg.rs`); FAT-PET, PEESE and the conditional rule (robust SEs with several estimates),
+  UWLS/WAAP, trim and fill (L0/R0), the three-parameter selection model and a contour-enhanced
+  funnel (`pubbias.rs`); influence diagnostics, Baujat plot, cumulative analysis and a model
+  comparison (`sensitivity.rs`). Each is tested against metafor 5.2-1 (run locally), R's lm, or
+  clubSandwich results printed in metafor's documentation; no R at runtime. A risk-of-bias
+  moderator comes from the "rob-covariates" export when RoB assessments exist.
+- **Conversions** (`conversions.rs`, UI `review-convert.tsx`): the helper on an outcome row
+  computes SE/CI/p/t, SDs from SE/CI/IQR/range, mean and SD from medians (Luo/Wan/Shi, as
+  conv.fivenum, with the skewness check), change-score SDs, combined groups, events from
+  percentages, split shared groups and cluster effective sample sizes, and stores method, formula
+  and source on the row (`_conversions`).
+- **Exports others import** (`interop.rs`, `rscript.rs`, `revman.rs`, `migrate.rs`): per saved
+  analysis an R script with its data that checks every number against Key's (`all.equal`), a
+  Stata do-file for the basic model; RevMan Web's study information, arms and results CSVs plus a
+  RIS with NS = Study ID, with a validator for its documented import rules; included and excluded
+  studies as RIS/BibTeX/CSV; a replication bundle (zip with README, manifest and SHA-256 sums,
+  optional anonymised reviewers); and an import of records and decisions from Covidence, Rayyan
+  or any CSV with a column mapping.
 
 ## PRISMA counts
 
@@ -237,4 +262,4 @@ under a second (`perf` test in `key-review`).
 Sync and web sharing (designed in `docs/review-sync.md`). Extraction stays per report when
 several reports form one study (PRISMA counts studies and reports apart). Saved web pages show as
 saved, without the reading mode's selection actions until that reader takes them (an iframe with
-its own small toolbar meanwhile). An outcome file RevMan Web imports.
+its own small toolbar meanwhile). RevMan Web's risk-of-bias CSV (its RoB 2 header is not public) and a check against Cochrane's own Excel templates.
