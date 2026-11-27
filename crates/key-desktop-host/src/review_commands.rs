@@ -19,6 +19,8 @@ use std::sync::{Arc, OnceLock};
 
 #[path = "review_commands/library_links.rs"]
 mod library_links;
+#[path = "review_commands/library_sync.rs"]
+mod library_sync;
 
 static REVIEWS: OnceLock<Result<Reviews, String>> = OnceLock::new();
 
@@ -51,6 +53,10 @@ impl key_review::Library for Lookup<'_> {
             out.insert("year".into(), json!(y));
         }
         Some((id, out))
+    }
+    /// A linked source's details (the record's "complete metadata" reads them first).
+    fn source_meta(&self, source_id: &str) -> Option<RecordMeta> {
+        library_sync::source_meta(self.0, source_id).map(|(_, m)| m)
     }
 }
 
@@ -140,6 +146,23 @@ fn full_text_path(root: &Path, library: &Library, reviews: &Reviews, review: &st
     let path = s.file_path().ok_or("Its library source has no file yet")?;
     let mime = s.field("mime").unwrap_or("application/pdf").to_string();
     Ok((path, mime))
+}
+
+/// Where a link change was made: the library's source page or the review (the default).
+fn origin(args: &Json) -> &'static str {
+    if args.get("origin").and_then(Json::as_str) == Some("library") { "library" } else { "review" }
+}
+
+/// The library's ⌘Z / ⇧⌘Z: the journal steps, and a link change it carries is undone or
+/// redone on the review's side too (library_sync.rs).
+pub fn library_undo(root: &Path, library: &Library, undo: bool) -> Result<Output, String> {
+    let entry = match reviews(root) {
+        Ok(r) => library_sync::library_step(library, root, r, undo)?,
+        Err(_) => if undo { library.store.undo()? } else { library.store.redo()? },
+    };
+    library.indexer.wake();
+    library.hygiene.wake();
+    json_output(json!({ "entry": entry, "state": library.store.journal_state(1)? }))
 }
 
 fn stage(args: &Json) -> Result<Stage, String> {
@@ -633,7 +656,18 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 let evidence: Vec<Json> = arg::<Option<Vec<Json>>>(args, "evidence")?.unwrap_or_default();
                 json!(reviews.decide(&review()?, &ids, stage(args)?, value, strings(args, "reasons"), text(args, "other"), text(args, "note"), evidence, &actor()?)?)
             }
-            "review_undo" => json!(reviews.undo(&review()?, &actor()?)?.map(|(record, stage)| json!({ "recordId": record, "stage": stage }))),
+            "review_undo" => {
+                // The latest of the person's decisions and the link changes they made here.
+                let (id, who) = (review()?, actor()?);
+                let link_at = reviews.link_undo_target(&id, &who, false)?.map(|o| o.at);
+                let decision_at = reviews.read(&id, |s, _| Ok(s.records.iter().flat_map(|r| r.decisions.iter().chain(r.resolutions.iter()).flatten()).filter(|d| d.reviewer == who).map(|d| d.at).max()))?;
+                if link_at.is_some_and(|l| decision_at.is_none_or(|d| l >= d)) {
+                    let op = library_sync::undo(library, root, reviews, &id, &who, false)?;
+                    json!(op.map(|o| json!({ "recordId": o.record, "link": o.label })))
+                } else {
+                    json!(reviews.undo(&id, &who)?.map(|(record, stage)| json!({ "recordId": record, "stage": stage })))
+                }
+            }
             "review_retract" => {
                 reviews.retract(&review()?, text(args, "recordId"), text(args, "eventId"), &actor()?)?;
                 json!(true)
@@ -758,8 +792,14 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             "review_fulltexts" => reviews.fulltext_status(&review()?)?,
             "review_fulltext_match" => json!(reviews.match_dropped(&review()?, &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
             // Links with the library (library_links.rs): refreshed, a conflict decided, a source's reviews.
-            "review_links_refresh" => library_links::refresh_links(library, root, reviews, &review()?, &actor()?)?,
-            "review_fulltext_reconcile" => library_links::reconcile(library, root, reviews, &review()?, text(args, "recordId"), text(args, "choice"), &actor()?)?,
+            "review_links_refresh" => {
+                let id = review()?;
+                let mut out = library_links::refresh_links(library, root, reviews, &id, &actor()?)?;
+                // The review's Setup says the library's details win: differences settle here.
+                out["settled"] = json!(library_sync::settle_by_policy(library, root, reviews, &id, &actor()?)?);
+                out
+            }
+            "review_fulltext_reconcile" => library_sync::reconcile(library, root, reviews, &review()?, text(args, "recordId"), text(args, "choice"), &actor()?)?,
             "review_links_for_source" => library_links::links_for_source(library, reviews, text(args, "sourceId"))?,
             // A PDF caught in the review's browser for one record: is it that record's work?
             "review_fulltext_check" => reviews.check_dropped(&review()?, text(args, "recordId"), &arg::<key_review::records::DroppedFile>(args, "file")?)?,
@@ -782,7 +822,9 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             "review_fulltext_info" => {
                 let id = review()?;
                 let (path, mime) = full_text_path(root, library, reviews, &id, text(args, "recordId"))?;
-                json!({ "path": path, "mime": mime, "exists": path.is_file() })
+                // The file's hash: an open reader follows a shared file replaced on either side.
+                let hash = key_index::file_hash(&path).ok();
+                json!({ "path": path, "mime": mime, "exists": path.is_file(), "hash": hash })
             }
             // "Also add to library": the review's file becomes a library source too.
             "review_fulltext_to_library" => {
@@ -937,6 +979,31 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             "review_migrate_preview" => json!(key_review::migrate::preview(text(args, "text"))?),
             "review_migrate" => json!(reviews.migrate(&review()?, text(args, "text"), &arg::<key_review::migrate::Mapping>(args, "mapping")?, &actor()?, &lookup)?),
             // std-D end.
+            // Linked records and the library (review_commands/library_sync.rs): details compared
+            // and reconciled, possible matches, undoable link changes, review-only highlights.
+            "review_link_diff" => library_sync::diff(library, reviews, &review()?, text(args, "recordId"))?,
+            "review_link_pending" => json!(library_sync::pending_counts(library, reviews, &review()?)?),
+            "review_link_take" => {
+                let picks: Vec<(String, String)> = args.get("fields").and_then(Json::as_array).map(|a| a.iter().filter_map(|f| Some((f.get("field")?.as_str()?.to_string(), f.get("choice")?.as_str()?.to_string()))).collect()).unwrap_or_default();
+                if picks.is_empty() {
+                    return Err("Choose what to take for each field".into());
+                }
+                library_sync::take(library, root, reviews, &review()?, text(args, "recordId"), &picks, origin(args), &actor()?)?
+            }
+            "review_link_suggestions" => library_sync::suggestions(library, reviews, &review()?)?,
+            "review_link_suggestions_for_source" => library_sync::suggestions_for_source(library, reviews, text(args, "sourceId"))?,
+            "review_link_confirm" => library_sync::confirm(library, root, reviews, &review()?, text(args, "recordId"), text(args, "sourceId"), origin(args), &actor()?)?,
+            "review_link_reject" => library_sync::reject(library, root, reviews, &review()?, text(args, "recordId"), text(args, "sourceId"), origin(args), &actor()?)?,
+            "review_link_unlink" => library_sync::unlink(library, root, reviews, &review()?, text(args, "recordId"), origin(args), &actor()?)?,
+            "review_link_undo" => json!(library_sync::undo(library, root, reviews, &review()?, &actor()?, args.get("redo").and_then(Json::as_bool).unwrap_or(false))?.map(|o| json!({ "recordId": o.record, "label": o.label }))),
+            "review_link_changes" => library_sync::changes(library, reviews, &review()?, args.get("since").and_then(Json::as_i64).unwrap_or(0))?,
+            "review_highlights" => library_sync::highlights(reviews, &review()?, text(args, "recordId"))?,
+            "review_highlights_apply" => {
+                let upserts: Vec<Json> = args.get("upserts").and_then(Json::as_array).cloned().unwrap_or_default();
+                library_sync::apply_highlights(reviews, &review()?, text(args, "recordId"), upserts, strings(args, "deleted"), &actor()?)?;
+                json!(true)
+            }
+            "review_highlights_carry" => library_sync::carry_highlights(library, root, reviews, &review()?, text(args, "recordId"), args.get("carry").and_then(Json::as_bool).unwrap_or(false), &actor()?)?,
             _ => return Err(format!("Unknown Key command: {command}")),
         })
     })();

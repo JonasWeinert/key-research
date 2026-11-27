@@ -188,6 +188,8 @@ pub fn normal(field: &str, v: &Json) -> String {
         "year" => s.get(..4).unwrap_or(&s).to_string(),
         "authors" => s.split(';').map(author_key).collect::<Vec<_>>().join("; "),
         "pages" => pages_key(&s),
+        // Key's "document" is a type not known yet.
+        "itemType" if s == "document" => String::new(),
         "itemType" => type_key(&s),
         "language" => language_key(&s),
         "url" => url_key(&s),

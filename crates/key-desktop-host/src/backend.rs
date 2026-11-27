@@ -3158,6 +3158,10 @@ impl Host {
             return tokio::task::block_in_place(|| feeds::dispatch(&self.feeds, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
+        // The library's undo also undoes the review side of a link change made in the library.
+        if command == "store_undo" || command == "store_redo" {
+            return tokio::task::block_in_place(|| review_commands::library_undo(&self.root, &self.library, command == "store_undo"));
+        }
         if command.starts_with("review_") {
             return tokio::task::block_in_place(|| review_commands::dispatch(&self.root, &self.library, &self.databases, &self.web, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));

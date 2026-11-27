@@ -218,6 +218,19 @@ fn prune(db: &Connection) -> Result<()> {
     Ok(())
 }
 
+impl crate::Store {
+    /// Up to `limit` changes after `consumer`'s cursor (outside the crate: the desktop host's
+    /// own consumers, such as reviews following their linked sources).
+    pub fn changes_since(&self, consumer: &str, limit: usize) -> Result<Vec<Change>> {
+        read_since(&*self.db()?, consumer, limit)
+    }
+
+    /// `consumer` has handled every change up to `seq`.
+    pub fn changes_ack(&self, consumer: &str, seq: i64) -> Result<()> {
+        ack(&*self.db()?, consumer, seq)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

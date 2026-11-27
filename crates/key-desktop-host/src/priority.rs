@@ -55,6 +55,9 @@ const INTERACTIVE: &[&str] = &[
     // end std-C
     // std-D: the conversion helper answers as a reviewer types.
     "review_convert", "review_conversion_kinds",
+    // Linked records and the library: the record panel's comparison, its choices, undo, highlights.
+    "review_link_diff", "review_link_take", "review_link_confirm", "review_link_reject", "review_link_unlink", "review_link_undo", "review_link_changes",
+    "review_highlights", "review_highlights_apply", "review_highlights_carry", "review_fulltext_reconcile", "review_links_for_source", "review_link_suggestions_for_source",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
