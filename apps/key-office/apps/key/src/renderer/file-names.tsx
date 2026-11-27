@@ -129,7 +129,7 @@ export function FileSettings({ invoke, workspaceId }: { invoke: Invoke; workspac
     if (!workspaceId) return;
     void invoke<{ rules: NamingRules; default: NamingRules }>("store_file_naming", {}, workspaceId).then((r) => (setRules(r.rules), setFallback(r.default)));
     void invoke<LinkedFolder[]>("store_linked_folders", {}, workspaceId).then(setFolders).catch(() => {});
-    void invoke<typeof mirror>("store_file_mirror", {}, workspaceId).then(setMirror).catch(() => {});
+    void invoke<typeof mirror>("store_file_mirror_config", {}, workspaceId).then(setMirror).catch(() => {});
   }, [workspaceId, invoke]);
   // Live examples from the library as the rules change; saved once they are valid.
   useEffect(() => {

@@ -1,7 +1,9 @@
 // Ways into systematic reviews: the sidebar's "Reviews" row (each review under it), the commands
-// "New systematic review…" and "Open review file…", and the library's "Send to review…" for a
-// selection of sources. A review opens as an ordinary tab (section "review").
+// "New systematic review…" and "Open review file…", the library's "Send to review…" for a
+// selection of sources and database search's for a run's results. A review opens as an ordinary
+// tab (section "review").
 import { useEffect, useState } from "react";
+import { Popover } from "../db-ui";
 import { GlobalDialog } from "../GlobalDrawer";
 import { Icon } from "../icons";
 import { bridge, type Invoke } from "../library-api";
@@ -18,7 +20,7 @@ export function openReview(workspaceId: string, reviewId: string, title = "Syste
   return bridge().tabAction("open-content", { section: "review", workspaceId, entityId: reviewId, title });
 }
 
-type Sheet = { kind: "new"; workspaceId: string } | { kind: "send"; workspaceId: string; sourceIds: string[] };
+type Sheet = { kind: "new"; workspaceId: string } | { kind: "send"; workspaceId: string; sourceIds: string[] } | { kind: "run"; workspaceId: string; send: (reviewId: string, actor: string) => Promise<unknown> };
 /** Opens "New systematic review…". */
 export const newReview = (workspaceId: string) => window.dispatchEvent(new CustomEvent<Sheet>(OPEN, { detail: { kind: "new", workspaceId } }));
 /** Opens "Send to review…" for library sources. */
@@ -59,7 +61,80 @@ export function ReviewSheetsHost({ invoke }: { invoke: Invoke }) {
     return () => window.removeEventListener(OPEN, listener);
   }, []);
   if (!sheet) return null;
-  return sheet.kind === "new" ? <NewReviewSheet invoke={invoke} workspaceId={sheet.workspaceId} onClose={() => setSheet(undefined)} /> : <SendSheet invoke={invoke} workspaceId={sheet.workspaceId} sourceIds={sheet.sourceIds} onClose={() => setSheet(undefined)} />;
+  const close = () => setSheet(undefined);
+  if (sheet.kind === "run") return <NewReviewSheet invoke={invoke} workspaceId={sheet.workspaceId} onClose={close} then={sheet.send} />;
+  return sheet.kind === "new" ? <NewReviewSheet invoke={invoke} workspaceId={sheet.workspaceId} onClose={close} /> : <SendSheet invoke={invoke} workspaceId={sheet.workspaceId} sourceIds={sheet.sourceIds} onClose={close} />;
+}
+
+/** Who acts for this window in a review: the given actor, the saved viewer or the owner. */
+async function actorFor(api: ReturnType<typeof reviewApi>, reviewId: string, actor?: string) {
+  return actor ?? savedViewer(reviewId) ?? (await api.summary("")).team.find((m) => m.roles.includes("owner"))?.id ?? "";
+}
+
+/** Database search's "Send to review…": a menu of the workspace's reviews and "New review…";
+ * sends the chosen works of a run (every version of each, so the review de-duplicates them) or,
+ * with no keys, all of the run's results, and opens the review. */
+export function SendRunToReview({ invoke, workspaceId, runId, keys, label }: { invoke: Invoke; workspaceId: string; runId: string; keys?: string[]; label: string }) {
+  const [anchor, setAnchor] = useState<DOMRect>();
+  const [reviews, setReviews] = useState<Awaited<ReturnType<typeof listReviews>>>();
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (anchor) void listReviews(invoke, workspaceId).then((r) => setReviews(r.filter((x) => !x.archived)), () => setReviews([]));
+  }, [anchor, invoke, workspaceId]);
+  const send = async (reviewId: string, actor?: string) => {
+    const api = reviewApi(invoke, workspaceId, reviewId);
+    const { report } = await api.importDbRun(runId, { name: label }, await actorFor(api, reviewId, actor), keys?.length ? keys : undefined);
+    toast(`${plural(report.added, "record")} sent to the review${report.duplicates ? ` (${report.duplicates} duplicates removed)` : ""}`);
+  };
+  const pick = (reviewId: string, name: string) => {
+    setAnchor(undefined);
+    setBusy(true);
+    send(reviewId)
+      .then(() => {
+        changed();
+        return openReview(workspaceId, reviewId, name);
+      })
+      .catch((e) => toast(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="kx-page-action"
+        aria-haspopup="menu"
+        aria-expanded={!!anchor}
+        disabled={busy}
+        title={keys?.length ? "Add these works to a systematic review for screening" : "Add every result of this search to a systematic review for screening"}
+        onClick={(e) => setAnchor(anchor ? undefined : e.currentTarget.getBoundingClientRect())}
+      >
+        <Icon name="checklist" size={12} /> {busy ? "Sending…" : "Send to review…"}
+      </button>
+      {anchor && (
+        <Popover anchor={anchor} onClose={() => setAnchor(undefined)} label="Send to review" width={240}>
+            {reviews?.length ? <div className="kx-db-menu-label">{keys?.length ? `Send ${plural(keys.length, "work")} to` : "Send all results to"}</div> : null}
+            {reviews?.map((r) => (
+              <button key={r.id} type="button" role="menuitem" onClick={() => pick(r.id, r.name)}>
+                <Icon name="checklist" size={12} />
+                <span>{r.name}</span>
+              </button>
+            ))}
+            {reviews?.length ? <hr /> : null}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setAnchor(undefined);
+                window.dispatchEvent(new CustomEvent<Sheet>(OPEN, { detail: { kind: "run", workspaceId, send } }));
+              }}
+            >
+              <Icon name="plus" size={12} />
+              <span>New review…</span>
+            </button>
+        </Popover>
+      )}
+    </>
+  );
 }
 
 function NewReviewSheet({ invoke, workspaceId, onClose, then }: { invoke: Invoke; workspaceId: string; onClose: () => void; then?: (reviewId: string, actor: string) => Promise<unknown> }) {
@@ -161,7 +236,7 @@ function SendSheet({ invoke, workspaceId, sourceIds, onClose }: { invoke: Invoke
   }, [invoke, workspaceId]);
   const send = async (reviewId: string, actor?: string) => {
     const api = reviewApi(invoke, workspaceId, reviewId);
-    const who = actor ?? savedViewer(reviewId) ?? (await api.summary("")).team.find((m) => m.roles.includes("owner"))?.id ?? "";
+    const who = await actorFor(api, reviewId, actor);
     const { report } = await api.importLibrary({ ids: sourceIds }, { group: "other", name: "Manual" }, who);
     toast(`${plural(report.added, "source")} sent to the review${report.duplicates ? ` (${report.duplicates} already there)` : ""}`);
   };

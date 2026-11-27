@@ -2,7 +2,7 @@
 // virtualised list of the shared source rows, de-duplicated (one row per work, with every
 // database that found it) or per database; sorting and filters; a side preview with the
 // abstract, links and where each copy came from; and many at once added to the library (to a
-// collection, tagged with the search's name, PDFs looked for) or to the Inbox.
+// collection, tagged with the search's name, PDFs looked for), to the Inbox or to a review.
 // Reusable: it needs a run id and the API, nothing of the page around it.
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
@@ -15,6 +15,8 @@ import { Icon } from "./icons";
 import { toast } from "./item-actions";
 import type { Collection, Invoke, Source } from "./library-api";
 import { libraryChanged } from "./library-nav";
+// Sample runs live only in this window, not on the host, so they cannot go to a review.
+import { SendRunToReview } from "./review/review-entry";
 import { SourceListItem, type ListWork } from "./source-list";
 import { openWebLink } from "./web-search";
 
@@ -318,6 +320,7 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
               <button type="button" className="kx-page-action" disabled={busy === "inbox"} onClick={() => void addToInbox(chosen())}>
                 <Icon name="inbox" size={12} /> {busy === "inbox" ? "Adding…" : "Add to Inbox"}
               </button>
+              {!api.isMock && <SendRunToReview invoke={invoke} workspaceId={workspaceId} runId={runId} keys={[...selected]} label={label} />}
               <button type="button" className="kx-page-action" onClick={() => setSelected(new Set())}>
                 Clear
               </button>
@@ -342,6 +345,7 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
             </>
           )}
           <span className="kx-spacer" />
+          {!api.isMock && !selected.size && page && page.state !== "running" && records.length > 0 && <SendRunToReview invoke={invoke} workspaceId={workspaceId} runId={runId} label={label} />}
           {onReport && page && page.state !== "running" && (
             <button type="button" className="kx-page-action" onClick={onReport}>
               <Icon name="list" size={12} /> Report…

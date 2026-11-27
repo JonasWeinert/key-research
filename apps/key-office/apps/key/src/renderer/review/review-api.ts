@@ -395,7 +395,8 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     importFile: (text: string, fileName: string, batch: Partial<Batch>, actor: string) => call<{ report: ImportReport; format: string; warnings: string[] }>("review_import_file", { text, fileName, batch, actor }),
     importLibrary: (args: { ids?: string[]; query?: Record<string, unknown> }, batch: Partial<Batch>, actor: string) => call<{ report: ImportReport }>("review_import_library", { ...args, batch, actor }),
     dbRuns: () => call<{ runId: string; label: string; startedAt: number; finishedAt?: number; state: string; total: number; fetched?: number; perConnector?: Record<string, number> }[]>("review_db_runs", { limit: 20 }),
-    importDbRun: (runId: string, batch: Partial<Batch>, actor: string) => call<{ report: ImportReport }>("review_import_db_run", { runId, batch, actor }),
+    /** `keys` (the run's work keys) sends only those works; none sends the whole run. */
+    importDbRun: (runId: string, batch: Partial<Batch>, actor: string, keys?: string[]) => call<{ report: ImportReport }>("review_import_db_run", { runId, batch, actor, keys }),
     importRecords: (records: Partial<RecordMeta>[], batch: Partial<Batch>, actor: string) => call<{ report: ImportReport }>("review_import_records", { records, batch, actor }),
     removeBatch: (batchId: string, actor: string) => call("review_batch_remove", { batchId, actor }),
     pairs: (offset = 0, limit = 50) => call<{ pairs: { a: RecordMeta | null; b: RecordMeta | null; score: number; reason: string }[]; total: number }>("review_pairs", { offset, limit }),

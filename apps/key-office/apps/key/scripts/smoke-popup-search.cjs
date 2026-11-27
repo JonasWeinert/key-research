@@ -118,7 +118,12 @@ const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host
     await popup.locator(".kx-suggest-chip[data-detected]").first().waitFor();
     await field.press("Tab");
     await popup.locator('.kx-token[data-negate]', { hasText: "draft" }).waitFor();
-    await popup.locator(".kx-found-empty, .kx-spot-row").first().waitFor();
+    // The last query's rows stay until the new one answers: wait for it to settle.
+    await page.waitForFunction(() => {
+      const spot = document.querySelector(".kx-spot");
+      const empty = spot?.querySelector(".kx-found-empty")?.textContent ?? "";
+      return !!spot && !spot.querySelector(".kx-search-spinner") && !empty.startsWith("Searching") && !!spot.querySelector(".kx-found-empty, .kx-spot-row") && !spot.querySelector('.kx-spot-group[data-group="source"] .kx-spot-row');
+    }, null, { timeout: 10000 }).catch(() => {});
     assert.equal(await popup.locator(".kx-spot-group[data-group=source] .kx-spot-row").count(), 0, "to read and not draft: none");
     await popup.locator(".kx-search-clear").click();
 

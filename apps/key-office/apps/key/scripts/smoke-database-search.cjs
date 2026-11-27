@@ -185,6 +185,8 @@ const assert = require("node:assert/strict");
     await rows.nth(5).getByRole("checkbox").check();
     await db.getByRole("button", { name: "Add to Inbox" }).first().click();
     await page.getByText(/Added 2 works to the Inbox/).waitFor();
+    // Sample runs are not on the host, so they cannot go to a review.
+    assert.equal(await db.getByRole("button", { name: "Send to review…" }).count(), 0, "no Send to review for sample data");
 
     // The report: counts per database, exported as Markdown and CSV.
     await db.getByRole("button", { name: "Report…" }).click();
@@ -382,6 +384,34 @@ async function enginePart(temp) {
     const src = run.sources.find((s) => s.connector === "crossref-series");
     assert.ok(src.strategy.postFilter && src.chunks.length >= 2 && src.chunkRaw.length === src.chunks.length, "the run keeps each query's counts");
     assert.ok(src.raw >= src.fetched, "Key's check keeps at most what came back");
+
+    // Send to review: with nothing selected the whole run is offered; a selection goes to the
+    // review picked from the menu, which then opens beside the search.
+    const rows = db.locator(".kx-db-work-list > li.kx-source-item");
+    await rows.nth(1).waitFor();
+    const runCount = Number((await db.locator(".kx-db-results-count").textContent()).replace(/\D/g, ""));
+    const review = await call("review_create", { name: "Vaccine review", ownerName: "Smoke" });
+    const dbTab = (await page.evaluate(() => window.key.tabs())).activeTabId;
+    await db.getByRole("button", { name: "Send to review…" }).click();
+    const sendMenu = page.getByRole("dialog", { name: "Send to review" });
+    await sendMenu.getByText("Send all results to").waitFor();
+    await sendMenu.getByRole("menuitem", { name: "Vaccine review" }).waitFor();
+    await sendMenu.getByRole("menuitem", { name: "New review…" }).waitFor();
+    await shot(page, "db-send-review-light");
+    await page.keyboard.press("Escape");
+    await sendMenu.waitFor({ state: "detached" });
+    await rows.nth(0).getByRole("checkbox").check();
+    await rows.nth(1).getByRole("checkbox").check();
+    await db.getByText("2 works selected").waitFor();
+    await db.getByRole("button", { name: "Send to review…" }).click();
+    await sendMenu.getByText("Send 2 works to").waitFor();
+    await sendMenu.getByRole("menuitem", { name: "Vaccine review" }).click();
+    await page.getByText(/sent to the review/).waitFor();
+    const sent = (await call("review_list")).find((r) => r.id === review.reviewId);
+    assert.ok(sent.records >= 2 && sent.records < runCount, `the two works (every version of each) went to the review: ${sent.records}`);
+    await page.waitForFunction((id) => window.key.tabs().then((t) => t.activeTabId !== id && t.tabs.find((x) => x.id === t.activeTabId)?.views[0]?.content?.section === "review"), dbTab);
+    await page.evaluate((id) => window.key.tabAction("activate", { tabId: id }), dbTab);
+    await db.waitFor();
     await db.getByRole("button", { name: "More" }).click();
     await page.getByRole("button", { name: /Copy \/ export search strategy/ }).click();
     const sheet = page.getByRole("dialog", { name: "Search strategy" });
