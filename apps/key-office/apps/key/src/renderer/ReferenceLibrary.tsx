@@ -59,6 +59,7 @@ import { readablePaths } from "./file-names";
 import { EmptyState as Guide } from "./explain";
 import { FillCellsProvider } from "./fill-cells";
 import { registerSelectionAction } from "./selection-actions";
+import { clickSelection, moveSelection, type ListSelection } from "./list-selection";
 
 const PAGE = 300;
 const groupKey = (source: Source) => JSON.stringify(source.groupValue ?? null);
@@ -145,6 +146,7 @@ export default function ReferenceLibrary({
         label: "Fill with AI…",
         icon: "sparkle",
         group: "ai",
+        kinds: ["library"],
         title: "Fill a property with AI or a rule",
         run: ({ workspaceId: ws, sourceIds }) => {
           if (ws === workspaceId) setAgent({ targets: fillTargets.current(sourceIds) });
@@ -530,37 +532,21 @@ export default function ReferenceLibrary({
     const chosen = selection.map((id) => known.get(id)).filter((x): x is Source => !!x);
     if (chosen.length) selectItems(chosen.map(sourceItem));
   }, [selectionKey, active]);
-  const select = (id: string, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
-    if (event.shiftKey && anchor) {
-      const a = rows.findIndex((s) => s.id === anchor);
-      const b = rows.findIndex((s) => s.id === id);
-      const [from, to] = a < b ? [a, b] : [b, a];
-      setSelected(new Set(rows.slice(from, to + 1).map((s) => s.id)));
-    } else if (event.metaKey || event.ctrlKey) {
-      const next = new Set(selected);
-      if (!next.size && focusId) next.add(focusId);
-      next.has(id) ? next.delete(id) : next.add(id);
-      setSelected(next);
-      setAnchor(id);
-    } else {
-      setSelected(new Set());
-      setAnchor(id);
-    }
-    setFocusId(id);
+  // Clicks and arrows select as every list does (list-selection.ts, shared with the Inbox).
+  const applySelection = (next: ListSelection) => {
+    setSelected(next.selected);
+    setAnchor(next.anchor);
+    setFocusId(next.focus);
   };
+  const select = (id: string, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) =>
+    applySelection(clickSelection({ selected, anchor, focus: focusId }, rows.map((s) => s.id), id, event));
   const move = (delta: number, extend: boolean) => {
-    const index = Math.max(0, Math.min(rows.length - 1, rows.findIndex((s) => s.id === focusId) + delta));
+    const order = rows.map((s) => s.id);
+    if (!order.length) return;
+    const nextState = moveSelection({ selected, anchor, focus: focusId }, order, delta, extend);
+    applySelection(nextState);
+    const index = order.indexOf(nextState.focus!);
     const next = rows[index];
-    if (!next) return;
-    if (extend) {
-      const set = new Set(selected.size ? selected : focusId ? [focusId] : []);
-      set.add(next.id);
-      setSelected(set);
-    } else {
-      setSelected(new Set());
-      setAnchor(next.id);
-    }
-    setFocusId(next.id);
     if (search) document.querySelector(`[data-hit="${CSS.escape(next.id)}"]`)?.scrollIntoView({ block: "nearest" });
     else listRef.current?.scrollToIndex(index);
   };

@@ -20,11 +20,11 @@ export function openReview(workspaceId: string, reviewId: string, title = "Syste
   return bridge().tabAction("open-content", { section: "review", workspaceId, entityId: reviewId, title });
 }
 
-type Sheet = { kind: "new"; workspaceId: string } | { kind: "send"; workspaceId: string; sourceIds: string[] } | { kind: "run"; workspaceId: string; send: (reviewId: string, actor: string) => Promise<unknown> };
+type Sheet = { kind: "new"; workspaceId: string } | { kind: "send"; workspaceId: string; sourceIds: string[]; itemIds?: string[] } | { kind: "run"; workspaceId: string; send: (reviewId: string, actor: string) => Promise<unknown> };
 /** Opens "New systematic review…". */
 export const newReview = (workspaceId: string) => window.dispatchEvent(new CustomEvent<Sheet>(OPEN, { detail: { kind: "new", workspaceId } }));
-/** Opens "Send to review…" for library sources. */
-export const sendToReview = (workspaceId: string, sourceIds: string[]) => window.dispatchEvent(new CustomEvent<Sheet>(OPEN, { detail: { kind: "send", workspaceId, sourceIds } }));
+/** Opens "Send to review…" for library sources, or for Inbox works not in the library (`itemIds`). */
+export const sendToReview = (workspaceId: string, sourceIds: string[], itemIds?: string[]) => window.dispatchEvent(new CustomEvent<Sheet>(OPEN, { detail: { kind: "send", workspaceId, sourceIds, itemIds } }));
 const changed = () => window.dispatchEvent(new Event(CHANGED));
 
 /** Imports a review file (a merge when the review is here already) and opens it. */
@@ -49,8 +49,16 @@ export function openReviewFile(invoke: Invoke, workspaceId: string) {
   input.click();
 }
 
-// The library's selection panel and context menu offer it.
-registerSelectionAction({ id: "review.send", label: "Send to review…", icon: "checklist", group: "organise", title: "Add these sources to a systematic review for screening", run: ({ workspaceId, sourceIds }) => void sendToReview(workspaceId, sourceIds) });
+// The library's and the Inbox's selection panels and the sources' context menu offer it.
+registerSelectionAction({
+  id: "review.send",
+  label: "Send to review…",
+  icon: "checklist",
+  group: "organise",
+  kinds: ["library", "inbox"],
+  title: "Add these to a systematic review for screening",
+  run: ({ workspaceId, kind, sourceIds, itemIds }) => void (kind === "inbox" ? sendToReview(workspaceId, [], itemIds ?? []) : sendToReview(workspaceId, sourceIds)),
+});
 
 /** Mounted once by the shell: the new-review and send-to-review sheets. */
 export function ReviewSheetsHost({ invoke }: { invoke: Invoke }) {
@@ -63,7 +71,7 @@ export function ReviewSheetsHost({ invoke }: { invoke: Invoke }) {
   if (!sheet) return null;
   const close = () => setSheet(undefined);
   if (sheet.kind === "run") return <NewReviewSheet invoke={invoke} workspaceId={sheet.workspaceId} onClose={close} then={sheet.send} />;
-  return sheet.kind === "new" ? <NewReviewSheet invoke={invoke} workspaceId={sheet.workspaceId} onClose={close} /> : <SendSheet invoke={invoke} workspaceId={sheet.workspaceId} sourceIds={sheet.sourceIds} onClose={close} />;
+  return sheet.kind === "new" ? <NewReviewSheet invoke={invoke} workspaceId={sheet.workspaceId} onClose={close} /> : <SendSheet invoke={invoke} workspaceId={sheet.workspaceId} sourceIds={sheet.sourceIds} itemIds={sheet.itemIds} onClose={close} />;
 }
 
 /** Who acts for this window in a review: the given actor, the saved viewer or the owner. */
@@ -221,7 +229,7 @@ function NewReviewSheet({ invoke, workspaceId, onClose, then }: { invoke: Invoke
   );
 }
 
-function SendSheet({ invoke, workspaceId, sourceIds, onClose }: { invoke: Invoke; workspaceId: string; sourceIds: string[]; onClose: () => void }) {
+function SendSheet({ invoke, workspaceId, sourceIds, itemIds, onClose }: { invoke: Invoke; workspaceId: string; sourceIds: string[]; itemIds?: string[]; onClose: () => void }) {
   const [reviews, setReviews] = useState<Awaited<ReturnType<typeof listReviews>>>();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -237,15 +245,21 @@ function SendSheet({ invoke, workspaceId, sourceIds, onClose }: { invoke: Invoke
   const send = async (reviewId: string, actor?: string) => {
     const api = reviewApi(invoke, workspaceId, reviewId);
     const who = await actorFor(api, reviewId, actor);
-    const { report } = await api.importLibrary({ ids: sourceIds }, { group: "other", name: "Manual" }, who);
-    toast(`${plural(report.added, "source")} sent to the review${report.duplicates ? ` (${report.duplicates} already there)` : ""}`);
+    const { report } = itemIds
+      ? await invoke<{ report: { added: number; duplicates: number } }>("review_import_inbox", { reviewId, ids: itemIds, batch: { group: "other", name: "Inbox" }, actor: who }, workspaceId)
+      : await api.importLibrary({ ids: sourceIds }, { group: "other", name: "Manual" }, who);
+    toast(`${plural(report.added, itemIds ? "work" : "source")} sent to the review${report.duplicates ? ` (${report.duplicates} already there)` : ""}`);
   };
   if (creating) return <NewReviewSheet invoke={invoke} workspaceId={workspaceId} onClose={onClose} then={(id, actor) => send(id, actor)} />;
   return (
     <GlobalDialog label="Send to review" onClose={onClose} busy={busy}>
       <div className="kx-rv-dialog">
-        <h2>Send {plural(sourceIds.length, "source")} to a review</h2>
-        <p>They join the review’s records as “other methods: manual”, linked to the library. Duplicates of records already there are removed.</p>
+        <h2>Send {itemIds ? plural(itemIds.length, "work") : plural(sourceIds.length, "source")} to a review</h2>
+        <p>
+          {itemIds
+            ? "They join the review’s records as “other methods: Inbox”, from what their feeds and alerts know of them. Duplicates of records already there are removed."
+            : "They join the review’s records as “other methods: manual”, linked to the library. Duplicates of records already there are removed."}
+        </p>
         <ul className="kx-rv-pick">
           {reviews?.map((r) => (
             <li key={r.id}>

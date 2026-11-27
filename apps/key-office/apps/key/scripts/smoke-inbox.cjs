@@ -219,19 +219,105 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await inbox.locator(".kx-inbox-group", { hasText: "Journal of Smoke Tests" }).waitFor();
     await inbox.locator(".kx-work-head", { hasText: "Attention Is All You Need" }).click();
     await inbox.locator(".kx-inbox-why", { hasText: "new work by Ashish Vaswani, whom you follow" }).waitFor();
-    // Bulk: x picks two, s saves both.
+    // Bulk: x picks two (j/k keep the picks), the selection panel opens beside the list, s saves both.
     await inbox.locator(".kx-inbox-list").focus();
     await page.keyboard.press("x");
     await page.keyboard.press("k");
     await page.keyboard.press("x");
-    await inbox.locator(".kx-inbox-bulk", { hasText: "2 selected" }).waitFor();
+    const side = page.locator(".kx-inbox-side");
+    await side.getByRole("heading", { name: "2 works selected" }).waitFor();
     await shot(page, "inbox-grouped-light");
     await page.keyboard.press("s");
-    await inbox.locator(".kx-inbox-bulk").waitFor({ state: "detached" });
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(400);
     assert.equal((await call("feeds_items", { view: "saved" })).total, 2, "both saved");
+    await inbox.locator(".kx-inbox-list").focus();
+    await page.keyboard.press("Escape");
+    await side.waitFor({ state: "detached" });
     await inbox.locator(".kx-inbox-filter").nth(1).click();
     await page.getByRole("menuitemradio", { name: "No grouping" }).click();
+
+    // Multi-select as in the library: ⇧-click a range, ⌘-click one more, ⌘A all.
+    const heads = rows.locator(".kx-work-head");
+    const shown = await rows.count();
+    assert.ok(shown >= 4, `enough items to select (${shown})`);
+    await heads.nth(0).click();
+    const opened = await rows.locator(".kx-work-body").count();
+    await heads.nth(2).click({ modifiers: ["Shift"] });
+    await side.getByRole("heading", { name: "3 works selected" }).waitFor();
+    await heads.nth(3).click({ modifiers: ["Meta"] });
+    await side.getByRole("heading", { name: "4 works selected" }).waitFor();
+    assert.equal(await rows.locator(".kx-work-body").count(), opened, "⌘- and ⇧-clicks pick rows instead of opening them");
+    // The context menu acts on the picked rows.
+    await heads.nth(1).click({ button: "right" });
+    const rowMenu = page.getByRole("menu", { name: "Inbox items" });
+    await rowMenu.getByRole("menuitem", { name: "Add 4 to library…" }).waitFor();
+    await rowMenu.getByRole("menuitem", { name: "Dismiss 4" }).waitFor();
+    await page.keyboard.press("Escape");
+    await rowMenu.waitFor({ state: "detached" });
+    await inbox.locator(".kx-inbox-list").focus();
+    await page.keyboard.press("Meta+a");
+    await side.getByRole("heading", { name: `${shown} works selected` }).waitFor();
+
+    // The overview, read in Rust: the one added earlier is in the library; where they came from.
+    const fact = (label) => side.locator(".kx-selection-fact").filter({ has: page.locator("span", { hasText: new RegExp(`^${label}$`) }) }).locator("strong");
+    await fact("In library").waitFor();
+    assert.equal(await fact("In library").first().textContent(), "1");
+    await side.locator(".kx-selection-found", { hasText: "Journal of Smoke Tests" }).waitFor();
+    await side.locator(".kx-selection-found", { hasText: "Ashish Vaswani" }).waitFor();
+    const overview = await call("inbox_selection_overview", { ids: (await call("feeds_items", { view: "all" })).items.map((i) => i.id) });
+    assert.equal(overview.total, shown);
+    assert.equal(overview.inLibrary, 1);
+    // Each action once, the primary Add counting the ones not in the library yet.
+    for (const label of ["Copy references", "Copy BibTeX", "Open all in the browser", "Send to review…", "Dismiss", "Find PDFs"]) {
+      assert.equal(await side.locator(".kx-selection-button", { hasText: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`) }).count(), 1, `${label} once`);
+    }
+    assert.equal(await side.getByRole("button", { name: `Add ${shown - 1} to library…` }).count(), 1);
+    assert.equal(await side.getByRole("button", { name: /Fill with AI/ }).count(), 0, "library-only actions stay in the library");
+    const sideways = () => side.locator(".kx-selection").evaluate((el) => el.scrollWidth - el.clientWidth);
+    assert.ok((await sideways()) <= 0, "no sideways scroll");
+    await shot(page, "inbox-selection-light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(200);
+    await shot(page, "inbox-selection-dark");
+    await page.emulateMedia({ colorScheme: "light" });
+    // Narrow: the panel floats over the list, still without sideways scroll.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(820, 800));
+    await page.waitForTimeout(400);
+    assert.equal(await page.locator(".kx-inbox-shell").getAttribute("data-overlay"), "true");
+    assert.ok((await sideways()) <= 0, "no sideways scroll when narrow");
+    await shot(page, "inbox-selection-narrow-light");
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1400, 900));
+    await page.waitForTimeout(300);
+    // BibTeX for works not in the library, keyed by the library's pattern (asked directly: no clipboard).
+    const bib = await call("store_biblio_copy", { sources: await call("inbox_works", { ids: (await call("feeds_items", { view: "all" })).items.map((i) => i.id) }), format: "bibtex" });
+    assert.ok(bib.startsWith("@") && (bib.match(/^@/gm) ?? []).length === shown, "a BibTeX entry each");
+
+    // Add all: the collection chooser, then one skipped (in the library already), Undo.
+    const inReading = async () => (await call("store_sources", { collectionId: reading.id })).items.length;
+    const filedBefore = await inReading();
+    const started = Date.now();
+    await side.getByRole("button", { name: `Add ${shown - 1} to library…` }).click();
+    await chooser.waitFor();
+    await chooser.locator("label", { hasText: "Reading group" }).click();
+    await chooser.getByRole("button", { name: "Add", exact: true }).click();
+    const notice = side.locator(".kx-selection-notice");
+    await notice.filter({ hasText: `Added ${shown - 1} works to Reading group · 1 already in the library, skipped` }).waitFor();
+    console.log(`Bulk add of ${shown - 1} took ${Date.now() - started} ms`);
+    assert.equal(await inReading(), filedBefore + shown - 1, "filed where chosen");
+    await fact("In library").filter({ hasText: new RegExp(`^${shown}$`) }).waitFor();
+    await shot(page, "inbox-selection-added-light");
+    await notice.getByRole("button", { name: "Undo" }).click();
+    await notice.filter({ hasText: `Took the add back: ${shown - 1} sources moved to the Trash` }).waitFor();
+    assert.equal(await inReading(), filedBefore, "undone");
+    await fact("In library").filter({ hasText: /^1$/ }).waitFor();
+
+    // Dismiss all, then Undo brings them back.
+    await side.locator(".kx-selection-foot").getByRole("button", { name: "Dismiss" }).click();
+    await side.waitFor({ state: "detached" });
+    const undoDismiss = page.locator(".kx-toast", { hasText: `Dismissed ${shown}` }).getByRole("button", { name: "Undo" });
+    await undoDismiss.click();
+    await rows.nth(shown - 1).waitFor();
+    assert.equal(await rows.count(), shown, "back after Undo");
 
     // A web search result kept for later: Add to Inbox, then Saved, then the library.
     await page.evaluate((id) => window.key.tabAction("open-content", { section: "search", workspaceId: id }), ws.id);

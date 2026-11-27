@@ -98,7 +98,11 @@ pub fn dispatch(library: &Library, command: &str, args: &Json, root: &Path) -> O
             }
         })(),
         // Quick copy: bibtex, biblatex, ris, csl-json, pandoc, latex, keys.
-        "store_biblio_copy" => (|| json_output(export::quick_copy(store, &arg::<Vec<String>>(args, "ids")?, &arg::<String>(args, "format")?)?))(),
+        // `sources` instead of `ids`: works not in the library (the Inbox), in a source's shape.
+        "store_biblio_copy" => (|| match arg::<Option<Vec<Json>>>(args, "sources")? {
+            Some(works) => json_output(copy_works(store, works, &arg::<String>(args, "format")?)?),
+            None => json_output(export::quick_copy(store, &arg::<Vec<String>>(args, "ids")?, &arg::<String>(args, "format")?)?),
+        })(),
         "store_citation_key" => arg::<String>(args, "id").and_then(|id| json_output(store.citation_key(&id)?)),
         "store_citation_key_set" => (|| {
             let id: String = arg(args, "id")?;
@@ -160,4 +164,24 @@ pub fn start_watcher(store: Store) {
             }
         }
     });
+}
+
+/// Quick copy of works not in the library: each gets a key by the library's pattern, unique
+/// among them.
+fn copy_works(store: &Store, works: Vec<Json>, format: &str) -> Result<String, String> {
+    use key_store::citation_keys::{KeyPattern, KeySourceFields, unique_key};
+    let pattern = KeyPattern::parse(&store.citation_key_pattern()?)?;
+    let sources: Vec<key_store::Source> = works.into_iter().take(5_000).map(super::cite_commands::loose_source).collect::<Result<_, _>>()?;
+    let mut taken = std::collections::HashSet::new();
+    let keys: Vec<String> = sources
+        .iter()
+        .map(|s| {
+            let key = unique_key(&pattern.apply(&KeySourceFields::from_source(s)), &taken);
+            taken.insert(key.to_lowercase());
+            key
+        })
+        .collect();
+    let format: key_biblio::Format = serde_json::from_value(Json::from(format)).map_err(|_| format!("Unknown format “{format}”"))?;
+    let items: Vec<export::ExportItem> = sources.iter().zip(keys).map(|(source, key)| export::ExportItem { source, notes: vec![], key }).collect();
+    Ok(export::write_items(&items, format, &ExportOptions { abstracts: false, ..Default::default() }))
 }
