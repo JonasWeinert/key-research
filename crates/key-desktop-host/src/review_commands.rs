@@ -496,7 +496,20 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 if records.is_empty() {
                     return Err("This search run has no records any more: run it again from Database search".into());
                 }
-                json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+                let id = review()?;
+                let run_id = arg::<String>(args, "runId")?;
+                let search = args.get("searchId").and_then(Json::as_str).filter(|s| !s.is_empty());
+                if args.get("onlyNew").and_then(Json::as_bool).unwrap_or(false) {
+                    // An update search: a dated batch of what is new.
+                    batch.name = format!("{} (update)", batch.name);
+                    json!({ "report": reviews.import_update(&id, batch, records, search, &run_id, &actor()?, &lookup)? })
+                } else {
+                    let report = reviews.import(&id, batch, records, &actor()?, &lookup)?;
+                    if let Some(s) = search {
+                        reviews.search_ran(&id, s, &run_id, &report.batch_id, report.added, &actor()?)?;
+                    }
+                    json!({ "report": report })
+                }
             }
             "review_import_records" => {
                 let records: Vec<RecordMeta> = arg::<Vec<RecordMeta>>(args, "records")?.into_iter().map(|mut r| {
@@ -524,6 +537,11 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                     batch.name = "Other".into();
                 }
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+            }
+            // Database searches that belong to the review (Sources › Search databases).
+            "review_search_save" => {
+                reviews.save_search(&review()?, args.get("search").cloned().unwrap_or(Json::Null), &actor()?)?;
+                json!(true)
             }
             // Where an import's records (or some records) came from, for PRISMA.
             "review_batch_origin" => {

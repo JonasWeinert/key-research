@@ -210,6 +210,44 @@ impl Reviews {
         })
     }
 
+    /// Saves (or deletes) a database search that belongs to the review.
+    pub fn save_search(&self, review: &str, search: Json, actor: &str) -> Result<()> {
+        if search.get("id").and_then(Json::as_str).is_none_or(str::is_empty) {
+            return Err("A search needs an id".into());
+        }
+        self.write(review, |_, _, b| Ok((vec![b.event("search.set", actor, None, search)], ())))
+    }
+
+    /// An update search: only records not already in the review (by DOI, PMID or the same title,
+    /// year and first author) are imported, as a new dated batch; the others are left out and
+    /// noted on it. The search records the run.
+    pub fn import_update(&self, review: &str, mut batch: Batch, records: Vec<RecordMeta>, search: Option<&str>, run_id: &str, actor: &str, library: &dyn Library) -> Result<ImportReport> {
+        let (fresh, known) = self.read(review, |state, conn| {
+            let existing: Vec<RecordMeta> = all_metas(conn, review)?.into_iter().filter(|m| state.record(&m.id).is_some()).collect();
+            let DedupOutcome { exact, .. } = dedup(&existing, &records);
+            // Duplicates within the run itself stay for import's own de-duplication.
+            let in_review: HashSet<String> = exact.iter().filter(|(_, of)| existing.iter().any(|m| &m.id == of)).map(|(id, _)| id.clone()).collect();
+            let fresh: Vec<RecordMeta> = records.iter().filter(|r| !in_review.contains(&r.id)).cloned().collect();
+            Ok((fresh, in_review.len()))
+        })?;
+        batch.per_source.clear();
+        batch.per_source_kind.clear();
+        batch.count = fresh.len();
+        batch.duplicates_removed = 0;
+        let note = format!("Update search: {known} records already in the review were left out");
+        batch.note = if batch.note.is_empty() { note } else { format!("{}. {note}", batch.note) };
+        let report = if fresh.is_empty() { ImportReport { batch_id: String::new(), added: 0, duplicates: 0, possible_duplicates: 0, auto_excluded: 0 } } else { self.import(review, batch, fresh, actor, library)? };
+        if let Some(id) = search {
+            self.write(review, |_, _, b| Ok((vec![b.event("search.ran", actor, None, json!({ "id": id, "runId": run_id, "batchId": report.batch_id, "added": report.added, "known": known, "update": true }))], ())))?;
+        }
+        Ok(report)
+    }
+
+    /// Records that a review search ran and what it brought.
+    pub fn search_ran(&self, review: &str, search: &str, run_id: &str, batch_id: &str, added: usize, actor: &str) -> Result<()> {
+        self.write(review, |_, _, b| Ok((vec![b.event("search.ran", actor, None, json!({ "id": search, "runId": run_id, "batchId": batch_id, "added": added, "update": false }))], ())))
+    }
+
     /// Adds a batch of records, removing certain duplicates and queueing likely ones for review.
     pub fn import(&self, review: &str, mut batch: Batch, records: Vec<RecordMeta>, actor: &str, library: &dyn Library) -> Result<ImportReport> {
         if records.is_empty() {

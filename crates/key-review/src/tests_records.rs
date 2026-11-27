@@ -538,3 +538,32 @@ fn the_owners_review_counts_add_up() {
     assert_invariants(&p);
     assert_eq!((p.other.sought, p.other.included, p.main.included, p.studies_included), (1, 1, 5, 6));
 }
+
+#[test]
+fn update_searches_import_only_what_is_new() {
+    let reviews = Reviews::in_memory().unwrap();
+    let (id, a) = reviews.create("Searches", "Ana", None).unwrap();
+    reviews.save_search(&id, json!({ "id": "s1", "name": "Walking", "query": {}, "connectors": ["pubmed"] }), &a).unwrap();
+    let first = invented(20, "run");
+    let batch = || Batch { kind: "database".into(), group: "databases".into(), name: "Walking".into(), db_run_id: "run-1".into(), ..Default::default() };
+    let report = reviews.import(&id, batch(), first.clone(), &a, &NoLibrary).unwrap();
+    reviews.search_ran(&id, "s1", "run-1", &report.batch_id, report.added, &a).unwrap();
+    // The same search months later: 15 of the earlier records again, 5 new ones.
+    let mut again: Vec<RecordMeta> = first[..15].iter().map(|m| RecordMeta { id: crate::events::uuid7(), ..m.clone() }).collect();
+    again.extend(invented(5, "new"));
+    let update = reviews.import_update(&id, batch(), again, Some("s1"), "run-2", &a, &NoLibrary).unwrap();
+    assert_eq!(update.added, 5);
+    let s = reviews.summary(&id, &a).unwrap();
+    let runs = s["searches"][0]["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[1]["known"], 15);
+    assert_eq!(runs[1]["update"], true);
+    let p = reviews.prisma(&id).unwrap();
+    assert_invariants(&p);
+    assert_eq!((p.identified, p.duplicates), (25, 0));
+    assert!(s["batches"].as_array().unwrap().iter().any(|b| b["batch"]["note"].as_str().is_some_and(|n| n.contains("15 records already in the review"))));
+    // Nothing new: no batch, the run still recorded.
+    let none = reviews.import_update(&id, batch(), first[..3].iter().map(|m| RecordMeta { id: crate::events::uuid7(), ..m.clone() }).collect(), Some("s1"), "run-3", &a, &NoLibrary).unwrap();
+    assert_eq!(none.added, 0);
+    assert_eq!(reviews.summary(&id, &a).unwrap()["searches"][0]["runs"].as_array().unwrap().len(), 3);
+}

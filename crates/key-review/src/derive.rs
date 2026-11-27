@@ -308,6 +308,9 @@ pub struct State {
     pub assignments: [Option<Assignment>; 2],
     pub extraction: HashMap<String, RecExtraction>,
     pub analyses: Vec<Json>,
+    /// Database searches that belong to the review: {id, name, query, connectors, overrides,
+    /// runs: [{runId, at, batchId, added, update}]}, to run again as update searches.
+    pub searches: Vec<Json>,
     pub events: usize,
     pub last_event: Option<(i64, String)>,
     /// Old exclusion reason ids → the criteria they became (criteria and reasons are one list).
@@ -349,6 +352,7 @@ impl State {
             assignments: [None, None],
             extraction: HashMap::new(),
             analyses: Vec::new(),
+            searches: Vec::new(),
             events: 0,
             last_event: None,
             aliases: BTreeMap::new(),
@@ -752,6 +756,29 @@ impl State {
                     s.at = e.at;
                     if let Some(r) = self.record_mut(&id) {
                         r.ai[stage.index()] = Some(s);
+                    }
+                }
+            }
+            "search.set" => {
+                let id = text("id");
+                let runs = self.searches.iter().find(|s| s.get("id").and_then(Json::as_str) == Some(id.as_str())).and_then(|s| s.get("runs").cloned()).unwrap_or(json!([]));
+                self.searches.retain(|s| s.get("id").and_then(Json::as_str) != Some(id.as_str()));
+                if !p.get("deleted").and_then(Json::as_bool).unwrap_or(false) {
+                    let mut s = p.clone();
+                    s["runs"] = runs;
+                    s["at"] = json!(e.at);
+                    self.searches.push(s);
+                }
+            }
+            "search.ran" => {
+                let id = text("id");
+                if let Some(s) = self.searches.iter_mut().find(|s| s.get("id").and_then(Json::as_str) == Some(id.as_str())) {
+                    let mut run = p.clone();
+                    run["at"] = json!(e.at);
+                    if let Some(Json::Array(runs)) = s.get_mut("runs") {
+                        runs.push(run);
+                    } else {
+                        s["runs"] = json!([run]);
                     }
                 }
             }

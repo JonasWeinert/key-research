@@ -13,6 +13,7 @@ import type { Collection } from "../library-api";
 import { OTHER_METHODS, plural, type Batch, type ImportReport, type RecordMeta } from "./review-api";
 import { Btn, Confirm, MenuButton, errorText, formatDate, useLoad } from "./review-ui";
 import { DuplicatesView, RecordsTable } from "./review-records";
+import { Searches } from "./review-search";
 import type { StageProps } from "./ReviewPage";
 
 const GROUPS: [Batch["group"], string, string][] = [
@@ -137,7 +138,7 @@ export function reportText(r: ImportReport) {
   return parts.join(" · ");
 }
 
-type SourcesView = "records" | "duplicates" | "imports";
+type SourcesView = "records" | "duplicates" | "imports" | "searches";
 
 export function Sources(props: StageProps) {
   const { summary } = props;
@@ -146,6 +147,7 @@ export function Sources(props: StageProps) {
     ["records", "Records", summary.records ? summary.active.toLocaleString() : ""],
     ["duplicates", "Duplicates", summary.openPairs ? `${summary.openPairs} to check` : summary.duplicates ? summary.duplicates.toLocaleString() : ""],
     ["imports", "Imports", summary.batches.filter((b) => !b.removed).length.toLocaleString()],
+    ["searches", "Database searches", ((summary as unknown as { searches?: unknown[] }).searches ?? []).length.toLocaleString()],
   ];
   return (
     <div className="kx-rv-sources-page" data-view={view}>
@@ -162,12 +164,13 @@ export function Sources(props: StageProps) {
       </div>
       {view === "records" && <RecordsTable {...props} />}
       {view === "duplicates" && <DuplicatesView {...props} pairs={summary.openPairs > 0 ? <Duplicates {...props} /> : null} />}
-      {view === "imports" && <Imports {...props} />}
+      {view === "imports" && <Imports {...props} onSearch={() => setView("searches")} />}
+      {view === "searches" && <Searches {...props} />}
     </div>
   );
 }
 
-function Imports(props: StageProps) {
+function Imports(props: StageProps & { onSearch: () => void }) {
   const { summary, api, viewer, notify, onChanged } = props;
   const [file, setFile] = useState<{ name: string; text: string }>();
   const [library, setLibrary] = useState(false);
@@ -228,6 +231,11 @@ function Imports(props: StageProps) {
             <Icon name="books" size={18} />
             <strong>From your library</strong>
             <span>A collection, a search, or the whole library</span>
+          </button>
+          <button type="button" className="kx-rv-add-card" onClick={props.onSearch}>
+            <Icon name="database" size={18} />
+            <strong>Search databases…</strong>
+            <span>Build the search here, from your question; the results come straight in</span>
           </button>
           <button type="button" className="kx-rv-add-card" onClick={() => setManual(true)}>
             <Icon name="pen" size={18} />

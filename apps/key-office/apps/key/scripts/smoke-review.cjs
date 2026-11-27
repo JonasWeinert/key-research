@@ -207,6 +207,18 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-criterion", { has: page.locator('input[value="Published 2000 or later"]') }).getByRole("button", { name: "Show details" }).click();
     await shot(page, "05-setup-criteria");
 
+    // A database search from inside the review, started from the question's parts and saved
+    // with the review (running it needs the network, which the smoke does not have).
+    await page.getByRole("tab", { name: /Sources/ }).click();
+    await page.getByRole("radio", { name: /^Imports/ }).click();
+    await page.getByRole("button", { name: /Search databases/ }).click();
+    await page.locator(".kx-rv-search-builder").getByText("a supervised exercise programme").first().waitFor();
+    await shot(page, "05b-sources-search");
+    await page.getByRole("textbox", { name: "Name of this search" }).fill("Exercise trials");
+    await page.locator(".kx-rv-search-builder").getByRole("button", { name: "Save" }).click();
+    await page.locator(".kx-rv-search-row", { hasText: "Exercise trials" }).waitFor();
+    assert.equal((await summary()).searches[0].name, "Exercise trials");
+
     // Title and abstract: keyboard screening.
     await page.getByRole("tab", { name: /Title & abstract/ }).click();
     await page.locator(".kx-rv-record-title").waitFor();

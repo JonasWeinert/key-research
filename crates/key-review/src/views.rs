@@ -127,6 +127,7 @@ impl Reviews {
                 "labelsInUse": state.records.iter().flat_map(|r| r.labels.iter().cloned()).collect::<std::collections::BTreeSet<_>>(),
                 "labelCounts": label_counts(state),
                 "originsToCheck": origins_to_check(state),
+                "searches": state.searches,
                 "labelKeys": state.protocol.label_keys,
                 "removedByHand": state.records.iter().filter(|r| r.removed.is_some() && !state.removed_batches.contains(&r.batch)).count(),
                 "missingAbstracts": state.records.iter().filter(|r| state.active(r) && !r.has_abstract).count(),
