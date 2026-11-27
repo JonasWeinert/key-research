@@ -46,6 +46,8 @@ const INTERACTIVE: &[&str] = &[
     // conduct checks, extraction pilots, contacts with authors.
     "review_chase_view", "review_chase_start", "review_chase_status", "review_chase_cancel", "review_ai_use", "review_ai_audit_draw", "review_ai_audit_close",
     "review_conduct", "review_conduct_dismiss", "review_xpilots", "review_xpilot_create", "review_xpilot_close", "review_contacts", "review_contact_save",
+    // std-A: reporting edits typed into fields
+    "review_checklist_note", "review_search_source", "review_search_peer_review", "review_search_prior", "review_protocol_register",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but

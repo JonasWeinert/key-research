@@ -17,6 +17,13 @@ pub mod stats;
 pub mod store;
 pub mod templates;
 pub mod views;
+// std-A: reporting (PRISMA 2020 checklist, protocol, PRISMA-S search report)
+pub mod checklist;
+pub mod protocol_doc;
+pub mod report_text;
+pub mod reporting;
+pub mod reporting_hooks;
+pub mod search_report;
 
 // std-B: citation chasing, AI-use audit, conduct checks, extraction pilots and contacts.
 pub mod ai_audit;
@@ -34,3 +41,6 @@ mod tests_records;
 // std-B
 #[cfg(test)]
 mod tests_std_b;
+// std-A
+#[cfg(test)]
+mod tests_reporting;

@@ -323,6 +323,8 @@ pub struct State {
     retracted: HashSet<String>,
     /// std-B: citation searching rounds, AI log and audits, conduct dismissals, pilots, contacts.
     pub std_b: crate::conduct::StdB,
+    // std-A: registration, checklist notes and PRISMA-S details (reporting.rs).
+    pub reporting: crate::reporting::Reporting,
 }
 
 #[derive(Deserialize, Default)]
@@ -362,6 +364,8 @@ impl State {
             alias_recorded: false,
             retracted: HashSet::new(),
             std_b: Default::default(),
+            // std-A
+            reporting: Default::default(),
         }
     }
 
@@ -793,6 +797,11 @@ impl State {
                 if !p.get("deleted").and_then(Json::as_bool).unwrap_or(false) {
                     self.analyses.push(p.clone());
                 }
+            }
+            // std-A: registration, checklist notes, PRISMA-S details (reporting.rs).
+            k if crate::reporting::KINDS.contains(&k) => {
+                let version = self.version.clone();
+                self.reporting.apply(e, &version);
             }
             _ => {}
         }

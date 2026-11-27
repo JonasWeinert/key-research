@@ -512,6 +512,8 @@ const REVIEW_READS = new Set([
   "review_ai_request", "review_ai_extract_request", "review_lookup",
   // std-B: citation searching, AI use, conduct checks, extraction pilots, contacts (reads).
   "review_chase_view", "review_chase_status", "review_chase_start", "review_chase_cancel", "review_ai_use", "review_conduct", "review_xpilots", "review_contacts",
+  // std-A: reporting reads
+  "review_checklist", "review_protocol_doc", "review_search_report", "review_report_export",
 ]);
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {

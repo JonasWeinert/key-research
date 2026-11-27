@@ -17,6 +17,8 @@ import { Screening } from "./review-screen";
 import { Extraction } from "./review-extract";
 import { AnalysisView } from "./review-analysis";
 import "./review.css";
+// std-A
+import { setFocus } from "./review-reporting-api";
 
 export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis";
 const stageKey = (id: string) => `key.review.stage:${id}`;
@@ -47,6 +49,8 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
   });
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // std-A: opening a view of the stage already shown (the PRISMA checklist from the menu).
+  const [opened, setOpened] = useState(0);
   const { show, view: notice, clear } = useNotice();
   const setStage = useCallback(
     (s: StageId) => {
@@ -165,6 +169,13 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
               { label: "Export screening decisions (CSV)", icon: "table", run: () => void exportFile("screening") },
               { label: "Export audit trail (CSV)", icon: "clock", run: () => void exportFile("audit") },
               { label: "Save protocol as template…", icon: "copy", run: () => void exportFile("template") },
+              // std-A: reporting
+              null,
+              { label: "PRISMA checklist…", icon: "checklist", run: () => (setFocus(reviewId, "checklist"), setOpened((n) => n + 1), setStage("overview")) },
+              { label: "Export PRISMA checklist (Markdown)", icon: "fileMarkdown", run: () => void exportFile("prisma-checklist") },
+              { label: "Export methods draft (Markdown)", icon: "doc", run: () => void exportFile("methods-draft") },
+              { label: "Export protocol (PRISMA-P)", icon: "fileMarkdown", run: () => void exportFile("protocol") },
+              { label: "Export search report (PRISMA-S)", icon: "fileMarkdown", run: () => void exportFile("search-report") },
               null,
               { label: summary.review.archived ? "Restore review" : "Archive review", icon: "disk", run: () => void api.archive(!summary.review.archived, viewer).then(reload) },
               { label: "Delete review…", icon: "trash", danger: true, run: () => setDeleting(true) },
@@ -173,7 +184,7 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
         </div>
       </header>
       <SegmentedTabs className="kx-rv-stages" label="Review stages" value={stage} onChange={setStage} minTabWidth={92} tabs={tabs} />
-      <main className="kx-rv-body" key={stage}>
+      <main className="kx-rv-body" key={`${stage}:${opened}`}>
         {stage === "overview" && <Overview {...props} />}
         {stage === "setup" && <Setup {...props} />}
         {stage === "sources" && <Sources {...props} />}

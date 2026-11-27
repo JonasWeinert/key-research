@@ -194,4 +194,34 @@ export const REVIEW_HELP = {
   },
   "empty.review.analysis": { kind: "empty", title: "Nothing to analyse yet", what: "Outcome data extracted from included studies is pooled here.", todo: "Include studies, then extract their outcome data." },
   "empty.review.outcomes": { kind: "empty", title: "No outcome data yet", what: "Add the Outcome data form in Setup › Extraction forms, then fill it in for each study.", todo: "Rows need an outcome name and events, means or an estimate." },
+  // std-A: reporting (PRISMA checklist, protocol, search report)
+  "review.checklist": {
+    kind: "explain",
+    title: "The PRISMA checklist",
+    body: [
+      "Journals ask for a filled PRISMA 2020 checklist with a systematic review: one line per item saying where the manuscript reports it. Key reads each item from the review itself and says whether its data show it, which rule decided, and the one thing that would close a gap.",
+      "Items only the manuscript can show (the title, the discussion) count once you note where they are. Drafts are sentences written from the review's numbers: copy them, check them, adjust them.",
+    ],
+    steps: ["Open Needs attention and work down the gaps", "Copy a draft into your manuscript", "Note where each item is reported", "Export the filled checklist for the journal"],
+    links: [{ label: "PRISMA 2020 checklist", url: "https://www.prisma-statement.org/prisma-2020-checklist" }],
+  },
+  "review.protocol": {
+    kind: "explain",
+    title: "Writing and registering the protocol",
+    body: [
+      "A protocol says before the review starts what it will do: the question, how studies are found and chosen, what data are taken, how they are combined. Registering it shows readers the methods were not chosen after seeing the results.",
+      "Key fills in what it knows from Setup and lists the rest in PRISMA-P's order. Once you record the registration, every change to the protocol is kept as a dated amendment with its reason, which the final report lists as deviations.",
+    ],
+    steps: ["Choose the review type", "Write the fields Key cannot know (rationale, funding, outcomes)", "Register with PROSPERO or OSF using the copy sheet", "Record the registration here"],
+    links: [{ label: "PRISMA-P", url: "https://www.prisma-statement.org/extensions" }, { label: "PROSPERO", url: "https://www.crd.york.ac.uk/prospero/" }, { label: "OSF Registries", url: "https://osf.io/registries" }],
+  },
+  "review.searchreport": {
+    kind: "explain",
+    title: "Reporting the search",
+    body: [
+      "PRISMA-S asks for enough about each search that someone else could run it again: the database and its platform, the date, the strategy exactly as run, any limits and filters with their reasons, other ways studies were found, and how duplicates were removed.",
+      "Searches run with Key's Database search fill most of this from their log. For a file exported from another platform, add the platform, the date and the strategy you ran.",
+    ],
+    links: [{ label: "PRISMA-S", url: "https://www.prisma-statement.org/extensions" }],
+  },
 } satisfies Record<string, HelpEntry>;

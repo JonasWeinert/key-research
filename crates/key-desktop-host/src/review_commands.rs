@@ -276,6 +276,26 @@ fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library
     Ok((batch, records))
 }
 
+// std-A: each database search run's own strategy log (queries as sent, dates, Key's
+// reconstruction), for the PRISMA-S report; runs whose log is gone are left out (the report
+// then uses the strategy stored with the import).
+fn run_strategies(reviews: &Reviews, review: &str, databases: &Arc<Databases>, web: &web_search::WebSearch, library: &Library, root: &Path) -> std::collections::HashMap<String, Json> {
+    let runs: Vec<String> = reviews.read(review, |s, _| Ok(s.batches.iter().filter(|b| !b.db_run_id.is_empty()).map(|b| b.db_run_id.clone()).collect())).unwrap_or_default();
+    let store_library = StoreLibrary { library, root };
+    let mut out = std::collections::HashMap::new();
+    for run in runs {
+        if out.contains_key(&run) {
+            continue;
+        }
+        if let Ok(v) = call_db(databases, web, &store_library, "db_strategy", json!({ "runId": run, "format": "json" })) {
+            if let Some(parsed) = v.get("content").and_then(Json::as_str).and_then(|c| serde_json::from_str::<Json>(c).ok()) {
+                out.insert(run, parsed);
+            }
+        }
+    }
+    out
+}
+
 /// Search runs imported before databases and registers were told apart: classified once from
 /// the connectors' kinds (an event in the review's log).
 fn classify_runs(reviews: &Reviews, review: &str, databases: &Arc<Databases>, web: &web_search::WebSearch, library: &Library, root: &Path) {
@@ -821,6 +841,40 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             }
             // std-B: citation searching, AI use and audit, conduct checks, extraction pilots, contacts.
             c if super::review_std_b::handles(c) => super::review_std_b::dispatch(reviews, library, &lookup, c, args)?,
+            // std-A: reporting — PRISMA checklists, protocol document and registration, PRISMA-S report.
+            "review_checklist" => {
+                let id = review()?;
+                reviews.checklist(&id, &run_strategies(reviews, &id, databases, web, library, root))?
+            }
+            "review_checklist_note" => {
+                reviews.checklist_note(&review()?, text(args, "list"), text(args, "item"), text(args, "location"), text(args, "text"), &actor()?)?;
+                json!(true)
+            }
+            "review_protocol_doc" => reviews.protocol_doc(&review()?)?,
+            "review_protocol_register" => {
+                reviews.register_protocol(&review()?, &arg::<key_review::reporting::Registration>(args, "registration")?, &actor()?)?;
+                json!(true)
+            }
+            "review_protocol_unregister" => {
+                reviews.unregister_protocol(&review()?, &actor()?)?;
+                json!(true)
+            }
+            "review_search_report" => {
+                let id = review()?;
+                reviews.search_report(&id, &run_strategies(reviews, &id, databases, web, library, root))?
+            }
+            "review_search_source" => {
+                reviews.set_source_detail(&review()?, args.get("detail").cloned().unwrap_or(Json::Null), &actor()?)?;
+                json!(true)
+            }
+            "review_search_peer_review" => json!(reviews.set_peer_review(&review()?, args.get("entry").cloned().unwrap_or(Json::Null), &actor()?)?),
+            "review_search_prior" => json!(reviews.set_prior_work(&review()?, args.get("entry").cloned().unwrap_or(Json::Null), &actor()?)?),
+            "review_report_export" => {
+                let id = review()?;
+                let strategies = run_strategies(reviews, &id, databases, web, library, root);
+                let (filename, content, mime) = reviews.read(&id, |state, _| key_review::reporting_hooks::export_with(state, text(args, "kind"), &strategies))?;
+                json!({ "filename": filename, "content": content, "mime": mime })
+            }
             _ => return Err(format!("Unknown Key command: {command}")),
         })
     })();

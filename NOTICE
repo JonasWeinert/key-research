@@ -14,6 +14,9 @@ Notable components:
 - Citation Style Language styles and locales (data/citation), CC BY-SA 3.0, shipped
   unmodified as separate data files (Key.app/Contents/Resources/citation), not compiled
   into Key; see data/citation/NOTICE.
+- The structure (item numbers, topics, order) of the PRISMA 2020, PRISMA-P and PRISMA-S
+  reporting checklists, CC BY 4.0 (prisma-statement.org), used by the review tool's reporting
+  views with Key's own item descriptions; exports carry the attribution.
 - PDFium and its bundled libraries (vendor/pdfium), BSD-style and other permissive
   licences; see vendor/pdfium/licenses.
 - hayagriva (vendor/hayagriva) and pdfium-render (vendor/pdfium-render-tile), used

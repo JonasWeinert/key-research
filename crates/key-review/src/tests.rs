@@ -340,6 +340,16 @@ fn perf_twenty_thousand_records() {
     eprintln!("20k records: import {import_ms} ms, 5000 decisions {decide_ms} ms, replay {replay_ms} ms, summary {summary_ms} ms, list {list_ms} ms, search {search_ms} ms, queue {queue_ms} ms, record+decide {record_ms} ms");
     assert!(record_ms < 250, "one record and a decision took {record_ms} ms");
     assert!(list_ms < 1000 && queue_ms < 1000 && summary_ms < 1500 && replay_ms < 5000);
+    // std-A: the reporting views read the whole review too.
+    let t = Instant::now();
+    let checklist = reviews.checklist(&id, &Default::default()).unwrap();
+    let doc = reviews.protocol_doc(&id).unwrap();
+    let report = reviews.search_report(&id, &Default::default()).unwrap();
+    let reporting_ms = t.elapsed().as_millis();
+    assert_eq!(checklist["lists"][0]["items"].as_array().unwrap().len(), 42);
+    assert!(doc["fields"].is_array() && report["sources"].is_array());
+    eprintln!("20k records: checklist + protocol + search report {reporting_ms} ms");
+    assert!(reporting_ms < 1500, "reporting took {reporting_ms} ms");
 }
 
 #[test]
