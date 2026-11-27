@@ -109,20 +109,22 @@ const want = (name) => !only.length || only.includes(name);
     // 2. Citation cards: one work, and several as chips that scroll inside the card.
     const card = pdf.locator(".pdfjs-cite-card");
     // The text layer sits above the marks; the reader hit-tests the pointer, as a person's would.
-    const hoverCitation = async (id) => {
-      const box = await pdf.locator(`.pdfjs-link-overlay.citation[data-id="${id}"]`).first().boundingBox();
-      if (!box) throw Error(`Citation ${id} is not on screen`);
+    const hoverCitation = async (id, { optional = false } = {}) => {
+      const box = await pdf.locator(`.pdfjs-link-overlay.citation[data-id="${id}"]`).first().boundingBox().catch(() => null);
+      if (!box) {
+        if (optional) return false;
+        throw Error(`Citation ${id} is not on screen`);
+      }
       await pdf.mouse.move(box.x + box.width / 2 - 3, box.y + box.height / 2 + 2, { steps: 3 });
       await pdf.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 2 });
+      return true;
     };
     const hoverCitations = async (wanted) => {
       const seen = new Set();
       const found = {};
       const height = await pdf.evaluate(() => document.querySelector(".pdfjs-scroll").scrollHeight);
-      for (let top = 0; top < height && Object.keys(found).length < wanted.length; top += 500) {
-        await scrollTo(top);
-        await pdf.waitForTimeout(250);
-        const ids = await pdf.evaluate(() =>
+      const onScreen = () =>
+        pdf.evaluate(() =>
           [...document.querySelectorAll(".pdfjs-link-overlay.citation[data-id]")]
             .filter((e) => {
               const r = e.getBoundingClientRect();
@@ -130,12 +132,18 @@ const want = (name) => !only.length || only.includes(name);
             })
             .map((e) => e.dataset.id),
         );
-        for (const id of ids) {
-          if (seen.has(id)) continue;
+      for (let top = 0; top < height && Object.keys(found).length < wanted.length; top += 500) {
+        await scrollTo(top);
+        await pdf.waitForTimeout(250);
+        // Analysis arriving redraws the marks under new ids, so the marks here are listed
+        // again after each one: a mark that went while the pointer moved is not lost.
+        for (;;) {
+          const id = (await onScreen()).find((candidate) => !seen.has(candidate));
+          if (!id) break;
           seen.add(id);
           await pdf.mouse.move(5, 5);
           await pdf.waitForTimeout(260);
-          await hoverCitation(id);
+          if (!(await hoverCitation(id, { optional: true }))) continue;
           if (!(await card.isVisible().catch(() => false))) {
             await card.waitFor({ timeout: 1500 }).catch(() => {});
           }
@@ -397,7 +405,8 @@ const want = (name) => !only.length || only.includes(name);
       await shell.evaluate(() => window.key.setAppSettings({ theme: "system" }));
       // A reference takes the reader to its place in the list.
       const top = await pdf.evaluate(() => document.querySelector(".pdfjs-scroll").scrollTop);
-      await panel.locator(".key-ref-list li button").nth(Math.min(3, rows - 1)).click();
+      // The row itself: a looked-up reference also carries Add to library and Add to Inbox buttons.
+      await panel.locator(".key-ref-list li > button:first-child").nth(Math.min(3, rows - 1)).click();
       await pdf.waitForFunction((t) => Math.abs(document.querySelector(".pdfjs-scroll").scrollTop - t) > 200, top, { timeout: 5000 });
       // The switch: Details shows the source's page in the same panel.
       await tab("Details").click();
@@ -429,8 +438,27 @@ const want = (name) => !only.length || only.includes(name);
       result.panelFollowsEdits = true;
       await tab("References").click();
       await shell.waitForFunction(() => document.querySelector(".key-reader-panel [role=tab][aria-selected=true]")?.textContent?.startsWith("References"), undefined, { timeout: 5000 });
+      // A scroll made just as the panel closes is kept: the reader lays out again for its new
+      // width a frame after the resize, and must not go back to where it was before.
+      await pdf.evaluate(() => {
+        const s = document.querySelector(".pdfjs-scroll");
+        window.__closing = { width: s.clientWidth, scrolled: false };
+        const observer = new ResizeObserver(() => {
+          if (s.clientWidth === window.__closing.width) return;
+          observer.disconnect();
+          s.scrollTo({ top: 0, behavior: "instant" });
+          window.__closing.scrolled = true;
+        });
+        observer.observe(s);
+      });
       await panel.getByRole("button", { name: "Hide details and references" }).click();
       await panel.waitFor({ state: "detached", timeout: 5000 });
+      await pdf.waitForFunction(() => window.__closing.scrolled, undefined, { timeout: 5000 });
+      // Two frames on, the new layout has been applied.
+      const kept = await pdf.evaluate(
+        () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: document.querySelector(".pdfjs-scroll").scrollTop, page: document.querySelector(".pdfjs-page").offsetHeight })))),
+      );
+      if (kept.top > kept.page / 2) throw Error(`Closing the panel undid a scroll to the top (${kept.top})`);
       result.panel = { rows };
     }
 
@@ -441,29 +469,32 @@ const want = (name) => !only.length || only.includes(name);
       await pdf.waitForTimeout(300);
       // Text runs are words: drag from "Each" to "patients".
       await pdf.waitForFunction(() => document.querySelectorAll(".pdfjs-text-run").length > 100, undefined, { timeout: 15000 });
-      // The page's text layer can still be re-rendering after the panel closed: wait for the passage.
-      const span = await pdf
+      // The page's text layer can still be re-rendering after the panel closed: wait until the
+      // passage is on the page and has stopped moving, and measure it in the same step (the
+      // runs are replaced when a page renders again, so an index taken earlier can go stale).
+      const b = await pdf
         .waitForFunction(
           () => {
             const runs = [...document.querySelectorAll(".pdfjs-text-run")];
             const words = runs.map((r) => r.textContent.trim());
             const at = words.findIndex((w, i) => w === "Each" && words.slice(i, i + 5).join(" ") === "Each nurse scanned 30 patients");
             if (at < 0) return false;
-            runs[at].scrollIntoView({ block: "center" });
-            return { at };
+            const first = runs[at].getBoundingClientRect();
+            const last = runs[at + 4].getBoundingClientRect();
+            const box = { x: first.x, y: first.y, width: last.right - first.x, height: first.height };
+            const centred = Math.abs(first.y + first.height / 2 - innerHeight / 2) < innerHeight / 4;
+            const key = JSON.stringify(box);
+            const settled = centred && window.__citePassage === key && box.width > 0 && box.height > 0;
+            window.__citePassage = key;
+            if (!centred) runs[at].scrollIntoView({ block: "center" });
+            return settled && box;
           },
           undefined,
-          { timeout: 20000 },
+          { timeout: 20000, polling: 200 },
         )
         .then((h) => h.jsonValue())
-        .then((v) => v.at)
         .catch(() => null);
-      if (span === null) throw Error("The passage to cite is not on the page");
-      await pdf.waitForTimeout(400);
-      const box = (i) => pdf.locator(".pdfjs-text-run").nth(i).boundingBox();
-      const first = await box(span);
-      const last = await box(span + 4);
-      const b = { x: first.x, y: first.y, width: last.x + last.width - first.x, height: first.height };
+      if (!b) throw Error("The passage to cite is not on the page");
       await pdf.mouse.move(b.x + 1, b.y + b.height / 2);
       await pdf.mouse.down();
       await pdf.mouse.move(b.x + b.width - 2, b.y + b.height / 2, { steps: 15 });
@@ -493,10 +524,12 @@ const want = (name) => !only.length || only.includes(name);
       await note.click();
       await shell.keyboard.press("Meta+ArrowDown");
       await shell.keyboard.press("Enter");
-      const before = await shell.locator(".kx-page-note .ne-squote").count();
+      // The quotes in this note: the library tab behind keeps the same source's note in its inspector.
+      const quotes = note.locator(".ne-squote");
+      const before = await quotes.count();
       await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.paste());
-      await shell.waitForFunction((n) => document.querySelectorAll(".kx-page-note .ne-squote").length > n, before, { timeout: 5000 });
-      const pasted = shell.locator(".kx-page-note .ne-squote").last();
+      await quotes.nth(before).waitFor({ timeout: 5000 });
+      const pasted = quotes.last();
       const pastedText = await pasted.innerText();
       if (!/Each nurse scanned 30 patients/.test(pastedText)) throw Error(`Pasted quote: ${pastedText}`);
       await pasted.scrollIntoViewIfNeeded();
