@@ -321,6 +321,8 @@ pub struct State {
     pub alias_recorded: bool,
     /// Retracted decision event ids (so a replay of a retract before its target still works).
     retracted: HashSet<String>,
+    /// std-B: citation searching rounds, AI log and audits, conduct dismissals, pilots, contacts.
+    pub std_b: crate::conduct::StdB,
 }
 
 #[derive(Deserialize, Default)]
@@ -359,6 +361,7 @@ impl State {
             migrated: false,
             alias_recorded: false,
             retracted: HashSet::new(),
+            std_b: Default::default(),
         }
     }
 
@@ -402,6 +405,8 @@ impl State {
         self.events += 1;
         self.info.updated_at = self.info.updated_at.max(e.at);
         self.last_event = Some((e.at, e.id.clone()));
+        // std-B
+        crate::conduct::observe(&mut self.std_b, e);
         let p = &e.payload;
         let text = |key: &str| p.get(key).and_then(Json::as_str).unwrap_or("").to_string();
         let stage = || p.get("stage").and_then(|s| serde_json::from_value::<Stage>(s.clone()).ok());

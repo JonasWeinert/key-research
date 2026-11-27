@@ -18,6 +18,12 @@ pub mod store;
 pub mod templates;
 pub mod views;
 
+// std-B: citation chasing, AI-use audit, conduct checks, extraction pilots and contacts.
+pub mod ai_audit;
+pub mod chasing;
+pub mod conduct;
+pub mod xpilot;
+
 pub use ops::{Library, NoLibrary};
 pub use store::Reviews;
 
@@ -25,3 +31,6 @@ pub use store::Reviews;
 mod tests;
 #[cfg(test)]
 mod tests_records;
+// std-B
+#[cfg(test)]
+mod tests_std_b;

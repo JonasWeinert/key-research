@@ -212,6 +212,8 @@ impl Reviews {
                 "template" => (format!("{base}-template.json"), template_json(&state.protocol)?, "application/json"),
                 "dictionary" => (format!("{base}-data-dictionary.csv"), crate::logic::dictionary(&state.protocol).iter().map(|r| csv_line(r)).collect::<String>(), "text/csv"),
                 "fulltext-csv" => (format!("{base}-full-texts-needed.csv"), crate::records::fulltext_csv(state, &all_metas(conn, review)?.into_iter().map(|m| (m.id.clone(), m)).collect()), "text/csv"),
+                // std-B: AI-use statement and log, contacts with authors, extraction pilot, conduct checks.
+                "ai-statement" | "ai-log" | "contacts" | "extraction-pilot" | "conduct" => crate::conduct::export(state, kind, &base)?,
                 other => return Err(format!("Unknown export {other}")),
             };
             Ok(json!({ "filename": name, "content": content, "mime": mime }))
@@ -520,6 +522,8 @@ pub fn describe(state: &State, e: &Event) -> String {
         "extract.final" => format!("Agreed {}", s("fieldId")),
         "ai.suggest" => "AI suggestion".into(),
         "analysis.set" => "Saved an analysis".into(),
+        // std-B
+        "chase.round" | "conduct.dismiss" | "conduct.retractions" | "ai.prompt" | "ai.audit" | "xpilot.set" | "form.piloted" | "contact.log" => crate::conduct::describe(e),
         other => other.into(),
     }
 }

@@ -64,6 +64,15 @@ pub const KINDS: &[&str] = &[
     "study.link",
     "extract.complete",
     "analysis.set",
+    // std-B: citation searching, AI-use log and audit, conduct checks, extraction pilots, contacts.
+    "chase.round",
+    "ai.prompt",
+    "ai.audit",
+    "conduct.dismiss",
+    "conduct.retractions",
+    "xpilot.set",
+    "form.piloted",
+    "contact.log",
 ];
 
 pub fn now_ms() -> i64 {

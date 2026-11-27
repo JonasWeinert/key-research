@@ -452,7 +452,7 @@ fn registers_in_a_search_run_are_counted_as_registers() {
 }
 
 /// Every box adds up: what was identified, removed, screened, sought, assessed and included.
-fn assert_invariants(p: &crate::prisma::Prisma) {
+pub(crate) fn assert_invariants(p: &crate::prisma::Prisma) {
     assert_eq!(p.identified, p.databases.iter().chain(&p.registers).map(|n| n.count).sum::<usize>());
     assert_eq!(p.identified - p.duplicates - p.automation - p.removed_other, p.screened + p.screening_pending, "identified − removed = screened + still to screen: {p:?}");
     assert_eq!(p.screened - p.screening_excluded, p.main.sought, "screened − excluded = sought");
