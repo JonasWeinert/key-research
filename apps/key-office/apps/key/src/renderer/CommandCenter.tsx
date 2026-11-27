@@ -28,6 +28,7 @@ export const SHORTCUTS: [string, [string, string][]][] = [
       ["⌘⇧T", "Reopen the last closed tab"],
       ["⌘1 … ⌘9", "Go to a tab"],
       ["⌃⇥ / ⌃⇧⇥", "Switch tabs, most recent first: hold ⌃, press ⇥ or a number, let go"],
+      ["⇧⌘R", "In a PDF: reading mode, the text reflowed (again for the page view)"],
     ],
   ],
   [
