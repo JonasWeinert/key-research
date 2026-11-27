@@ -116,10 +116,12 @@ export function ItemRow({ item, open, toggle, go, notify, save }: { item: Checkl
       {open && (
         <div className="kx-rp-item-body">
           <p className="kx-rp-asks">{item.text}</p>
-          <p className="kx-rp-rule">
-            <Icon name="info" size={12} />
-            <span>{item.rule}</span>
-          </p>
+          {item.note?.location && (
+            <p className="kx-rp-rule">
+              <Icon name="info" size={12} />
+              <span>{item.rule}</span>
+            </p>
+          )}
           {item.gap && (
             <div className="kx-rp-gap">
               <span>{item.gap.action}</span>

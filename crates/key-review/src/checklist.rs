@@ -238,7 +238,7 @@ fn sources_sentence(c: &Ctx) -> String {
     if !regs.is_empty() {
         t.push_str(&format!(" We searched the study registers {}.", join_and(&regs)));
     }
-    let other: Vec<String> = c.search.other_methods.iter().map(|s| s.name.to_lowercase()).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+    let other: Vec<String> = c.search.other_methods.iter().map(|s| lower_first(&s.name)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
     if !other.is_empty() {
         t.push_str(&format!(" We also used {}.", join_and(&other)));
     }
@@ -292,12 +292,12 @@ fn results_flow(c: &Ctx) -> String {
     }
     t.push_str(&format!(". Of {} assessed for eligibility, {} excluded", plural(m.assessed, "report", "reports"), thousands(m.excluded)));
     if !m.excluded_reasons.is_empty() {
-        t.push_str(&format!(" ({})", m.excluded_reasons.iter().map(|r| format!("{}: {}", r.name.to_lowercase(), r.count)).collect::<Vec<_>>().join("; ")));
+        t.push_str(&format!(" ({})", m.excluded_reasons.iter().map(|r| format!("{}: {}", lower_first(&r.name), r.count)).collect::<Vec<_>>().join("; ")));
     }
     t.push('.');
     if p.other.identified > 0 {
         let o = &p.other;
-        t.push_str(&format!(" Other methods ({}) identified {}; {} were assessed and {} included.", join_and(&p.other_methods.iter().map(|n| n.name.to_lowercase()).collect::<Vec<_>>()), plural(o.identified, "record", "records"), thousands(o.assessed), thousands(o.included)));
+        t.push_str(&format!(" Other methods ({}) identified {}; {} were assessed and {} included.", join_and(&p.other_methods.iter().map(|n| lower_first(&n.name)).collect::<Vec<_>>()), plural(o.identified, "record", "records"), thousands(o.assessed), thousands(o.included)));
     }
     t.push_str(&format!(" In total, {} ({}) were included in the review.", plural(p.studies_included, "study", "studies"), plural(p.reports_included, "report", "reports")));
     if !p.complete {
@@ -339,6 +339,14 @@ fn limitations(c: &Ctx) -> String {
 }
 
 // ── PRISMA 2020 items ───────────────────────────────────────────────────────────────
+
+fn lower_first(t: &str) -> String {
+    let mut c = t.chars();
+    match c.next() {
+        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
+        None => String::new(),
+    }
+}
 
 fn manuscript(mut i: Item, draft: Option<String>) -> Item {
     i.manuscript = true;
@@ -589,7 +597,7 @@ fn main_items(c: &Ctx) -> Vec<Item> {
     } else if unexplained > 0 {
         gap(i, "partly", &format!("{} excluded at full text without a criterion.", plural(unexplained, "report was", "reports were")), "Give the criterion for each (Full text, Excluded)", Link::to("Full text", "ft", None))
     } else {
-        done(i, "Every report excluded at full text has its criterion; the screening export lists them.", Some(format!("Reports excluded at full text, with reasons, are listed in Supplementary table X ({}).", pr.main.excluded_reasons.iter().map(|r| format!("{}: {}", r.name.to_lowercase(), r.count)).collect::<Vec<_>>().join("; "))))
+        done(i, "Every report excluded at full text has its criterion; the screening export lists them.", Some(format!("Reports excluded at full text, with reasons, are listed in Supplementary table X ({}).", pr.main.excluded_reasons.iter().map(|r| format!("{}: {}", lower_first(&r.name), r.count)).collect::<Vec<_>>().join("; "))))
     };
     i.evidence.push(Link::to("Export screening decisions (CSV)", "export", Some("screening")));
     out.push(i);
@@ -688,7 +696,7 @@ fn main_items(c: &Ctx) -> Vec<Item> {
     let i = mk("24c", "Other information", "Amendments", "Describe and explain any changes from the registration or protocol.");
     out.push(if pd::locked(s) {
         let d = pd::deviations(s);
-        let draft = if d.is_empty() { "There were no deviations from the registered protocol.".to_string() } else { format!("The protocol was amended {} after registration: {}.", if d.len() == 1 { "once".to_string() } else { format!("{} times", count_word(d.len())) }, d.iter().map(|x| format!("on {} ({}; reason: {})", date(x.at), if x.changes.is_empty() { "settings changed".into() } else { x.changes.join("; ").to_lowercase() }, x.reason.trim())).collect::<Vec<_>>().join("; ")) };
+        let draft = if d.is_empty() { "There were no deviations from the registered protocol.".to_string() } else { format!("The protocol was amended {} after registration: {}.", if d.len() == 1 { "once".to_string() } else { format!("{} times", count_word(d.len())) }, d.iter().map(|x| format!("on {} ({}; reason: {})", date(x.at), if x.changes.is_empty() { "settings changed".into() } else { lower_first(&x.changes.join("; ")) }, x.reason.trim())).collect::<Vec<_>>().join("; ")) };
         let mut x = done(i, "Every change after registration is a dated amendment with its reason.", Some(draft));
         x.evidence.push(protocol("Deviations from protocol"));
         x

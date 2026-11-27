@@ -246,8 +246,12 @@
 .kx-rp-empty {
   font-size: 11.5px;
 }
-.kx-rp-methods {
-  width: min(760px, 86vw);
+.kx-rp-methods,
+.kx-rp-sheet,
+.kx-rp-prospero {
+  box-sizing: border-box;
+  width: min(720px, 90vw);
+  max-width: 100%;
 }
 .kx-rp-methods-body {
   max-height: 58vh;
@@ -364,7 +368,6 @@
   line-height: 1.5;
 }
 .kx-rp-sheet {
-  width: min(640px, 86vw);
   max-height: 82vh;
   overflow: auto;
 }
@@ -516,9 +519,6 @@
   gap: 3px;
   color: var(--kx-text-2);
   font-size: 11.5px;
-}
-.kx-rp-prospero {
-  width: min(720px, 88vw);
 }
 .kx-rp-prospero-list {
   max-height: 62vh;
