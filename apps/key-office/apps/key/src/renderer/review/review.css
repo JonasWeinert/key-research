@@ -2546,11 +2546,6 @@ td.kx-rv-roles {
   padding: 18px 22px;
   overflow: auto;
 }
-.pdfjs-selection-host {
-  padding-inline: 8px;
-  font-size: 12px;
-  white-space: nowrap;
-}
 
 /* ── Full texts ───────────────────────────────────────────────────────────── */
 .kx-rv-fulltexts {
@@ -2985,4 +2980,161 @@ td.kx-rv-roles {
 .kx-rv-file-drop p {
   margin: 0 0 6px;
   font-size: 12.5px;
+}
+
+/* ── The reader's selection menu in the review (review-reader.tsx, review-marks.tsx) ─── */
+.kx-rv-pdf {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.kx-rv-pdf > .pdfjs-benchmark {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.kx-rv-reader-tools {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-bg-raised) 88%, transparent);
+  box-shadow: var(--kx-shadow-sm);
+  backdrop-filter: blur(16px);
+}
+.kx-rv-reader-tool {
+  display: grid;
+  width: 26px;
+  height: 24px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--kx-text-2);
+  background: transparent;
+}
+.kx-rv-reader-tool:hover {
+  color: var(--kx-text);
+  background: var(--kx-fill);
+}
+.kx-rv-reader-tool[aria-pressed="true"] {
+  color: var(--kx-accent-text);
+  background: var(--kx-accent-soft);
+}
+.kx-rv-reader-notice {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 40;
+  max-width: min(420px, calc(100% - 24px));
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: var(--kx-text);
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  font-size: 12px;
+  transform: translateX(-50%);
+}
+.kx-rv-marks-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin: 2px 0 6px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-rv-marks-toggle {
+  font-size: 12px;
+}
+.kx-rv-evidence-list li[data-kind="include"],
+.kx-rv-evidence-list li[data-kind="note"] {
+  border-left-color: var(--kx-accent);
+}
+.kx-rv-evidence-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 2px 0 4px 44px;
+}
+.kx-rv-evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--kx-text-2);
+  background: var(--kx-fill);
+  font-size: 11px;
+}
+.kx-rv-evidence-chip i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--kx-accent);
+}
+.kx-rv-evidence-chip[data-kind="notMet"] i {
+  background: var(--kx-red);
+}
+.kx-rv-evidence-chip[data-kind="met"] i {
+  background: var(--kx-green);
+}
+.kx-rv-evidence-chip:hover {
+  color: var(--kx-text);
+  background: var(--kx-fill-2);
+}
+.kx-rv-flash {
+  animation: kx-rv-flash 1.5s ease-out;
+}
+@keyframes kx-rv-flash {
+  0%,
+  40% {
+    background: var(--kx-accent-soft);
+    box-shadow: 0 0 0 2px var(--kx-accent-soft);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .kx-rv-flash {
+    animation: none;
+    outline: 2px solid var(--kx-accent);
+  }
+}
+.kx-rv-xfield[data-focused] {
+  box-shadow: inset 2px 0 0 var(--kx-accent);
+}
+.kx-rv-xfield[data-picking] {
+  box-shadow: inset 2px 0 0 var(--kx-indigo);
+  background: color-mix(in srgb, var(--kx-indigo) 7%, transparent);
+}
+.kx-rv-xfield-label .kx-rv-pick {
+  align-self: flex-start;
+  width: 20px;
+  height: 20px;
+  opacity: 0;
+}
+.kx-rv-xfield:hover .kx-rv-pick,
+.kx-rv-xfield[data-focused] .kx-rv-pick,
+.kx-rv-pick[aria-pressed="true"],
+.kx-rv-pick:focus-visible {
+  opacity: 1;
+}
+.kx-rv-pick[aria-pressed="true"] {
+  color: var(--kx-indigo);
+}
+.kx-rv-pick-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 12px;
+  border-bottom: 0.5px solid var(--kx-line);
+  color: var(--kx-text);
+  background: color-mix(in srgb, var(--kx-indigo) 10%, var(--kx-bg-raised));
+  font-size: 12px;
+}
+.kx-rv-pick-banner > span {
+  flex: 1 1 auto;
 }

@@ -1,8 +1,11 @@
 // Extraction: the study's full text in Key's reader as the main panel, its forms in the sidebar.
-// A passage selected in the reader goes into a field ("Use for ‹field›…": the field last focused,
-// else a picker with type-ahead and numbers); numbers in it are read the way papers write them
-// ("12.3 (4.5)", "n = 120", "45%", "0.52 (0.31 to 0.88)") and offered with a confirmation; a
-// table's row can be filled from one selection. Every value keeps its source (page, position
+// Selecting a passage opens the reader's menu in extraction mode: where the passage can go, the
+// focused field first ("Use for ‹field›", Enter), then the fields it fits (Rust reads the numbers
+// the way papers write them: "12.3 (4.5)" → mean and SD, "45/120", "n = 120", CIs; words go to
+// text and choice fields with the closest option), new and existing rows of repeating groups.
+// Choosing fills the field(s) with the passage as their source, marks it in the page and moves
+// focus to the next empty field: select → Enter → select → Enter. A field's pick button (or ⌥P)
+// makes the next selection fill it with no menu. ⌘Z takes the last fill back. Every value keeps its source (page, position
 // and quoted text), shown as a chip that brings the place back. Fields shown on other answers
 // appear and disappear with them; their values stay (inactive) when hidden. Completing a form
 // checks it in Rust: required answers, quotes, source positions and cross-field checks, for the
@@ -13,9 +16,10 @@ import { EmptyState, Hint } from "../explain";
 import { downloadText } from "../db-ui";
 import { GlobalDialog } from "../GlobalDrawer";
 import { Icon } from "../icons";
-import { plural, type ExtractionView, type Field, type Form, type SourcePos, type StudyRow } from "./review-api";
+import { plural, type ExtractionView, type Field, type Form, type SelectionTarget, type SourcePos, type StudyRow } from "./review-api";
 import { Btn, MenuButton, errorText, useLoad } from "./review-ui";
-import type { ReaderSelectionAction, ReviewReaderHandle } from "./review-reader";
+import type { ReaderMark, ReaderMarkMenu, ReaderPassage, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
+import { MarksLegend, flashRow, sourceMarks, useMarksShown } from "./review-marks";
 import type { StageProps } from "./ReviewPage";
 
 const ReviewReader = lazy(() => import("./review-reader").then((m) => ({ default: m.ReviewReader })));
@@ -115,9 +119,13 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
   const [asking, setAsking] = useState(false);
   /** The field a passage goes to first: the last one focused. */
   const [focused, setFocused] = useState<{ form: Form; field: Field }>();
-  const [using, setUsing] = useState<Passage>();
+  /** A field waiting for the next selection (no menu). */
+  const [pick, setPick] = useState<{ form: Form; field: Field }>();
   const [mime, setMime] = useState<string>();
+  const [marksShown, setMarksShown] = useMarksShown();
   const reader = useRef<ReviewReaderHandle>(null);
+  /** Fills made from the text, newest last: what each field had before. */
+  const fills = useRef<Array<Array<{ form: Form; field: Field; before: Slot["mine"] }>>>([]);
   const r = record.value;
   const version = r?.fulltext.file?.hash ?? r?.sourceId ?? "";
   useEffect(() => {
@@ -140,27 +148,202 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
     [api, recordId, r?.sourceId, viewer, view, props, notify],
   );
 
-  const actions = useMemo<ReaderSelectionAction[]>(
-    () => [{ id: "review-use", label: focused ? `Use for ${focused.field.label}…` : "Use for field…", title: "Put this passage (and its place) into a field", run: (p) => setUsing(p) }],
-    [focused],
+  const latest = useRef({ v: view.value, focused });
+  latest.current = { v: view.value, focused };
+  /** The visible fields in the forms' order. */
+  const order = (v: ExtractionView) =>
+    v.forms.flatMap((form) => {
+      const shown = new Set(v.formState?.[form.id]?.visible ?? form.sections.flatMap((x) => x.fields.map((f) => f.id)));
+      return form.sections.flatMap((x) => x.fields.filter((f) => shown.has(f.id)).map((field) => ({ form, field })));
+    });
+  const focusField = (formId: string, fieldId: string) => {
+    const el = document.querySelector<HTMLElement>(`.kx-rv-xfield[data-form="${formId}"][data-field="${fieldId}"]`);
+    el?.querySelector<HTMLElement>("input:not([type=checkbox]), select, textarea, button[role=radio], input")?.focus({ preventScroll: true });
+    el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  /** A target chosen in the menu (or by a pick): the field(s) filled, the passage their source. */
+  const fill = useCallback(
+    async (t: SelectionTarget, p: ReaderPassage) => {
+      const v = latest.current.v;
+      const form = v?.forms.find((f) => f.id === t.formId);
+      const field = form?.sections.flatMap((x) => x.fields).find((f) => f.id === t.fieldId);
+      if (!v || !form || !field) return;
+      const extra: Extra = { quote: p.text, page: p.page >= 0 ? p.page + 1 : null, sourcePos: { page: p.page, rects: p.rects, text: p.text } };
+      const mine = (id: string) => v.values[`${form.id}/${id}`]?.mine ?? null;
+      const done: Array<{ form: Form; field: Field; before: Slot["mine"] }> = [];
+      if (t.kind === "table") {
+        const rows = [...((Array.isArray(mine(field.id)?.value) ? mine(field.id)!.value : []) as Record<string, unknown>[])];
+        const cells = Object.fromEntries(t.fills.map((f) => [f.fieldId, f.value]));
+        if (t.newRow || t.row == null) rows.push(cells);
+        else rows[t.row] = { ...rows[t.row], ...cells };
+        done.push({ form, field, before: mine(field.id) });
+        await save(form, field, rows, extra);
+      } else if (!t.fills.length) {
+        done.push({ form, field, before: mine(field.id) });
+        await save(form, field, mine(field.id)?.value ?? "", extra);
+      } else {
+        for (const f of t.fills) {
+          const target = form.sections.flatMap((x) => x.fields).find((x) => x.id === f.fieldId);
+          if (!target) continue;
+          done.push({ form, field: target, before: mine(target.id) });
+          await save(form, target, f.value, extra);
+        }
+      }
+      fills.current.push(done);
+      notify(`${done.map((d) => d.field.label).join(", ")}: filled from the text (⌘Z takes it back)`, "ok");
+      // On to the next empty field, ready for the next selection.
+      const list = order(v);
+      const at = Math.max(...done.map((d) => list.findIndex((x) => x.form.id === d.form.id && x.field.id === d.field.id)));
+      const filled = new Set(done.map((d) => `${d.form.id}/${d.field.id}`));
+      const next = list.slice(at + 1).find((x) => x.field.kind !== "table" && !filled.has(`${x.form.id}/${x.field.id}`) && (v.values[`${x.form.id}/${x.field.id}`]?.mine?.value ?? "") === "");
+      if (next) {
+        setFocused(next);
+        setTimeout(() => focusField(next.form.id, next.field.id), 60);
+      }
+    },
+    [save, notify],
   );
-  // ⌥S: the reader's selection for the focused field.
+  const targetsFor = useCallback(
+    (text: string, focus?: { form: Form; field: Field }) => {
+      const v = latest.current.v;
+      if (!v) return Promise.resolve([] as SelectionTarget[]);
+      const values = Object.fromEntries(Object.entries(v.values).flatMap(([k, slot]) => (slot.mine && !slot.inactive ? [[k, slot.mine.value]] : [])));
+      return api.selectionTargets(text, v.forms, values, focus ? { formId: focus.form.id, fieldId: focus.field.id } : undefined).then((res) => res.targets);
+    },
+    [api],
+  );
+  // The menu for a selection: where it can go, worked out in Rust for the passage.
+  const actions = useCallback(
+    async (p: ReaderPassage): Promise<ReaderSelectionAction[]> => {
+      const focus = latest.current.focused;
+      const targets = await targetsFor(p.text, focus);
+      const many = (latest.current.v?.forms.length ?? 0) > 1;
+      const icon = (t: SelectionTarget) => (t.kind === "table" ? (t.newRow ? "plus" : "table") : t.kind === "number" ? "hash" : t.kind === "choice" || t.kind === "multi" ? "list" : "text");
+      return targets.slice(0, 40).map((t) => ({
+        id: `use-${t.id}`,
+        label: t.focused ? `Use for ${t.label}` : t.newRow || t.row != null ? t.label : t.label,
+        title: `${t.form} · ${t.section}`,
+        detail: t.preview ? `→ ${t.preview}` : t.focused ? "Keep its value, add this passage as its source" : undefined,
+        group: many ? `${t.form} · ${t.section}` : t.section,
+        icon: icon(t),
+        tone: "source",
+        keywords: `${t.form} ${t.section} ${t.fills.map((f) => f.label).join(" ")}`,
+        run: (pp) => void fill(t, pp),
+      }));
+    },
+    [targetsFor, fill],
+  );
+  const mode = useMemo<ReaderSelectionMode>(() => ({ id: "extract", label: focused ? `Extract · ${focused.field.label} has focus` : "Extract to the form", filter: "Filter fields", empty: "No field fits this passage", hint: "↩ uses the first · ↑↓ choose · type to filter" }), [focused]);
+  const pickSelection = useMemo(
+    () =>
+      pick
+        ? (p: ReaderPassage) => {
+            setPick(undefined);
+            void targetsFor(p.text, pick).then((ts) => {
+              const t = ts.find((x) => x.focused && x.formId === pick.form.id && x.fieldId === pick.field.id);
+              if (t) void fill(t, p);
+              else notify(`Nothing in that passage fits ${pick.field.label}`, "error");
+            });
+          }
+        : null,
+    [pick, targetsFor, fill, notify],
+  );
+  const undoFill = useCallback(() => {
+    const last = fills.current.pop();
+    if (!last) return false;
+    for (const { form, field, before } of last) void save(form, field, before?.value ?? (field.kind === "table" || field.kind === "multi" ? [] : ""), { quote: before?.quote ?? "", page: before?.page ?? null, sourcePos: before?.sourcePos ?? null });
+    notify(`Took back ${last.map((d) => d.field.label).join(", ")}`, "ok");
+    return true;
+  }, [save, notify]);
+  // ⌥S: the reader's selection for the focused field; ⌥P: pick the next one; ⌘Z: undo a fill;
+  // Esc ends a pick.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName));
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z" && !typing && fills.current.length) {
+        e.preventDefault();
+        undoFill();
+        return;
+      }
+      if (e.key === "Escape" && pick) {
+        setPick(undefined);
+        return;
+      }
+      if (e.altKey && e.code === "KeyP" && latest.current.focused) {
+        e.preventDefault();
+        setPick(latest.current.focused);
+        return;
+      }
       if (!(e.altKey && e.code === "KeyS")) return;
       const p = selectionPassage();
       if (!p) return notify("Select a passage in the full text first");
+      const focus = latest.current.focused;
+      if (!focus) return notify("Focus a field first");
       e.preventDefault();
-      setUsing(p);
+      void targetsFor(p.text, focus).then((ts) => {
+        const t = ts.find((x) => x.focused);
+        if (t) void fill(t, p);
+      });
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, notify]);
+  }, [active, notify, pick, undoFill, targetsFor, fill]);
+
+  // The values' sources as marks in the page (one per passage); a click shows the field(s).
+  const sources = useMemo(() => (view.value ? sourceMarks(view.value, view.value.forms) : { marks: [], byField: new Map<string, string>() }), [view.value]);
+  const marks = marksShown ? sources.marks : [];
+  const markActions = useCallback(
+    (mark: ReaderMark): ReaderMarkMenu | null => {
+      const v = latest.current.v;
+      if (!v) return null;
+      const keys = [...sources.byField].filter(([, id]) => id === mark.id).map(([k]) => k);
+      const fields = keys.flatMap((k) => {
+        const [formId, fieldId] = k.split("/");
+        const form = v.forms.find((f) => f.id === formId);
+        const field = form?.sections.flatMap((x) => x.fields).find((f) => f.id === fieldId);
+        return form && field ? [{ form, field }] : [];
+      });
+      if (!fields.length) return null;
+      flashRow(`.kx-rv-xfield[data-form="${fields[0].form.id}"][data-field="${fields[0].field.id}"]`);
+      const slot = (x: (typeof fields)[number]) => v.values[`${x.form.id}/${x.field.id}`]?.mine;
+      return {
+        title: mark.label,
+        mode: { id: "source-mark", label: mark.label },
+        actions: [
+          ...fields.map((x) => ({ id: `show-${x.field.id}`, label: `Show ${x.field.label} in the form`, icon: "arrowRight" as const, detail: slot(x) ? display(slot(x)!.value) : undefined, run: () => (flashRow(`.kx-rv-xfield[data-form="${x.form.id}"][data-field="${x.field.id}"]`), focusField(x.form.id, x.field.id)) })),
+          {
+            id: "source-remove",
+            label: fields.length > 1 ? "Remove this source (keep the values)" : "Remove this source (keep the value)",
+            icon: "close",
+            secondary: true,
+            run: () => {
+              fills.current.push(fields.map((x) => ({ ...x, before: slot(x) ?? null })));
+              for (const x of fields) void save(x.form, x.field, slot(x)?.value ?? "", { quote: "", page: null, sourcePos: null });
+            },
+          },
+          {
+            id: "value-remove",
+            label: fields.length > 1 ? "Remove the values" : "Remove the value",
+            icon: "trash",
+            tone: "danger",
+            secondary: true,
+            run: () => {
+              fills.current.push(fields.map((x) => ({ ...x, before: slot(x) ?? null })));
+              for (const x of fields) void save(x.form, x.field, x.field.kind === "table" || x.field.kind === "multi" ? [] : "", { quote: "", page: null, sourcePos: null });
+            },
+          },
+        ],
+      };
+    },
+    [sources, save],
+  );
 
   if (!view.value || !r) return <div className="kx-rv-loading" aria-busy="true" />;
   const v = view.value;
-  const show = (pos: SourcePos | null | undefined, page?: number | null, quote?: string) => {
+  const show = (pos: SourcePos | null | undefined, page?: number | null, quote?: string, key?: string) => {
+    const mark = key ? sources.byField.get(key) : undefined;
+    if (mark && reader.current?.showMark(mark)) return;
     if (pos && pos.page >= 0) reader.current?.show(pos.page, pos.text);
     else if (page) reader.current?.show(page - 1, quote);
   };
@@ -192,8 +375,22 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
         </div>
       )}
       {v.forms.map((form) => (
-        <FormView key={form.id} {...props} form={form} view={v} recordId={recordId} save={save} onFocus={(field) => setFocused({ form, field })} onShow={show} reload={view.reload} />
+        <FormView
+          key={form.id}
+          {...props}
+          form={form}
+          view={v}
+          recordId={recordId}
+          save={save}
+          focusedId={focused?.form.id === form.id ? focused.field.id : undefined}
+          pickingId={pick?.form.id === form.id ? pick.field.id : undefined}
+          onFocus={(field) => setFocused({ form, field })}
+          onPick={mime ? (field) => setPick(pick?.field.id === field.id ? undefined : { form, field }) : undefined}
+          onShow={show}
+          reload={view.reload}
+        />
       ))}
+      {mime && <MarksLegend kinds={["source"]} shown={marksShown} onShown={setMarksShown} count={sources.marks.length} />}
       <Hint help="review.extraction.quotes" />
       {v.forms.some((f) => f.kind === "outcomes") && <Hint help="review.outcomes.table" />}
     </div>
@@ -208,8 +405,34 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
               <p className="kx-rv-compact-sub">{[r.meta.authors.slice(0, 3).join("; "), r.meta.journal, r.meta.year].filter(Boolean).join(" · ")}</p>
             </div>
           </header>
+          {pick && (
+            <div className="kx-rv-pick-banner" role="status">
+              <Icon name="cursor" size={12} />
+              <span>
+                Select the passage for <strong>{pick.field.label}</strong>
+              </span>
+              <Btn small quiet onClick={() => setPick(undefined)}>
+                Cancel <kbd>Esc</kbd>
+              </Btn>
+            </div>
+          )}
           <Suspense fallback={<div className="kx-rv-reader" aria-busy="true" />}>
-            <ReviewReader ref={reader} api={api} recordId={recordId} version={version} title={r.meta.title} mime={mime} actions={actions} onError={(t) => notify(t, "error")} />
+            <ReviewReader
+              ref={reader}
+              api={api}
+              recordId={recordId}
+              version={version}
+              title={r.meta.title}
+              mime={mime}
+              sourceId={r.fulltext.file ? null : r.sourceId}
+              invoke={(command, args) => props.invoke(command, args as Record<string, unknown>, props.workspaceId)}
+              actions={actions}
+              mode={mode}
+              marks={marks}
+              markActions={markActions}
+              pickSelection={pickSelection}
+              onError={(t) => notify(t, "error")}
+            />
           </Suspense>
         </section>
       ) : (
@@ -222,7 +445,6 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
       <aside className="kx-rv-xside" aria-label="Extraction form">
         {forms}
       </aside>
-      {using && <UsePassage {...props} passage={using} forms={v} focused={focused} onClose={() => setUsing(undefined)} save={save} />}
     </div>
   );
 }
@@ -243,7 +465,7 @@ function selectionPassage(): Passage | null {
   return { text, page, rects };
 }
 
-function FormView(props: StageProps & { form: Form; view: ExtractionView; recordId: string; save: (form: Form, field: Field, value: unknown, extra: Extra) => Promise<void>; onFocus: (f: Field) => void; onShow: (pos: SourcePos | null | undefined, page?: number | null, quote?: string) => void; reload: () => void }) {
+function FormView(props: StageProps & { form: Form; view: ExtractionView; recordId: string; save: (form: Form, field: Field, value: unknown, extra: Extra) => Promise<void>; focusedId?: string; pickingId?: string; onFocus: (f: Field) => void; onPick?: (f: Field) => void; onShow: (pos: SourcePos | null | undefined, page?: number | null, quote?: string, key?: string) => void; reload: () => void }) {
   const { form, view, api, recordId, viewer, notify, summary } = props;
   const state = view.formState?.[form.id];
   const visible = new Set(state?.visible ?? form.sections.flatMap((s) => s.fields.map((f) => f.id)));
@@ -301,7 +523,10 @@ function FormView(props: StageProps & { form: Form; view: ExtractionView; record
                 extractors={view.extractors}
                 onSave={(value, extra) => props.save(form, field, value, extra)}
                 onFocus={() => props.onFocus(field)}
-                onShow={props.onShow}
+                focused={props.focusedId === field.id}
+                picking={props.pickingId === field.id}
+                onPick={props.onPick ? () => props.onPick!(field) : undefined}
+                onShow={(pos, page, quote) => props.onShow(pos, page, quote, `${form.id}/${field.id}`)}
                 canAgree={summary.canResolve || summary.protocol.rules.conflicts === "consensus"}
               />
             ))}
@@ -330,7 +555,7 @@ function SourceChip({ pos, page, quote, onShow }: { pos?: SourcePos | null; page
   );
 }
 
-function FieldInput({ field, slot, onSave, onFocus, onShow, extractors, canAgree, needQuote, shownWhen }: { form: Form; field: Field; needQuote: boolean; slot: Slot | undefined; shownWhen?: string; onSave: (value: unknown, extra: Extra) => void; onFocus: () => void; onShow: (pos: SourcePos | null | undefined, page?: number | null, quote?: string) => void; extractors: number; canAgree: boolean }) {
+function FieldInput({ form, field, slot, onSave, onFocus, onShow, onPick, focused, picking, extractors, canAgree, needQuote, shownWhen }: { form: Form; field: Field; needQuote: boolean; slot: Slot | undefined; shownWhen?: string; onSave: (value: unknown, extra: Extra) => void; onFocus: () => void; onPick?: () => void; focused?: boolean; picking?: boolean; onShow: (pos: SourcePos | null | undefined, page?: number | null, quote?: string) => void; extractors: number; canAgree: boolean }) {
   const mine = slot?.mine;
   const empty = field.kind === "table" || field.kind === "multi" ? [] : "";
   const [value, setValue] = useState<unknown>(mine?.value ?? empty);
@@ -416,7 +641,7 @@ function FieldInput({ field, slot, onSave, onFocus, onShow, extractors, canAgree
   const differs = slot?.differs && !slot.final;
   const placed = !!mine?.sourcePos;
   return (
-    <div className="kx-rv-xfield" data-kind={field.kind} data-differs={differs || undefined} data-field={field.id}>
+    <div className="kx-rv-xfield" data-kind={field.kind} data-differs={differs || undefined} data-form={form.id} data-field={field.id} data-focused={focused || undefined} data-picking={picking || undefined}>
       <div className="kx-rv-xfield-label">
         <span>
           {field.label}
@@ -427,6 +652,11 @@ function FieldInput({ field, slot, onSave, onFocus, onShow, extractors, canAgree
             </small>
           )}
         </span>
+        {onPick && (
+          <button type="button" className="kx-rv-icon kx-rv-pick" aria-pressed={!!picking} aria-label={`Pick ${field.label} from the text`} title="Pick from the text: the next passage you select fills this field (⌥P)" onClick={onPick}>
+            <Icon name="cursor" size={12} />
+          </button>
+        )}
         {shownWhen && <small className="kx-rv-rule-chip">{shownWhen}</small>}
         {field.guidance && <small>{field.guidance}</small>}
         {!(quote || quoting) && (
@@ -557,180 +787,5 @@ function TableInput({ field, value, onChange, onCommit, onFocus }: { field: Fiel
         Row
       </Btn>
     </div>
-  );
-}
-
-// ── A passage into a field ───────────────────────────────────────────────────────
-
-type Parsed = Awaited<ReturnType<StageProps["api"]["parseSelection"]>>;
-
-/** What a field gets from a passage: its text, an option it names, or a number read from it. */
-function proposals(field: Field, text: string, parsed: Parsed | undefined): { label: string; value: unknown }[] {
-  const out: { label: string; value: unknown }[] = [];
-  const add = (label: string, value: unknown) => value !== undefined && value !== null && !out.some((o) => JSON.stringify(o.value) === JSON.stringify(value)) && out.push({ label, value });
-  if (field.kind === "number") {
-    const p = parsed ?? { numbers: [] };
-    add(`n = ${p.n}`, p.n);
-    add(`Mean ${p.mean}`, p.mean);
-    add(`SD ${p.sd}`, p.sd);
-    add(`${p.percent}%`, p.percent);
-    add(`Events ${p.events}`, p.events);
-    add(`Total ${p.total}`, p.total);
-    add(`Estimate ${p.estimate}`, p.estimate);
-    add(`Lower ${p.lower}`, p.lower);
-    add(`Upper ${p.upper}`, p.upper);
-    for (const n of p.numbers ?? []) add(String(n), n);
-  } else if (field.kind === "choice" || field.kind === "multi") {
-    const t = text.toLowerCase();
-    for (const o of field.options) if (t.includes(o.toLowerCase())) add(o, field.kind === "multi" ? [o] : o);
-    for (const o of field.options) add(o, field.kind === "multi" ? [o] : o);
-  } else if (field.kind === "yesno") {
-    add("Yes", true);
-    add("No", false);
-  } else if (field.kind !== "table") add("The passage", text);
-  return out;
-}
-
-/** A table row from the passage: numbers in order into the number columns (editable). */
-function rowFrom(field: Field, parsed: Parsed | undefined, text: string): Record<string, unknown> {
-  const row: Record<string, unknown> = {};
-  const nums = [...(parsed?.numbers ?? [])];
-  const byName: Record<string, number | undefined> = { m1: parsed?.mean, sd1: parsed?.sd, n1: parsed?.n ?? parsed?.total, e1: parsed?.events, estimate: parsed?.estimate, lower: parsed?.lower, upper: parsed?.upper };
-  for (const c of field.columns) {
-    if (c.kind === "number") {
-      if (byName[c.id] != null) row[c.id] = byName[c.id];
-      else if (nums.length) row[c.id] = nums.shift();
-    }
-  }
-  const textCol = field.columns.find((c) => c.kind === "text");
-  if (textCol && !Object.keys(row).length) row[textCol.id] = text;
-  return row;
-}
-
-function UsePassage({ api, passage, forms, focused, onClose, save }: StageProps & { passage: Passage; forms: ExtractionView; focused?: { form: Form; field: Field }; onClose: () => void; save: (form: Form, field: Field, value: unknown, extra: Extra) => Promise<void> }) {
-  const visible = (f: Form) => new Set(forms.formState?.[f.id]?.visible ?? f.sections.flatMap((s) => s.fields.map((x) => x.id)));
-  const all = forms.forms.flatMap((form) => {
-    const shown = visible(form);
-    return form.sections.flatMap((s) => s.fields.filter((f) => shown.has(f.id)).map((field) => ({ form, field })));
-  });
-  const [target, setTarget] = useState(focused && all.some((x) => x.field.id === focused.field.id && x.form.id === focused.form.id) ? focused : undefined);
-  const [query, setQuery] = useState("");
-  const [parsed, setParsed] = useState<Parsed>();
-  const [row, setRow] = useState<Record<string, unknown>>();
-  useEffect(() => {
-    void api.parseSelection(passage.text).then(setParsed).catch(() => setParsed(undefined));
-  }, [api, passage.text]);
-  useEffect(() => {
-    if (target?.field.kind === "table") setRow(rowFrom(target.field, parsed, passage.text));
-  }, [target, parsed, passage.text]);
-  const matches = all.filter((x) => !query || x.field.label.toLowerCase().includes(query.toLowerCase()));
-  const pos: SourcePos = { page: passage.page, rects: passage.rects, text: passage.text };
-  const extra: Extra = { quote: passage.text, page: passage.page >= 0 ? passage.page + 1 : null, sourcePos: pos };
-  const use = (value: unknown) => {
-    if (!target) return;
-    void save(target.form, target.field, value, extra).then(onClose);
-  };
-  const addRow = () => {
-    if (!target || !row) return;
-    const key = `${target.form.id}/${target.field.id}`;
-    const old = forms.values[key]?.mine?.value;
-    void save(target.form, target.field, [...(Array.isArray(old) ? old : []), row], extra).then(onClose);
-  };
-  useEffect(() => {
-    if (target) return;
-    const onKey = (e: KeyboardEvent) => {
-      const n = Number(e.key);
-      if (n >= 1 && n <= 9 && matches[n - 1] && !(e.target instanceof HTMLInputElement && /\d/.test(e.key) && query)) {
-        e.preventDefault();
-        setTarget(matches[n - 1]);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [target, matches, query]);
-  return (
-    <GlobalDialog label="Use the passage" onClose={onClose}>
-      <div className="kx-rv-dialog kx-rv-use">
-        <h2>{target ? `Use for ${target.field.label}` : "Use for which field?"}</h2>
-        <blockquote>
-          “{passage.text.slice(0, 400)}”{passage.page >= 0 && <small> p. {passage.page + 1}</small>}
-        </blockquote>
-        {!target ? (
-          <>
-            <input
-              className="kx-rv-input"
-              autoFocus
-              placeholder="Type to find a field, or press its number"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && matches[0]) {
-                  e.preventDefault();
-                  setTarget(matches[0]);
-                }
-              }}
-            />
-            <ul className="kx-rv-radio-list">
-              {matches.slice(0, 30).map((m, i) => (
-                <li key={`${m.form.id}/${m.field.id}`}>
-                  <button type="button" className="kx-rv-pick-row" onClick={() => setTarget(m)}>
-                    {i < 9 && <kbd>{i + 1}</kbd>}
-                    <span>
-                      {m.field.label} <small>{m.form.name}</small>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : target.field.kind === "table" ? (
-          <>
-            <p className="kx-rv-muted">A new row from this passage: check the numbers, then add it.</p>
-            <table className="kx-rv-xtable">
-              <thead>
-                <tr>
-                  {target.field.columns.map((c) => (
-                    <th key={c.id}>{c.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  {target.field.columns.map((c) => (
-                    <td key={c.id}>
-                      <input className="kx-rv-input" aria-label={c.label} value={String(row?.[c.id] ?? "")} onChange={(e) => setRow({ ...row, [c.id]: c.kind === "number" && e.target.value !== "" && !Number.isNaN(Number(e.target.value)) ? Number(e.target.value) : e.target.value })} />
-                    </td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-            <div className="kx-rv-dialog-actions">
-              <Btn onClick={() => setTarget(undefined)}>Another field</Btn>
-              <Btn primary onClick={addRow}>
-                Add the row
-              </Btn>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="kx-rv-muted">Choose the value (its place in the document is kept with it).</p>
-            <div className="kx-rv-use-values">
-              {proposals(target.field, passage.text, parsed).map((p, i) => (
-                <Btn key={i} primary={i === 0} onClick={() => use(p.value)} autoFocus={i === 0}>
-                  {p.label.length > 80 ? `${p.label.slice(0, 80)}…` : p.label}
-                </Btn>
-              ))}
-              <Btn quiet onClick={() => use(forms.values[`${target.form.id}/${target.field.id}`]?.mine?.value ?? "")} title="Keep the value, add this passage as its source">
-                Only as its source
-              </Btn>
-            </div>
-            <div className="kx-rv-dialog-actions">
-              <Btn onClick={() => setTarget(undefined)}>Another field</Btn>
-              <Btn onClick={onClose}>Cancel</Btn>
-            </div>
-          </>
-        )}
-      </div>
-    </GlobalDialog>
   );
 }

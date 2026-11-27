@@ -3311,7 +3311,7 @@ function PdfJsBenchmarkApp({
       <SelectionMenu
         open={!!context && !commentDraft && !(activeAnnotation && !selection && annotationInfo) && !(selection && pickSelection)}
         anchor={context ?? null}
-        area={() => rootRef.current?.getBoundingClientRect()}
+        area={() => scrollRef.current?.getBoundingClientRect() ?? rootRef.current?.getBoundingClientRect()}
         label={selection ? 'Text selection actions' : 'Annotation actions'}
         passage={selectedPassage}
         actions={selection ? selectionActions : undefined}
@@ -3360,7 +3360,7 @@ function PdfJsBenchmarkApp({
       <SelectionMenu
         open={!!markMenu}
         anchor={markMenu?.rect ?? null}
-        area={() => rootRef.current?.getBoundingClientRect()}
+        area={() => scrollRef.current?.getBoundingClientRect() ?? rootRef.current?.getBoundingClientRect()}
         label={markMenu?.menu.title ?? 'Mark'}
         title={markMenu?.menu.title}
         passage={() => (markMenu ? { text: markMenu.mark.text, page: markMenu.mark.page, rects: markMenu.mark.rects } : null)}

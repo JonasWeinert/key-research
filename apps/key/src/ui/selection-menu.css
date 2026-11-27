@@ -9,7 +9,7 @@
   --ksm-fill: var(--kx-fill, color-mix(in srgb, CanvasText 7%, transparent));
   --ksm-fill-2: var(--kx-fill-2, color-mix(in srgb, CanvasText 11%, transparent));
   --ksm-accent: var(--kx-accent, AccentColor);
-  --ksm-on-accent: var(--kx-on-accent, AccentColorText);
+  --ksm-on-accent: var(--kx-accent-ink, AccentColorText);
   --ksm-not-met: var(--kx-red, CanvasText);
   --ksm-met: var(--kx-green, CanvasText);
   --ksm-evidence: var(--kx-accent, AccentColor);
@@ -122,7 +122,7 @@
   margin: 0 3px;
   background: var(--ksm-line);
 }
-.ksm-tool {
+.ksm .ksm-tool {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
@@ -141,12 +141,12 @@
   color: var(--ksm-text);
   background: var(--ksm-fill);
 }
-.ksm-tool[data-text] {
+.ksm .ksm-tool[data-text] {
   padding: 0 8px 0 6px;
   color: var(--ksm-accent);
   font-weight: 550;
 }
-.ksm-tool[data-danger] {
+.ksm .ksm-tool[data-danger] {
   color: var(--ksm-not-met);
 }
 .ksm-generic[data-compact] .ksm-tool {
@@ -163,7 +163,7 @@
   padding-top: 4px;
   border-top: 0.5px solid var(--ksm-line);
 }
-.ksm-chip {
+.ksm .ksm-chip {
   display: inline-flex;
   flex: 0 1 auto;
   align-items: center;
@@ -186,7 +186,7 @@
 .ksm-chip:hover {
   background: var(--ksm-fill-2);
 }
-.ksm-chip[data-primary] {
+.ksm .ksm-chip[data-primary] {
   color: var(--ksm-on-accent);
   background: var(--ksm-accent);
 }
@@ -314,9 +314,7 @@
   min-width: 0;
 }
 .ksm-row-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .ksm-row-detail {
   overflow: hidden;
@@ -336,7 +334,7 @@
   padding-top: 4px;
   border-top: 0.5px solid var(--ksm-line);
 }
-.ksm-pill {
+.ksm .ksm-pill {
   --ksm-tone: var(--ksm-accent);
   display: inline-flex;
   flex: 0 0 auto;
@@ -352,13 +350,13 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.ksm-pill[data-tone="notMet"] {
+.ksm .ksm-pill[data-tone="notMet"] {
   --ksm-tone: var(--ksm-not-met);
 }
-.ksm-pill[data-tone="met"] {
+.ksm .ksm-pill[data-tone="met"] {
   --ksm-tone: var(--ksm-met);
 }
-.ksm-pill[data-tone="source"] {
+.ksm .ksm-pill[data-tone="source"] {
   --ksm-tone: var(--ksm-source);
 }
 .ksm-pill .ksm-kbd {
@@ -368,10 +366,10 @@
   background: color-mix(in srgb, var(--ksm-tone) 16%, transparent);
   box-shadow: none;
 }
-.ksm-row-main:hover .ksm-pill,
-.ksm-row-main[data-target-active] .ksm-pill,
-.ksm-quick:hover,
-.ksm-quick[data-target-active] {
+.ksm .ksm-row-main:hover .ksm-pill,
+.ksm .ksm-row-main[data-target-active] .ksm-pill,
+.ksm .ksm-quick:hover,
+.ksm .ksm-quick[data-target-active] {
   color: var(--ksm-on-accent);
   background: var(--ksm-tone);
 }
@@ -384,7 +382,7 @@
 .ksm-quick {
   margin-right: 4px;
 }
-.ksm-quick:not(:hover):not([data-target-active]) {
+.ksm .ksm-quick:not(:hover):not([data-target-active]) {
   background: transparent;
   box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--ksm-tone) 40%, transparent);
 }
@@ -406,7 +404,7 @@
   outline: none;
   user-select: text;
 }
-.ksm-more {
+.ksm .ksm-more {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
@@ -520,7 +518,7 @@
   padding: 0 4px;
   overflow: hidden;
   border-radius: 3px 3px 3px 0;
-  color: var(--kx-on-accent, Canvas);
+  color: var(--kx-accent-ink, Canvas);
   background: var(--ksm-mark);
   font: 600 9px/13px var(--kx-font, system-ui, sans-serif);
   text-overflow: ellipsis;
