@@ -1,13 +1,14 @@
 // Overview: what to do next, progress per stage, and the PRISMA 2020 flow diagram from the
 // review's real numbers (exportable as SVG, PNG or the numbers as CSV).
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { downloadText } from "../db-ui";
 import { Explain } from "../explain";
 import { Icon, type IconName } from "../icons";
 import { pngBlob, saveFile, svgMarkup } from "../charts/export";
 import { plural, type Summary } from "./review-api";
 import { PrismaDiagram } from "./prisma-diagram";
-import { Btn, MenuButton, errorText, useLoad } from "./review-ui";
+import { Btn, Confirm, MenuButton, errorText, useLoad } from "./review-ui";
+import { OriginSheet } from "./review-sources";
 import type { StageId, StageProps } from "./ReviewPage";
 
 function nextStep(s: Summary, viewer: string): { title: string; body: string; action: string; stage: StageId; icon: IconName } {
@@ -49,6 +50,12 @@ export function Overview(props: StageProps) {
   const { summary, api, viewer, go, notify } = props;
   const prisma = useLoad(() => api.prisma(), [api, summary.events]);
   const svg = useRef<SVGSVGElement>(null);
+  // The figure for publication: drawn without the work-in-progress lines, off screen.
+  const finalSvg = useRef<SVGSVGElement>(null);
+  const [unfinished, setUnfinished] = useState<() => void>();
+  const [fixing, setFixing] = useState(false);
+  const publish = (run: () => void) => (prisma.value && !prisma.value.complete ? setUnfinished(() => run) : run());
+  const p = prisma.value;
   const step = nextStep(summary, viewer);
   const ta = summary.stages.ta,
     ft = summary.stages.ft;
@@ -110,14 +117,57 @@ export function Overview(props: StageProps) {
             label="Export the flow diagram"
             icon="download"
             items={[
-              { label: "SVG image", run: () => svg.current && saveFile(`${base}-prisma.svg`, svgMarkup(svg.current)) },
-              { label: "PNG image", run: () => svg.current && void pngBlob(svg.current, 3).then((b) => saveFile(`${base}-prisma.png`, b)).catch((e) => notify(errorText(e), "error")) },
-              { label: "Numbers (CSV)", run: () => void api.exportFile("prisma", viewer).then((f) => downloadText(f.filename, f.content, f.mime)) },
+              { label: "SVG image", run: () => publish(() => finalSvg.current && saveFile(`${base}-prisma.svg`, svgMarkup(finalSvg.current))) },
+              { label: "PNG image", run: () => publish(() => finalSvg.current && void pngBlob(finalSvg.current, 3).then((b) => saveFile(`${base}-prisma.png`, b)).catch((e) => notify(errorText(e), "error"))) },
+              { label: "Numbers (CSV)", run: () => publish(() => void api.exportFile("prisma", viewer).then((f) => downloadText(f.filename, f.content, f.mime))) },
             ]}
           />
         </div>
-        {prisma.value ? <PrismaDiagram ref={svg} p={prisma.value} /> : <div className="kx-rv-loading" aria-busy="true" />}
+        {summary.originsToCheck?.length > 0 && (
+          <div className="kx-rv-missing-bar kx-rv-origin-bar" role="status">
+            <span>
+              {summary.originsToCheck.map((o) => (
+                <span key={o.batchId} className="kx-rv-origin-line">
+                  <strong>{plural(o.records, "record")}</strong> counted as “{o.name}”. {o.why}.
+                </span>
+              ))}
+            </span>
+            <Btn small primary onClick={() => setFixing(true)}>
+              Where did these come from?
+            </Btn>
+          </div>
+        )}
+        {p ? <PrismaDiagram ref={svg} p={p} /> : <div className="kx-rv-loading" aria-busy="true" />}
+        {p && !p.complete && (
+          <p className="kx-rv-muted kx-rv-prisma-wip">
+            Under way: {[p.screeningPending && `${p.screeningPending.toLocaleString()} still to screen`, p.main.pending && `${p.main.pending.toLocaleString()} still to assess`].filter(Boolean).join(", ")}. These lines disappear when screening is done and are never in the exported figure.
+          </p>
+        )}
+        {p && (
+          <div className="kx-rv-offscreen" aria-hidden="true">
+            <PrismaDiagram ref={finalSvg} p={p} final />
+          </div>
+        )}
       </section>
+      {unfinished && (
+        <Confirm
+          title="Screening is not finished"
+          body={
+            <p>
+              {p?.screeningPending ? `${plural(p.screeningPending, "record")} still to screen` : ""}
+              {p?.screeningPending && p?.main.pending ? " and " : ""}
+              {p?.main.pending ? `${plural(p.main.pending, "report")} still to assess` : ""}. The figure would show numbers that will change. Export it anyway (without the “still to” lines)?
+            </p>
+          }
+          confirm="Export anyway"
+          onClose={() => setUnfinished(undefined)}
+          onConfirm={() => {
+            unfinished();
+            setUnfinished(undefined);
+          }}
+        />
+      )}
+      {fixing && <OriginSheet {...props} batchId={summary.originsToCheck[0]?.batchId} onClose={() => setFixing(false)} />}
     </div>
   );
 }

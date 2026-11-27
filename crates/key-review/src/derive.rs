@@ -103,6 +103,8 @@ pub struct RecState {
     pub removed: Option<String>,
     /// Another report of the study this record is (its first report's id).
     pub study_of: Option<String>,
+    /// Where it was found, when that differs from its import: (PRISMA group, name).
+    pub origin: Option<(String, String)>,
     /// Fields filled in from elsewhere: field → where from.
     pub filled: BTreeMap<String, String>,
 }
@@ -306,6 +308,9 @@ pub struct State {
     pub assignments: [Option<Assignment>; 2],
     pub extraction: HashMap<String, RecExtraction>,
     pub analyses: Vec<Json>,
+    /// Database searches that belong to the review: {id, name, query, connectors, overrides,
+    /// runs: [{runId, at, batchId, added, update}]}, to run again as update searches.
+    pub searches: Vec<Json>,
     pub events: usize,
     pub last_event: Option<(i64, String)>,
     /// Old exclusion reason ids → the criteria they became (criteria and reasons are one list).
@@ -347,6 +352,7 @@ impl State {
             assignments: [None, None],
             extraction: HashMap::new(),
             analyses: Vec::new(),
+            searches: Vec::new(),
             events: 0,
             last_event: None,
             aliases: BTreeMap::new(),
@@ -441,6 +447,30 @@ impl State {
                     }
                 }
                 self.alias_recorded = true;
+            }
+            "batch.set" => {
+                // Where an import's records came from, named afterwards.
+                let id = text("batchId");
+                if let Some(b) = self.batches.iter_mut().find(|b| b.id == id) {
+                    if let Some(g) = p.get("group").and_then(Json::as_str) {
+                        b.group = g.to_string();
+                    }
+                    if let Some(n) = p.get("name").and_then(Json::as_str) {
+                        b.name = n.to_string();
+                    }
+                }
+            }
+            "record.origin" => {
+                let ids: Vec<String> = p.get("recordIds").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
+                let origin = match (p.get("group").and_then(Json::as_str), p.get("name").and_then(Json::as_str)) {
+                    (Some(g), Some(n)) if !g.is_empty() => Some((g.to_string(), n.to_string())),
+                    _ => None,
+                };
+                for id in ids {
+                    if let Some(r) = self.record_mut(&id) {
+                        r.origin = origin.clone();
+                    }
+                }
             }
             "batch.classify" => {
                 let id = text("batchId");
@@ -726,6 +756,29 @@ impl State {
                     s.at = e.at;
                     if let Some(r) = self.record_mut(&id) {
                         r.ai[stage.index()] = Some(s);
+                    }
+                }
+            }
+            "search.set" => {
+                let id = text("id");
+                let runs = self.searches.iter().find(|s| s.get("id").and_then(Json::as_str) == Some(id.as_str())).and_then(|s| s.get("runs").cloned()).unwrap_or(json!([]));
+                self.searches.retain(|s| s.get("id").and_then(Json::as_str) != Some(id.as_str()));
+                if !p.get("deleted").and_then(Json::as_bool).unwrap_or(false) {
+                    let mut s = p.clone();
+                    s["runs"] = runs;
+                    s["at"] = json!(e.at);
+                    self.searches.push(s);
+                }
+            }
+            "search.ran" => {
+                let id = text("id");
+                if let Some(s) = self.searches.iter_mut().find(|s| s.get("id").and_then(Json::as_str) == Some(id.as_str())) {
+                    let mut run = p.clone();
+                    run["at"] = json!(e.at);
+                    if let Some(Json::Array(runs)) = s.get_mut("runs") {
+                        runs.push(run);
+                    } else {
+                        s["runs"] = json!([run]);
                     }
                 }
             }

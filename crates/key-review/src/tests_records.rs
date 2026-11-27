@@ -123,11 +123,11 @@ fn removing_restoring_and_duplicates_keep_prisma_consistent() {
     let recs = active(&reviews, &id);
     assert_eq!(recs.len(), 4);
     let before = reviews.prisma(&id).unwrap();
-    assert_eq!((before.identified, before.duplicates, before.removed_other, before.screened), (5, 1, 0, 4));
+    assert_eq!((before.identified, before.duplicates, before.removed_other, before.screening_pending), (5, 1, 0, 4));
     // Removed by hand: out of screening, counted as removed for other reasons.
     reviews.remove_records(&id, &[recs[3].clone()], true, "Retracted", &a).unwrap();
     let p = reviews.prisma(&id).unwrap();
-    assert_eq!((p.removed_other, p.screened), (1, 3));
+    assert_eq!((p.removed_other, p.screening_pending), (1, 3));
     assert_eq!(reviews.queue(&id, &a, Stage::Ta, "").unwrap().len(), 3);
     let removed = reviews.list(&id, &a, &ListQuery { filter: "removed".into(), ..Default::default() }, &NoLibrary).unwrap();
     assert_eq!(removed["rows"][0]["removed"], "Retracted");
@@ -144,7 +144,7 @@ fn removing_restoring_and_duplicates_keep_prisma_consistent() {
     let dup = merged["record"]["id"].as_str().unwrap().to_string();
     reviews.resolve_pair(&id, &dup, &kept, "distinct", None, &a).unwrap();
     let p = reviews.prisma(&id).unwrap();
-    assert_eq!((p.duplicates, p.screened), (0, 5));
+    assert_eq!((p.duplicates, p.screening_pending), (0, 5));
     // Merged again by hand: listed as by hand.
     reviews.resolve_pair(&id, &kept, &dup, "duplicate", Some(&kept), &a).unwrap();
     assert_eq!(reviews.prisma(&id).unwrap(), before);
@@ -153,6 +153,13 @@ fn removing_restoring_and_duplicates_keep_prisma_consistent() {
     // The Sources table sees every record, with filters.
     let all = reviews.list(&id, &a, &ListQuery { scope: "sources".into(), ..Default::default() }, &NoLibrary).unwrap();
     assert_eq!(all["total"], 5);
+    let by_title = reviews.list(&id, &a, &ListQuery { scope: "sources".into(), sort: "title".into(), ..Default::default() }, &NoLibrary).unwrap();
+    let titles: Vec<&str> = by_title["rows"].as_array().unwrap().iter().map(|r| r["title"].as_str().unwrap()).collect();
+    let mut sorted = titles.clone();
+    sorted.sort_by_key(|t| t.to_lowercase());
+    assert_eq!(titles, sorted);
+    let back = reviews.list(&id, &a, &ListQuery { scope: "sources".into(), sort: "-title".into(), ..Default::default() }, &NoLibrary).unwrap();
+    assert_eq!(back["rows"][0]["title"].as_str(), titles.last().copied());
     let no_abstract = reviews.list(&id, &a, &ListQuery { scope: "sources".into(), filter: "active".into(), has_abstract: "no".into(), ..Default::default() }, &NoLibrary).unwrap();
     assert_eq!(no_abstract["total"], 2);
 }
@@ -209,7 +216,7 @@ fn missing_abstracts_come_from_duplicates_then_the_library() {
     let mut found = Map::new();
     found.insert("abstractText".into(), json!("Something else"));
     found.insert("volume".into(), json!("12"));
-    assert_eq!(reviews.enrich_from(&id, &walk, found, "OpenAlex", &a).unwrap(), 1);
+    assert_eq!(reviews.enrich_from(&id, &walk, found, "OpenAlex", false, &a).unwrap(), 1);
     let m = reviews.metas(&id, &[walk.clone()]).unwrap();
     assert_eq!(m[&walk].abstract_text, "A randomised trial of walking groups in four towns.");
     assert_eq!(m[&walk].volume, "12");
@@ -442,4 +449,121 @@ fn registers_in_a_search_run_are_counted_as_registers() {
     assert_eq!(p.identified, 5);
     let csv = crate::prisma::csv(&p);
     assert!(csv.contains("Records identified: register: ClinicalTrials.gov,2"), "{csv}");
+}
+
+/// Every box adds up: what was identified, removed, screened, sought, assessed and included.
+fn assert_invariants(p: &crate::prisma::Prisma) {
+    assert_eq!(p.identified, p.databases.iter().chain(&p.registers).map(|n| n.count).sum::<usize>());
+    assert_eq!(p.identified - p.duplicates - p.automation - p.removed_other, p.screened + p.screening_pending, "identified − removed = screened + still to screen: {p:?}");
+    assert_eq!(p.screened - p.screening_excluded, p.main.sought, "screened − excluded = sought");
+    for c in [&p.main, &p.other] {
+        assert_eq!(c.sought - c.not_retrieved, c.assessed + c.pending, "sought − not retrieved = assessed + still to assess");
+        assert_eq!(c.assessed - c.excluded, c.included, "assessed − excluded = included");
+        assert_eq!(c.excluded, c.excluded_reasons.iter().map(|n| n.count).sum::<usize>(), "every exclusion has its reason");
+    }
+    assert_eq!(p.other.identified - p.other.removed, p.other.screened_out + p.other.screening_pending + p.other.sought, "other methods: identified = screened out + still to screen + sought");
+    assert_eq!(p.reports_included, p.main.included + p.other.included);
+    assert!(p.studies_included <= p.reports_included);
+    assert_eq!(p.complete, p.screening_pending + p.main.pending + p.other.pending + p.other.screening_pending == 0);
+}
+
+fn invented(n: usize, tag: &str) -> Vec<RecordMeta> {
+    (0..n)
+        .map(|i| RecordMeta {
+            id: crate::events::uuid7(),
+            title: format!("{tag} study number {i} on walking, cycling and outcome {}", (i * 7919) % 100_003),
+            authors: vec![format!("Author{i}, A.")],
+            year: Some(2000 + (i % 24) as i64),
+            doi: format!("10.9999/{tag}.{i}"),
+            abstract_text: "An invented abstract.".into(),
+            ..Default::default()
+        })
+        .collect()
+}
+
+#[test]
+fn the_owners_review_counts_add_up() {
+    let reviews = Reviews::in_memory().unwrap();
+    let (id, a) = reviews.create("Counts", "Ana", None).unwrap();
+    // 315 from a PubMed search run, and 3,402 from the library that an older Key labelled
+    // "Manual" under other methods.
+    let mut per_source = std::collections::BTreeMap::new();
+    per_source.insert("PubMed".to_string(), 315);
+    let run = Batch { kind: "database".into(), group: "databases".into(), name: "PubMed search".into(), db_run_id: "run-1".into(), per_source, count: 315, ..Default::default() };
+    reviews.import(&id, run, invented(315, "pubmed"), &a, &NoLibrary).unwrap();
+    let library = Batch { kind: "library".into(), group: "other".into(), name: "Manual".into(), ..Default::default() };
+    let lib_batch = reviews.import(&id, library, invented(3402, "library"), &a, &NoLibrary).unwrap().batch_id;
+    // 75 screened at title and abstract: 70 excluded, 5 included.
+    let queue = reviews.queue(&id, &a, Stage::Ta, "").unwrap();
+    let pubmed: Vec<String> = reviews.read(&id, |s, _| Ok(s.records.iter().filter(|r| r.batch != lib_batch).map(|r| r.id.clone()).collect())).unwrap();
+    let screened: Vec<String> = queue.iter().filter(|id| pubmed.contains(id)).take(75).cloned().collect();
+    reviews.decide(&id, &screened[..70], Stage::Ta, Choice::Exclude, vec![], "", "", vec![], &a).unwrap();
+    reviews.decide(&id, &screened[70..], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+    let p = reviews.prisma(&id).unwrap();
+    assert_invariants(&p);
+    // Screened counts finished decisions only; the rest is work in progress.
+    assert_eq!((p.identified, p.screened, p.screening_pending, p.screening_excluded, p.main.sought), (315, 75, 240, 70, 5));
+    assert!(!p.complete);
+    // The old "Manual" import still sits under other methods, its records screened in Key.
+    assert_eq!(p.other_methods, vec![crate::prisma::Named { name: "Manual".into(), count: 3402 }]);
+    assert_eq!(p.other.screening_pending, 3402);
+    let csv = crate::prisma::csv(&p);
+    assert!(csv.contains("Records screened,75"), "{csv}");
+    assert!(csv.contains("still to screen (in progress, not for publication)\",240"), "{csv}");
+    // "Where did these come from?": a database, so they move to the left column and its screening.
+    assert!(reviews.set_batch_origin(&id, &lib_batch, "manual", "", &a).is_err());
+    reviews.set_batch_origin(&id, &lib_batch, "databases", "", &a).unwrap();
+    let p = reviews.prisma(&id).unwrap();
+    assert_invariants(&p);
+    assert_eq!(p.databases, vec![crate::prisma::Named { name: "PubMed".into(), count: 315 }, crate::prisma::Named { name: crate::prisma::UNNAMED.into(), count: 3402 }]);
+    assert_eq!((p.identified, p.screened, p.screening_pending, p.unnamed), (3717, 75, 3642, 3402));
+    assert!(p.other_methods.is_empty());
+    reviews.set_batch_origin(&id, &lib_batch, "databases", "Scopus", &a).unwrap();
+    let p = reviews.prisma(&id).unwrap();
+    assert_eq!((p.databases[1].name.as_str(), p.unnamed), ("Scopus", 0));
+    // One record found by citation searching instead: it moves to the right-hand column.
+    let one = reviews.read(&id, |s, _| Ok(s.records.iter().find(|r| r.batch == lib_batch).unwrap().id.clone())).unwrap();
+    reviews.set_record_origin(&id, std::slice::from_ref(&one), Some(("other", "Citation searching")), &a).unwrap();
+    let p = reviews.prisma(&id).unwrap();
+    assert_invariants(&p);
+    assert_eq!(p.databases[1].count, 3401);
+    assert_eq!(p.other_methods, vec![crate::prisma::Named { name: "Citation searching".into(), count: 1 }]);
+    // Included at title/abstract, then at full text: it reaches "included" through the right path.
+    reviews.decide(&id, std::slice::from_ref(&one), Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+    reviews.decide(&id, std::slice::from_ref(&one), Stage::Ft, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+    for r in &screened[70..] {
+        reviews.decide(&id, std::slice::from_ref(r), Stage::Ft, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+    }
+    let p = reviews.prisma(&id).unwrap();
+    assert_invariants(&p);
+    assert_eq!((p.other.sought, p.other.included, p.main.included, p.studies_included), (1, 1, 5, 6));
+}
+
+#[test]
+fn update_searches_import_only_what_is_new() {
+    let reviews = Reviews::in_memory().unwrap();
+    let (id, a) = reviews.create("Searches", "Ana", None).unwrap();
+    reviews.save_search(&id, json!({ "id": "s1", "name": "Walking", "query": {}, "connectors": ["pubmed"] }), &a).unwrap();
+    let first = invented(20, "run");
+    let batch = || Batch { kind: "database".into(), group: "databases".into(), name: "Walking".into(), db_run_id: "run-1".into(), ..Default::default() };
+    let report = reviews.import(&id, batch(), first.clone(), &a, &NoLibrary).unwrap();
+    reviews.search_ran(&id, "s1", "run-1", &report.batch_id, report.added, &a).unwrap();
+    // The same search months later: 15 of the earlier records again, 5 new ones.
+    let mut again: Vec<RecordMeta> = first[..15].iter().map(|m| RecordMeta { id: crate::events::uuid7(), ..m.clone() }).collect();
+    again.extend(invented(5, "new"));
+    let update = reviews.import_update(&id, batch(), again, Some("s1"), "run-2", &a, &NoLibrary).unwrap();
+    assert_eq!(update.added, 5);
+    let s = reviews.summary(&id, &a).unwrap();
+    let runs = s["searches"][0]["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2);
+    assert_eq!(runs[1]["known"], 15);
+    assert_eq!(runs[1]["update"], true);
+    let p = reviews.prisma(&id).unwrap();
+    assert_invariants(&p);
+    assert_eq!((p.identified, p.duplicates), (25, 0));
+    assert!(s["batches"].as_array().unwrap().iter().any(|b| b["batch"]["note"].as_str().is_some_and(|n| n.contains("15 records already in the review"))));
+    // Nothing new: no batch, the run still recorded.
+    let none = reviews.import_update(&id, batch(), first[..3].iter().map(|m| RecordMeta { id: crate::events::uuid7(), ..m.clone() }).collect(), Some("s1"), "run-3", &a, &NoLibrary).unwrap();
+    assert_eq!(none.added, 0);
+    assert_eq!(reviews.summary(&id, &a).unwrap()["searches"][0]["runs"].as_array().unwrap().len(), 3);
 }

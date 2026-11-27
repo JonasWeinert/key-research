@@ -134,11 +134,20 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   progress, what to do next, agreement.
 - **Setup**: question, team and rules, criteria (by part of the question, with suggestions), keywords, versions (with notes)
   and the audit trail. Template save/load (JSON).
-- **Sources**: three views. *Records*: every record in one virtualised table (search; filter by
-  import, PRISMA group, stage status, abstract, full text); a record opens to correct its metadata
-  (`record.edit`), remove it by hand or restore it (`record.remove`: PRISMA "removed for other
-  reasons"), or mark it as another report of a study (`study.link`: PRISMA counts reports and
-  studies apart). "Find missing abstracts" fills abstracts, DOI, PMID, year and journal from the
+- **Sources**: four views. *Records*: every record in one virtualised table (chosen columns,
+  sorting, filters by import, PRISMA group, stage status, abstract, full text; status chips: no
+  abstract, no DOI, no full text, duplicate, report; multi-select with a bulk panel). A record
+  opens beside the table with every field edited in place (`record.edit`), "Look up" by DOI,
+  PMID or title with a field-by-field comparison to accept (`record.enrich`, noting the source),
+  its full text attached, replaced or removed by drop or picker, where it was found
+  (`record.origin`), removed by hand or restored (`record.remove`: PRISMA "removed for other
+  reasons"), or marked as another report of a study (`study.link`: PRISMA counts reports and
+  studies apart). "Complete metadata" does the lookup for the selection (or everything shown),
+  then shows every difference to accept. *Database searches*: Database search's own builder,
+  picker and per-database preview embedded, started from the question's parts; "Search and
+  import" runs it and imports the run as a batch (strategy, per-database counts, registers apart,
+  de-duplicated); searches belong to the review (`search.set`, `search.ran`) and "Update search"
+  imports only records not already there, as a dated batch noting how many were left out. "Find missing abstracts" fills abstracts, DOI, PMID, year and journal from the
   record's duplicates in other imports first (the longest abstract), then the same work in the
   library, then, when asked, OpenAlex/Crossref/PubMed through Key's own lookup; every value is a
   `record.enrich` event noting where it came from, shown beside it. *Duplicates*: the pairs to
@@ -197,6 +206,25 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   variance); fixed and random effects (DerSimonian–Laird, REML; Hartung–Knapp); heterogeneity (Q,
   I², τ², prediction interval); subgroups; leave-one-out; Egger's test; forest and funnel plots
   (`src/renderer/charts/`), exportable.
+
+## PRISMA counts
+
+- "Records screened" counts finished title/abstract decisions; what is still to screen is shown
+  apart ("75 of 315", "240 still to screen", muted) and never in the exported figure, which warns
+  before exporting while anything is unfinished. The same for "Reports assessed".
+- Every box adds up (tested): identified − removed before screening = screened + still to screen;
+  screened − excluded = sought; sought − not retrieved = assessed + still to assess; assessed −
+  excluded = included, every exclusion with its reason.
+- Imports say where their records came from: a named database or register (left column,
+  screened) or one of PRISMA 2020's other methods (citation searching, websites, organisations,
+  contact with authors or experts, hand searching, other). A library or file import with no
+  answer counts as "Databases — source not specified" and asks to be named. Origins are editable
+  per import (`batch.set`) and per record (`record.origin`); older reviews' "Manual" imports are
+  flagged with a one-click fix.
+- Records from other methods follow PRISMA 2020's right-hand path (sought → assessed →
+  included). Key screens them at title and abstract like every record; those excluded there are
+  reported in the right column's "Records identified" box ("Excluded on title and abstract"), an
+  adaptation the PRISMA 2020 statement allows, so no record leaves the flow unaccounted for.
 
 ## Performance
 

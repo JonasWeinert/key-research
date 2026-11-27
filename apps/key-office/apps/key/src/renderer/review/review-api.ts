@@ -221,6 +221,8 @@ export interface Summary {
   /** Recurring "Other" texts (offered as criteria). */
   otherReasons: { text: string; count: number }[];
   fulltexts: { need: number; have: number };
+  /** Imports PRISMA cannot report as they stand (an unnamed database, "Manual"). */
+  originsToCheck: { batchId: string; name: string; group: string; kind: string; records: number; why: string }[];
 }
 export interface RecordMeta {
   id: string;
@@ -313,6 +315,7 @@ export interface RecordView {
   hasFullText: boolean;
   removed: string | null;
   studyOf: string | null;
+  origin: Origin | null;
   reports: string[];
   filled: Record<string, string>;
   flagged: boolean;
@@ -346,9 +349,12 @@ export interface ListRow {
   batch: string;
   batchName?: string | null;
   doi?: string;
+  pmid?: string;
+  authors?: string[];
   removed?: string | null;
   active?: boolean;
   studyOf?: string | null;
+  origin?: Origin | null;
   filled?: Record<string, string>;
   hasFullText?: boolean;
   statuses?: { ta: StatusInfo; ft: StatusInfo } | null;
@@ -436,6 +442,10 @@ export interface Named {
 }
 export interface PrismaColumn {
   identified: number;
+  /** Other methods: excluded at title/abstract in Key, still to screen, and removed. */
+  screenedOut: number;
+  screeningPending: number;
+  removed: number;
   sought: number;
   notRetrieved: number;
   assessed: number;
@@ -460,7 +470,14 @@ export interface Prisma {
   other: PrismaColumn;
   studiesIncluded: number;
   reportsIncluded: number;
+  /** Nothing still to screen or assess. */
+  complete: boolean;
+  /** Records under a database whose name was not given. */
+  unnamed: number;
 }
+/** PRISMA 2020's other methods. */
+export const OTHER_METHODS = ["Citation searching", "Websites", "Organisations", "Contact with authors or experts", "Hand searching", "Other"];
+export type Origin = { group: "databases" | "registers" | "other"; name: string };
 export interface Extracted {
   event: string;
   at: number;
@@ -562,7 +579,8 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     importLibrary: (args: { ids?: string[]; query?: Record<string, unknown> }, batch: Partial<Batch>, actor: string) => call<{ report: ImportReport }>("review_import_library", { ...args, batch, actor }),
     dbRuns: () => call<{ runId: string; label: string; startedAt: number; finishedAt?: number; state: string; total: number; fetched?: number; perConnector?: Record<string, number> }[]>("review_db_runs", { limit: 20 }),
     /** `keys` (the run's work keys) sends only those works; none sends the whole run. */
-    importDbRun: (runId: string, batch: Partial<Batch>, actor: string, keys?: string[]) => call<{ report: ImportReport }>("review_import_db_run", { runId, batch, actor, keys }),
+    importDbRun: (runId: string, batch: Partial<Batch>, actor: string, keys?: string[], options: { searchId?: string; onlyNew?: boolean } = {}) => call<{ report: ImportReport }>("review_import_db_run", { runId, batch, actor, keys, ...options }),
+    saveSearch: (search: unknown, actor: string) => call("review_search_save", { search, actor }),
     importRecords: (records: Partial<RecordMeta>[], batch: Partial<Batch>, actor: string) => call<{ report: ImportReport }>("review_import_records", { records, batch, actor }),
     removeBatch: (batchId: string, actor: string) => call("review_batch_remove", { batchId, actor }),
     pairs: (offset = 0, limit = 50) => call<{ pairs: { a: RecordMeta | null; b: RecordMeta | null; score: number; reason: string }[]; total: number }>("review_pairs", { offset, limit }),
@@ -598,7 +616,9 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     linkStudy: (recordId: string, studyOf: string | null, actor: string) => call("review_study_link", { recordId, studyOf, actor }),
     duplicates: () => call<{ groups: DuplicateGroup[]; pairsToCheck: number }>("review_duplicates"),
     fillMissing: (actor: string) => call<{ filled: Record<string, number>; stillMissing: number; lookupCandidates: string[] }>("review_fill_missing", { actor }),
-    enrich: (recordId: string, fields: Record<string, unknown>, from: string, actor: string) => call<{ filled: number }>("review_enrich", { recordId, fields, from, actor }),
+    enrich: (recordId: string, fields: Record<string, unknown>, from: string, actor: string, replace = false) => call<{ filled: number }>("review_enrich", { recordId, fields, from, actor, replace }),
+    batchOrigin: (batchId: string, group: Origin["group"], name: string, actor: string) => call("review_batch_origin", { batchId, group, name, actor }),
+    recordOrigin: (recordIds: string[], origin: Origin | null, actor: string) => call("review_record_origin", { recordIds, group: origin?.group ?? "", name: origin?.name ?? "", actor }),
     fulltexts: () => call<{ rows: FullTextRow[]; have: number; need: number; notRetrievable: number }>("review_fulltexts"),
     matchFiles: (files: DroppedFile[]) => call<MatchProposal[]>("review_fulltext_match", { files }),
     readCsv: (text: string, files: DroppedFile[]) => call<CsvRow[]>("review_fulltext_csv_read", { text, files }),

@@ -20,15 +20,23 @@ pub struct Named {
 #[serde(rename_all = "camelCase")]
 pub struct Column {
     pub identified: usize,
+    /// Other methods only: records Key screened at title and abstract and excluded there, and
+    /// those still to screen (PRISMA 2020's right-hand path has no screening box; Key screens
+    /// them anyway and reports it beside "Records identified").
+    pub screened_out: usize,
+    pub screening_pending: usize,
+    /// Other methods only: duplicates and records removed by hand.
+    pub removed: usize,
     pub sought: usize,
     pub not_retrieved: usize,
+    /// Reports with a final full-text decision (included + excluded).
     pub assessed: usize,
     pub excluded: usize,
     pub excluded_reasons: Vec<Named>,
     /// The words written under "Other", with how often.
     pub other_reasons: Vec<Named>,
     pub included: usize,
-    /// Assessed but not decided yet.
+    /// Sought, retrieved, not decided yet ("still to assess": work in progress).
     pub pending: usize,
 }
 
@@ -43,8 +51,10 @@ pub struct Prisma {
     pub duplicates: usize,
     pub automation: usize,
     pub removed_other: usize,
+    /// Records with a final title/abstract decision (included, maybe or excluded).
     pub screened: usize,
     pub screening_excluded: usize,
+    /// Still to screen (work in progress, never in a figure for publication).
     pub screening_pending: usize,
     /// Databases and registers (the main column) from retrieval on.
     pub main: Column,
@@ -52,7 +62,17 @@ pub struct Prisma {
     pub other: Column,
     pub studies_included: usize,
     pub reports_included: usize,
+    /// Every box final: nothing still to screen or assess.
+    pub complete: bool,
+    /// Records counted under a database whose name was not given ("Source not specified").
+    pub unnamed: usize,
 }
+
+/// A batch's line when its source was not named.
+pub const UNNAMED: &str = "Source not specified";
+
+/// PRISMA 2020's other methods. "Manual" (Key's old default) is none of them.
+pub const OTHER_METHODS: &[&str] = &["Citation searching", "Websites", "Organisations", "Contact with authors or experts", "Hand searching", "Other"];
 
 fn add(list: &mut Vec<Named>, name: &str, count: usize) {
     match list.iter_mut().find(|n| n.name == name) {
@@ -61,84 +81,118 @@ fn add(list: &mut Vec<Named>, name: &str, count: usize) {
     }
 }
 
+fn take(list: &mut Vec<Named>, name: &str, count: usize) {
+    if let Some(n) = list.iter_mut().find(|n| n.name == name) {
+        n.count = n.count.saturating_sub(count);
+    }
+    list.retain(|n| n.count > 0 || n.name != name);
+}
+
+/// The PRISMA group of a record: its own origin when one was set, else its import's.
+pub fn group_of<'a>(state: &'a State, r: &'a crate::derive::RecState) -> (&'a str, String) {
+    if let Some((g, n)) = &r.origin {
+        return (g.as_str(), n.clone());
+    }
+    match state.batch(&r.batch) {
+        Some(b) => (b.group.as_str(), batch_name(b)),
+        None => ("databases", UNNAMED.to_string()),
+    }
+}
+
+/// The name a batch is counted under.
+pub fn batch_name(b: &Batch) -> String {
+    let name = if b.name.trim().is_empty() && b.kind == "file" && b.group == "other" { b.file_name.clone() } else { b.name.clone() };
+    if name.trim().is_empty() { UNNAMED.to_string() } else { name }
+}
+
+fn list_of<'a>(p: &'a mut Prisma, group: &str) -> &'a mut Vec<Named> {
+    match group {
+        "registers" | "register" => &mut p.registers,
+        "other" => &mut p.other_methods,
+        _ => &mut p.databases,
+    }
+}
+
 pub fn compute(state: &State) -> Prisma {
     let mut p = Prisma::default();
-    let mut other_group: std::collections::HashSet<&str> = Default::default();
     for b in state.batches.iter().filter(|b| !state.removed_batches.contains(&b.id)) {
-        let group = match b.group.as_str() {
-            "databases" => "database",
-            "registers" => "register",
-            _ => {
-                other_group.insert(&b.id);
-                "other"
-            }
-        };
         if b.group != "other" {
             p.duplicates += b.duplicates_removed;
         }
-        let name = if b.name.trim().is_empty() { b.file_name.clone() } else { b.name.clone() };
-        let mut put = |kind: &str, n: &str, c: usize| match kind {
-            "register" => add(&mut p.registers, n, c),
-            "other" => add(&mut p.other_methods, n, c),
-            _ => add(&mut p.databases, n, c),
-        };
         if !b.per_source.is_empty() {
             // A search run can mix databases and registers: each goes to its own box.
             for (n, c) in &b.per_source {
-                let kind = if group == "other" { group } else { b.per_source_kind.get(n).map(String::as_str).unwrap_or(group) };
-                put(kind, n, *c);
+                let kind = if b.group == "other" { "other" } else { b.per_source_kind.get(n).map(String::as_str).unwrap_or(b.group.as_str()) };
+                add(list_of(&mut p, kind), n, *c);
             }
         } else {
-            put(group, &name, b.count);
+            add(list_of(&mut p, &b.group), &batch_name(b), b.count);
         }
     }
+    // Records given an origin of their own move from their import's line to it.
+    for r in state.records.iter().filter(|r| r.origin.is_some() && !state.removed_batches.contains(&r.batch)) {
+        let Some(b) = state.batch(&r.batch) else { continue };
+        if !b.per_source.is_empty() {
+            continue;
+        }
+        take(list_of(&mut p, &b.group), &batch_name(b), 1);
+        let (g, n) = group_of(state, r);
+        let (g, n) = (g.to_string(), n);
+        add(list_of(&mut p, &g), &n, 1);
+    }
+    p.unnamed = p.databases.iter().chain(&p.registers).filter(|n| n.name == UNNAMED).map(|n| n.count).sum();
     p.identified = p.databases.iter().chain(&p.registers).map(|n| n.count).sum();
     let mut reasons_main: BTreeMap<String, usize> = BTreeMap::new();
     let mut reasons_other: BTreeMap<String, usize> = BTreeMap::new();
     let mut included_studies: std::collections::HashSet<String> = Default::default();
-    let mut studies: std::collections::HashSet<String> = Default::default();
     for r in &state.records {
         if state.removed_batches.contains(&r.batch) {
             continue;
         }
-        let other = other_group.contains(r.batch.as_str());
+        let other = group_of(state, r).0 == "other";
         if !state.active(r) {
-            if !other {
-                if r.removed.is_some() && r.dup_of.is_none() {
-                    p.removed_other += 1;
-                } else {
-                    p.duplicates += 1;
-                }
+            if other {
+                p.other.removed += 1;
+            } else if r.removed.is_some() && r.dup_of.is_none() {
+                p.removed_other += 1;
+            } else {
+                p.duplicates += 1;
             }
             continue;
         }
+        // Title and abstract: every record is screened in Key, whichever column it is in.
         let ta = state.status(r, Stage::Ta);
-        if !other {
-            match &ta {
-                Status::Final { auto: true, .. } => {
-                    p.automation += 1;
-                    continue;
-                }
-                Status::Final { value: Choice::Exclude, .. } => {
+        match &ta {
+            Status::Final { auto: true, value: Choice::Exclude, .. } if !other => {
+                p.automation += 1;
+                continue;
+            }
+            Status::Final { value: Choice::Exclude, .. } => {
+                if other {
+                    p.other.screened_out += 1;
+                } else {
                     p.screened += 1;
                     p.screening_excluded += 1;
-                    continue;
                 }
-                Status::Final { .. } => p.screened += 1,
-                _ => {
+                continue;
+            }
+            Status::Final { .. } => {
+                if !other {
                     p.screened += 1;
-                    p.screening_pending += 1;
-                    continue;
                 }
             }
-        } else if !matches!(ta, Status::Final { value: Choice::Include | Choice::Maybe, .. }) {
-            // Other methods: only what reaches full text appears in their column.
-            continue;
+            _ => {
+                if other {
+                    p.other.screening_pending += 1;
+                } else {
+                    p.screening_pending += 1;
+                }
+                continue;
+            }
         }
         let column = if other { &mut p.other } else { &mut p.main };
         column.sought += 1;
-        let ft = state.status(r, Stage::Ft);
-        match ft {
+        match state.status(r, Stage::Ft) {
             Status::NotRetrieved => column.not_retrieved += 1,
             Status::Final { value: Choice::Include, .. } => {
                 column.assessed += 1;
@@ -161,15 +215,9 @@ pub fn compute(state: &State) -> Prisma {
                         add(&mut column.other_reasons, &t, 1);
                     }
                 }
-                if !other {
-                    studies.insert(state.study_id(r).to_string());
-                }
                 *(if other { &mut reasons_other } else { &mut reasons_main }).entry(label).or_default() += 1;
             }
-            _ => {
-                column.assessed += 1;
-                column.pending += 1;
-            }
+            _ => column.pending += 1,
         }
     }
     let order = |map: BTreeMap<String, usize>| -> Vec<Named> {
@@ -183,9 +231,9 @@ pub fn compute(state: &State) -> Prisma {
     p.main.identified = p.identified;
     p.other.identified = p.other_methods.iter().map(|n| n.count).sum();
     // Several reports of one study count once as a study.
-    let _ = studies;
     p.reports_included = p.main.included + p.other.included;
     p.studies_included = included_studies.len();
+    p.complete = p.screening_pending == 0 && p.main.pending == 0 && p.other.pending == 0 && p.other.screening_pending == 0;
     p
 }
 
@@ -204,7 +252,9 @@ pub fn csv(p: &Prisma) -> String {
     rows.push(("Records removed for other reasons".into(), p.removed_other.to_string()));
     rows.push(("Records screened".into(), p.screened.to_string()));
     rows.push(("Records excluded".into(), p.screening_excluded.to_string()));
-    rows.push(("Records awaiting screening".into(), p.screening_pending.to_string()));
+    if p.screening_pending > 0 {
+        rows.push(("Records still to screen (in progress, not for publication)".into(), p.screening_pending.to_string()));
+    }
     let column = |rows: &mut Vec<(String, String)>, prefix: &str, c: &Column| {
         rows.push((format!("{prefix}Reports sought for retrieval"), c.sought.to_string()));
         rows.push((format!("{prefix}Reports not retrieved"), c.not_retrieved.to_string()));
@@ -216,11 +266,19 @@ pub fn csv(p: &Prisma) -> String {
         for r in &c.other_reasons {
             rows.push((format!("{prefix}Reports excluded: Other: {}", r.name), r.count.to_string()));
         }
-        rows.push((format!("{prefix}Reports awaiting assessment"), c.pending.to_string()));
+        if c.pending > 0 {
+            rows.push((format!("{prefix}Reports still to assess (in progress, not for publication)"), c.pending.to_string()));
+        }
     };
     column(&mut rows, "", &p.main);
     for n in &p.other_methods {
         rows.push((format!("Other methods: records identified: {}", n.name), n.count.to_string()));
+    }
+    if p.other.screened_out > 0 {
+        rows.push(("Other methods: records excluded at title and abstract screening".into(), p.other.screened_out.to_string()));
+    }
+    if p.other.screening_pending > 0 {
+        rows.push(("Other methods: records still to screen (in progress, not for publication)".into(), p.other.screening_pending.to_string()));
     }
     column(&mut rows, "Other methods: ", &p.other);
     rows.push(("Studies included in review".into(), p.studies_included.to_string()));

@@ -10,7 +10,7 @@ use crate::stats::{self, Agreement};
 use crate::store::{Result, Reviews, metas, search_ids};
 use serde::Deserialize;
 use serde_json::{Map, Value as Json, json};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Whether `viewer` may see other reviewers' work on this record at this stage.
 pub fn unblinded(state: &State, r: &RecState, stage: Stage, viewer: &str) -> bool {
@@ -126,6 +126,8 @@ impl Reviews {
                 "events": state.events,
                 "labelsInUse": state.records.iter().flat_map(|r| r.labels.iter().cloned()).collect::<std::collections::BTreeSet<_>>(),
                 "labelCounts": label_counts(state),
+                "originsToCheck": origins_to_check(state),
+                "searches": state.searches,
                 "labelKeys": state.protocol.label_keys,
                 "removedByHand": state.records.iter().filter(|r| r.removed.is_some() && !state.removed_batches.contains(&r.batch)).count(),
                 "missingAbstracts": state.records.iter().filter(|r| state.active(r) && !r.has_abstract).count(),
@@ -173,6 +175,7 @@ impl Reviews {
                 "duplicateOf": r.dup_of,
                 "removed": r.removed,
                 "studyOf": r.study_of,
+                "origin": r.origin.as_ref().map(|(g, n)| json!({ "group": g, "name": n })),
                 "reports": state.records.iter().filter(|o| o.study_of.as_deref() == Some(record)).map(|o| o.id.clone()).collect::<Vec<_>>(),
                 "filled": r.filled,
                 "hasFullText": r.has_full_text(),
@@ -245,6 +248,18 @@ impl Reviews {
                     s(b).total_cmp(&s(a))
                 }),
                 "year" => candidates.sort_by_key(|r| std::cmp::Reverse(r.year.unwrap_or(0))),
+                "-year" => candidates.sort_by_key(|r| r.year.unwrap_or(i64::MAX)),
+                "-pos" => candidates.reverse(),
+                // Text columns sort in SQLite (one query over the review's rows).
+                s @ ("title" | "-title" | "journal" | "-journal" | "authors" | "-authors" | "doi" | "-doi") => {
+                    let col = s.trim_start_matches('-');
+                    let mut st = conn.prepare(&format!("SELECT id FROM review_records WHERE review_id = ?1 ORDER BY lower(coalesce({col}, '')) = '', lower({col})")).map_err(|e| e.to_string())?;
+                    let order: HashMap<String, usize> = st.query_map([review], |row| row.get::<_, String>(0)).map_err(|e| e.to_string())?.filter_map(|x| x.ok()).enumerate().map(|(i, id)| (id, i)).collect();
+                    candidates.sort_by_key(|r| order.get(&r.id).copied().unwrap_or(usize::MAX));
+                    if s.starts_with('-') {
+                        candidates.reverse();
+                    }
+                }
                 _ => {}
             }
             let total = candidates.len();
@@ -285,9 +300,12 @@ impl Reviews {
                         "batch": r.batch,
                         "batchName": state.batch(&r.batch).map(|b| b.name.clone()),
                         "doi": meta.map(|x| x.doi.clone()).unwrap_or_default(),
+                        "pmid": meta.map(|x| x.pmid.clone()).unwrap_or_default(),
+                        "authors": meta.map(|x| x.authors.clone()).unwrap_or_default(),
                         "removed": r.removed,
                         "active": state.active(r),
                         "studyOf": r.study_of,
+                        "origin": r.origin.as_ref().map(|(g, n)| json!({ "group": g, "name": n })),
                         "filled": r.filled,
                         "hasFullText": r.has_full_text(),
                         "statuses": if q.scope == "sources" { json!({ "ta": status_json(&state.status(r, Stage::Ta)), "ft": status_json(&state.status(r, Stage::Ft)) }) } else { Json::Null },
@@ -526,4 +544,25 @@ pub fn label_counts(state: &State) -> BTreeMap<String, usize> {
         }
     }
     out
+}
+
+/// Imports whose origin PRISMA cannot report as it stands: a database not named, or an "other
+/// method" that is none of PRISMA 2020's (an older Key's "Manual").
+pub fn origins_to_check(state: &State) -> Vec<Json> {
+    state
+        .batches
+        .iter()
+        .filter(|b| !state.removed_batches.contains(&b.id))
+        .filter_map(|b| {
+            let records = state.records.iter().filter(|r| r.batch == b.id).count();
+            let why = if b.group == "other" && !crate::prisma::OTHER_METHODS.contains(&b.name.as_str()) {
+                "PRISMA 2020 has no such method: name the database they came from, or the method (citation searching, websites …)".to_string()
+            } else if b.group != "other" && b.per_source.is_empty() && b.name.trim().is_empty() {
+                "The database or register is not named".to_string()
+            } else {
+                return None;
+            };
+            Some(json!({ "batchId": b.id, "name": crate::prisma::batch_name(b), "group": b.group, "kind": b.kind, "records": records, "why": why }))
+        })
+        .collect()
 }

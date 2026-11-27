@@ -2,7 +2,8 @@
 // The layout follows the PRISMA 2020 template for new reviews (Page et al., BMJ 2021): boxes for
 // identification, screening and inclusion, exclusions to the right, and a second column for
 // records found by other methods when there are any. Theme tokens on screen, print colours on
-// export (charts/export.ts).
+// export (charts/export.ts). While screening is under way the boxes say how far it is ("75 of
+// 315", "240 still to screen", muted); the figure for publication (`final`) never shows those.
 import { forwardRef, type ReactNode } from "react";
 import type { Named, Prisma } from "./review-api";
 
@@ -29,7 +30,7 @@ interface Box {
   x: number;
   y: number;
   w: number;
-  lines: { text: string; bold?: boolean; indent?: boolean; deep?: boolean }[];
+  lines: { text: string; bold?: boolean; indent?: boolean; deep?: boolean; muted?: boolean }[];
 }
 const height = (b: Box) => b.lines.length * LINE + PAD * 2 - 3;
 
@@ -38,7 +39,7 @@ function BoxView({ b, tone }: { b: Box; tone?: "side" | "main" }) {
     <g>
       <rect x={b.x} y={b.y} width={b.w} height={height(b)} rx={6} style={{ fill: tone === "side" ? "var(--kx-bg-sunken)" : "var(--kx-bg-raised)", stroke: "var(--kx-line-strong)", strokeWidth: 1 }} />
       {b.lines.map((l, i) => (
-        <text key={i} x={b.x + PAD + (l.deep ? 22 : l.indent ? 10 : 0)} y={b.y + PAD + 9 + i * LINE} fontSize={11.5} fontWeight={l.bold ? 600 : 400} style={{ fill: "var(--kx-text)" }}>
+        <text key={i} x={b.x + PAD + (l.deep ? 22 : l.indent ? 10 : 0)} y={b.y + PAD + 9 + i * LINE} fontSize={11.5} fontWeight={l.bold ? 600 : 400} fontStyle={l.muted ? "italic" : undefined} style={{ fill: l.muted ? "var(--kx-text-3)" : "var(--kx-text)" }}>
           {l.text}
         </text>
       ))}
@@ -57,8 +58,12 @@ function listLines(title: string, items: Named[], chars: number, empty?: string)
   return out;
 }
 
-export const PrismaDiagram = forwardRef<SVGSVGElement, { p: Prisma }>(function PrismaDiagram({ p }, ref) {
+export const PrismaDiagram = forwardRef<SVGSVGElement, { p: Prisma; final?: boolean }>(function PrismaDiagram({ p, final }, ref) {
+  // Work in progress, shown on screen only.
+  const wip = (count: number, what: string) => (!final && count > 0 ? [{ text: `${count.toLocaleString("en-GB")} ${what}`, indent: true, muted: true }] : []);
+  const of = (done: number, pending: number) => (!final && pending > 0 ? `(n = ${done.toLocaleString("en-GB")} of ${(done + pending).toLocaleString("en-GB")})` : n(done));
   const other = p.otherMethods.length > 0;
+  const unnamedHint = !final && p.unnamed > 0 ? [{ text: "Name the database in Sources", deep: true, muted: true }] : [];
   const W = 250,
     S = 230,
     gap = 40,
@@ -78,6 +83,7 @@ export const PrismaDiagram = forwardRef<SVGSVGElement, { p: Prisma }>(function P
       ...wrap("Records identified from:", chars).map((t) => ({ text: t })),
       ...(p.databases.length ? [{ text: `Databases ${n(p.databases.reduce((s, d) => s + d.count, 0))}`, indent: true }] : [{ text: "Databases (n = 0)", indent: true }]),
       ...p.databases.flatMap((d) => wrap(`${d.name} ${n(d.count)}`, chars - 4).map((t) => ({ text: t, deep: true }))),
+      ...unnamedHint,
       { text: `Registers ${n(p.registers.reduce((s, d) => s + d.count, 0))}`, indent: true },
       ...p.registers.flatMap((d) => wrap(`${d.name} ${n(d.count)}`, chars - 4).map((t) => ({ text: t, deep: true }))),
     ],
@@ -94,19 +100,32 @@ export const PrismaDiagram = forwardRef<SVGSVGElement, { p: Prisma }>(function P
     ],
   };
   const row1 = Math.max(ident.y + height(ident), removed.y + height(removed)) + 44;
-  const screened: Box = { x: aX, y: row1, w: W, lines: [{ text: `Records screened ${n(p.screened)}` }, ...(p.screeningPending ? [{ text: `still to screen ${n(p.screeningPending)}`, indent: true }] : [])] };
+  const screened: Box = { x: aX, y: row1, w: W, lines: [{ text: `Records screened ${of(p.screened, p.screeningPending)}` }, ...wip(p.screeningPending, "still to screen")] };
   const excluded: Box = { x: aSideX, y: row1, w: S, lines: [{ text: `Records excluded ${n(p.screeningExcluded)}` }] };
   const row2 = Math.max(screened.y + height(screened), excluded.y + height(excluded)) + 34;
   const sought: Box = { x: aX, y: row2, w: W, lines: wrap(`Reports sought for retrieval ${n(p.main.sought)}`, chars).map((t) => ({ text: t })) };
   const notRetrieved: Box = { x: aSideX, y: row2, w: S, lines: wrap(`Reports not retrieved ${n(p.main.notRetrieved)}`, sideChars).map((t) => ({ text: t })) };
   const row3 = Math.max(sought.y + height(sought), notRetrieved.y + height(notRetrieved)) + 34;
-  const assessed: Box = { x: aX, y: row3, w: W, lines: [...wrap(`Reports assessed for eligibility ${n(p.main.assessed)}`, chars).map((t) => ({ text: t })), ...(p.main.pending ? [{ text: `still to assess ${n(p.main.pending)}`, indent: true }] : [])] };
+  const assessed: Box = { x: aX, y: row3, w: W, lines: [...wrap(`Reports assessed for eligibility ${of(p.main.assessed, p.main.pending)}`, chars).map((t) => ({ text: t })), ...wip(p.main.pending, "still to assess")] };
   const reasons: Box = { x: aSideX, y: row3, w: S, lines: listLines(`Reports excluded ${n(p.main.excluded)}`, p.main.excludedReasons, sideChars) };
   // Other methods
-  const bIdent: Box | null = other ? { x: bX, y: ident.y, w: W, lines: listLines("Records identified from:", p.otherMethods, chars) } : null;
+  // Other methods: PRISMA 2020's right-hand path has no screening box. Key screens these records
+  // at title and abstract too; those it excluded there are reported under "Records identified".
+  const bIdent: Box | null = other
+    ? {
+        x: bX,
+        y: ident.y,
+        w: W,
+        lines: [
+          ...listLines("Records identified from:", p.otherMethods, chars),
+          ...(p.other.screenedOut ? wrap(`Excluded on title and abstract ${n(p.other.screenedOut)}`, chars - 2).map((t) => ({ text: t, indent: true })) : []),
+          ...wip(p.other.screeningPending, "still to screen"),
+        ],
+      }
+    : null;
   const bSought: Box | null = other ? { x: bX, y: row2, w: W, lines: wrap(`Reports sought for retrieval ${n(p.other.sought)}`, chars).map((t) => ({ text: t })) } : null;
   const bNot: Box | null = other ? { x: bSideX, y: row2, w: S, lines: wrap(`Reports not retrieved ${n(p.other.notRetrieved)}`, sideChars).map((t) => ({ text: t })) } : null;
-  const bAssessed: Box | null = other ? { x: bX, y: row3, w: W, lines: wrap(`Reports assessed for eligibility ${n(p.other.assessed)}`, chars).map((t) => ({ text: t })) } : null;
+  const bAssessed: Box | null = other ? { x: bX, y: row3, w: W, lines: [...wrap(`Reports assessed for eligibility ${of(p.other.assessed, p.other.pending)}`, chars).map((t) => ({ text: t })), ...wip(p.other.pending, "still to assess")] } : null;
   const bReasons: Box | null = other ? { x: bSideX, y: row3, w: S, lines: listLines(`Reports excluded ${n(p.other.excluded)}`, p.other.excludedReasons, sideChars) } : null;
   const row4 = Math.max(assessed.y + height(assessed), reasons.y + height(reasons), bReasons ? bReasons.y + height(bReasons) : 0) + 44;
   const included: Box = { x: aX, y: row4, w: W, lines: [{ text: `Studies included in review ${n(p.studiesIncluded)}`, bold: true }, { text: `Reports of included studies ${n(p.reportsIncluded)}` }] };

@@ -478,10 +478,9 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                         _ => break,
                     }
                 }
-                let mut batch = batch_from(args, "library")?;
-                if batch.name.is_empty() {
-                    batch.name = "Key library".into();
-                }
+                // Where the library's records came from is asked in the sheet; without an answer
+                // they count under databases, "source not specified", until named.
+                let batch = batch_from(args, "library")?;
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }
             "review_db_runs" => {
@@ -497,7 +496,20 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 if records.is_empty() {
                     return Err("This search run has no records any more: run it again from Database search".into());
                 }
-                json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+                let id = review()?;
+                let run_id = arg::<String>(args, "runId")?;
+                let search = args.get("searchId").and_then(Json::as_str).filter(|s| !s.is_empty());
+                if args.get("onlyNew").and_then(Json::as_bool).unwrap_or(false) {
+                    // An update search: a dated batch of what is new.
+                    batch.name = format!("{} (update)", batch.name);
+                    json!({ "report": reviews.import_update(&id, batch, records, search, &run_id, &actor()?, &lookup)? })
+                } else {
+                    let report = reviews.import(&id, batch, records, &actor()?, &lookup)?;
+                    if let Some(s) = search {
+                        reviews.search_ran(&id, s, &run_id, &report.batch_id, report.added, &actor()?)?;
+                    }
+                    json!({ "report": report })
+                }
             }
             "review_import_records" => {
                 let records: Vec<RecordMeta> = arg::<Vec<RecordMeta>>(args, "records")?.into_iter().map(|mut r| {
@@ -516,11 +528,31 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 if records.is_empty() {
                     return Err("These works are no longer in the Inbox".into());
                 }
+                // Alerts from journals and feeds: PRISMA's other methods ("Other").
                 let mut batch = batch_from(args, "other")?;
+                if batch.group.is_empty() {
+                    batch.group = "other".into();
+                }
                 if batch.name.is_empty() {
-                    batch.name = "Inbox".into();
+                    batch.name = "Other".into();
                 }
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+            }
+            // Database searches that belong to the review (Sources › Search databases).
+            "review_search_save" => {
+                reviews.save_search(&review()?, args.get("search").cloned().unwrap_or(Json::Null), &actor()?)?;
+                json!(true)
+            }
+            // Where an import's records (or some records) came from, for PRISMA.
+            "review_batch_origin" => {
+                reviews.set_batch_origin(&review()?, text(args, "batchId"), text(args, "group"), text(args, "name"), &actor()?)?;
+                json!(true)
+            }
+            "review_record_origin" => {
+                let group = text(args, "group");
+                let origin = (!group.is_empty()).then(|| (group, text(args, "name")));
+                reviews.set_record_origin(&review()?, &strings(args, "recordIds"), origin, &actor()?)?;
+                json!(true)
             }
             "review_batch_remove" => {
                 reviews.remove_batch(&review()?, text(args, "batchId"), &actor()?)?;
@@ -660,7 +692,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             // Values an open lookup found for one record (only what it lacks is written).
             "review_enrich" => {
                 let found = args.get("fields").and_then(Json::as_object).cloned().unwrap_or_default();
-                json!({ "filled": reviews.enrich_from(&review()?, text(args, "recordId"), found, text(args, "from"), &actor()?)? })
+                json!({ "filled": reviews.enrich_from(&review()?, text(args, "recordId"), found, text(args, "from"), args.get("replace").and_then(Json::as_bool).unwrap_or(false), &actor()?)? })
             }
             // Full texts.
             "review_fulltexts" => reviews.fulltext_status(&review()?)?,

@@ -433,16 +433,19 @@ impl Reviews {
         })
     }
 
-    /// Values found by an open lookup (OpenAlex, Crossref, PubMed) for one record: only fields it
-    /// lacks are written, each marked with where it came from.
-    pub fn enrich_from(&self, review: &str, record: &str, found: Map<String, Json>, from: &str, actor: &str) -> Result<usize> {
+    /// Values found by a lookup (OpenAlex, Crossref, PubMed) for one record, each marked with
+    /// where it came from: only fields it lacks, or (`replace`, values the reviewer accepted from a
+    /// side-by-side comparison) those too.
+    pub fn enrich_from(&self, review: &str, record: &str, found: Map<String, Json>, from: &str, replace: bool, actor: &str) -> Result<usize> {
         self.write(review, |state, conn, b| {
             state.record(record).ok_or("This record no longer exists")?;
             let meta = metas(conn, review, &[record.to_string()])?.remove(record).ok_or("This record has no metadata")?;
             let mut fields = Map::new();
             let mut whence = Map::new();
             for (k, v) in found {
-                if FILLABLE.contains(&k.as_str()) && field_value(&meta, &k).is_none() && !crate::logic::is_empty(Some(&v)) {
+                let allowed = FILLABLE.contains(&k.as_str()) || (replace && ["title", "authors", "url", "keywords"].contains(&k.as_str()));
+                let open = replace || field_value(&meta, &k).is_none();
+                if allowed && open && !crate::logic::is_empty(Some(&v)) {
                     whence.insert(k.clone(), json!(from));
                     fields.insert(k, v);
                 }
@@ -456,10 +459,8 @@ impl Reviews {
     /// A full text kept with the review for a record (the host has copied the file).
     pub fn attach_file(&self, review: &str, record: &str, file: FileRef, actor: &str) -> Result<()> {
         self.write(review, |state, _, b| {
-            let r = state.record(record).ok_or("This record no longer exists")?;
-            if !state.eligible(r, Stage::Ft) && !state.included().iter().any(|x| x.id == record) {
-                return Err("Full texts are for records at full-text screening".into());
-            }
+            // Any record may get its file, whatever its stage (it is there when it reaches full text).
+            state.record(record).ok_or("This record no longer exists")?;
             Ok((vec![b.event("fulltext.set", actor, Some(record), json!({ "status": "retrieved", "file": file }))], ()))
         })
     }
