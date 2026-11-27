@@ -72,6 +72,10 @@ struct Payload {
     /// Sources the operation added (an import): undo moves them to the Trash, redo back.
     #[serde(default)]
     created: Vec<String>,
+    /// What the operation changed outside the library (a linked review's events), opaque
+    /// here: the caller that undoes or redoes the entry puts it back (see `journal_external`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    external: Vec<Json>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -104,7 +108,7 @@ fn move_files(renames: &[(String, String)]) -> Result<()> {
 
 impl Payload {
     fn is_empty(&self) -> bool {
-        self.changes.is_empty() && self.moves.is_empty() && self.pairs.is_empty() && self.rows.is_empty() && self.created.is_empty() && self.files.is_empty()
+        self.changes.is_empty() && self.moves.is_empty() && self.pairs.is_empty() && self.rows.is_empty() && self.created.is_empty() && self.files.is_empty() && self.external.is_empty()
     }
 }
 
@@ -121,6 +125,9 @@ pub struct JournalEntry {
     /// Undone (and not redone).
     #[serde(default)]
     pub undone: bool,
+    /// Changes outside the library the caller puts back on undo and redo (`journal_external`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub external: Vec<Json>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -616,8 +623,8 @@ pub(crate) fn edited_fields(db: &Connection, id: &str) -> Result<Vec<String>> {
 
 fn read_entry(r: &rusqlite::Row) -> rusqlite::Result<(JournalEntry, String)> {
     let payload: String = r.get(5)?;
-    let ids = serde_json::from_str::<Payload>(&payload).map(|p| p.changes.into_iter().map(|c| c.id).collect()).unwrap_or_default();
-    Ok((JournalEntry { seq: r.get(0)?, kind: r.get(1)?, label: r.get(2)?, count: r.get(3)?, created_at: r.get(4)?, ids, undone: r.get(6)? }, payload))
+    let (ids, external) = serde_json::from_str::<Payload>(&payload).map(|p| (p.changes.into_iter().map(|c| c.id).collect(), p.external)).unwrap_or_default();
+    Ok((JournalEntry { seq: r.get(0)?, kind: r.get(1)?, label: r.get(2)?, count: r.get(3)?, created_at: r.get(4)?, ids, undone: r.get(6)?, external }, payload))
 }
 
 const ENTRY_COLUMNS: &str = "seq, kind, label, count, created_at, payload, undone";
@@ -919,7 +926,7 @@ fn record(db: &Connection, kind: &str, label: &str, payload: Payload) -> Result<
     .map_err(e)?;
     let seq = db.last_insert_rowid();
     db.execute("DELETE FROM journal WHERE seq <= ?1", [seq - MAX_ENTRIES]).map_err(e)?;
-    Ok(JournalEntry { seq, kind: kind.into(), label: label.into(), count, created_at: now, ids, undone: false })
+    Ok(JournalEntry { seq, kind: kind.into(), label: label.into(), count, created_at: now, ids, undone: false, external: Vec::new() })
 }
 
 /// The values `formulas` give on source `id` (a failing formula leaves its property alone).
@@ -1059,6 +1066,40 @@ impl Store {
             .1)
     }
 
+    /// Journals an operation done in the library whose effects live elsewhere (a review
+    /// record linked to a source, its metadata taken from the review): one entry on the
+    /// library's undo stack carrying `external`, which the caller puts back when the entry is
+    /// undone or redone (the entry `store.undo()`/`redo()` answer carries it). `sources` are
+    /// source patches made with it (journaled like any edit, by hand).
+    pub fn journal_external(&self, kind: &str, label: &str, sources: &[(String, Map<String, Json>)], external: Json) -> Result<JournalEntry> {
+        let ids: Vec<String> = sources.iter().map(|(id, _)| id.clone()).collect();
+        let db = self.db()?;
+        let tx = db.unchecked_transaction().map_err(e)?;
+        let mut recorder = Recorder { order: Vec::new(), before: HashMap::new(), moves: Vec::new(), pairs: Vec::new(), watches: Vec::new(), created: Vec::new() };
+        for id in &ids {
+            recorder.touch(&tx, id)?;
+        }
+        let now = now_ms();
+        for (id, patch) in sources.iter().filter(|(_, p)| !p.is_empty()) {
+            patch_source_row(&tx, id, patch, now)?;
+            sync_graph(&tx, id, Some(patch))?;
+            refresh_fts(&tx, id)?;
+            mark_edited(&tx, id, patch.keys().cloned())?;
+        }
+        let mut payload = Payload { external: vec![external], ..Default::default() };
+        for id in &recorder.order {
+            let after = capture(&tx, id)?.unwrap_or_default();
+            let (before, after) = diff(&recorder.before[id], &after);
+            if !before.is_empty() {
+                payload.changes.push(Change { id: id.clone(), before, after });
+            }
+        }
+        let external = payload.external.clone();
+        let entry = record(&tx, kind, label, payload)?;
+        tx.commit().map_err(e)?;
+        Ok(JournalEntry { external, ..entry })
+    }
+
     /// Journals an operation that already ran in several steps (a bibliography import):
     /// the sources it added, rows it added (`(table, column, ids)`: notes, collections), and
     /// existing sources it changed with the values to put back (an import's merge patch).
@@ -1166,6 +1207,29 @@ mod tests {
         assert!(store.redo().unwrap().is_none());
         store.undo().unwrap().unwrap();
         assert_eq!(store.source(&b).unwrap().unwrap().field("itemType"), Some("document"));
+    }
+
+    #[test]
+    fn an_external_entry_is_undone_and_redone_with_its_source_patch_and_its_external_part() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let a = source(&store, "Old title", &[]);
+        let mut patch = Map::new();
+        patch.insert("title".into(), json!("New title"));
+        let entry = store.journal_external("link", "Take the title from the review", &[(a.clone(), patch)], json!({"review": "r1", "op": "o1"})).unwrap();
+        assert_eq!(entry.external, vec![json!({"review": "r1", "op": "o1"})]);
+        assert_eq!(store.source(&a).unwrap().unwrap().field("title"), Some("New title"));
+        let undone = store.undo().unwrap().unwrap();
+        assert_eq!(undone.external, vec![json!({"review": "r1", "op": "o1"})]);
+        assert_eq!(store.source(&a).unwrap().unwrap().field("title"), Some("Old title"));
+        let redone = store.redo().unwrap().unwrap();
+        assert_eq!(redone.seq, entry.seq);
+        assert_eq!(redone.external.len(), 1);
+        assert_eq!(store.source(&a).unwrap().unwrap().field("title"), Some("New title"));
+        // Only the external part (a link made from the library): still one entry.
+        let only = store.journal_external("link", "Link to a review record", &[], json!({"op": "o2"})).unwrap();
+        assert_eq!(store.journal_state(1).unwrap().undo.map(|e| e.seq), Some(only.seq));
+        assert_eq!(store.undo().unwrap().unwrap().external, vec![json!({"op": "o2"})]);
     }
 
     #[test]
