@@ -337,3 +337,21 @@ fn perf_twenty_thousand_records() {
     assert!(record_ms < 250, "one record and a decision took {record_ms} ms");
     assert!(list_ms < 1000 && queue_ms < 1000 && summary_ms < 1500 && replay_ms < 5000);
 }
+
+#[test]
+fn a_stricter_rule_applies_from_then_on() {
+    let reviews = Reviews::in_memory().unwrap();
+    let (id, a) = reviews.create("Solo then dual", "Ana", None).unwrap();
+    let parsed = crate::import::parse_file(RIS, None).unwrap();
+    reviews.import(&id, Batch { kind: "file".into(), group: "databases".into(), name: "Db".into(), ..Default::default() }, parsed.records, &a, &NoLibrary).unwrap();
+    let records = ids(&reviews, &id);
+    reviews.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+    let mut p = reviews.read(&id, |s, _| Ok(s.protocol.clone())).unwrap();
+    p.rules.ta.reviewers = 2;
+    reviews.save_protocol(&id, p, "Two reviewers from now on", &a, false, &NoLibrary).unwrap();
+    reviews.decide(&id, &[records[1].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+    let s = reviews.summary(&id, &a).unwrap();
+    // The record decided under version 1 stays included; the one decided under version 2 waits.
+    assert_eq!(s["stages"]["ta"]["included"], 1);
+    assert_eq!(s["stages"]["ta"]["partial"], 1);
+}

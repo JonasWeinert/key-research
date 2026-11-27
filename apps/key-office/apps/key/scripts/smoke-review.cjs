@@ -36,6 +36,8 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
   const report = {};
   const shot = async (page, name) => {
     await page.waitForTimeout(350);
+    // Notices close themselves after a few seconds; for the pictures, close them now.
+    for (const notice of await page.locator(".kx-rv-notice").all()) await notice.click({ position: { x: 4, y: 4 } }).catch(() => {});
     await page.screenshot({ path: path.join(temp, `${name}.png`) });
   };
   try {
@@ -138,10 +140,26 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-list-row .kx-rv-list-title").first().waitFor();
     await shot(page, "09-list");
 
-    // Full text: exclude one with a reason (E then 1), include the rest.
+    // Full text: the first record gets a PDF from the library; it opens in the reader beside.
+    const pdf = path.resolve(__dirname, "../../../../../tests/fixtures/scientific-unlinked.pdf");
+    const info = await call("library_import_file", { path: pdf });
+    const source = await call("store_source", { id: info.id });
+    assert(source?.id, "the PDF is in the library");
     await page.getByRole("tab", { name: /Full text/ }).click();
     await page.locator(".kx-rv-record-title").waitFor();
+    const firstFt = (await call("review_queue", { reviewId, stage: "ft", viewer: s.team[0].id, filter: "" }))[0];
+    await call("review_fulltext", { reviewId, recordId: firstFt, sourceId: source.id, actor: s.team[0].id });
+    await page.getByRole("tab", { name: "Overview" }).click();
+    await page.getByRole("tab", { name: /Full text/ }).click();
+    await page.getByRole("button", { name: "Open full text beside" }).click();
+    for (let i = 0; i < 100 && !app.windows().some((w) => w.url().endsWith("/pdf.html")); i++) await page.waitForTimeout(100);
+    assert(app.windows().some((w) => w.url().endsWith("/pdf.html")), "the reader opened");
+    const groups = await page.evaluate(() => window.key.tabs().then((t) => t.groups?.length ?? 0));
+    report.readerBeside = groups;
+    await page.waitForTimeout(1500);
     await shot(page, "10-fulltext");
+    // Back to the review (the reader took the focus).
+    await page.locator(".kx-rv-decide-head").click();
     for (let i = 0; i < 6; i++) {
       const title = await page.locator(".kx-rv-record-title").textContent();
       if (/Pilates/.test(title)) {
@@ -154,6 +172,9 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
       } else await decide("i");
       if (await page.locator(".kx-rv-done").count()) break;
     }
+    // Close the reader: the rest is looked at full width.
+    await page.evaluate((id) => window.key.tabAction("close-view", { viewId: id }), `pdf:${ws.id}:${info.hash}`);
+    await page.waitForFunction(() => window.key.tabs().then((t) => (t.groups?.length ?? 1) === 1));
     s = await summary();
     report.ft = s.stages.ft;
     assert.equal(s.included, 5);
@@ -194,6 +215,27 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     report.prisma = { identified: prisma.identified, duplicates: prisma.duplicates, screened: prisma.screened, excluded: prisma.screeningExcluded, assessed: prisma.main.assessed, included: prisma.studiesIncluded };
     assert.deepEqual(report.prisma, { identified: 11, duplicates: 1, screened: 10, excluded: 4, assessed: 6, included: 5 });
     await shot(page, "15-overview-prisma");
+
+    // Team, a stricter rule after decisions (a new version, flagged records), pilot, audit.
+    await page.getByRole("tab", { name: /Setup/ }).click();
+    await page.getByRole("button", { name: "Team & rules" }).click();
+    await page.getByRole("button", { name: "Add a person" }).click();
+    await page.locator(".kx-rv-team tr").nth(1).waitFor();
+    await page.getByRole("radiogroup", { name: "Title & abstract reviewers" }).getByRole("radio", { name: "2" }).click();
+    const bar = page.getByRole("region", { name: "Save protocol changes" });
+    await bar.waitFor();
+    await shot(page, "19-setup-rules-savebar");
+    await bar.getByRole("textbox", { name: "Change note" }).fill("Two reviewers per record from now on");
+    await bar.getByRole("button", { name: "Save version 2" }).click();
+    await bar.waitFor({ state: "detached" });
+    s = await summary();
+    assert.equal(s.versionNumber, 2);
+    await page.getByRole("button", { name: "Pilot & assignment" }).click();
+    await page.getByRole("heading", { name: "Pilot rounds" }).waitFor();
+    await shot(page, "20-setup-pilot");
+    await page.getByRole("button", { name: "Versions & audit" }).click();
+    await page.getByRole("heading", { name: "Audit trail" }).waitFor();
+    await shot(page, "21-setup-history");
 
     // Dark mode.
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));

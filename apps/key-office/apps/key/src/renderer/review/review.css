@@ -51,6 +51,7 @@
   margin-left: auto;
 }
 .kx-rv-viewer {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -342,6 +343,7 @@
   background: color-mix(in srgb, var(--kx-amber) 28%, transparent);
 }
 .kx-rv-notice {
+  cursor: default;
   position: absolute;
   left: 50%;
   bottom: 18px;
@@ -1124,7 +1126,7 @@ kbd,
 .kx-rv-single {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 330px);
   min-height: 0;
   gap: 14px;
 }
@@ -1204,6 +1206,7 @@ kbd,
   color: var(--kx-text-3);
 }
 .kx-rv-decide {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1967,17 +1970,101 @@ kbd,
   display: block;
   color: var(--kx-text-2);
 }
-.kx-rv-criteria-panel li[data-kind="include"] > svg {
+.kx-rv-criteria-panel h4 {
+  margin: 8px 0 0;
+  color: var(--kx-text-3);
+  font: 500 11px var(--kx-font);
+}
+.kx-rv-bullet {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 6px 3px 0;
+  border-radius: 50%;
+  background: var(--kx-text-3);
+}
+.kx-rv-criteria-panel li[data-state="ok"] > svg {
   color: var(--kx-green);
 }
-.kx-rv-criteria-panel li[data-kind="exclude"] > svg {
-  color: var(--kx-red);
-}
-.kx-rv-criteria-panel li[data-met="false"] span {
+.kx-rv-criteria-panel li[data-state="fails"] > svg,
+.kx-rv-criteria-panel li[data-state="fails"] span {
   color: color-mix(in srgb, var(--kx-red) 75%, var(--kx-text));
+}
+.kx-rv-criteria-panel li[data-state="unknown"] > svg {
+  color: var(--kx-text-3);
 }
 .kx-rv-criteria-panel summary {
   color: var(--kx-text-2);
   font-size: 11.5px;
   font-weight: 500;
+}
+
+/* Beside a reader (a split window) the record and its decision stack, decision first. */
+.kx-rv-body {
+  container-type: inline-size;
+}
+@container (max-width: 760px) {
+  .kx-rv-single {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .kx-rv-single > * {
+    flex: none;
+  }
+  .kx-rv-single > .kx-rv-decide {
+    order: -1;
+    overflow: visible;
+  }
+  .kx-rv-single > .kx-rv-record {
+    overflow: visible;
+    padding: 16px 18px;
+  }
+  .kx-rv-extract {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 160px minmax(0, 1fr);
+  }
+  .kx-rv-overview,
+  .kx-rv-setup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .kx-rv-subnav {
+    position: static;
+    flex-flow: row wrap;
+  }
+  .kx-rv-progress .kx-rv-progress-bar {
+    width: 90px;
+  }
+}
+@media (max-width: 900px) {
+  .kx-rv-viewer > span {
+    display: none;
+  }
+}
+.kx-rv-body {
+  overflow-x: hidden;
+}
+.kx-rv-setup-body > .kx-rv-inline:first-child {
+  margin-bottom: 12px;
+}
+td.kx-rv-roles {
+  white-space: normal;
+}
+.kx-rv-roles label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 2px 14px 2px 0;
+  white-space: nowrap;
+}
+.kx-rv-savebar {
+  flex-wrap: wrap;
+}
+.kx-rv-savebar > svg {
+  flex: none;
+  color: var(--kx-accent);
+}
+.kx-rv-section {
+  min-width: 0;
+  overflow-x: auto;
 }

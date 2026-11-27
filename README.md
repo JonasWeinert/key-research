@@ -129,6 +129,29 @@ Semantic search runs EmbeddingGemma through llama.cpp on your Mac. A search of y
 </tr>
 </table>
 
+### Systematic reviews
+
+<table>
+<tr>
+<td width="50%"><img src="assets/readme/key-review-screening.png" alt="Title and abstract screening: a record with highlighted keywords beside Include, Maybe and Exclude, a rule suggesting exclusion and the criteria"/></td>
+<td width="50%"><img src="assets/readme/key-review-prisma.png" alt="A review's overview with the next step, progress and a PRISMA 2020 flow diagram from its real numbers"/></td>
+</tr>
+<tr>
+<td valign="top"><strong>Screening</strong><br/>One record at a time with the keyboard (I, E, M, a reason's number, ⌘Z), or a list with filters and batch decisions. Blind dual screening, conflicts, pilot rounds with Cohen's kappa.</td>
+<td valign="top"><strong>PRISMA 2020</strong><br/>The flow diagram is drawn from the review's own data and exports as SVG, PNG or CSV.</td>
+</tr>
+<tr>
+<td width="50%"><img src="assets/readme/key-review-setup.png" alt="The criteria editor, one criterion linked to the publication year"/></td>
+<td width="50%"><img src="assets/readme/key-review-analysis.png" alt="A random-effects meta-analysis with its forest plot"/></td>
+</tr>
+<tr>
+<td valign="top"><strong>Protocol</strong><br/>Question, rules, criteria and exclusion reasons, versioned with notes. Criteria can be linked to metadata (year, type, language, a custom property or a formula) to suggest, or apply visibly, a decision.</td>
+<td valign="top"><strong>Extraction and meta-analysis</strong><br/>Forms with quotes from the reader, dual extraction, risk-of-bias templates; RR, OR, RD, MD and SMD pooled by fixed or random effects (DerSimonian–Laird, REML, Hartung–Knapp), checked against R's metafor.</td>
+</tr>
+</table>
+
+A review is a tab (sidebar › Reviews, or "New systematic review…" in the command palette). Records come from RIS, BibTeX, EndNote XML, PubMed .nbib and CSV files, the library, Database search runs (with their strategy and counts) or by hand, de-duplicated on import. Every decision is an event in an append-only log, so a review exports as one file and merges back without conflicts; the format and a design for later sync are in `docs/review-sync.md`.
+
 ## Key and Zotero
 
 Key reads from Zotero and never writes to it.

@@ -635,7 +635,18 @@ impl State {
 
     pub fn needed(&self, record: &str, stage: Stage) -> usize {
         let assigned = self.assigned(record, stage);
-        if assigned.is_empty() { self.protocol.rules.stage(stage).reviewers.max(1) as usize } else { assigned.len() }
+        if !assigned.is_empty() {
+            return assigned.len();
+        }
+        // A change to the number of reviewers applies from then on: a record first decided
+        // under an earlier version needs what that version asked for.
+        let rules = self
+            .record(record)
+            .and_then(|r| r.decisions[stage.index()].first())
+            .and_then(|d| self.versions.iter().find(|v| v.id == d.version))
+            .map(|v| &v.protocol.rules)
+            .unwrap_or(&self.protocol.rules);
+        rules.stage(stage).reviewers.max(1) as usize
     }
 
     /// Whether a record reaches `stage` at all.

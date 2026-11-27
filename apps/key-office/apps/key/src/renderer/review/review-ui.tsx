@@ -184,7 +184,7 @@ export function useNotice() {
     timer.current = setTimeout(() => setNotice(undefined), tone === "error" ? 7000 : 4000);
   }, []);
   const view = notice ? (
-    <div className="kx-rv-notice" role={notice.tone === "error" ? "alert" : "status"} data-tone={notice.tone}>
+    <div className="kx-rv-notice" role={notice.tone === "error" ? "alert" : "status"} data-tone={notice.tone} title="Click to close" onClick={(e) => e.target === e.currentTarget && setNotice(undefined)}>
       <span>{notice.text}</span>
       {notice.action && (
         <button

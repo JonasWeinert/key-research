@@ -405,24 +405,36 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
 function CriteriaPanel({ protocol, stage, checks }: { protocol: StageProps["summary"]["protocol"]; stage: Stage; checks: RecordView["checks"] }) {
   const criteria = protocol.criteria.filter((c) => c.stages.includes(stage));
   if (!criteria.length) return null;
+  const group = (kind: "include" | "exclude", title: string) => {
+    const list = criteria.filter((c) => c.kind === kind);
+    if (!list.length) return null;
+    return (
+      <>
+        <h4>{title}</h4>
+        <ul>
+          {list.map((c) => {
+            const check = checks.find((x) => x.criterionId === c.id);
+            const fails = check?.met != null && (kind === "include" ? !check.met : check.met);
+            const state = !check ? "plain" : check.met == null ? "unknown" : fails ? "fails" : "ok";
+            return (
+              <li key={c.id} data-state={state} title={c.guidance || undefined}>
+                {state === "plain" ? <span className="kx-rv-bullet" aria-hidden="true" /> : <Icon name={state === "ok" ? "check" : state === "fails" ? "close" : "info"} size={11} />}
+                <span>
+                  {c.label}
+                  {check && <small>{check.met == null ? `${check.rule}: not known` : fails ? (kind === "include" ? `Not met: ${check.rule}` : check.rule) : check.rule}</small>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </>
+    );
+  };
   return (
     <details className="kx-rv-criteria-panel" open>
       <summary>Criteria</summary>
-      <ul>
-        {criteria.map((c) => {
-          const check = checks.find((x) => x.criterionId === c.id);
-          const fails = check?.met != null && (c.kind === "include" ? !check.met : check.met);
-          return (
-            <li key={c.id} data-kind={c.kind} data-met={check?.met == null ? undefined : String(!fails)} title={c.guidance || undefined}>
-              <Icon name={c.kind === "include" ? "check" : "close"} size={11} />
-              <span>
-                {c.label}
-                {check && <small>{check.met == null ? `${check.rule}: not known` : fails ? `Not met: ${check.rule}` : check.rule}</small>}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      {group("include", "Include if")}
+      {group("exclude", "Exclude if")}
     </details>
   );
 }
