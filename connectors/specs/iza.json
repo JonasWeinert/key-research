@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "iza",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "IZA discussion papers",
   "description": "Discussion papers of IZA, the Institute of Labor Economics: labour, education, health, migration and development economics.",
   "homepage": "https://www.iza.org/publications/dp",
@@ -21,6 +21,7 @@
     "maxPages": 20
   },
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": [
       "title"
     ],

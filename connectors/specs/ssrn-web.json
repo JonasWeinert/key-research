@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "ssrn-web",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "SSRN (web)",
   "description": "SSRN's preprint and working-paper library in the social sciences, economics, law and health.",
   "homepage": "https://papers.ssrn.com/",
@@ -13,6 +13,7 @@
   "credentials": [],
   "hosts": [],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all"
     ],

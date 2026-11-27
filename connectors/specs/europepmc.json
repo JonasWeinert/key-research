@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "europepmc",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "Europe PMC",
   "description": "Life-science and health literature: everything in PubMed plus PubMed Central full texts, preprints, patents, agricultural records and theses.",
   "homepage": "https://europepmc.org/",
@@ -22,6 +22,7 @@
     "mailtoParam": "email"
   },
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",

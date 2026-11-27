@@ -2,8 +2,8 @@
   "$schema": "../schema/connector-1.schema.json",
   "format": 1,
   "id": "pubmed",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "PubMed",
   "description": "Biomedical and life-science literature from MEDLINE, PubMed Central and online books, searched through NCBI's E-utilities.",
   "homepage": "https://pubmed.ncbi.nlm.nih.gov/",
@@ -25,6 +25,7 @@
   "hosts": ["eutils.ncbi.nlm.nih.gov"],
   "politeness": { "minIntervalMs": 400, "minIntervalMsWithKey": 120, "retries": 4, "backoffMs": 2000, "maxPages": 60, "maxResponseBytes": 33554432 },
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": ["all", "title", "title_abstract", "abstract", "author", "journal", "keywords", "subject", "affiliation"],
     "phrase": true, "truncation": true, "proximity": true, "dates": "year",
     "filters": ["types", "languages"],

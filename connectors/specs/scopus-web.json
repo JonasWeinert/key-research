@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "scopus-web",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "Scopus (web)",
   "description": "Elsevier's abstract and citation database of peer-reviewed journals, books and conference papers in all fields.",
   "homepage": "https://www.scopus.com/",
@@ -13,6 +13,7 @@
   "credentials": [],
   "hosts": [],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",
