@@ -81,6 +81,12 @@ const assert = require("node:assert/strict");
     await menu.waitFor();
     await page.keyboard.press("Escape");
     await gone(menu, "the menu (Escape)");
+    // The app going to the background closes it, as macOS menus do (in test mode only the
+    // test sends that; the person switching apps does not).
+    await thesis.click({ button: "right" });
+    await menu.waitFor();
+    await app.evaluate(() => globalThis.__keyTest.resignActive());
+    await gone(menu, "the menu (app in the background)");
     report.sidebarMenu = true;
 
     // The workspace switcher: a press in the sidebar closes it; Escape returns focus to it.

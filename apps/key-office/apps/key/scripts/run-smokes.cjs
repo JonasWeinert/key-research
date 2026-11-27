@@ -10,7 +10,7 @@ const { spawn, execFileSync } = require("node:child_process");
 const { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, createWriteStream, existsSync } = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { killTree, testRunMarker } = require("./lib/processes.cjs");
+const { killTree, testRunMarker, reapOrphans } = require("./lib/processes.cjs");
 
 const here = __dirname;
 const argv = process.argv.slice(2);
@@ -181,6 +181,8 @@ for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"])
 
 (async () => {
   const started = Date.now();
+  const reaped = reapOrphans(path.resolve(here, ".."));
+  if (reaped) console.log(`Ended ${reaped} test app process(es) left over from earlier runs.`);
   console.log(`Running ${queue.length} smoke run(s), ${jobs} at a time${opts.retries ? `, ${opts.retries} retr${opts.retries > 1 ? "ies" : "y"}` : ""}. Logs: ${out}`);
   if (!process.env.KEY_HOST_EXECUTABLE) console.log("Note: KEY_HOST_EXECUTABLE is not set; the app looks for the host in its default build folder.");
   await Promise.all(Array.from({ length: Math.min(jobs, queue.length) }, worker));

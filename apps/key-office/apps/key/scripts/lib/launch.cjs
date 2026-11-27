@@ -20,13 +20,22 @@ const path = require("node:path");
 const { killTree, testRunMarker } = require("./processes.cjs");
 
 const launched = new Set();
-process.on("exit", () => {
+const teardown = () => {
   for (const app of launched) {
     try {
       killTree(app.__keyPid, { marker: app.__keyMarker });
     } catch {}
   }
-});
+  launched.clear();
+};
+// Whatever way the driver ends, its apps end with it (and test mode quits an app whose
+// driver is gone, for a driver killed with SIGKILL).
+process.on("exit", teardown);
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"])
+  process.once(sig, () => {
+    teardown();
+    process.exit(128 + ({ SIGINT: 2, SIGTERM: 15, SIGHUP: 1 })[sig]);
+  });
 
 /** Chromium's resolver: only loopback, plus whatever the smoke maps itself. */
 function resolverRules(args) {
@@ -68,6 +77,7 @@ async function launch(options = {}) {
     env.KEY_TEST_MODE = "1";
     env.KEY_TEST_RUN_DIR = dir;
     env.KEY_TEST_RUN_ID = id;
+    env.KEY_TEST_PARENT_PID = String(process.pid);
     defaults(env, dir);
     if ((network ?? env.KEY_TEST_NETWORK) !== "allow") args = resolverRules(args);
   }

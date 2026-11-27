@@ -13,6 +13,7 @@
 // - Chromium keeps no secrets in the login Keychain (--use-mock-keychain).
 // Must be imported first in main/index.ts: it sets Chromium switches before the app is ready.
 import { app, BaseWindow, BrowserWindow, Menu, clipboard, globalShortcut, ipcMain, nativeImage, session, shell, type NativeImage } from "electron";
+import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -278,7 +279,47 @@ function installNetwork() {
   void app.whenReady().then(() => watch(session.defaultSession));
 }
 
+/** A test app whose driver died (a killed smoke, a crashed runner) quits itself: no test app
+ *  outlives its run. KEY_TEST_PARENT_PID is the driver (scripts/lib/launch.cjs). */
+function watchParent() {
+  const parent = Number(process.env.KEY_TEST_PARENT_PID) || process.ppid;
+  const timer = setInterval(() => {
+    try {
+      process.kill(parent, 0);
+      return;
+    } catch {}
+    clearInterval(timer);
+    note("driver gone: quitting");
+    // Its hosts and helpers first, then the app itself.
+    try {
+      const rows = execFileSync("/bin/ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" })
+        .trim()
+        .split("\n")
+        .map((l) => l.trim().split(/\s+/).map(Number));
+      const mine = new Set([process.pid]);
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const [pid, ppid] of rows)
+          if (mine.has(ppid) && !mine.has(pid)) {
+            mine.add(pid);
+            grew = true;
+          }
+      }
+      mine.delete(process.pid);
+      for (const pid of mine) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
+    } catch {}
+    setTimeout(() => process.kill(process.pid, "SIGKILL"), 3000).unref();
+    app.exit(0);
+  }, 1000);
+  timer.unref();
+}
+
 if (testMode) {
+  watchParent();
   // Timers, animations and painting as for a front-most window, whatever the OS thinks.
   for (const s of ["disable-renderer-backgrounding", "disable-backgrounding-occluded-windows", "disable-background-timer-throttling", "use-mock-keychain"]) app.commandLine.appendSwitch(s);
   app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,MacWebContentsOcclusion");
