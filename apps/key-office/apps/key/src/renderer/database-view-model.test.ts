@@ -66,5 +66,7 @@ describe("database view sorting", () => {
     expect(fitted[2]).toBeGreaterThanOrEqual(64);
     // Too narrow for every minimum: the minimums hold and the pane scrolls.
     expect(fitColumns(widths, 200).map((r) => r.width)).toEqual([160, 64, 64, 64]);
+    // A column just resized keeps its width; the others give way.
+    expect(fitColumns(widths, 600, (r) => r === widths[1])[1].width).toBe(180);
   });
 });

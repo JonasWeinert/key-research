@@ -475,7 +475,11 @@ function DatabaseViewInner<T>(
   const resolved = useMemo(() => resolveColumns(columns, state.columns), [columns, state.columns]);
   const table = layout === "table";
   // In a table the columns give up width to fit the pane rather than scroll it sideways.
-  const visible = useMemo(() => fitColumns(resolved.filter((r) => !r.hidden), table ? width : 0), [resolved, table, width]);
+  const [resized, setResized] = useState<string>();
+  const visible = useMemo(
+    () => fitColumns(resolved.filter((r) => !r.hidden), table ? width : 0, (r) => r.column.id === resized),
+    [resolved, table, width, resized],
+  );
   const tableWidth = visible.reduce((sum, r) => sum + r.width, 0);
 
   const rowProps = (row: T) => ({
@@ -503,7 +507,7 @@ function DatabaseViewInner<T>(
         empty
       ) : (
         <>
-          {table && <TableHead resolved={resolved} visible={visible} width={tableWidth} sorts={state.sorts} onChange={onChange} />}
+          {table && <TableHead resolved={resolved} visible={visible} width={tableWidth} sorts={state.sorts} onChange={onChange} onResized={setResized} />}
           <div className="kx-db-body" style={{ height: virtualizer.getTotalSize(), width: table ? tableWidth : undefined }}>
             {items.map((item) => {
               if (layout === "grid") {
@@ -577,12 +581,15 @@ function TableHead<T>({
   width,
   sorts,
   onChange,
+  onResized,
 }: {
   resolved: ResolvedColumn<DatabaseColumn<T>>[];
   visible: ResolvedColumn<DatabaseColumn<T>>[];
   width: number;
   sorts: SortLevel[];
   onChange: (patch: Partial<DatabaseViewState>) => void;
+  /** A column resized by hand: fitting the pane leaves its width as set. */
+  onResized?: (id: string) => void;
 }) {
   const cells = useRef<Record<string, HTMLElement | null>>({});
   const [drag, setDrag] = useState<{ id: string; drop: number; offset: number }>();
@@ -653,7 +660,10 @@ function TableHead<T>({
       window.removeEventListener("pointercancel", end, true);
       window.removeEventListener("blur", end);
       setResizing(undefined);
-      if (next !== r.width) onChange({ columns: updateColumn(resolved, r.column.id, { width: next }) });
+      if (next !== r.width) {
+        onResized?.(r.column.id);
+        onChange({ columns: updateColumn(resolved, r.column.id, { width: next }) });
+      }
     };
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", end, true);

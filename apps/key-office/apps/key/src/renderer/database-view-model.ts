@@ -73,10 +73,11 @@ export const FIT_MIN_COLUMN = 64;
 /** Widths that fit `available` pixels: when the columns are wider than the pane, each gives
  *  up width in proportion to what it has above its minimum, so text ellipsizes instead of
  *  the table scrolling sideways. Only a pane too narrow for every minimum still scrolls. */
-export function fitColumns<R extends { width: number }>(visible: R[], available: number): R[] {
+export function fitColumns<R extends { width: number }>(visible: R[], available: number, keep?: (r: R) => boolean): R[] {
   const total = visible.reduce((sum, r) => sum + r.width, 0);
   if (available <= 0 || total <= available) return visible;
-  const mins = visible.map((r, i) => Math.min(r.width, i === 0 ? FIT_MIN_FIRST : FIT_MIN_COLUMN));
+  // A column just resized by hand keeps the width it was given; the others make room.
+  const mins = visible.map((r, i) => (keep?.(r) ? r.width : Math.min(r.width, i === 0 ? FIT_MIN_FIRST : FIT_MIN_COLUMN)));
   const spare = visible.reduce((sum, r, i) => sum + r.width - mins[i], 0);
   if (spare <= 0) return visible;
   const factor = Math.min(1, (total - available) / spare);
