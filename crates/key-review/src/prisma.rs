@@ -65,24 +65,31 @@ pub fn compute(state: &State) -> Prisma {
     let mut p = Prisma::default();
     let mut other_group: std::collections::HashSet<&str> = Default::default();
     for b in state.batches.iter().filter(|b| !state.removed_batches.contains(&b.id)) {
-        let list = match b.group.as_str() {
-            "databases" => &mut p.databases,
-            "registers" => &mut p.registers,
+        let group = match b.group.as_str() {
+            "databases" => "database",
+            "registers" => "register",
             _ => {
                 other_group.insert(&b.id);
-                &mut p.other_methods
+                "other"
             }
         };
         if b.group != "other" {
             p.duplicates += b.duplicates_removed;
         }
         let name = if b.name.trim().is_empty() { b.file_name.clone() } else { b.name.clone() };
+        let mut put = |kind: &str, n: &str, c: usize| match kind {
+            "register" => add(&mut p.registers, n, c),
+            "other" => add(&mut p.other_methods, n, c),
+            _ => add(&mut p.databases, n, c),
+        };
         if !b.per_source.is_empty() {
+            // A search run can mix databases and registers: each goes to its own box.
             for (n, c) in &b.per_source {
-                add(list, n, *c);
+                let kind = if group == "other" { group } else { b.per_source_kind.get(n).map(String::as_str).unwrap_or(group) };
+                put(kind, n, *c);
             }
         } else {
-            add(list, &name, b.count);
+            put(group, &name, b.count);
         }
     }
     p.identified = p.databases.iter().chain(&p.registers).map(|n| n.count).sum();

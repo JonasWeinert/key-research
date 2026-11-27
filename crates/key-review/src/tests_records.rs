@@ -417,3 +417,29 @@ fn several_reports_of_one_study_count_once() {
     reviews.link_study(&id, &recs[1], None, &a).unwrap();
     assert_eq!(reviews.prisma(&id).unwrap().studies_included, 2);
 }
+
+#[test]
+fn registers_in_a_search_run_are_counted_as_registers() {
+    let reviews = Reviews::in_memory().unwrap();
+    let (id, owner) = reviews.create("Runs", "Ana", None).unwrap();
+    let parsed = crate::import::parse_file(RIS, Some("run.ris")).unwrap();
+    let mut per_source = std::collections::BTreeMap::new();
+    per_source.insert("PubMed".to_string(), 3);
+    per_source.insert("ClinicalTrials.gov".to_string(), 2);
+    // A run imported before registers were told apart: all of it under databases.
+    let batch = Batch { kind: "database".into(), group: "databases".into(), name: "Search run".into(), db_run_id: "run-1".into(), per_source, count: 5, ..Default::default() };
+    reviews.import(&id, batch, parsed.records, &owner, &NoLibrary).unwrap();
+    let before = reviews.prisma(&id).unwrap();
+    assert_eq!(before.databases.len(), 2);
+    assert!(before.registers.is_empty());
+    // Classified from the connectors' kinds (once: a second pass changes nothing).
+    let kinds: std::collections::HashMap<String, String> = [("PubMed", "database"), ("ClinicalTrials.gov", "register")].into_iter().map(|(a, b)| (a.to_string(), b.to_string())).collect();
+    assert_eq!(reviews.classify_batches(&id, &kinds).unwrap(), 1);
+    assert_eq!(reviews.classify_batches(&id, &kinds).unwrap(), 0);
+    let p = reviews.prisma(&id).unwrap();
+    assert_eq!(p.databases, vec![crate::prisma::Named { name: "PubMed".into(), count: 3 }]);
+    assert_eq!(p.registers, vec![crate::prisma::Named { name: "ClinicalTrials.gov".into(), count: 2 }]);
+    assert_eq!(p.identified, 5);
+    let csv = crate::prisma::csv(&p);
+    assert!(csv.contains("Records identified: register: ClinicalTrials.gov,2"), "{csv}");
+}

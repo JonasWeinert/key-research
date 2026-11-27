@@ -349,7 +349,7 @@ impl Databases {
         let state = self.store().state();
         let caps = &spec.capabilities;
         json!({
-            "id": spec.id, "name": spec.name, "description": spec.description, "category": spec.category, "coverage": spec.coverage,
+            "id": spec.id, "name": spec.name, "description": spec.description, "category": spec.category, "prisma": spec.prisma_kind(), "coverage": spec.coverage,
             "terms": spec.terms, "homepage": spec.homepage, "version": spec.version, "kind": spec.kind, "guide": spec.guide,
             "credentials": credentials, "needsKey": needs_key, "hasKey": has_key, "manual": spec.kind == "manual",
             "manualInfo": spec.manual.as_ref().map(|m| json!({ "url": m.url, "steps": m.steps, "exportFormats": m.export_formats, "importHint": m.import_hint })),

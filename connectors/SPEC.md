@@ -26,6 +26,10 @@ named built-in adapter in Rust (list below), referenced by name.
   "homepage": "https://pubmed.ncbi.nlm.nih.gov/",
   "category": "biomedical",         // biomedical | multidisciplinary | economics | social-science |
                                     // grey-literature | preprints | registries | other
+  "prisma": "database",             // optional: what PRISMA 2020 counts its records as —
+                                    // database | register | repository | other. Default: register
+                                    // for category registries, else database. A systematic review
+                                    // puts a search run's counts in the matching box.
   "coverage": "36M+ citations, 1946 onwards (some older).",
   "terms": "Free; NCBI asks for at most 3 requests/s without a key, 10/s with one.",
   "kind": "api",                    // api | harvest (no server query: harvest a scope and filter

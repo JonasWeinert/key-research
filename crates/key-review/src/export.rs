@@ -1,5 +1,5 @@
 // Out of a review: screening decisions, extraction tables (wide, long, outcome data for R's
-// meta/metafor, a RevMan-style table), the audit trail, the PRISMA numbers, the whole review as
+// meta/metafor, a table for RevMan-style entry), the audit trail, the PRISMA numbers, the whole review as
 // one file and the protocol as a template. And the outcome data the meta-analysis reads.
 use crate::derive::{RecState, State, Status};
 use crate::events::{Event, FORMAT};
@@ -203,7 +203,9 @@ impl Reviews {
                 "extraction" => (format!("{base}-extraction.csv"), extraction_wide(state, conn)?, "text/csv"),
                 "extraction-long" => (format!("{base}-extraction-long.csv"), extraction_long(state, conn)?, "text/csv"),
                 "outcomes" => (format!("{base}-outcomes.csv"), outcomes_csv(state, conn)?, "text/csv"),
-                "revman" => (format!("{base}-revman.csv"), revman_csv(state, conn)?, "text/csv"),
+                // Not a file RevMan Web imports (it takes its own templates): a table for typing
+                // the data in. "revman" was its earlier name.
+                "outcome-table" | "revman" => (format!("{base}-outcome-data.csv"), revman_csv(state, conn)?, "text/csv"),
                 "prisma" => (format!("{base}-prisma.csv"), crate::prisma::csv(&crate::prisma::compute(state)), "text/csv"),
                 "audit" => (format!("{base}-audit.csv"), audit_csv(state, conn)?, "text/csv"),
                 "review" => (format!("{base}.keyreview.json"), serde_json::to_string_pretty(&json!({ "format": "key-review", "version": FORMAT, "review": state.info, "exportedBy": viewer, "events": load_events(conn, review)? })).map_err(|e| e.to_string())?, "application/json"),
@@ -444,7 +446,8 @@ fn outcomes_csv(state: &State, conn: &rusqlite::Connection) -> Result<String> {
     Ok(out)
 }
 
-/// Outcome data in the column layout RevMan takes when pasting study data: per outcome, study
+/// Outcome data laid out for entering it in RevMan or another tool by hand (not a file RevMan
+/// Web imports): per outcome, study
 /// then events and totals (dichotomous) or mean, SD and total (continuous) for each group, or
 /// estimate and SE (generic inverse variance, ratios on the log scale).
 fn revman_csv(state: &State, conn: &rusqlite::Connection) -> Result<String> {

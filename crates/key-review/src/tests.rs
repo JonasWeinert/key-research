@@ -183,7 +183,7 @@ fn versions_linked_rules_and_prisma() {
     assert_eq!(other.prisma(&id).unwrap(), p);
     // Importing again adds nothing.
     assert_eq!(other.import_review_file(file["content"].as_str().unwrap()).unwrap()["added"], 0);
-    for kind in ["screening", "audit", "prisma", "template", "extraction", "extraction-long", "outcomes", "revman"] {
+    for kind in ["screening", "audit", "prisma", "template", "extraction", "extraction-long", "outcomes", "outcome-table", "revman"] {
         assert!(!reviews.export(&id, kind, &a).unwrap()["content"].as_str().unwrap().is_empty(), "{kind}");
     }
     let template = reviews.export(&id, "template", &a).unwrap();

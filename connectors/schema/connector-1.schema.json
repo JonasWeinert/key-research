@@ -16,6 +16,7 @@
     "description": { "type": "string", "maxLength": 2000 },
     "homepage": { "type": "string", "pattern": "^(https://.*)?$" },
     "category": { "enum": ["biomedical", "multidisciplinary", "economics", "social-science", "grey-literature", "preprints", "registries", "other"] },
+    "prisma": { "enum": ["database", "register", "repository", "other"] },
     "coverage": { "type": "string", "maxLength": 2000 },
     "terms": { "type": "string", "maxLength": 4000 },
     "kind": { "enum": ["api", "harvest", "manual"] },

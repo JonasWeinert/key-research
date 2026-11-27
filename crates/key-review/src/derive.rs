@@ -442,6 +442,13 @@ impl State {
                 }
                 self.alias_recorded = true;
             }
+            "batch.classify" => {
+                let id = text("batchId");
+                let kinds: BTreeMap<String, String> = p.get("kinds").and_then(|k| serde_json::from_value(k.clone()).ok()).unwrap_or_default();
+                if let Some(b) = self.batches.iter_mut().find(|b| b.id == id) {
+                    b.per_source_kind = kinds;
+                }
+            }
             "record.remove" => {
                 let ids: Vec<String> = p.get("recordIds").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
                 let removed = p.get("removed").and_then(Json::as_bool).unwrap_or(true);

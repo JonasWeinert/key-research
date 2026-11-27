@@ -21,6 +21,10 @@ pub struct Spec {
     pub homepage: String,
     #[serde(default = "default_category")]
     pub category: String,
+    /// What PRISMA 2020 counts it as: database | register | repository | other ("" : a
+    /// register when its category is registries, else a database). See `prisma_kind`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub prisma: String,
     #[serde(default)]
     pub coverage: String,
     #[serde(default)]
@@ -1018,5 +1022,17 @@ fn check_field(label: &str, field: &str, extract: &Extract, out: &mut Vec<String
 fn check_path(label: &str, path: &str, format: &str, out: &mut Vec<String>) {
     if let Err(e) = crate::paths::check(path, format) {
         out.push(format!("{label}: path {path:?}: {e}"));
+    }
+}
+
+impl Spec {
+    /// PRISMA 2020's identification box for records it finds: "database", "register",
+    /// "repository" or "other".
+    pub fn prisma_kind(&self) -> &str {
+        match self.prisma.as_str() {
+            "" if self.category == "registries" => "register",
+            "" => "database",
+            k => k,
+        }
     }
 }

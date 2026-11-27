@@ -627,6 +627,10 @@ pub struct Batch {
     pub count: usize,
     /// Records per database of a multi-database run: name → count.
     pub per_source: BTreeMap<String, usize>,
+    /// What PRISMA counts each of those as (name → database | register | repository | other),
+    /// from the connector that searched it: a run can mix databases and trial registers.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub per_source_kind: BTreeMap<String, String>,
     pub db_run_id: String,
     /// Duplicates the database search removed before the records came here (counted in PRISMA).
     pub duplicates_removed: usize,

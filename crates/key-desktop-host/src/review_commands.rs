@@ -185,6 +185,23 @@ fn call_db(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &St
     }
 }
 
+/// What PRISMA counts each connector's records as (database | register | repository | other),
+/// by the connector's id and its name.
+fn connector_kinds(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &StoreLibrary) -> std::collections::HashMap<String, String> {
+    let mut out = std::collections::HashMap::new();
+    if let Ok(Json::Array(list)) = call_db(databases, web, library, "db_connectors", json!({})) {
+        for c in list {
+            let kind = c.get("prisma").and_then(Json::as_str).unwrap_or("database").to_string();
+            for key in ["id", "name"] {
+                if let Some(k) = c.get(key).and_then(Json::as_str) {
+                    out.insert(k.to_string(), kind.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
 /// A database search run's records and its PRISMA identification numbers.
 /// `keys` (the run's work keys) keeps only those works, every version of each.
 fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &StoreLibrary, run: &str, keys: &[String]) -> Result<(Batch, Vec<RecordMeta>), String> {
@@ -239,12 +256,33 @@ fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library
         // A selection: the run's per-database totals are not what was sent.
         batch.per_source.clear();
     }
+    // Registers (ClinicalTrials.gov, WHO ICTRP …) searched in the same run go to PRISMA's
+    // register box, not the databases'.
+    let kinds = connector_kinds(databases, web, library);
+    batch.per_source_kind = batch.per_source.keys().filter_map(|n| kinds.get(n).map(|k| (n.clone(), k.clone()))).collect();
+    if batch.per_source.is_empty() && !records.is_empty() {
+        // No per-database counts: a run that searched only registers is a register import.
+        let found: std::collections::HashSet<String> = records.iter().filter_map(|r| r.extra.get("foundBy")).filter_map(Json::as_array).flatten().filter_map(Json::as_str).map(str::to_string).collect();
+        if !found.is_empty() && found.iter().all(|c| kinds.get(c).map(String::as_str) == Some("register")) {
+            batch.group = "registers".into();
+        }
+    }
     batch.count = records.len() + batch.duplicates_removed;
     if !batch.per_source.is_empty() && !live {
         // per_source counts what each database returned; keep them as identified.
         batch.count = batch.per_source.values().sum();
     }
     Ok((batch, records))
+}
+
+/// Search runs imported before databases and registers were told apart: classified once from
+/// the connectors' kinds (an event in the review's log).
+fn classify_runs(reviews: &Reviews, review: &str, databases: &Arc<Databases>, web: &web_search::WebSearch, library: &Library, root: &Path) {
+    let pending = reviews.read(review, |s, _| Ok(s.batches.iter().any(|b| !b.db_run_id.is_empty() && !b.per_source.is_empty() && b.per_source_kind.is_empty()))).unwrap_or(false);
+    if pending {
+        let store_library = StoreLibrary { library, root };
+        let _ = reviews.classify_batches(review, &connector_kinds(databases, web, &store_library));
+    }
 }
 
 /// Library sources for records that have none (to find and read their full text): an existing
@@ -363,7 +401,11 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 let (id, owner) = reviews.create(text(args, "name"), text(args, "ownerName"), protocol)?;
                 json!({ "reviewId": id, "actor": owner })
             }
-            "review_get" => reviews.summary(&review()?, text(args, "viewer"))?,
+            "review_get" => {
+                let id = review()?;
+                classify_runs(reviews, &id, databases, web, library, root);
+                reviews.summary(&id, text(args, "viewer"))?
+            }
             // Cheap: whether anything changed since the screen last read (another window, a merge).
             "review_stamp" => reviews.read(&review()?, |state, _| Ok(json!({ "events": state.events, "last": state.last_event.as_ref().map(|e| &e.1) })))?,
             "review_rename" => {
@@ -530,7 +572,11 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             }
             "review_assign" => json!(reviews.assign(&review()?, stage(args)?, text(args, "mode"), arg::<Vec<Share>>(args, "reviewers")?, args.get("double").and_then(Json::as_f64).unwrap_or(0.0), args.get("seed").and_then(Json::as_u64), &actor()?)?.mode),
             "review_agreement" => reviews.agreement(&review()?, stage(args)?, args.get("pilotId").and_then(Json::as_str))?,
-            "review_prisma" => json!(reviews.prisma(&review()?)?),
+            "review_prisma" => {
+                let id = review()?;
+                classify_runs(reviews, &id, databases, web, library, root);
+                json!(reviews.prisma(&id)?)
+            }
             "review_studies" => reviews.studies(&review()?, text(args, "viewer"))?,
             "review_extraction" => reviews.extraction_view(&review()?, text(args, "recordId"), text(args, "viewer"))?,
             "review_extract" => {

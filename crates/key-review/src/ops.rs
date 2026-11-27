@@ -243,6 +243,23 @@ impl Reviews {
         Ok(ImportReport { auto_excluded, ..report })
     }
 
+    /// Database search runs imported before their databases were told apart from registers:
+    /// what each counted source is (by its name: database | register | repository | other),
+    /// recorded once per batch. PRISMA then puts each in its box.
+    pub fn classify_batches(&self, review: &str, kinds: &HashMap<String, String>) -> Result<usize> {
+        self.write(review, |state, _, b| {
+            let mut events = Vec::new();
+            for batch in state.batches.iter().filter(|x| !x.db_run_id.is_empty() && !x.per_source.is_empty() && x.per_source_kind.is_empty()) {
+                let found: BTreeMap<String, String> = batch.per_source.keys().filter_map(|n| kinds.get(n).map(|k| (n.clone(), k.clone()))).collect();
+                if !found.is_empty() {
+                    events.push(b.event("batch.classify", "system", None, json!({ "batchId": batch.id, "kinds": found })));
+                }
+            }
+            let n = events.len();
+            Ok((events, n))
+        })
+    }
+
     pub fn remove_batch(&self, review: &str, batch: &str, actor: &str) -> Result<()> {
         self.write(review, |state, _, b| {
             if state.batch(batch).is_none() {
