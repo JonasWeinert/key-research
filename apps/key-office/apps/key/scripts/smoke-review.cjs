@@ -93,15 +93,17 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await call("review_protocol_save", { reviewId, protocol, note: "", actor: s.team[0].id, rescreen: false });
     await page.getByRole("tab", { name: /Setup/ }).click();
     await page.getByRole("button", { name: "Criteria", exact: false }).first().click();
-    await page.locator(".kx-rv-criterion").first().waitFor();
+    // The criterion saved through the host shows before any edit (the editor starts from it).
+    await page.locator('.kx-rv-criterion input[value="Published 2000 or later"]').waitFor();
     for (const chip of ["Wrong population", "Wrong intervention", "Wrong study design", "Not in an included language"]) {
       await page.locator(".kx-rv-chip", { hasText: chip }).click();
       await page.locator(".kx-rv-chip", { hasText: chip }).waitFor({ state: "detached" });
     }
     // The question's words became the guidance of the population criterion.
-    await page.waitForFunction(async ({ reviewId, id }) => (await window.key.invoke("review_get", { reviewId, viewer: "" }, id)).protocol.criteria.length === 5, { reviewId, id: ws.id });
+    // Saved as they are made (an amendment: nothing was decided yet).
+    for (let i = 0; i < 50 && (await summary()).protocol.criteria.length !== 5; i++) await page.waitForTimeout(200);
     s = await summary();
-    assert.equal(s.protocol.criteria.find((c) => c.id === "c-population").guidance, "Include: adults of any age");
+    assert.equal(s.protocol.criteria.find((c) => c.id === "c-population")?.guidance, "Include: adults of any age");
     assert(!("reasons" in s.protocol), "no separate list of reasons");
     await page.locator(".kx-rv-criterion", { has: page.locator('input[value="Published 2000 or later"]') }).getByRole("button", { name: "Show details" }).click();
     await shot(page, "05-setup-criteria");
@@ -174,7 +176,7 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
       const title = await page.locator(".kx-rv-record-title").textContent();
       if (/Pilates/.test(title)) {
         await page.keyboard.press("e");
-        await page.locator(".kx-rv-reasons[data-picking]").waitFor();
+        await page.locator(".kx-rv-criteria-pick[data-picking]").waitFor();
         await shot(page, "11-fulltext-reasons");
         await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
         await shot(page, "11-fulltext-reasons-dark");

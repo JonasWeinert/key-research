@@ -31,6 +31,9 @@ export function Setup(props: StageProps) {
   const [section, setSection] = useState<Section>(() => (summary.active ? "criteria" : "question"));
   const [draft, setDraft] = useState<Protocol>(() => clone(summary.protocol));
   const base = useRef(summary.protocol);
+  // Start from the latest protocol (another window may have saved one since this tab last read).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => onChanged(), []);
   // A protocol saved elsewhere (another window, a template) replaces an unchanged draft.
   useEffect(() => {
     if (same(draft, base.current)) setDraft(clone(summary.protocol));
@@ -569,7 +572,8 @@ function CriteriaSection({ draft, change, api }: DraftProps) {
       let id = c.id || newId("c-");
       for (let n = 2; taken.has(id); n++) id = `${c.id || "c"}-${n}`;
       p.criteria = grouped([...p.criteria, { ...c, id }]);
-      setFresh(id);
+      // A blank criterion opens for writing; a suggestion is complete as it is.
+      if (!c.label) setFresh(id);
     });
   const move = (id: string, by: number) =>
     change((p) => {
