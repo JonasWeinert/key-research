@@ -66,6 +66,23 @@ export function resolveColumns<C extends ColumnDefaults>(columns: C[], settings:
   return [...ordered.filter((c) => c.pinned), ...ordered.filter((c) => !c.pinned)];
 }
 
+/** The narrowest a column shrinks to when fitting the pane: the first (the title) keeps more. */
+export const FIT_MIN_FIRST = 160;
+export const FIT_MIN_COLUMN = 64;
+
+/** Widths that fit `available` pixels: when the columns are wider than the pane, each gives
+ *  up width in proportion to what it has above its minimum, so text ellipsizes instead of
+ *  the table scrolling sideways. Only a pane too narrow for every minimum still scrolls. */
+export function fitColumns<R extends { width: number }>(visible: R[], available: number): R[] {
+  const total = visible.reduce((sum, r) => sum + r.width, 0);
+  if (available <= 0 || total <= available) return visible;
+  const mins = visible.map((r, i) => Math.min(r.width, i === 0 ? FIT_MIN_FIRST : FIT_MIN_COLUMN));
+  const spare = visible.reduce((sum, r, i) => sum + r.width - mins[i], 0);
+  if (spare <= 0) return visible;
+  const factor = Math.min(1, (total - available) / spare);
+  return visible.map((r, i) => ({ ...r, width: Math.floor(r.width - (r.width - mins[i]) * factor) }));
+}
+
 /** Settings for every column, so order survives columns being added later. */
 export function toSettings<C extends ColumnDefaults>(resolved: ResolvedColumn<C>[]): ColumnSetting[] {
   return resolved.map((r) => ({ id: r.column.id, width: r.width, hidden: r.hidden, pinned: r.pinned }));

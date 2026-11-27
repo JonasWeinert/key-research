@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clickSort, moveColumn, resolveColumns, updateColumn } from "./database-view-model";
+import { clickSort, fitColumns, moveColumn, resolveColumns, updateColumn } from "./database-view-model";
 
 const columns = [
   { id: "title", width: 300, pinned: true },
@@ -55,5 +55,16 @@ describe("database view sorting", () => {
     sorts = clickSort(sorts, "title", true);
     expect(sorts[1]).toEqual({ field: "title", descending: true });
     expect(clickSort(sorts, "title", true)).toEqual([{ field: "year", descending: true }]);
+  });
+
+  it("shrinks columns to fit the pane, keeping minimums, and leaves a fitting table alone", () => {
+    const widths = [{ width: 330 }, { width: 180 }, { width: 70 }, { width: 220 }];
+    expect(fitColumns(widths, 900)).toBe(widths);
+    const fitted = fitColumns(widths, 600).map((r) => r.width);
+    expect(fitted.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(600);
+    expect(fitted[0]).toBeGreaterThanOrEqual(160);
+    expect(fitted[2]).toBeGreaterThanOrEqual(64);
+    // Too narrow for every minimum: the minimums hold and the pane scrolls.
+    expect(fitColumns(widths, 200).map((r) => r.width)).toEqual([160, 64, 64, 64]);
   });
 });

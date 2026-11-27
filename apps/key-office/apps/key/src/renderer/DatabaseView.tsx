@@ -21,6 +21,7 @@ import {
   clickSort,
   moveColumn,
   readViewState,
+  fitColumns,
   resolveColumns,
   updateColumn,
   writeViewState,
@@ -472,8 +473,9 @@ function DatabaseViewInner<T>(
   }, [first, last]);
 
   const resolved = useMemo(() => resolveColumns(columns, state.columns), [columns, state.columns]);
-  const visible = resolved.filter((r) => !r.hidden);
   const table = layout === "table";
+  // In a table the columns give up width to fit the pane rather than scroll it sideways.
+  const visible = useMemo(() => fitColumns(resolved.filter((r) => !r.hidden), table ? width : 0), [resolved, table, width]);
   const tableWidth = visible.reduce((sum, r) => sum + r.width, 0);
 
   const rowProps = (row: T) => ({
@@ -592,7 +594,7 @@ function TableHead<T>({
   const dropIndex = (x: number) => {
     for (const r of visible) {
       const rect = cells.current[r.column.id]?.getBoundingClientRect();
-      if (rect && x < rect.left + rect.width / 2) return resolved.indexOf(r);
+      if (rect && x < rect.left + rect.width / 2) return resolved.findIndex((c) => c.column.id === r.column.id);
     }
     return resolved.length;
   };
@@ -668,7 +670,7 @@ function TableHead<T>({
     <div className="kx-table-head" role="row" style={{ gridTemplateColumns: gridTemplate(live), width }} data-dragging={drag ? true : undefined}>
       {live.map((r) => {
         const level = r.column.sortField ? sorts.findIndex((s) => s.field === r.column.sortField) : -1;
-        const index = resolved.indexOf(visible.find((v) => v.column.id === r.column.id)!);
+        const index = resolved.findIndex((c) => c.column.id === r.column.id);
         return (
           <div
             key={r.column.id}
