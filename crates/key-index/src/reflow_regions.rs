@@ -339,7 +339,7 @@ mod tests {
         [(x * FULL) as u16, (y * FULL) as u16, (w * FULL) as u16, (h * FULL) as u16]
     }
     fn block(page: i64, kind: &str, rect: [u16; 4], text: &str) -> LayoutBlock {
-        LayoutBlock { page, kind: kind.into(), text: text.into(), bounds: rect, sentences: vec![LayoutSentence { text: text.into(), rects: vec![rect] }], level: (kind == "heading").then_some(1) }
+        LayoutBlock { page, kind: kind.into(), text: text.into(), bounds: rect, sentences: vec![LayoutSentence { text: text.into(), rects: vec![rect] }], level: (kind == "heading").then_some(1), ..Default::default() }
     }
     fn regions(page_count: usize, list: Vec<Region>) -> PageRegions {
         PageRegions { file_hash: "f".into(), page_count, analysed: (0..page_count as i64).collect(), regions: list }
