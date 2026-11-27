@@ -24,6 +24,9 @@ const INTERACTIVE: &[&str] = &[
     "workspace_save_entry", "workspace_save_record", "workspace_set_project_membership", "workspace_create_project", "workspace_save_attribute",
     "workspace_rename_attribute", "workspace_delete_attribute", "workspace_apply_property_proposal", "web_add_to_library", "web_library_match", "db_add_to_library", "db_translate", "db_search_start", "db_search_cancel", "db_estimate_cancel", "db_saved_save", "db_saved_delete", "db_parse", "db_query_parse", "db_query_format", "db_strategy", "db_run",
     "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set", "inbox_save", "inbox_state",
+    // The Inbox's selection panel: its overview, Add to library (later batches are sent as
+    // background and pause for the user's own work) and its undo, citations of the works.
+    "inbox_selection_overview", "inbox_add", "inbox_add_undo", "inbox_works",
     "store_formula_evaluate", "store_formula_catalog", "store_formula_analyze", "store_formula_preview", "store_formula_print", "store_formula_prompt",
     "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete", "store_fill_recipe_export",
     "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status", "store_fill_runs", "store_fill_run",
@@ -139,6 +142,9 @@ mod tests {
         // Saving a work to the Inbox is a click; finding what to follow asks the network.
         assert_eq!(resolve("inbox_save", None), Class::Interactive);
         assert!(is_slow("feeds_suggest") && is_slow("feeds_preview") && !is_slow("inbox_state"));
+        assert_eq!(resolve("inbox_add", None), Class::Interactive);
+        assert_eq!(resolve("inbox_selection_overview", None), Class::Interactive);
+        assert_eq!(resolve("inbox_add", Some("background")), Class::Background);
         assert_eq!(resolve("feeds_refresh", None), Class::Background);
         // A screening decision is a keystroke; an import of 20,000 records is long.
         assert_eq!(resolve("review_decide", None), Class::Interactive);

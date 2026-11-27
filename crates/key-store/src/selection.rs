@@ -232,7 +232,7 @@ impl Store {
 }
 
 /// Every year from the first to the last (a long span is grouped into at most 40 bars).
-fn year_histogram(years: &[(i64, i64)], total: i64) -> Years {
+pub(crate) fn year_histogram(years: &[(i64, i64)], total: i64) -> Years {
     let (Some(min), Some(max)) = (years.iter().map(|y| y.0).min(), years.iter().map(|y| y.0).max()) else {
         return Years { without: total, ..Default::default() };
     };
