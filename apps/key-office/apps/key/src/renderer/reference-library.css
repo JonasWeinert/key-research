@@ -151,29 +151,54 @@
   border-top: 1px solid var(--kx-line);
 }
 
-/* Scope, sort and facet bars */
+/* Scope, sort and facet bars: one block under the title. The views keep the width their tabs
+   need (never stretched); the view controls sit at the end of their line, and when the two
+   do not fit together (`data-stacked`, measured in ReferenceLibrary) the controls move down
+   beside the facets instead of taking a line of their own. Only a pane too narrow for every
+   tab scrolls the tab bar (labels are never cut). */
 .kx-filter-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  padding: 12px 20px 8px;
+  gap: 0 12px;
+  padding: 12px 20px 10px;
+  box-shadow: inset 0 -1px 0 var(--kx-line);
 }
-/* The views take the width their tabs need; when the view controls do not fit beside
-   them, the controls move to a line of their own rather than the tabs scrolling sideways.
-   Only a pane too narrow for every tab scrolls the tab bar (labels are never cut). */
 .kx-library .kx-filter-bar > .kx-scope-tabs {
-  flex: 1 1 max-content;
+  order: 1;
+  flex: 0 1 auto;
   max-width: 100%;
 }
 .kx-library .kx-filter-bar > .kx-scope-tabs .key-segmented-track > [role="tab"] {
-  flex: 1 0 auto;
+  flex: 0 0 auto;
   min-width: 0;
-  padding: 0 10px;
+  padding: 0 12px;
 }
 .kx-filter-bar > .kx-controls-end {
+  order: 2;
   margin-left: auto;
+}
+.kx-filter-break {
+  display: none;
+  order: 3;
+  flex: 0 0 100%;
+  height: 0;
+}
+.kx-filter-bar > .kx-facet-bar {
+  order: 4;
+  flex: 1 1 100%;
+  margin-top: 8px;
+}
+.kx-filter-bar[data-stacked] > .kx-filter-break {
+  display: block;
+}
+.kx-filter-bar[data-stacked] > .kx-facet-bar {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.kx-filter-bar[data-stacked] > .kx-controls-end {
+  order: 5;
+  margin-top: 8px;
 }
 .kx-library .kx-control {
   position: relative;
@@ -209,9 +234,8 @@
 .kx-facet-bar {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
-  padding: 0 20px 10px;
-  box-shadow: inset 0 -1px 0 var(--kx-line);
 }
 .kx-facet {
   display: inline-flex;
@@ -794,6 +818,9 @@
 .kx-creators > span {
   flex: 1 1 auto;
   min-width: 0;
+}
+.kx-creators .kx-creator {
+  white-space: nowrap;
 }
 /* A name is one unbreakable button: very long ones ellipsize, leaving room for the comma. */
 .kx-creators .kx-filter-link {

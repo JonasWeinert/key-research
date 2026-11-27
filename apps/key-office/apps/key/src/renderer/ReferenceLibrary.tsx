@@ -5,7 +5,7 @@ import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { itemAttrs, selectItems } from "./item-ui";
 import { SectionHeader, useCollapsedGroups } from "./search-sections";
 import { GROUPS, type SearchGroup } from "./unified-search";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ActivityBanner, ProgressRing, isActive, jobProgress, referencesProgress, useLibraryStatus } from "./index-activity";
 import { useStatusItems } from "./status-bar";
 import { ModelProgressCard, useModelProgress } from "./model-progress";
@@ -238,6 +238,27 @@ export default function ReferenceLibrary({
     handle.addEventListener("pointercancel", end);
   };
   const searchInput = useRef<HTMLTextAreaElement>(null);
+  // The header's views, view controls and facets read as one block: the controls sit beside
+  // the views while both fit on a line, and beside the facets on the next line otherwise.
+  const filterBar = useRef<HTMLDivElement>(null);
+  const [stacked, setStacked] = useState(false);
+  useLayoutEffect(() => {
+    const bar = filterBar.current;
+    if (!bar) return;
+    const measure = () => {
+      const tabs = bar.querySelector<HTMLElement>(".kx-scope-tabs .key-segmented-track");
+      const controls = bar.querySelector<HTMLElement>(".kx-controls-end");
+      if (!tabs || !controls) return setStacked(false);
+      const style = getComputedStyle(bar);
+      const room = bar.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      setStacked(tabs.scrollWidth + 12 + controls.offsetWidth > room);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    for (const el of bar.querySelectorAll(".kx-controls-end, .kx-scope-tabs .key-segmented-track > [role=tab]")) observer.observe(el);
+    return () => observer.disconnect();
+  });
   const request = useRef(0);
   const loadingMore = useRef(false);
 
@@ -807,8 +828,7 @@ export default function ReferenceLibrary({
           </div>
         </header>
 
-        {(
-        <div className="kx-filter-bar" data-searching={!!search}>
+        <div className="kx-filter-bar" ref={filterBar} data-searching={!!search} data-stacked={stacked || undefined}>
           <SegmentedTabs
             className="kx-scope-tabs"
             label="Library views"
@@ -821,6 +841,7 @@ export default function ReferenceLibrary({
               return [{ id: value, label, badge: count ? count.toLocaleString() : undefined }];
             })}
           />
+          <span className="kx-filter-break" aria-hidden="true" />
           {!search && scope !== "duplicates" && (
             <div className="kx-controls-end">
               <DatabaseToolbar
@@ -837,8 +858,6 @@ export default function ReferenceLibrary({
               />
             </div>
           )}
-        </div>
-        )}
         {(facets.kinds.length > 1 || facets.tags.length > 0) && (
           <div className="kx-facet-bar">
             {facets.kinds.length > 1 &&
@@ -852,6 +871,7 @@ export default function ReferenceLibrary({
             {facets.tags.length > 0 && <TagPicker tags={facets.tags} value={tag} onChange={setTag} onManage={() => setTagManager(true)} />}
           </div>
         )}
+        </div>
         <ModelProgressCard progress={model} compact />
         <ActivityBanner status={status} minimum={12} onPause={pauseIndexing} />
         {error && (
