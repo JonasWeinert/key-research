@@ -72,6 +72,7 @@ const pageStyle = () =>
   `mark.${MARK}[data-active]{background:rgb(var(--key-hl) / .6)}` +
   `mark.${MARK}.key-flash{animation:key-flash 1.6s ease-out}` +
   `mark.key-passage{color:inherit;background:rgb(255 185 60 / .45);border-radius:2px;animation:key-flash 2.4s ease-out forwards}` +
+  `mark.key-passage-kept{animation:key-flash 2.4s ease-out}` +
   `@keyframes key-flash{0%,30%{background:rgb(var(--key-hl, 255 185 60) / .85)}}` +
   `::selection{background:rgb(80 158 255 / .35)}`;
 
@@ -220,23 +221,39 @@ export function WebPageReader({
     }
     return true;
   }, []);
-  /** Goes to a highlight, or to a quoted passage and lights it up for a moment. */
+  /** Goes to a highlight, or to a quoted passage and lights it up for a moment (a search
+   *  hit's stays lit until the page is clicked). */
+  const lit = useRef<Element[]>([]);
   const goTo = useCallback(
-    (d: Document, focus: { annotationId?: string; text?: string }) => {
+    (d: Document, focus: { annotationId?: string; text?: string; fallback?: string[]; keep?: boolean }) => {
       setContext(null);
       setDraft(null);
+      unwrap(lit.current);
+      lit.current = [];
       if (focus.annotationId && flash(d, focus.annotationId)) return;
-      if (!focus.text) return;
       const index = textIndex(d.body);
-      const at = locate(index, undefined, focus.text);
-      if (!at) return toast("That passage is not on the saved page");
+      let at: { start: number; end: number } | undefined;
+      for (const text of [focus.text, ...(focus.fallback ?? [])]) {
+        if (text && (at = locate(index, undefined, text))) break;
+      }
+      if (!at) return focus.text || focus.fallback?.length ? toast("That passage is not on the saved page") : undefined;
       const marks = wrapRange(index, at.start, at.end, () => {
         const m = d.createElement("mark");
-        m.className = "key-passage";
+        m.className = focus.keep ? "key-passage key-passage-kept" : "key-passage";
         return m;
       });
       marks[0]?.scrollIntoView({ block: "center", behavior: "smooth" });
-      setTimeout(() => unwrap(marks), 2600);
+      if (!focus.keep) return void setTimeout(() => unwrap(marks), 2600);
+      lit.current = marks;
+      d.addEventListener(
+        "pointerdown",
+        () => {
+          if (lit.current !== marks) return;
+          unwrap(marks);
+          lit.current = [];
+        },
+        { once: true },
+      );
     },
     [flash],
   );
