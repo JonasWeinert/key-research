@@ -13,6 +13,7 @@ import { FormulaValue } from "./formula-display";
 import type { PropertyDefinition } from "./PropertySheets";
 import "./formula-builder.css";
 import "./fill.css";
+import "./fill-cells.css";
 
 export interface Recipe {
   id: string;
@@ -30,6 +31,10 @@ export interface Recipe {
   auto: boolean;
   refill: boolean;
   budget?: number;
+  /** When what an answer came from changes: nothing | mark | refill. */
+  onChange?: string;
+  /** The most tokens automatic fills use in 24 hours. */
+  dailyTokens?: number;
 }
 interface Passage {
   id: string;
@@ -112,7 +117,27 @@ const blank = (property = ""): Recipe => ({
   rule: { kind: "formula", formula: "", pattern: "", input: "abstract" },
   auto: false,
   refill: false,
+  onChange: "mark",
+  dailyTokens: 250_000,
 });
+const ON_CHANGE: [string, string, string][] = [
+  ["nothing", "Do nothing", "Answers stay as they are."],
+  ["mark", "Mark as out of date", "A small clock on the cell; fill it again when you choose."],
+  ["refill", "Fill again automatically", "In the background, within the daily limit. Values you edited are never replaced."],
+];
+const DAILY: [number, string][] = [
+  [50_000, "50,000 tokens"],
+  [250_000, "250,000 tokens"],
+  [1_000_000, "1 million tokens"],
+  [5_000_000, "5 million tokens"],
+];
+interface StaleRecipe {
+  id: string;
+  name: string;
+  property: string;
+  stale: number;
+  ids: string[];
+}
 const errorText = (error: unknown) => String(error instanceof Error ? error.message : error).replace(/^Error invoking remote method '[^']+': (Error: )?/, "").replace(/^Error: /, "");
 const plural = (n: number, one: string) => `${n.toLocaleString()} ${one}${n === 1 ? "" : "s"}`;
 
@@ -420,6 +445,9 @@ export default function FillSheet({
   const [busy, setBusy] = useState(false);
   const [saveRecipe, setSaveRecipe] = useState(true);
   const [importing, setImporting] = useState<string>();
+  const [stale, setStale] = useState<StaleRecipe[]>([]);
+  const [againIds, setAgainIds] = useState<string[]>([]);
+  const [dailyCost, setDailyCost] = useState<number>();
   const { detail: test } = useRun(invoke, workspaceId, testRun, true);
 
   const loadRecipes = useCallback(() => void invoke<Recipe[]>("store_fill_recipes", {}, workspaceId).then(setSaved).catch(() => {}), [invoke, workspaceId]);
@@ -428,6 +456,9 @@ export default function FillSheet({
     void invoke<Recipe[]>("store_fill_starters", {}, workspaceId).then(setStarters).catch(() => {});
     void invoke<Collection[]>("store_collections", {}, workspaceId).then(setCollections).catch(() => {});
     void invoke<typeof ai>("ai_status", {}, workspaceId).then(setAi).catch(() => setAi({ configured: false }));
+    void invoke<{ recipes: StaleRecipe[] }>("store_fill_marks", {}, workspaceId)
+      .then((m) => setStale(m?.recipes ?? []))
+      .catch(() => {});
     loadRecipes();
   }, [invoke, workspaceId, loadRecipes]);
 
@@ -444,7 +475,45 @@ export default function FillSheet({
     setRecipe({ ...blank(), ...r, id: saved.some((s) => s.id === r.id) ? r.id : "", property });
     setTestRun(undefined);
   };
-  const scopeArgs = useMemo(() => (scope === "selection" ? { ids: targets } : scope === "library" ? { all: true } : { collectionId: scope.slice(11) }), [scope, targets.join()]);
+  const scopeArgs = useMemo(
+    () => (scope === "again" ? { ids: againIds, again: true } : scope === "selection" ? { ids: targets } : scope === "library" ? { all: true } : { collectionId: scope.slice(11) }),
+    [scope, targets.join(), againIds.join()],
+  );
+  const isSaved = saved.some((s) => s.id === recipe.id);
+  // Out-of-date values per saved recipe (within the selection when there is one).
+  const staleShown = stale
+    .map((r) => ({ ...r, ids: targets.length ? r.ids.filter((id) => targets.includes(id)) : r.ids }))
+    .filter((r) => r.ids.length && saved.some((s) => s.id === r.id));
+  const fillAgain = (r: StaleRecipe) => {
+    const found = saved.find((s) => s.id === r.id);
+    if (!found) return;
+    setRecipe({ ...blank(), ...found });
+    setAgainIds(r.ids);
+    setScope("again");
+    setTestRun(undefined);
+    setStep(4);
+  };
+  // What the daily limit for automatic fills costs at most, at the provider's price.
+  useEffect(() => {
+    if (recipe.method !== "ai" || !(recipe.auto || recipe.onChange === "refill")) return setDailyCost(undefined);
+    const tokens = recipe.dailyTokens || 250_000;
+    void invoke<{ cost?: number }>("ai_estimate_cost", { inputTokens: Math.round(tokens * 0.9), outputTokens: Math.round(tokens * 0.1) }, workspaceId)
+      .then((c) => setDailyCost(c.cost))
+      .catch(() => setDailyCost(undefined));
+  }, [recipe.method, recipe.auto, recipe.onChange, recipe.dailyTokens, invoke, workspaceId]);
+  const saveOnly = async () => {
+    setBusy(true);
+    try {
+      const final = await invoke<Recipe>("store_fill_recipe_save", { recipe }, workspaceId);
+      setRecipe(final);
+      loadRecipes();
+      setError(`Saved “${final.name}”`);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (step !== 4) return;
@@ -467,12 +536,13 @@ export default function FillSheet({
     try {
       const args = sample ? { ids: targets.length >= 3 ? targets : [], all: targets.length < 3 } : scopeArgs;
       let final = recipe;
-      if (!sample && saveRecipe) {
+      if (!sample && (saveRecipe || recipe.auto || recipe.onChange === "refill")) {
         final = await invoke<Recipe>("store_fill_recipe_save", { recipe }, workspaceId);
         setRecipe(final);
         loadRecipes();
       }
       const summary = await invoke<RunSummary>("fill_start", { recipe: final, sample, ...args }, workspaceId);
+      if (scope === "again" && !sample) setStale((all) => all.filter((r) => r.id !== final.id));
       if (sample) setTestRun(summary.id);
       else setFullRun(summary.id);
       onSaved();
@@ -524,6 +594,26 @@ export default function FillSheet({
             <FillReview invoke={invoke} workspaceId={workspaceId} runId={fullRun} onSaved={onSaved} />
           ) : step === 0 ? (
             <div className="kx-fill-step">
+              {staleShown.length > 0 && (
+                <section aria-label="Out of date">
+                  <h3>
+                    Out of date <Explain help="fill.onchange" />
+                  </h3>
+                  <div className="kx-fill-stale-list">
+                    {staleShown.map((r) => (
+                      <div key={r.id} className="kx-fill-stale-row" data-recipe={r.name}>
+                        <Icon name="clock" size={12} />
+                        <span>
+                          <strong>{r.property}</strong> · {plural(r.ids.length, "value")} from “{r.name}” {r.ids.length === 1 ? "is" : "are"} out of date{targets.length ? " in the selection" : ""}
+                        </span>
+                        <button type="button" className="kx-settings-button" onClick={() => fillAgain(r)}>
+                          Fill again…
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
               <section>
                 <h3>Start from a recipe</h3>
                 <div className="kx-fill-gallery">
@@ -749,6 +839,7 @@ export default function FillSheet({
                 <label className="kx-form-row">
                   <span>On</span>
                   <select className="kx-settings-select" aria-label="Run on" value={scope} onChange={(e) => setScope(e.target.value)}>
+                    {againIds.length > 0 && <option value="again">The {plural(againIds.length, "out-of-date value")}</option>}
                     {targets.length > 0 && <option value="selection">The {plural(targets.length, "selected source")}</option>}
                     <option value="library">The whole library</option>
                     {collections.map((c) => (
@@ -764,9 +855,42 @@ export default function FillSheet({
                   </span>
                   <input type="checkbox" className="kx-switch" checked={recipe.auto} onChange={(e) => set({ auto: e.target.checked })} />
                 </label>
+                <div className="kx-form-row kx-fill-onchange-row">
+                  <span>
+                    When a source changes <Explain help="fill.onchange" />
+                  </span>
+                  <div className="kx-fill-onchange" role="radiogroup" aria-label="When a source changes">
+                    {ON_CHANGE.map(([id, label, detail]) => (
+                      <label key={id} data-onchange={id}>
+                        <input type="radio" name="kx-fill-onchange" checked={(recipe.onChange || "mark") === id} onChange={() => set({ onChange: id })} />
+                        <span>
+                          <strong>{label}</strong>
+                          <small>{detail}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {recipe.method === "ai" && (recipe.auto || recipe.onChange === "refill") && (
+                  <>
+                    <label className="kx-form-row">
+                      <span>Automatic fills use at most</span>
+                      <select className="kx-settings-select" aria-label="Daily limit" value={recipe.dailyTokens || 250_000} onChange={(e) => set({ dailyTokens: Number(e.target.value) })}>
+                        {DAILY.map(([n, label]) => (
+                          <option key={n} value={n}>
+                            {label} a day
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <small className="kx-form-note">
+                      {dailyCost === undefined ? "When the limit is reached, automatic fills wait until the next day." : `At most ${dailyCost === 0 ? "nothing" : `≈ $${dailyCost < 0.01 ? "0.01" : dailyCost.toFixed(2)}`} a day with ${ai?.providerName ?? "this provider"}. When the limit is reached, automatic fills wait.`}
+                    </small>
+                  </>
+                )}
                 <label className="kx-form-row kx-switch-row">
                   <span>Save the recipe</span>
-                  <input type="checkbox" className="kx-switch" checked={saveRecipe || recipe.auto} disabled={recipe.auto} onChange={(e) => setSaveRecipe(e.target.checked)} />
+                  <input type="checkbox" className="kx-switch" checked={saveRecipe || recipe.auto || recipe.onChange === "refill"} disabled={recipe.auto || recipe.onChange === "refill"} onChange={(e) => setSaveRecipe(e.target.checked)} />
                 </label>
                 {saveRecipe && (
                   <label className="kx-form-row">
@@ -780,7 +904,7 @@ export default function FillSheet({
                   <>
                     <div>
                       <strong>{plural(estimate.eligible, "source")}</strong>
-                      <small>to fill{estimate.skipped ? ` · ${estimate.skipped} keep the value you entered` : ""}</small>
+                      <small>{scope === "again" ? "to fill again" : "to fill"}{estimate.skipped ? ` · ${estimate.skipped} keep the value you entered` : ""}</small>
                     </div>
                     {recipe.method === "ai" && (
                       <>
@@ -817,13 +941,18 @@ export default function FillSheet({
                 Back
               </button>
             )}
+            {step === 4 && isSaved && (
+              <button type="button" className="kx-settings-button" disabled={busy} onClick={() => void saveOnly()}>
+                Save changes
+              </button>
+            )}
             {step < 4 ? (
               <button type="button" className="kx-settings-button kx-service-primary" disabled={!canNext} onClick={() => setStep(step + 1)}>
                 Continue
               </button>
             ) : (
               <button type="button" className="kx-settings-button kx-service-primary" disabled={busy || !estimate?.eligible || (recipe.method === "ai" && !ai?.configured)} onClick={() => void run(false)}>
-                {busy ? "Starting…" : `Fill ${estimate ? plural(estimate.eligible, "source") : ""}`}
+                {busy ? "Starting…" : `${scope === "again" ? "Fill again" : "Fill"} ${estimate ? plural(estimate.eligible, "source") : ""}`}
               </button>
             )}
           </footer>

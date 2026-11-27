@@ -28,6 +28,7 @@ const INTERACTIVE: &[&str] = &[
     "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete", "store_fill_recipe_export",
     "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status", "store_fill_runs", "store_fill_run",
     "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
+    "store_fill_cell", "store_fill_cell_use_answer", "store_fill_cell_keep", "store_fill_again_ids", "store_fill_source_cells",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
@@ -41,6 +42,7 @@ const BACKGROUND: &[&str] = &[
     "store_import_zotero", "store_biblio_progress", "store_md_export_status", "store_autoexport_run", "store_file_mirror_run", "store_md_export_run",
     "store_retractions_seen", "web_key_usage", "web_options", "db_options", "feeds_refresh", "feeds_counts", "feeds_environment", "feeds_retention", "feeds_purge",
     "workspace_scan_linked_folder", "pdfjs_companion_list", "host_can_suspend", "store_fill_run_next", "store_fill_run_answer", "store_fill_auto_candidates",
+    "store_fill_sync",
 ];
 
 /// Network or long work: never interactive, and bounded in flight by the bridge.
@@ -75,6 +77,7 @@ const SOURCE_EDITS: &[&str] = &[
     "store_update", "store_edit", "store_trash", "store_delete", "store_bulk_tag", "store_tag_apply", "store_tag_apply_many", "store_retag", "store_undo",
     "store_redo", "store_merge_sources", "store_merge_exact", "store_citation_key_set", "store_set_reading_status", "store_membership",
     "library_update_metadata", "library_set_labels", "library_set_property",
+    "store_fill_cell_use_answer", "store_fill_cell_keep", "store_fill_review", "store_fill_run_undo",
 ];
 
 pub fn changes_sources(command: &str) -> bool {

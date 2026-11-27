@@ -34,15 +34,16 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         })(),
         "store_fill_recipe_import" => (|| json_output(Store::import_fill_recipe(&arg::<String>(args, "text")?)?))(),
         "store_fill_validate" => (|| json_output(arg::<Recipe>(args, "recipe")?.validate()?))(),
-        "store_fill_estimate" => (|| json_output(store.fill_estimate(arg::<Recipe>(args, "recipe")?, &ids()?)?))(),
+        "store_fill_estimate" => (|| json_output(store.fill_estimate_again(arg::<Recipe>(args, "recipe")?, &ids()?, arg::<Option<bool>>(args, "again")?.unwrap_or(false))?))(),
         "store_fill_run_create" => (|| {
             let provider: Option<String> = arg(args, "provider")?;
             let model: Option<String> = arg(args, "model")?;
-            let summary = store.fill_run_create(
+            let summary = store.fill_run_create_again(
                 arg::<Recipe>(args, "recipe")?,
                 &ids()?,
                 arg::<Option<bool>>(args, "sample")?.unwrap_or(false),
                 arg::<Option<bool>>(args, "auto")?.unwrap_or(false),
+                arg::<Option<bool>>(args, "again")?.unwrap_or(false),
                 provider.as_deref(),
                 model.as_deref(),
             )?;
@@ -82,7 +83,24 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
             json_output(out)
         })(),
         "store_fill_run_delete" => (|| json_output(store.fill_run_delete(&run()?)?))(),
-        "store_fill_auto_candidates" => (|| json_output(store.fill_auto_candidates(arg::<Option<usize>>(args, "limit")?.unwrap_or(50))?))(),
+        "store_fill_auto_candidates" => (|| {
+            json_output(store.fill_auto_candidates_settled(arg::<Option<usize>>(args, "limit")?.unwrap_or(50), arg::<Option<i64>>(args, "settleMs")?.unwrap_or(20_000).max(0))?)
+        })(),
+        // Filled cells: out of date and edited marks, one cell's record, its actions.
+        "store_fill_sync" => (|| json_output(store.fill_sync()?))(),
+        "store_fill_marks" => (|| json_output(store.fill_marks()?))(),
+        "store_fill_source_cells" => (|| json_output(store.fill_source_cells(&arg::<String>(args, "id")?)?))(),
+        "store_fill_cell" => (|| json_output(store.fill_cell(&arg::<String>(args, "id")?, &arg::<String>(args, "property")?)?))(),
+        "store_fill_cell_use_answer" => (|| {
+            let out = store.fill_cell_use_answer(&arg::<String>(args, "id")?, &arg::<String>(args, "property")?)?;
+            changed();
+            json_output(out)
+        })(),
+        "store_fill_cell_keep" => (|| json_output(store.fill_cell_keep(&arg::<String>(args, "id")?, &arg::<String>(args, "property")?)?))(),
+        "store_fill_again_ids" => (|| {
+            let given: Vec<String> = arg::<Option<Vec<String>>>(args, "ids")?.unwrap_or_default();
+            json_output(store.fill_again_ids(&arg::<String>(args, "recipeId")?, &given, arg::<Option<bool>>(args, "includeEdited")?.unwrap_or(false))?)
+        })(),
         _ => return None,
     })
 }

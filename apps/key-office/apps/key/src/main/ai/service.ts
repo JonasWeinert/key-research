@@ -327,7 +327,7 @@ export class AiService {
     if (ai && !endpoint) throw Error(reason);
     const summary = await this.deps.invoke(
       "store_fill_run_create",
-      { recipe, ids, collectionId: args?.collectionId ?? null, all: !!args?.all, sample: !!args?.sample, auto: !!args?.auto, provider: ai ? this.settings.provider : "rule", model: ai ? endpoint?.model : null },
+      { recipe, ids, collectionId: args?.collectionId ?? null, all: !!args?.all, sample: !!args?.sample, auto: !!args?.auto, again: !!args?.again, provider: ai ? this.settings.provider : "rule", model: ai ? endpoint?.model : null },
       workspaceId,
     );
     this.watch(workspaceId);
@@ -360,18 +360,25 @@ export class AiService {
   private watch(workspaceId: string) {
     this.watched.add(workspaceId);
     if (this.autoTimer || this.deps.noTimers) return;
-    this.autoTimer = setInterval(() => void this.autoFill(), 90_000);
+    this.autoTimer = setInterval(() => void this.autoFill(), Number(process.env.KEY_FILL_AUTO_MS) || 45_000);
     this.autoTimer.unref?.();
   }
 
-  /** Recipes kept automatic: a run over the sources added since. */
+  /** Recipes kept automatic: a run over the sources added since, and (for recipes that fill
+   * again when a source changes) over the values that went out of date and have settled. The
+   * host keeps each recipe within its daily token limit; a recipe at its limit is announced. */
   async autoFill() {
+    const settleMs = process.env.KEY_FILL_SETTLE_MS !== undefined ? Number(process.env.KEY_FILL_SETTLE_MS) : 20_000;
     for (const workspaceId of this.watched) {
-      const candidates = await this.deps.invoke<{ recipe: any; ids: string[] }[]>("store_fill_auto_candidates", { limit: 50 }, workspaceId).catch(() => []);
-      for (const { recipe, ids } of candidates) {
-        if (recipe.method !== "rule" && !this.endpoint().endpoint) continue;
+      const candidates = await this.deps
+        .invoke<{ recipe: any; ids: string[]; again?: boolean; capped?: boolean; waiting?: number; dailyTokens?: number }[]>("store_fill_auto_candidates", { limit: 50, settleMs }, workspaceId)
+        .catch(() => []);
+      const capped = candidates.filter((c) => c.capped).map((c) => ({ recipeId: c.recipe.id, property: c.recipe.property, waiting: (c.waiting ?? 0) - c.ids.length, dailyTokens: c.dailyTokens }));
+      this.deps.emit("fill-progress", { workspaceId, auto: { capped } });
+      for (const { recipe, ids, again } of candidates) {
+        if (!ids.length || (recipe.method !== "rule" && !this.endpoint().endpoint)) continue;
         if ([...this.runs.values()].some((r) => r.workspaceId === workspaceId && r.summary?.recipe?.id === recipe.id)) continue;
-        await this.start(workspaceId, { recipe, ids, auto: true }).catch(() => {});
+        await this.start(workspaceId, { recipe, ids, auto: true, again: !!again }).catch(() => {});
       }
     }
   }

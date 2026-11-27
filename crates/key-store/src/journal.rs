@@ -224,6 +224,7 @@ const ROW_TABLES: &[(&str, &[&str])] = &[
     ("links", &["id"]),
     ("meta", &["key"]),
     ("property_definitions", &["name"]),
+    ("fill_cells", &["source_id", "property"]),
 ];
 
 /// One row of another table before and after an operation (`None`: absent).

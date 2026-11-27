@@ -417,6 +417,21 @@ export const HELP = {
     "Saved recipes",
     ["A recipe remembers what to fill, from where and how. Copy it as text to share it or to use it in another workspace, and paste one to import it."],
   ),
+  "fill.onchange": explain(
+    "When a source changes",
+    [
+      "Key remembers what each answer was worked out from: the recipe, the model and the exact text it read. When that text changes (you edit the abstract, the PDF is read again, a note is added) or you change the recipe, the answer may no longer fit.",
+      "Choose to do nothing, to mark such answers as out of date with a small clock so you can fill them again when you like, or to fill them again automatically in the background, within a daily limit. Changes the recipe does not read mark nothing, and values you edited yourself are never replaced.",
+    ],
+    { privacy: "Filling again sends the same parts of the source as the first fill, to the same provider." },
+  ),
+  "fill.cell": explain(
+    "Your value and the AI answer",
+    [
+      "When you change a value the AI filled in, Key keeps both: your value is what the library shows, exports and cites; the AI's answer stays beside it with the passages it came from, so you can compare them later.",
+      "Use AI answer again puts the AI's answer back (undoable). Keep mine leaves your value and clears the out-of-date mark. Earlier answers show what the recipe said before it was filled again.",
+    ],
+  ),
   "fill.cost": explain(
     "Tokens and cost",
     ["Models count text in tokens, roughly four characters each. The estimate adds up the text a run would send and the answers it expects, priced at the provider’s list price. Local models cost nothing."],

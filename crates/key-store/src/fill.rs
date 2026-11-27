@@ -26,7 +26,15 @@ pub(crate) fn ensure_schema(db: &Connection) -> Result<()> {
            attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (run_id, source_id));
          CREATE INDEX IF NOT EXISTS fill_items_source ON fill_items(source_id);",
     )
-    .map_err(e)
+    .map_err(e)?;
+    // Added later: the hash of what each item was asked from, and runs that fill again.
+    for (table, column, definition) in [("fill_items", "input_hash", "TEXT"), ("fill_runs", "again", "INTEGER NOT NULL DEFAULT 0")] {
+        let present: bool = db.query_row(&format!("SELECT count(*) FROM pragma_table_info('{table}') WHERE name = ?"), [column], |r| r.get(0)).map_err(e)?;
+        if !present {
+            db.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {definition}")).map_err(e)?;
+        }
+    }
+    crate::fill_cells::ensure_schema(db)
 }
 
 /// The shapes a filled value can take, tied to the property's type.
@@ -73,7 +81,14 @@ pub struct Recipe {
     pub refill: bool,
     /// The most text taken from a PDF, in characters.
     pub budget: usize,
+    /// When what an answer was worked out from changes: nothing | mark (out of date) | refill.
+    pub on_change: String,
+    /// The most tokens automatic fills of this recipe use in 24 hours.
+    pub daily_tokens: u64,
 }
+
+/// What a recipe does when a filled source changes.
+pub const ON_CHANGE: [&str; 3] = ["nothing", "mark", "refill"];
 
 const MAX_BUDGET: usize = 60_000;
 
@@ -99,6 +114,10 @@ impl Recipe {
         self.inputs.dedup();
         self.sections = self.sections.iter().map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).take(8).collect();
         self.budget = if self.budget == 0 { 16_000 } else { self.budget.clamp(1_000, MAX_BUDGET) };
+        if !ON_CHANGE.contains(&self.on_change.as_str()) {
+            self.on_change = "mark".into();
+        }
+        self.daily_tokens = if self.daily_tokens == 0 { crate::fill_cells::DAILY_TOKENS } else { self.daily_tokens.clamp(1_000, 100_000_000) };
         match self.method.as_str() {
             "ai" => {
                 if self.instruction.trim().is_empty() || self.instruction.len() > 8192 {
@@ -210,7 +229,7 @@ fn clip(text: &str, limit: usize) -> String {
 }
 
 /// The passages a recipe reads on source `id`.
-fn material(db: &Connection, id: &str, recipe: &Recipe, inputs: &[String]) -> Result<Vec<Passage>> {
+pub(crate) fn material(db: &Connection, id: &str, recipe: &Recipe, inputs: &[String]) -> Result<Vec<Passage>> {
     let source = db.query_row(&format!("{} WHERE s.id = ?", crate::select_sources()), [id], crate::read_source).optional().map_err(e)?.ok_or("Source not found")?;
     let mut passages: Vec<Passage> = Vec::new();
     let mut push = |label: String, text: String| {
@@ -507,6 +526,8 @@ pub struct RunSummary {
     pub status: String,
     pub sample: bool,
     pub auto: bool,
+    /// Fills values again (out of date ones).
+    pub again: bool,
     pub provider: Option<String>,
     pub model: Option<String>,
     pub tokens_in: i64,
@@ -573,6 +594,7 @@ impl Store {
             params![recipe.id, serde_json::to_string(&recipe).map_err(e)?, now_ms()],
         )
         .map_err(e)?;
+        crate::fill_cells::recipe_changed(&db, &recipe)?;
         Ok(recipe)
     }
 
@@ -604,18 +626,29 @@ impl Store {
         let mut recipe: Recipe = serde_json::from_value(value).map_err(|_| "That recipe is damaged".to_string())?;
         recipe.id = String::new();
         recipe.auto = false;
+        if recipe.on_change == "refill" {
+            recipe.on_change = "mark".into();
+        }
         recipe.validate()
     }
 
     /// What a run would send and roughly cost: sources it would fill, those it skips (they
     /// hold a value you entered), and tokens (characters / 4) from a sample of sources.
     pub fn fill_estimate(&self, recipe: Recipe, ids: &[String]) -> Result<Json> {
+        self.fill_estimate_again(recipe, ids, false)
+    }
+
+    /// The estimate for a run; `again` also counts the out-of-date values this recipe filled.
+    pub fn fill_estimate_again(&self, recipe: Recipe, ids: &[String], again: bool) -> Result<Json> {
         let recipe = recipe.validate()?;
+        if again {
+            self.fill_sync()?;
+        }
         let db = self.read()?;
         let ids = resolve(&db, ids)?;
         let (mut eligible, mut skipped) = (Vec::new(), 0);
         for id in ids.iter().take(20_000) {
-            if writable(&db, id, &recipe.property, recipe.refill)?.0 {
+            if writable(&db, id, &recipe.property, recipe.refill)?.0 || (again && crate::fill_cells::cell_state(&db, id, &recipe)?.is_some()) {
                 eligible.push(id.clone());
             } else {
                 skipped += 1;
@@ -648,7 +681,18 @@ impl Store {
     /// Starts a run over `ids` (a sample run takes the first few eligible ones). Creates the
     /// property when it does not exist yet.
     pub fn fill_run_create(&self, recipe: Recipe, ids: &[String], sample: bool, auto: bool, provider: Option<&str>, model: Option<&str>) -> Result<RunSummary> {
+        self.fill_run_create_again(recipe, ids, sample, auto, false, provider, model)
+    }
+
+    /// A run that may also fill again values this recipe filled before (`again`): those the
+    /// user edited keep their value and only get a new AI answer, and an automatic run leaves
+    /// them out altogether.
+    #[allow(clippy::too_many_arguments)]
+    pub fn fill_run_create_again(&self, recipe: Recipe, ids: &[String], sample: bool, auto: bool, again: bool, provider: Option<&str>, model: Option<&str>) -> Result<RunSummary> {
         let recipe = recipe.validate()?;
+        if again {
+            self.fill_sync()?;
+        }
         if ids.is_empty() || ids.len() > 20_000 {
             return Err("Choose 1 to 20,000 sources".into());
         }
@@ -665,18 +709,26 @@ impl Store {
         let id = new_id();
         let now = now_ms();
         tx.execute(
-            "INSERT INTO fill_runs(id, recipe, recipe_id, status, sample, auto, provider, model, created_at, updated_at) VALUES (?1, ?2, ?3, 'running', ?4, ?5, ?6, ?7, ?8, ?8)",
-            params![id, serde_json::to_string(&recipe).map_err(e)?, recipe.id, sample, auto, provider, model, now],
+            "INSERT INTO fill_runs(id, recipe, recipe_id, status, sample, auto, again, provider, model, created_at, updated_at) VALUES (?1, ?2, ?3, 'running', ?4, ?5, ?9, ?6, ?7, ?8, ?8)",
+            params![id, serde_json::to_string(&recipe).map_err(e)?, recipe.id, sample, auto, provider, model, now, again],
         )
         .map_err(e)?;
         let mut seq = 0;
         for source in &resolve(&tx, ids)? {
-            let (ok, current) = writable(&tx, source, &recipe.property, recipe.refill)?;
+            let (mut ok, current) = writable(&tx, source, &recipe.property, recipe.refill)?;
+            let mut note = (!ok).then_some("Has a value you entered");
+            if !ok && again {
+                match crate::fill_cells::cell_state(&tx, source, &recipe)? {
+                    Some(false) => (ok, note) = (true, None),
+                    Some(true) if !auto => (ok, note) = (true, Some("Keeps the value you edited; updates the AI answer")),
+                    Some(true) => note = Some("Kept the value you edited"),
+                    None => {}
+                }
+            }
             if sample && !ok {
                 continue;
             }
             let status = if ok { "pending" } else { "skipped" };
-            let note = (!ok).then_some("Has a value you entered");
             tx.execute(
                 "INSERT OR IGNORE INTO fill_items(run_id, source_id, seq, status, prior, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![id, source, seq, status, current.to_string(), note],
@@ -721,6 +773,8 @@ impl Store {
         for source in &pending {
             crate::priority::yield_if_needed();
             if recipe.method == "rule" {
+                let hash = crate::fill_cells::input_hash(&db, source, &recipe).ok();
+                db.execute("UPDATE fill_items SET input_hash = ?3 WHERE run_id = ?1 AND source_id = ?2", params![run, source, hash]).map_err(e)?;
                 let outcome = rule_value(&db, source, &recipe);
                 store_outcome(&db, run, source, outcome, &[])?;
                 continue;
@@ -729,8 +783,8 @@ impl Store {
             let mut request = build_request(&recipe, &passages);
             request["sourceId"] = json!(source);
             db.execute(
-                "UPDATE fill_items SET status = 'asked', passages = ?3, attempts = attempts + 1 WHERE run_id = ?1 AND source_id = ?2",
-                params![run, source, serde_json::to_string(&passages).map_err(e)?],
+                "UPDATE fill_items SET status = 'asked', passages = ?3, input_hash = ?4, attempts = attempts + 1 WHERE run_id = ?1 AND source_id = ?2",
+                params![run, source, serde_json::to_string(&passages).map_err(e)?, crate::fill_cells::passages_hash(&passages)],
             )
             .map_err(e)?;
             requests.push(request);
@@ -864,59 +918,98 @@ impl Store {
             let (provider, model) = db.query_row("SELECT provider, model FROM fill_runs WHERE id = ?", [run], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?;
             (recipe, provider, model)
         };
-        let proposals: Vec<(String, Json, Json, Option<f64>)> = {
+        struct Chosen {
+            id: String,
+            answer: Json,
+            value: Json,
+            edited: bool,
+            prior: Json,
+            confidence: Option<f64>,
+            evidence: String,
+            passages: String,
+            hash: String,
+        }
+        let proposals: Vec<Chosen> = {
             let db = self.db()?;
-            let mut statement = db.prepare("SELECT source_id, value, prior, confidence FROM fill_items WHERE run_id = ?1 AND status = 'proposed' ORDER BY seq").map_err(e)?;
+            let mut statement = db
+                .prepare("SELECT source_id, value, prior, confidence, coalesce(evidence, '[]'), coalesce(passages, '[]'), coalesce(input_hash, '') FROM fill_items WHERE run_id = ?1 AND status = 'proposed' ORDER BY seq")
+                .map_err(e)?;
             let rows = statement
                 .query_map([run], |r| {
                     let parse = |t: Option<String>| t.and_then(|t| serde_json::from_str::<Json>(&t).ok()).unwrap_or(Json::Null);
-                    Ok((r.get::<_, String>(0)?, parse(r.get(1)?), parse(r.get(2)?), r.get(3)?))
+                    let answer = parse(r.get(1)?);
+                    Ok(Chosen { id: r.get(0)?, value: answer.clone(), answer, edited: false, prior: parse(r.get(2)?), confidence: r.get(3)?, evidence: r.get(4)?, passages: r.get(5)?, hash: r.get(6)? })
                 })
                 .map_err(e)?;
             rows.collect::<std::result::Result<_, _>>().map_err(e)?
         };
-        let chosen: Vec<(String, Json, bool, Json, Option<f64>)> = proposals
+        let chosen: Vec<Chosen> = proposals
             .into_iter()
-            .filter(|(id, ..)| all || accept.contains(id) || edits.contains_key(id))
-            .map(|(id, value, prior, confidence)| match edits.get(&id) {
-                Some(edited) => coerce(edited, &recipe).map(|v| (id, v, true, prior, confidence)),
-                None => Ok((id, value, false, prior, confidence)),
+            .filter(|c| all || accept.contains(&c.id) || edits.contains_key(&c.id))
+            .map(|mut c| {
+                if let Some(edited) = edits.get(&c.id) {
+                    c.value = coerce(edited, &recipe)?;
+                    c.edited = !crate::fill_cells::same_value(&c.value, &c.answer);
+                }
+                Ok(c)
             })
             .collect::<Result<_>>()?;
-        let ids: Vec<String> = chosen.iter().map(|c| c.0.clone()).collect();
+        let ids: Vec<String> = chosen.iter().map(|c| c.id.clone()).collect();
         let label = format!("Fill “{}” on {} source{}", recipe.property, ids.len(), if ids.len() == 1 { "" } else { "s" });
         let mut changed_since = 0;
         let (accepted, entry) = if ids.is_empty() {
             (Vec::new(), None)
         } else {
-            self.journaled("fill", &label, &ids, |db, _| {
+            self.journaled("fill", &label, &ids, |db, rec| {
+                rec.watch_in(db, "fill_cells", "source_id", &ids)?;
                 let now = now_ms();
                 let mut accepted = Vec::new();
-                for (id, value, edited, prior, confidence) in &chosen {
-                    let (_, current) = writable(db, id, &recipe.property, true)?;
-                    if &current != prior {
+                for c in &chosen {
+                    let (_, current) = writable(db, &c.id, &recipe.property, true)?;
+                    if current != c.prior {
                         changed_since += 1;
-                        db.execute("UPDATE fill_items SET status = 'stale', note = 'Changed since the proposal' WHERE run_id = ?1 AND source_id = ?2", params![run, id]).map_err(e)?;
+                        db.execute("UPDATE fill_items SET status = 'stale', note = 'Changed since the proposal' WHERE run_id = ?1 AND source_id = ?2", params![run, c.id]).map_err(e)?;
+                        continue;
+                    }
+                    let answer = crate::fill_cells::NewAnswer {
+                        source: &c.id,
+                        recipe: &recipe,
+                        run,
+                        provider: provider.as_deref(),
+                        model: model.as_deref(),
+                        value: &c.answer,
+                        confidence: c.confidence,
+                        evidence: &c.evidence,
+                        passages: &c.passages,
+                        input_hash: &c.hash,
+                    };
+                    // A value the user edited stays; the cell only gets the new AI answer.
+                    if crate::fill_cells::cell_state(db, &c.id, &recipe)? == Some(true) && !c.edited {
+                        crate::fill_cells::record_answer(db, &answer, crate::fill_cells::UserSide::Keep)?;
+                        db.execute("UPDATE fill_items SET status = 'accepted', note = 'Kept the value you edited' WHERE run_id = ?1 AND source_id = ?2", params![run, c.id]).map_err(e)?;
+                        accepted.push(c.id.clone());
                         continue;
                     }
                     let mut properties = Map::new();
-                    properties.insert(recipe.property.clone(), value.clone());
+                    properties.insert(recipe.property.clone(), c.value.clone());
                     let mut patch = Map::new();
                     patch.insert("properties".into(), Json::Object(properties));
-                    patch_source_row(db, id, &patch, now)?;
-                    sync_choices(db, id)?;
-                    refresh_fts(db, id)?;
+                    patch_source_row(db, &c.id, &patch, now)?;
+                    sync_choices(db, &c.id)?;
+                    refresh_fts(db, &c.id)?;
                     let provenance = json!({
                         "method": recipe.method, "recipe": recipe.name, "run": run, "provider": provider, "model": model,
-                        "inputs": recipe.inputs, "prompt": recipe.instruction, "value": value, "edited": edited, "confidence": confidence, "confirmedAt": now,
+                        "inputs": recipe.inputs, "prompt": recipe.instruction, "value": c.value, "edited": c.edited, "confidence": c.confidence, "confirmedAt": now,
                     });
                     db.execute(
                         "INSERT INTO property_provenance(source_id, name, payload) VALUES (?1, ?2, ?3) ON CONFLICT(source_id, name) DO UPDATE SET payload = excluded.payload",
-                        params![id, recipe.property, provenance.to_string()],
+                        params![c.id, recipe.property, provenance.to_string()],
                     )
                     .map_err(e)?;
-                    db.execute("UPDATE fill_items SET status = 'accepted', value = ?3 WHERE run_id = ?1 AND source_id = ?2", params![run, id, value.to_string()]).map_err(e)?;
-                    accepted.push(id.clone());
+                    let user = if c.edited { crate::fill_cells::UserSide::Set(&c.value) } else { crate::fill_cells::UserSide::Clear };
+                    crate::fill_cells::record_answer(db, &answer, user)?;
+                    db.execute("UPDATE fill_items SET status = 'accepted', value = ?3 WHERE run_id = ?1 AND source_id = ?2", params![run, c.id, c.value.to_string()]).map_err(e)?;
+                    accepted.push(c.id.clone());
                 }
                 Ok(accepted)
             })?
@@ -961,25 +1054,66 @@ impl Store {
     }
 
     /// For recipes kept automatic: new sources (added since it was turned on) that hold no
-    /// value and no run has looked at yet.
+    /// value and no run has looked at yet; for recipes that fill again when a source changes:
+    /// out-of-date values nobody edited, once they have settled for `settle_ms`. Both within
+    /// the recipe's daily token limit (`capped` when it is reached).
     pub fn fill_auto_candidates(&self, limit: usize) -> Result<Json> {
-        let recipes: Vec<Recipe> = self.fill_recipes()?.into_iter().filter(|r| r.auto).collect();
+        self.fill_auto_candidates_settled(limit, 20_000)
+    }
+
+    pub fn fill_auto_candidates_settled(&self, limit: usize, settle_ms: i64) -> Result<Json> {
+        self.fill_sync()?;
+        let recipes: Vec<Recipe> = self.fill_recipes()?.into_iter().filter(|r| r.auto || r.on_change == "refill").collect();
         let db = self.read()?;
+        let limit = limit.clamp(1, 200) as i64;
         let mut out = Vec::new();
         for recipe in recipes {
-            let path = format!("$.\"{}\"", recipe.property.replace('"', "\\\""));
-            let mut statement = db
-                .prepare(
-                    "SELECT s.id FROM sources s WHERE s.trashed_at IS NULL AND s.merged_into IS NULL AND s.added_at >= ?1
-                       AND coalesce(json_extract(s.properties, ?2), '') = ''
-                       AND NOT EXISTS (SELECT 1 FROM fill_items i JOIN fill_runs r ON r.id = i.run_id WHERE i.source_id = s.id AND r.recipe_id = ?3)
-                     ORDER BY s.added_at LIMIT ?4",
-                )
-                .map_err(e)?;
-            let rows = statement.query_map(params![recipe.auto_since, path, recipe.id, limit.clamp(1, 200) as i64], |r| r.get::<_, String>(0)).map_err(e)?;
-            let ids: Vec<String> = rows.collect::<std::result::Result<_, _>>().map_err(e)?;
-            if !ids.is_empty() {
-                out.push(json!({ "recipe": recipe, "ids": ids }));
+            let ids = |sql: &str, values: &[&dyn rusqlite::ToSql]| -> Result<Vec<String>> {
+                let mut statement = db.prepare(sql).map_err(e)?;
+                let rows = statement.query_map(values, |r| r.get::<_, String>(0)).map_err(e)?;
+                rows.collect::<std::result::Result<_, _>>().map_err(e)
+            };
+            let mut groups: Vec<(bool, Vec<String>)> = Vec::new();
+            if recipe.auto {
+                let path = format!("$.\"{}\"", recipe.property.replace('"', "\\\""));
+                groups.push((
+                    false,
+                    ids(
+                        "SELECT s.id FROM sources s WHERE s.trashed_at IS NULL AND s.merged_into IS NULL AND s.added_at >= ?1
+                           AND coalesce(json_extract(s.properties, ?2), '') = ''
+                           AND NOT EXISTS (SELECT 1 FROM fill_items i JOIN fill_runs r ON r.id = i.run_id WHERE i.source_id = s.id AND r.recipe_id = ?3)
+                         ORDER BY s.added_at LIMIT ?4",
+                        &[&recipe.auto_since, &path, &recipe.id, &limit],
+                    )?,
+                ));
+            }
+            if recipe.on_change == "refill" {
+                groups.push((
+                    true,
+                    ids(
+                        "SELECT c.source_id FROM fill_cells c JOIN sources s ON s.id = c.source_id
+                         WHERE c.recipe_id = ?1 AND c.stale IS NOT NULL AND c.edited_at IS NULL AND c.stale_at <= ?2 AND s.trashed_at IS NULL AND s.merged_into IS NULL
+                         ORDER BY c.stale_at LIMIT ?3",
+                        &[&recipe.id, &(now_ms() - settle_ms), &limit],
+                    )?,
+                ));
+            }
+            let mut room = recipe.daily_tokens.saturating_sub(crate::fill_cells::tokens_today(&db, &recipe.id)?);
+            for (again, found) in groups {
+                if found.is_empty() {
+                    continue;
+                }
+                let mut fits = Vec::new();
+                for id in &found {
+                    let cost = crate::fill_cells::tokens_for(&db, id, &recipe)?;
+                    if cost > room {
+                        break;
+                    }
+                    room -= cost;
+                    fits.push(id.clone());
+                }
+                let capped = fits.len() < found.len();
+                out.push(json!({ "recipe": recipe, "ids": fits, "again": again, "capped": capped, "waiting": found.len(), "dailyTokens": recipe.daily_tokens }));
             }
         }
         Ok(json!(out))
@@ -1007,7 +1141,7 @@ fn resolve(db: &Connection, keys: &[String]) -> Result<Vec<String>> {
 fn summary(db: &Connection, run: &str) -> Result<RunSummary> {
     let row = db
         .query_row(
-            "SELECT recipe, status, sample, auto, provider, model, tokens_in, tokens_out, journal, error, created_at, updated_at FROM fill_runs WHERE id = ?",
+            "SELECT recipe, status, sample, auto, provider, model, tokens_in, tokens_out, journal, error, created_at, updated_at, again FROM fill_runs WHERE id = ?",
             [run],
             |r| {
                 Ok((
@@ -1023,6 +1157,7 @@ fn summary(db: &Connection, run: &str) -> Result<RunSummary> {
                     r.get::<_, Option<String>>(9)?,
                     r.get::<_, i64>(10)?,
                     r.get::<_, i64>(11)?,
+                    r.get::<_, bool>(12)?,
                 ))
             },
         )
@@ -1048,6 +1183,7 @@ fn summary(db: &Connection, run: &str) -> Result<RunSummary> {
         status: row.1,
         sample: row.2,
         auto: row.3,
+        again: row.12,
         provider: row.4,
         model: row.5,
         tokens_in: row.6,
@@ -1063,7 +1199,7 @@ fn summary(db: &Connection, run: &str) -> Result<RunSummary> {
 }
 
 /// A rule recipe's value on a source, with what it was read from.
-fn rule_value(db: &Connection, id: &str, recipe: &Recipe) -> Result<Answer> {
+pub(crate) fn rule_value(db: &Connection, id: &str, recipe: &Recipe) -> Result<Answer> {
     match recipe.rule.kind.as_str() {
         "formula" => {
             let value = evaluate_on(db, id, &recipe.rule.formula).map_err(|e| e.message)?;
