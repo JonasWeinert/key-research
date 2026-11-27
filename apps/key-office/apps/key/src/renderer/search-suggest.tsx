@@ -489,6 +489,7 @@ export default function SearchField({
           spellCheck={false}
           className="kx-search-input"
           data-empty={!text || undefined}
+          data-autofocus
           aria-label={label}
           aria-expanded={showMenu}
           aria-controls="kx-suggest"
