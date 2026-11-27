@@ -263,6 +263,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         // The formula editor: fields, functions, templates and blocks; a formula's
         // highlighting, type, errors and blocks; its values on real sources; blocks to text.
         "store_formula_catalog" => (|| json_output(store.formula_catalog()?))(),
+        "store_formula_status" => (|| json_output(json!({ "updating": store.formula_pending()? })))(),
         "store_formula_analyze" => (|| {
             let name: Option<String> = arg(args, "name")?;
             json_output(store.formula_analyze(&arg::<String>(args, "formula")?, name.as_deref())?)
