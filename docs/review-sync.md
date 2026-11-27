@@ -65,6 +65,10 @@ workspace that has the review already adds the events it lacks — the same merg
 | `extract.value`, `extract.final` | `{ formId, fieldId, value, quote, page, sourceId, suggested }` |
 | `ai.suggest` | `{ stage, value, score, rationale, model }` |
 | `analysis.set` | `{ id, … }` |
+| `protocol.register` | `{ registry, id, date, url }` (a later one corrects the details; `{ deleted: true }` withdraws it) |
+| `checklist.note` | `{ list, item, location, text }` (last writer wins per list and item; both empty removes it) |
+| `search.source` | `{ batchId, source, platform?, coverage?, searchedAt?, strategy?, limits?, noLimits?, filters?, notes?, searcher? }` (a patch per import and database) |
+| `search.peer_review`, `search.prior` | `{ id, … }` or `{ id, deleted: true }` |
 
 ### Why merging never conflicts
 
