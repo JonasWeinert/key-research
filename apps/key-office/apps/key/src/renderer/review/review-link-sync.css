@@ -28,8 +28,8 @@
   color: var(--kx-text);
 }
 
-.kx-link-diff {
-  width: min(860px, calc(100vw - 80px));
+.key-global-drawer.key-modal:has(.kx-link-diff) {
+  --kx-modal-width: 880px;
 }
 .kx-link-diff-grid {
   display: grid;
@@ -120,8 +120,8 @@
   opacity: 0.35;
 }
 
-.kx-link-matches {
-  width: min(720px, calc(100vw - 80px));
+.key-global-drawer.key-modal:has(.kx-link-matches) {
+  --kx-modal-width: 720px;
 }
 .kx-link-match-why {
   display: flex;

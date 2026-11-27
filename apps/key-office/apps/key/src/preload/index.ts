@@ -124,6 +124,9 @@ contextBridge.exposeInMainWorld("key", {
         "tab-switcher",
         "web-providers-changed",
         "review-changed",
+        // Linked review records: a source's details edited, a review opened at a passage.
+        "source-metadata-changed",
+        "review-reveal",
       ].includes(event)
     )
       throw Error("Unknown event");
