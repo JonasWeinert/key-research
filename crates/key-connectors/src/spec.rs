@@ -177,6 +177,9 @@ pub struct Capabilities {
     pub sort: Vec<String>,
     #[serde(default)]
     pub export_fields: Vec<String>,
+    /// AND/OR/NOT and nesting; when left out, implied by `query.mode`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boolean: Option<crate::plan::BoolCaps>,
 }
 
 fn default_fields() -> Vec<String> {
@@ -201,6 +204,7 @@ impl Default for Capabilities {
             max_results: default_max_results(),
             sort: Vec::new(),
             export_fields: Vec::new(),
+            boolean: None,
         }
     }
 }

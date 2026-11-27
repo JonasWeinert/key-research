@@ -1,8 +1,7 @@
 // Reading a pasted Boolean search string (PubMed, Scopus, Web of Science) back into the neutral
-// query, so the visual builder can show it as blocks. Only queries that are an AND of OR groups
-// (with NOT at the end) become blocks; anything nested deeper is reported, and the app keeps the
-// text as typed.
-use crate::query::{Concept, Query, Term};
+// query tree, so the visual builder can show it as blocks, however deeply it is nested.
+use crate::boolean::{Node, Op};
+use crate::query::{Query, Term};
 
 #[derive(Clone, Debug, PartialEq)]
 enum Tok {
@@ -259,15 +258,16 @@ impl Parser<'_> {
     }
 }
 
-fn terms_of(e: &Expr) -> Option<Vec<Term>> {
+fn to_node(e: Expr) -> Node {
     match e {
-        Expr::Term(t) => Some(vec![t.clone()]),
-        Expr::Or(items) => items.iter().map(terms_of).collect::<Option<Vec<_>>>().map(|v| v.concat()),
-        _ => None,
+        Expr::Term(t) => Node::term(t),
+        Expr::And(items) => Node::group(Op::And, items.into_iter().map(to_node).collect()),
+        Expr::Or(items) => Node::group(Op::Or, items.into_iter().map(to_node).collect()),
+        Expr::Not(pos, neg) => Node::group(Op::And, vec![to_node(*pos), to_node(*neg).negated(true)]),
     }
 }
 
-/// The neutral query for a pasted string, with warnings; an error when it is not an AND of ORs.
+/// The neutral query for a pasted string, with warnings.
 pub fn parse(text: &str, dialect: &str) -> Result<(Query, Vec<String>), String> {
     let dialect = if dialect == "auto" || dialect.is_empty() { detect(text) } else { dialect };
     let toks = tokenize(text, dialect)?;
@@ -279,28 +279,10 @@ pub fn parse(text: &str, dialect: &str) -> Result<(Query, Vec<String>), String> 
     if p.at < toks.len() {
         return Err("Part of the query could not be read (a bracket too many?)".into());
     }
-    let (positive, exclude) = match expr {
-        Expr::Not(pos, neg) => {
-            let ex = terms_of(&neg).ok_or("The NOT part is too nested to show as blocks")?;
-            (*pos, ex)
-        }
-        other => (other, Vec::new()),
-    };
-    if matches!(positive, Expr::Not(..)) {
-        return Err("More than one NOT part; kept as typed".into());
-    }
-    let groups: Vec<Expr> = match positive {
-        Expr::And(items) => items,
-        other => vec![other],
-    };
-    let mut concepts = Vec::new();
-    for g in groups {
-        let terms = terms_of(&g).ok_or("The query is nested too deeply to show as blocks")?;
-        concepts.push(Concept { id: None, label: None, terms });
-    }
+    let tree = to_node(expr).normalized().unwrap_or_default();
     let mut warnings = p.warnings;
     warnings.dedup();
-    Ok((Query { concepts, exclude, filters: Default::default() }, warnings))
+    Ok((Query::from_tree(tree, Default::default()), warnings))
 }
 
 #[cfg(test)]
@@ -311,31 +293,35 @@ mod tests {
     fn pubmed_strings_become_blocks() {
         let (q, w) = parse("(\"vaccine hesitancy\"[tiab] OR vaccin*[ti]) AND (nurses[mh] OR \"health personnel\"[tiab:~2]) NOT mice[tiab]", "auto").unwrap();
         assert!(w.is_empty(), "{w:?}");
-        assert_eq!(q.concepts.len(), 2);
-        assert_eq!(q.concepts[0].terms[0].mode, "phrase");
-        assert_eq!(q.concepts[0].terms[1].text, "vaccin");
-        assert!(q.concepts[0].terms[1].truncate);
-        assert_eq!(q.concepts[1].terms[0].field, "subject");
-        assert_eq!(q.concepts[1].terms[1].proximity, Some(2));
-        assert_eq!(q.exclude[0].text, "mice");
+        let t = q.terms();
+        assert_eq!(q.parts().len(), 3);
+        assert_eq!(t[0].mode, "phrase");
+        assert_eq!(t[1].text, "vaccin");
+        assert!(t[1].truncate);
+        assert_eq!(t[2].field, "subject");
+        assert_eq!(t[3].proximity, Some(2));
+        assert_eq!(t[4].text, "mice");
+        assert!(q.parts()[2].is_not());
     }
 
     #[test]
     fn scopus_and_wos_scopes_apply_to_their_groups() {
         let (q, _) = parse("TITLE-ABS-KEY(\"school meals\" OR lunch*) AND TITLE(attendance W/3 rates) AND NOT AUTH(smith)", "auto").unwrap();
-        assert_eq!(q.concepts.len(), 2);
-        assert_eq!(q.concepts[0].terms[0].field, "title_abstract");
-        assert_eq!(q.concepts[1].terms[0].proximity, Some(3));
-        assert_eq!(q.concepts[1].terms[0].text, "attendance rates");
-        assert_eq!(q.exclude[0].field, "author");
+        let t = q.terms();
+        assert_eq!(q.parts().len(), 3);
+        assert_eq!(t[0].field, "title_abstract");
+        assert_eq!(t[2].proximity, Some(3));
+        assert_eq!(t[2].text, "attendance rates");
+        assert_eq!(t[3].field, "author");
         let (q, _) = parse("TS=(remittances OR \"migrant transfers\") AND TI=household*", "auto").unwrap();
-        assert_eq!(q.concepts[0].terms.len(), 2);
-        assert_eq!(q.concepts[1].terms[0].field, "title");
+        assert_eq!(q.terms().len(), 3);
+        assert_eq!(q.terms()[2].field, "title");
     }
 
     #[test]
-    fn deep_nesting_is_reported() {
-        assert!(parse("(a AND (b OR (c AND d)))", "pubmed").is_err());
+    fn deep_nesting_becomes_a_tree() {
+        let (q, _) = parse("(a AND (b OR (c AND d)))", "pubmed").unwrap();
+        assert_eq!(crate::boolean::format(&q.tree()), "a AND (b OR (c AND d))");
         assert!(parse("(a OR b", "pubmed").is_err());
     }
 }

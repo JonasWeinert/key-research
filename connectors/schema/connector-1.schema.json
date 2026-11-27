@@ -83,7 +83,17 @@
         "filters": { "type": "array", "items": { "enum": ["types", "languages", "openAccess"] } },
         "maxResults": { "type": "integer", "minimum": 1 },
         "sort": { "type": "array", "items": { "type": "string" } },
-        "exportFields": { "type": "array", "items": { "type": "string" } }
+        "exportFields": { "type": "array", "items": { "type": "string" } },
+        "boolean": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "and": { "type": "boolean" },
+            "or": { "type": "boolean" },
+            "not": { "type": "boolean" },
+            "nesting": { "type": "integer", "minimum": 0, "maximum": 32 }
+          }
+        }
       }
     },
     "options": {

@@ -22,7 +22,7 @@ const INTERACTIVE: &[&str] = &[
     "library_set_labels", "library_update_metadata", "library_set_property", "library_set_removed", "library_retag", "begin_pdfjs_companion_managed",
     "resolve_search_target", "native_open_buffer", "native_render", "native_text", "native_search", "native_close", "native_hibernate",
     "workspace_save_entry", "workspace_save_record", "workspace_set_project_membership", "workspace_create_project", "workspace_save_attribute",
-    "workspace_rename_attribute", "workspace_delete_attribute", "workspace_apply_property_proposal", "web_add_to_library", "web_library_match", "db_add_to_library", "db_translate", "db_search_start", "db_search_cancel", "db_estimate_cancel", "db_saved_save", "db_saved_delete", "db_parse",
+    "workspace_rename_attribute", "workspace_delete_attribute", "workspace_apply_property_proposal", "web_add_to_library", "web_library_match", "db_add_to_library", "db_translate", "db_search_start", "db_search_cancel", "db_estimate_cancel", "db_saved_save", "db_saved_delete", "db_parse", "db_query_parse", "db_query_format", "db_strategy", "db_run",
     "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set", "inbox_save", "inbox_state",
     "store_formula_evaluate", "store_formula_catalog", "store_formula_analyze", "store_formula_preview", "store_formula_print", "store_formula_prompt",
     "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete", "store_fill_recipe_export",
