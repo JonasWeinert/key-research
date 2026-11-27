@@ -26,6 +26,8 @@ export interface Landing {
   abstractOnly: boolean;
   fullText: boolean;
   signIn?: string;
+  /** Download controls without an address (a viewer's "Download PDF" button). */
+  controls?: string[];
   title?: string;
   doi?: string;
 }
@@ -34,7 +36,9 @@ export interface FindPdfBanner {
   title: string;
   /** looking: the page is loading; landed: on a page, no PDF yet; attached: the PDF is the
    * source's; saved: the page became its full text. */
-  stage: "looking" | "landed" | "attached" | "saved";
+  stage: "looking" | "landed" | "saving" | "attached" | "saved";
+  /** The page's own PDF link (or download control) Key points at, by what it says. */
+  pointer?: { label: string };
   links: { url: string; label: string }[];
   wall: boolean;
   signIn?: string;

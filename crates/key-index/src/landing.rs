@@ -322,7 +322,7 @@ pub fn read_landing(html: &str, url: &str) -> Landing {
         if !addressless || element.attr("data-href").or(element.attr("data-url")).or(element.attr("data-pdf-url")).is_some() {
             continue;
         }
-        let label = [element.text.as_str(), element.attr("aria-label").unwrap_or(""), element.attr("title").unwrap_or(""), element.attr("value").unwrap_or("")].into_iter().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+        let label = [element.text.as_str(), element.attr("aria-label").unwrap_or(""), element.attr("title").unwrap_or(""), element.attr("value").unwrap_or("")].into_iter().map(str::trim).find(|l| l.chars().any(char::is_alphanumeric)).unwrap_or("");
         let said = words(&[element.text.as_str(), element.attr("aria-label").unwrap_or(""), element.attr("title").unwrap_or(""), element.attr("value").unwrap_or("")].join(" "));
         let pdf = said.iter().any(|w| w == "pdf" || w == "epdf");
         let download = said.iter().any(|w| w == "download");
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn points_at_a_viewers_download_button() {
-        let page = r#"<html><body><header><button aria-label="Download PDF"><svg></svg></button><button>Print</button></header>
+        let page = r#"<html><body><header><button aria-label="Download PDF">&#8595;</button><button>Print</button></header>
             <div id="viewer"></div><nav><button>Download PDF guide</button></nav></body></html>"#;
         let landing = read_landing(page, "https://journal.example/doi/epdf/10.5555/rivers");
         assert_eq!(landing.controls, ["Download PDF"]);
