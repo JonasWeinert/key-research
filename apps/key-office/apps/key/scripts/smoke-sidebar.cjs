@@ -78,7 +78,8 @@ const assert = require("node:assert/strict");
       const state = await tabs();
       return state.tabs.find((t) => t.id === state.activeTabId)?.views[0].kind === "library";
     }, "the library from its row");
-    assert.equal(await libraryRow.getAttribute("data-current"), "true", "the Library row shows as current");
+    // The row follows the window's tabs once the renderer hears of the change.
+    await until(async () => (await libraryRow.getAttribute("data-current")) === "true", "the Library row shows as current");
     assert.equal(await sidebar.locator(".kx-nav-item", { hasText: "All items" }).count(), 0, "All items is gone");
     report.search = true;
 
