@@ -146,7 +146,18 @@ function runOne(job, attempt) {
           execFileSync("/bin/cp", ["-R", dir + "/.", artifacts], { stdio: "ignore" });
         } catch {}
       }
-      if (!opts.keep) rmSync(dir, { recursive: true, force: true });
+      // A process killed a moment ago may still be writing into it: retry, and never fail on it.
+      if (!opts.keep) {
+        try {
+          rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+        } catch {
+          setTimeout(() => {
+            try {
+              rmSync(dir, { recursive: true, force: true, maxRetries: 10 });
+            } catch {}
+          }, 3000).unref();
+        }
+      }
       const result = { ok, skipped, ms, reason, where, log: logPath, dir: !ok ? artifacts : opts.keep ? dir : undefined, attempt, run: job.run, code: signal ?? code };
       process.stdout.write(`${skipped ? "skip" : ok ? "pass" : "FAIL"}  ${label.padEnd(34)} ${(ms / 1000).toFixed(1).padStart(6)}s${ok ? "" : `  ${where ? `${where}  ` : ""}${reason}`}\n`);
       resolve(result);
@@ -169,6 +180,10 @@ async function worker() {
   }
 }
 
+// However the runner ends (a crash included), the smokes it started end with it.
+process.on("exit", () => {
+  for (const [child, id] of live) killTree(child.pid, { marker: testRunMarker(`${id}.${token}`) });
+});
 let stopping = false;
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"])
   process.on(sig, () => {
