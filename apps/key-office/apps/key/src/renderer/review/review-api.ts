@@ -349,6 +349,8 @@ export interface ListRow {
   batch: string;
   batchName?: string | null;
   doi?: string;
+  pmid?: string;
+  authors?: string[];
   removed?: string | null;
   active?: boolean;
   studyOf?: string | null;

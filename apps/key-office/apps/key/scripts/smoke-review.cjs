@@ -123,7 +123,21 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await shot(page, "04b-sources-records");
     // A record removed by hand leaves screening (PRISMA: removed for other reasons), then comes back.
     await page.locator(".kx-rv-record-row .kx-rv-list-main", { hasText: "Editorial" }).click();
-    const recordSheet = page.getByRole("dialog", { name: "Record" });
+    const recordSheet = page.getByRole("complementary", { name: "Record" });
+    // Fields are edited in place, beside the table.
+    await recordSheet.getByRole("textbox", { name: "Volume" }).fill("12");
+    await recordSheet.getByRole("textbox", { name: "Volume" }).press("Enter");
+    for (let i = 0; i < 50; i++) {
+      const rows = (await call("review_records", { reviewId, viewer: "", query: { stage: "ta", filter: "all", text: "Editorial", scope: "sources" } })).rows;
+      if ((await call("review_record", { reviewId, recordId: rows[0].id, stage: "ta", viewer: "" })).meta.volume === "12") break;
+      await page.waitForTimeout(100);
+    }
+    // A full text dropped on (or chosen for) the record is kept with the review.
+    await recordSheet.locator("input[type=file]").setInputFiles(taichiPdf);
+    await recordSheet.getByText("kept with the review").waitFor();
+    await recordSheet.getByRole("button", { name: "Remove", exact: true }).click();
+    await recordSheet.getByText("None yet").waitFor();
+    await shot(page, "04a-sources-record-panel");
     await recordSheet.getByRole("button", { name: "Remove…" }).click();
     await page.getByRole("button", { name: "Remove record" }).click();
     await page.locator(".kx-rv-records .kx-rv-muted", { hasText: /^9 records$/ }).waitFor();

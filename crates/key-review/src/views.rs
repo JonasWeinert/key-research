@@ -299,6 +299,8 @@ impl Reviews {
                         "batch": r.batch,
                         "batchName": state.batch(&r.batch).map(|b| b.name.clone()),
                         "doi": meta.map(|x| x.doi.clone()).unwrap_or_default(),
+                        "pmid": meta.map(|x| x.pmid.clone()).unwrap_or_default(),
+                        "authors": meta.map(|x| x.authors.clone()).unwrap_or_default(),
                         "removed": r.removed,
                         "active": state.active(r),
                         "studyOf": r.study_of,

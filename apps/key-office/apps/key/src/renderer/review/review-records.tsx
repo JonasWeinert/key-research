@@ -1,7 +1,10 @@
-// Sources › Records and Duplicates. Every record of the review in one virtualised table,
-// searchable and filtered by import, PRISMA group, stage status, abstract and full text; a record
-// opens to edit its metadata, remove it by hand (PRISMA: removed for other reasons) or restore
-// it, and to mark it as another report of a study. Missing abstracts (and DOI, PMID, year,
+// Sources › Records and Duplicates. Every record of the review in one virtualised table with
+// chosen columns, sorting, filters (import, PRISMA group, stage status, abstract, full text),
+// status chips (no abstract, no DOI, no full text, duplicate …) and multi-select with a bulk
+// panel. A record opens beside the table: every field edited in place, "Look up" by DOI, PMID or
+// title with a field-by-field comparison to accept, its full text attached, replaced or removed
+// by drop or picker, where it was found, removed by hand (PRISMA: removed for other reasons) or
+// restored, marked as another report of a study. Nothing needs leaving the review. Missing abstracts (and DOI, PMID, year,
 // journal) are filled from the record's duplicates first, then the library, then (asked for)
 // from OpenAlex, Crossref and PubMed, each value noting where it came from. Duplicates lists
 // every duplicate decision, automatic and by hand, with the record kept, why they matched, and
@@ -9,9 +12,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GlobalDialog } from "../GlobalDrawer";
 import { Icon } from "../icons";
-import { STAGE_LABEL, plural, type DuplicateGroup, type ListRow, type RecordMeta, type RecordView } from "./review-api";
-import { Btn, Confirm, StatusPill, errorText, formatDate, useLoad } from "./review-ui";
+import { bridge } from "../library-api";
+import { STAGE_LABEL, plural, type Batch, type DuplicateGroup, type ListRow, type Origin, type RecordMeta, type RecordView } from "./review-api";
+import { Btn, Confirm, MenuButton, StatusPill, errorText, formatDate, useLoad } from "./review-ui";
 import { provenance } from "./review-screen";
+import { OriginFields, reportText } from "./review-sources";
 import type { StageProps } from "./ReviewPage";
 
 const ROW = 52;
@@ -31,6 +36,39 @@ const STATUS_FILTERS: [string, string][] = [
   ["removed", "Removed"],
 ];
 
+type Col = "authors" | "year" | "journal" | "doi" | "import" | "status" | "fulltext";
+const COLUMNS: [Col, string, number][] = [
+  ["authors", "Authors", 160],
+  ["year", "Year", 60],
+  ["journal", "Journal", 160],
+  ["doi", "DOI", 170],
+  ["import", "Import", 130],
+  ["status", "Status", 120],
+  ["fulltext", "Full text", 80],
+];
+const SORTABLE: Partial<Record<Col | "title", string>> = { title: "title", authors: "authors", year: "year", journal: "journal", doi: "doi" };
+const colsKey = "key.review.columns";
+function readCols(): Col[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(colsKey) ?? "null");
+    if (Array.isArray(v)) return v.filter((c) => COLUMNS.some(([id]) => id === c));
+  } catch {}
+  return ["authors", "year", "journal", "status", "fulltext"];
+}
+
+/** What a record lacks or is, at a glance. */
+function chips(row: ListRow): { text: string; tone: string; title?: string }[] {
+  const out: { text: string; tone: string; title?: string }[] = [];
+  if (row.removed) out.push({ text: "Removed", tone: "muted", title: row.removed });
+  if (row.duplicateOf) out.push({ text: "Duplicate", tone: "muted", title: "Merged into another record (see Duplicates)" });
+  if (row.studyOf) out.push({ text: "Report", tone: "info", title: "Another report of a study" });
+  if (!row.hasAbstract) out.push({ text: "No abstract", tone: "amber" });
+  if (!row.doi) out.push({ text: "No DOI", tone: "amber" });
+  if (row.statuses && row.statuses.ft.name !== "notEligible" && !row.hasFullText) out.push({ text: "No full text", tone: "amber" });
+  if (row.origin) out.push({ text: row.origin.name || row.origin.group, tone: "info", title: "Where it was found (not its import's)" });
+  return out;
+}
+
 export function RecordsTable(props: StageProps) {
   const { api, summary, viewer, notify, onChanged } = props;
   const [text, setText] = useState("");
@@ -39,20 +77,32 @@ export function RecordsTable(props: StageProps) {
   const [status, setStatus] = useState("");
   const [hasAbstract, setHasAbstract] = useState<"" | "yes" | "no">("");
   const [hasFullText, setHasFullText] = useState<"" | "yes" | "no">("");
+  const [sort, setSort] = useState("");
+  const [cols, setColsState] = useState<Col[]>(readCols);
+  const setCols = (c: Col[]) => {
+    setColsState(c);
+    try {
+      localStorage.setItem(colsKey, JSON.stringify(c));
+    } catch {}
+  };
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState<Map<number, ListRow>>(new Map());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(600);
   const [open, setOpen] = useState<string>();
   const [filling, setFilling] = useState(false);
-  const [lookups, setLookups] = useState<string[]>();
+  const [completing, setCompleting] = useState<string[]>();
+  const [removing, setRemoving] = useState<string[]>();
+  const [origin, setOrigin] = useState<string[]>();
+  const [adding, setAdding] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const generation = useRef(0);
   const loaded = useRef(new Set<number>());
   const query = useMemo(() => {
     const [stage, f] = status.includes(":") ? status.split(":") : ["ta", status];
-    return { stage: stage as "ta" | "ft", filter: f, text, batch, group, hasAbstract, hasFullText, scope: "sources" as const };
-  }, [status, text, batch, group, hasAbstract, hasFullText]);
+    return { stage: stage as "ta" | "ft", filter: f, text, batch, group, hasAbstract, hasFullText, scope: "sources" as const, sort };
+  }, [status, text, batch, group, hasAbstract, hasFullText, sort]);
 
   const fetchPage = useCallback(
     (page: number, gen: number) => {
@@ -96,6 +146,15 @@ export function RecordsTable(props: StageProps) {
     for (let p = Math.floor(first / PAGE); p <= Math.floor(Math.max(first, last - 1) / PAGE); p++) fetchPage(p, generation.current);
   }, [first, last, fetchPage]);
 
+  /** Every id matching the filters (for "select all" and bulk actions on everything shown). */
+  const allIds = async () => {
+    const ids: string[] = [];
+    for (let offset = 0; ; offset += 1000) {
+      const page = await api.records({ ...query, offset, limit: 1000 }, viewer);
+      ids.push(...page.rows.map((r) => r.id));
+      if (ids.length >= page.total || !page.rows.length) return ids;
+    }
+  };
   const fill = () => {
     setFilling(true);
     api
@@ -104,103 +163,194 @@ export function RecordsTable(props: StageProps) {
         const n = Object.values(r.filled).reduce((a, b) => a + b, 0);
         notify(n ? `Filled ${plural(r.filled.abstractText ?? 0, "abstract")}${n > (r.filled.abstractText ?? 0) ? ` and ${plural(n - (r.filled.abstractText ?? 0), "other value")}` : ""} from duplicates and the library` : "Nothing more in the duplicates or the library", n ? "ok" : undefined);
         onChanged();
-        if (r.lookupCandidates.length) setLookups(r.lookupCandidates);
+        if (r.lookupCandidates.length) setCompleting(r.lookupCandidates);
       })
       .catch((e) => notify(errorText(e), "error"))
       .finally(() => setFilling(false));
   };
+  const ids = [...selected];
+  const sortBy = (key?: string) => key && setSort(sort === key ? `-${key}` : sort === `-${key}` ? "" : key);
+  const arrow = (key?: string) => (key && sort === key ? " ↑" : key && sort === `-${key}` ? " ↓" : "");
+  // With a record open beside, the table keeps its first two columns.
+  const shownCols = open ? cols.slice(0, 2) : cols;
+  const grid = `28px minmax(200px, 1fr) ${shownCols.map((c) => `${COLUMNS.find(([id]) => id === c)![2]}px`).join(" ")}`;
 
   return (
-    <div className="kx-rv-records">
-      <div className="kx-rv-filters">
-        <input className="kx-rv-input kx-rv-search" type="search" placeholder="Search titles, abstracts, authors" value={text} onChange={(e) => setText(e.target.value)} aria-label="Search records" />
-        <select className="kx-rv-select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-          {STATUS_FILTERS.map(([id, l]) => (
-            <option key={id} value={id}>
-              {l}
-            </option>
-          ))}
-        </select>
-        <select className="kx-rv-select" value={batch} onChange={(e) => setBatch(e.target.value)} aria-label="Import">
-          <option value="">Every import</option>
-          {summary.batches
-            .filter((b) => !b.removed)
-            .map((b) => (
-              <option key={b.batch.id} value={b.batch.id}>
-                {b.batch.name || b.batch.fileName}
+    <div className="kx-rv-records" data-panel={open ? true : undefined}>
+      <div className="kx-rv-records-main">
+        <div className="kx-rv-filters">
+          <input className="kx-rv-input kx-rv-search" type="search" placeholder="Search titles, abstracts, authors" value={text} onChange={(e) => setText(e.target.value)} aria-label="Search records" />
+          <select className="kx-rv-select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
+            {STATUS_FILTERS.map(([id, l]) => (
+              <option key={id} value={id}>
+                {l}
               </option>
             ))}
-        </select>
-        <select className="kx-rv-select" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Origin">
-          <option value="">Any origin</option>
-          <option value="databases">Databases</option>
-          <option value="registers">Registers</option>
-          <option value="other">Other methods</option>
-        </select>
-        <select className="kx-rv-select" value={hasAbstract} onChange={(e) => setHasAbstract(e.target.value as "" | "yes" | "no")} aria-label="Abstract">
-          <option value="">Abstract: any</option>
-          <option value="yes">With an abstract</option>
-          <option value="no">Without an abstract</option>
-        </select>
-        <select className="kx-rv-select" value={hasFullText} onChange={(e) => setHasFullText(e.target.value as "" | "yes" | "no")} aria-label="Full text">
-          <option value="">Full text: any</option>
-          <option value="yes">With a full text</option>
-          <option value="no">Without a full text</option>
-        </select>
-        <span className="kx-rv-muted">{plural(total, "record")}</span>
-      </div>
-      {summary.missingAbstracts > 0 && (
-        <div className="kx-rv-missing-bar">
-          <Icon name="info" size={13} />
-          <span>
-            <strong>{plural(summary.missingAbstracts, "record")}</strong> without an abstract{summary.filledAbstracts ? ` · ${plural(summary.filledAbstracts, "abstract")} filled in so far` : ""}
-          </span>
-          <Btn small primary disabled={filling} onClick={fill} title="From each record's duplicates in other imports first, then the same work in your library; every value notes where it came from">
-            {filling ? "Looking…" : "Find missing abstracts"}
-          </Btn>
-          <Btn small quiet onClick={() => setHasAbstract("no")}>
-            Show them
-          </Btn>
+          </select>
+          <select className="kx-rv-select" value={batch} onChange={(e) => setBatch(e.target.value)} aria-label="Import">
+            <option value="">Every import</option>
+            {summary.batches
+              .filter((b) => !b.removed)
+              .map((b) => (
+                <option key={b.batch.id} value={b.batch.id}>
+                  {b.batch.name || b.batch.fileName || "Source not specified"}
+                </option>
+              ))}
+          </select>
+          <select className="kx-rv-select" value={group} onChange={(e) => setGroup(e.target.value)} aria-label="Origin">
+            <option value="">Any origin</option>
+            <option value="databases">Databases</option>
+            <option value="registers">Registers</option>
+            <option value="other">Other methods</option>
+          </select>
+          <select className="kx-rv-select" value={hasAbstract} onChange={(e) => setHasAbstract(e.target.value as "" | "yes" | "no")} aria-label="Abstract">
+            <option value="">Abstract: any</option>
+            <option value="yes">With an abstract</option>
+            <option value="no">Without an abstract</option>
+          </select>
+          <select className="kx-rv-select" value={hasFullText} onChange={(e) => setHasFullText(e.target.value as "" | "yes" | "no")} aria-label="Full text">
+            <option value="">Full text: any</option>
+            <option value="yes">With a full text</option>
+            <option value="no">Without a full text</option>
+          </select>
+          <span className="kx-rv-muted">{plural(total, "record")}</span>
         </div>
-      )}
-      <div className="kx-rv-rows" ref={box} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} role="table" aria-label="Records">
-        {total === 0 ? (
-          <p className="kx-rv-list-empty">No records match.</p>
-        ) : (
-          <div style={{ height: total * ROW, position: "relative" }}>
-            {Array.from({ length: last - first }, (_, i) => first + i).map((i) => {
-              const row = rows.get(i);
-              return (
-                <div key={i} className="kx-rv-list-row kx-rv-record-row" role="row" style={{ top: i * ROW, height: ROW }} data-removed={(row && !row.active) || undefined}>
-                  {row ? (
-                    <>
-                      <button type="button" className="kx-rv-list-main" onClick={() => setOpen(row.id)}>
-                        <span className="kx-rv-list-title">{row.title || "Untitled"}</span>
-                        <span className="kx-rv-list-sub">
-                          {[row.byline, row.journal, row.batchName].filter(Boolean).join(" · ")}
-                          {!row.hasAbstract && " · no abstract"}
-                          {row.filled?.abstractText && <em> · abstract from {provenance(row.filled.abstractText)}</em>}
-                        </span>
-                      </button>
-                      <span className="kx-rv-list-state">
-                        {row.removed && <span className="kx-rv-pill" data-tone="muted" title={row.removed}>Removed</span>}
-                        {row.duplicateOf && <span className="kx-rv-pill" data-tone="muted">Duplicate</span>}
-                        {row.studyOf && <span className="kx-rv-pill" data-tone="info" title="Another report of a study">Report</span>}
-                        {row.hasFullText && <Icon name="filePdf" size={12} aria-label="Has a full text" />}
-                        {row.statuses && row.active && <StatusPill status={row.statuses.ft.name !== "notEligible" ? row.statuses.ft : row.statuses.ta} compact />}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="kx-rv-list-placeholder" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        <div className="kx-rv-bulk" role="toolbar" aria-label={selected.size ? "Selected records" : "Records"}>
+          {selected.size ? (
+            <>
+              <strong>{selected.size.toLocaleString()} selected</strong>
+              <Btn small icon="sparkle" onClick={() => setCompleting(ids)} title="Look each up by DOI, PMID or title and compare field by field">
+                Complete metadata…
+              </Btn>
+              <Btn small icon="pen" onClick={() => setOrigin(ids)}>
+                Came from…
+              </Btn>
+              <MenuButton
+                label="Label selected"
+                icon="tag"
+                items={[...new Set([...summary.protocol.labels, ...summary.labelsInUse])].map((l) => ({ label: l, run: () => void api.labels(ids, [l], [], viewer).then(() => (onChanged(), restart())) }))}
+              />
+              <Btn small onClick={() => void api.removeRecords(ids, false, "", viewer).then(() => (notify("Restored", "ok"), onChanged(), restart()))}>Restore</Btn>
+              <Btn small danger icon="trash" onClick={() => setRemoving(ids)}>
+                Remove…
+              </Btn>
+              <Btn small quiet onClick={() => setSelected(new Set())}>
+                Clear
+              </Btn>
+            </>
+          ) : (
+            <>
+              <Btn small icon="plus" onClick={() => setAdding(true)}>
+                Add a record
+              </Btn>
+              {summary.missingAbstracts > 0 && (
+                <Btn small primary disabled={filling} onClick={fill} title="From each record's duplicates in other imports first, then the same work in your library; then, if you agree, online lookups. Every value notes where it came from.">
+                  {filling ? "Looking…" : `Find ${plural(summary.missingAbstracts, "missing abstract")}`}
+                </Btn>
+              )}
+              <Btn small icon="sparkle" onClick={() => void allIds().then(setCompleting)} title="Look up every record shown and compare field by field">
+                Complete metadata…
+              </Btn>
+              <span className="kx-rv-spacer" />
+              <MenuButton
+                label="Columns"
+                icon="columns"
+                items={COLUMNS.map(([id, label]) => ({ label: `${cols.includes(id) ? "✓ " : ""}${label}`, run: () => setCols(cols.includes(id) ? cols.filter((c) => c !== id) : COLUMNS.map(([c]) => c).filter((c) => c === id || cols.includes(c))) }))}
+              />
+            </>
+          )}
+        </div>
+        <div className="kx-rv-table-head" style={{ gridTemplateColumns: grid }} role="row">
+          <input
+            type="checkbox"
+            aria-label="Select every record shown"
+            checked={total > 0 && selected.size === total}
+            onChange={(e) => (e.target.checked ? void allIds().then((a) => setSelected(new Set(a))) : setSelected(new Set()))}
+          />
+          <button type="button" role="columnheader" onClick={() => sortBy("title")}>
+            Title{arrow("title")}
+          </button>
+          {shownCols.map((c) => (
+            <button key={c} type="button" role="columnheader" disabled={!SORTABLE[c]} onClick={() => sortBy(SORTABLE[c])}>
+              {COLUMNS.find(([id]) => id === c)![1]}
+              {arrow(SORTABLE[c])}
+            </button>
+          ))}
+        </div>
+        <div className="kx-rv-rows" ref={box} onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)} role="table" aria-label="Records">
+          {total === 0 ? (
+            <p className="kx-rv-list-empty">No records match.</p>
+          ) : (
+            <div style={{ height: total * ROW, position: "relative" }}>
+              {Array.from({ length: last - first }, (_, i) => first + i).map((i) => {
+                const row = rows.get(i);
+                return (
+                  <div key={i} className="kx-rv-record-row" role="row" style={{ top: i * ROW, height: ROW, gridTemplateColumns: grid }} data-removed={(row && !row.active) || undefined} data-open={(row && row.id === open) || undefined} data-selected={(row && selected.has(row.id)) || undefined}>
+                    {row ? (
+                      <>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${row.title}`}
+                          checked={selected.has(row.id)}
+                          onChange={() =>
+                            setSelected((s) => {
+                              const n = new Set(s);
+                              if (n.has(row.id)) n.delete(row.id);
+                              else n.add(row.id);
+                              return n;
+                            })
+                          }
+                        />
+                        <button type="button" className="kx-rv-list-main" onClick={() => setOpen(row.id)}>
+                          <span className="kx-rv-list-title">{row.title || "Untitled"}</span>
+                          <span className="kx-rv-chips-inline">
+                            {chips(row).map((c) => (
+                              <span key={c.text} className="kx-rv-pill" data-tone={c.tone} title={c.title}>
+                                {c.text}
+                              </span>
+                            ))}
+                            {row.filled?.abstractText && <em className="kx-rv-provenance">abstract from {provenance(row.filled.abstractText)}</em>}
+                          </span>
+                        </button>
+                        {shownCols.map((c) => (
+                          <span key={c} className="kx-rv-cell" data-col={c}>
+                            {c === "authors" && (row.authors?.slice(0, 2).join("; ") + ((row.authors?.length ?? 0) > 2 ? " et al." : "") || row.byline)}
+                            {c === "year" && (row.year ?? "")}
+                            {c === "journal" && row.journal}
+                            {c === "doi" && row.doi}
+                            {c === "import" && (row.batchName || "Source not specified")}
+                            {c === "status" && row.statuses && row.active && <StatusPill status={row.statuses.ft.name !== "notEligible" ? row.statuses.ft : row.statuses.ta} compact />}
+                            {c === "fulltext" && (row.hasFullText ? <Icon name="filePdf" size={12} aria-label="Has a full text" /> : <span className="kx-rv-muted">—</span>)}
+                          </span>
+                        ))}
+                      </>
+                    ) : (
+                      <span className="kx-rv-list-placeholder" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-      {open && <RecordSheet {...props} recordId={open} onClose={() => setOpen(undefined)} onChange={restart} />}
-      {lookups && <LookupSheet {...props} ids={lookups} onClose={() => setLookups(undefined)} />}
+      {open && <RecordPanel key={open} {...props} recordId={open} onClose={() => setOpen(undefined)} onChange={restart} />}
+      {completing && <CompleteSheet {...props} ids={completing} onClose={() => setCompleting(undefined)} onDone={restart} />}
+      {removing && (
+        <RemoveSheet
+          onClose={() => setRemoving(undefined)}
+          onRemove={(reason) =>
+            api.removeRecords(removing, true, reason, viewer).then(() => {
+              notify(`${plural(removing.length, "record")} removed`, "ok", { label: "Undo", run: () => void api.removeRecords(removing, false, "", viewer).then(() => (onChanged(), restart())) });
+              setSelected(new Set());
+              onChanged();
+              restart();
+            })
+          }
+        />
+      )}
+      {origin && <RecordOriginSheet {...props} ids={origin} onClose={() => setOrigin(undefined)} onDone={restart} />}
+      {adding && <AddRecordSheet {...props} onClose={() => setAdding(false)} onDone={(id) => (restart(), setOpen(id))} />}
     </div>
   );
 }
@@ -215,105 +365,323 @@ const EDITABLE: [keyof RecordMeta, string, "text" | "long" | "year"][] = [
   ["pages", "Pages", "text"],
   ["doi", "DOI", "text"],
   ["pmid", "PMID", "text"],
+  ["url", "Link", "text"],
   ["abstractText", "Abstract", "long"],
 ];
+const shown = (m: RecordMeta, k: keyof RecordMeta) => (k === "authors" ? m.authors.join("; ") : String(m[k] ?? ""));
 
-function RecordSheet({ api, viewer, notify, onChanged, recordId, onClose, onChange, summary }: StageProps & { recordId: string; onClose: () => void; onChange: () => void }) {
+/** A lookup's answer as the record's fields. */
+type Found = { source: string; fields: Record<string, unknown> };
+async function lookUp(invoke: StageProps["invoke"], workspaceId: string, m: Pick<RecordMeta, "doi" | "pmid" | "title" | "url">): Promise<Found | null> {
+  const resource = m.doi?.trim() || (m.pmid?.trim() ? `https://pubmed.ncbi.nlm.nih.gov/${m.pmid.trim()}/` : "") || m.url?.trim() || m.title?.trim();
+  if (!resource) return null;
+  const r = await invoke<{ source: string; title?: string; abstractText?: string | null; authors?: string[]; year?: number | null; journal?: string | null; doi?: string | null; certainty?: string | null }>("scholarly_lookup_resource", { resource }, workspaceId);
+  const fields: Record<string, unknown> = {};
+  if (r.title) fields.title = r.title;
+  if (r.abstractText) fields.abstractText = r.abstractText;
+  if (r.authors?.length) fields.authors = r.authors;
+  if (r.year) fields.year = r.year;
+  if (r.journal) fields.journal = r.journal;
+  if (r.doi) fields.doi = r.doi;
+  return { source: r.source || "online lookup", fields };
+}
+const same = (a: unknown, b: unknown) => String(Array.isArray(a) ? a.join("; ") : (a ?? "")).trim().toLowerCase() === String(Array.isArray(b) ? b.join("; ") : (b ?? "")).trim().toLowerCase();
+/** Fields a lookup would change: missing ones ticked, differing ones offered. */
+function diffOf(m: RecordMeta, found: Found) {
+  return Object.entries(found.fields)
+    .filter(([k, v]) => !same((m as unknown as Record<string, unknown>)[k], v))
+    .map(([k, v]) => ({ field: k, from: (m as unknown as Record<string, unknown>)[k], to: v, missing: !String((m as unknown as Record<string, unknown>)[k] ?? "").trim() || (Array.isArray((m as unknown as Record<string, unknown>)[k]) && !((m as unknown as Record<string, unknown>)[k] as unknown[]).length) }));
+}
+const LABEL: Record<string, string> = Object.fromEntries(EDITABLE.map(([k, l]) => [k, l]));
+const showValue = (v: unknown) => (Array.isArray(v) ? v.join("; ") : v == null || v === "" ? "—" : String(v));
+
+/** One record, beside the table: every field editable in place, Look up, its file, its origin. */
+function RecordPanel(props: StageProps & { recordId: string; onClose: () => void; onChange: () => void }) {
+  const { api, viewer, notify, onChanged, recordId, onClose, onChange, summary, invoke, workspaceId } = props;
   const view = useLoad(() => api.record(recordId, "ta", viewer), [api, recordId, summary.events]);
   const [draft, setDraft] = useState<Record<string, string>>({});
+  const [found, setFound] = useState<{ source: string; diff: ReturnType<typeof diffOf>; on: Set<string> }>();
+  const [looking, setLooking] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [linking, setLinking] = useState(false);
-  const [error, setError] = useState("");
+  const [origin, setOrigin] = useState(false);
+  const [over, setOver] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
   const v = view.value;
   useEffect(() => {
-    if (!v) return;
-    setDraft(Object.fromEntries(EDITABLE.map(([k]) => [k, k === "authors" ? v.meta.authors.join("; ") : String(v.meta[k] ?? "")])));
+    if (v) setDraft(Object.fromEntries(EDITABLE.map(([k]) => [k, shown(v.meta, k)])));
   }, [v]);
-  if (!v) return null;
-  const changed = EDITABLE.filter(([k]) => draft[k] !== (k === "authors" ? v.meta.authors.join("; ") : String(v.meta[k] ?? "")));
-  const save = () => {
-    const fields: Record<string, unknown> = {};
-    for (const [k, , kind] of changed) fields[k] = k === "authors" ? draft[k].split(/;\s*/).map((a) => a.trim()).filter(Boolean) : kind === "year" ? (draft[k] ? Number(draft[k]) : null) : draft[k];
+  if (!v) return <aside className="kx-rv-record-panel" aria-busy="true" />;
+  const after = () => (onChanged(), onChange(), view.reload());
+  const saveField = (k: keyof RecordMeta, kind: string) => {
+    if (draft[k] === shown(v.meta, k)) return;
+    const value = k === "authors" ? draft[k].split(/;\s*/).map((a) => a.trim()).filter(Boolean) : kind === "year" ? (draft[k] ? Number(draft[k]) : null) : draft[k];
     api
-      .editRecord(recordId, fields, viewer)
-      .then(() => {
-        notify("Record corrected", "ok");
-        onChanged();
-        onChange();
-      })
-      .catch((e) => setError(errorText(e)));
+      .editRecord(recordId, { [k]: value } as Partial<RecordMeta>, viewer)
+      .then(after)
+      .catch((e) => {
+        notify(errorText(e), "error");
+        setDraft((d) => ({ ...d, [k]: shown(v.meta, k) }));
+      });
   };
-  const restore = () =>
+  const lookup = () => {
+    setLooking(true);
+    lookUp(invoke, workspaceId, v.meta)
+      .then((f) => {
+        if (!f) return notify("Nothing to look it up by: add a DOI, PMID or title", "error");
+        const diff = diffOf(v.meta, f);
+        if (!diff.length) return notify("The lookup agrees with this record", "ok");
+        setFound({ source: f.source, diff, on: new Set(diff.filter((d) => d.missing).map((d) => d.field)) });
+      })
+      .catch((e) => notify(`Couldn’t look it up: ${errorText(e)}`, "error"))
+      .finally(() => setLooking(false));
+  };
+  const attach = (f: File) => {
+    const path = bridge().pathForFile(f);
+    if (!path) return notify("Could not read that file from disk", "error");
     api
-      .removeRecords([recordId], false, "", viewer)
-      .then(() => (notify("Record restored", "ok"), onChanged(), onChange()))
-      .catch((e) => setError(errorText(e)));
-  // One sheet at a time: removing or linking takes the record sheet's place.
-  if (removing)
-    return (
-      <RemoveSheet
-        onClose={() => setRemoving(false)}
-        onRemove={(reason) =>
-          api.removeRecords([recordId], true, reason, viewer).then(() => {
-            notify("Record removed", "ok", { label: "Undo", run: () => void restore() });
-            onChanged();
-            onChange();
-            onClose();
-          })
-        }
-      />
-    );
-  if (linking) return <StudySheet {...{ api, viewer, notify, onChanged }} view={v} onClose={() => setLinking(false)} onDone={onChange} summary={summary} />;
+      .attach(recordId, path, f.name, v.fulltext.file || v.hasFullText ? "replace" : "upload", viewer)
+      .then(() => (notify(`Attached ${f.name}`, "ok", { label: "Undo", run: () => void api.detach(recordId, viewer).then(after) }), after()))
+      .catch((e) => notify(errorText(e), "error"));
+  };
+  const restore = () => api.removeRecords([recordId], false, "", viewer).then(() => (notify("Record restored", "ok"), after()));
+  const row = { ...v, hasAbstract: !!v.meta.abstractText, doi: v.meta.doi, statuses: v.statuses, active: !v.removed && !v.duplicateOf } as unknown as ListRow;
   return (
-    <GlobalDialog label="Record" onClose={onClose}>
-      <div className="kx-rv-dialog kx-rv-record-sheet">
-        <h2>{v.meta.title || "Untitled"}</h2>
-        <p className="kx-rv-muted">
-          {v.batch?.name} · {STAGE_LABEL.ta}: <StatusPill status={v.statuses.ta} compact />
-          {v.statuses.ft.name !== "notEligible" && (
-            <>
-              {" "}
-              · {STAGE_LABEL.ft}: <StatusPill status={v.statuses.ft} compact />
-            </>
-          )}
-        </p>
-        {v.removed && <p className="kx-rv-warning">Removed by hand: {v.removed}. PRISMA counts it as removed for other reasons.</p>}
-        {v.duplicateOf && <p className="kx-rv-muted">A duplicate of another record (see Duplicates).</p>}
-        {v.studyOf && <p className="kx-rv-muted">Another report of a study: counted once in “studies included”.</p>}
-        <div className="kx-rv-form">
-          {EDITABLE.map(([k, label, kind]) => (
-            <label key={k} className="kx-rv-field" data-wide={kind !== "year" && !["volume", "issue", "pages", "pmid"].includes(k) ? true : undefined}>
+    <aside className="kx-rv-record-panel" aria-label="Record">
+      <div className="kx-rv-record-panel-head">
+        <span className="kx-rv-chips-inline">
+          {chips(row).map((c) => (
+            <span key={c.text} className="kx-rv-pill" data-tone={c.tone} title={c.title}>
+              {c.text}
+            </span>
+          ))}
+        </span>
+        <button type="button" className="kx-rv-icon" aria-label="Close the record" onClick={onClose}>
+          <Icon name="close" size={13} />
+        </button>
+      </div>
+      <p className="kx-rv-muted">
+        {v.batch?.name || "Source not specified"} · {STAGE_LABEL.ta}: <StatusPill status={v.statuses.ta} compact />
+        {v.statuses.ft.name !== "notEligible" && (
+          <>
+            {" "}
+            · {STAGE_LABEL.ft}: <StatusPill status={v.statuses.ft} compact />
+          </>
+        )}
+      </p>
+      {v.removed && <p className="kx-rv-warning">Removed by hand: {v.removed}. PRISMA counts it as removed for other reasons.</p>}
+      <div className="kx-rv-panel-actions">
+        <Btn small primary icon="sparkle" disabled={looking} onClick={lookup} title="Look it up by DOI, PMID or title (OpenAlex, Crossref, PubMed) and compare field by field">
+          {looking ? "Looking up…" : "Look up"}
+        </Btn>
+        <Btn small onClick={() => setOrigin(true)}>Came from…</Btn>
+        <Btn small onClick={() => setLinking(true)}>{v.studyOf ? "Report of a study…" : "Another report of…"}</Btn>
+        {v.removed ? <Btn small onClick={() => void restore()}>Restore</Btn> : <Btn small danger onClick={() => setRemoving(true)}>Remove…</Btn>}
+      </div>
+      {found && (
+        <div className="kx-rv-diff" role="group" aria-label="Lookup results">
+          <p>
+            <strong>From {found.source}</strong> · tick what to take
+          </p>
+          {found.diff.map((d) => (
+            <label key={d.field} className="kx-rv-diff-row">
+              <input type="checkbox" checked={found.on.has(d.field)} onChange={() => setFound({ ...found, on: new Set(found.on.has(d.field) ? [...found.on].filter((x) => x !== d.field) : [...found.on, d.field]) })} />
               <span>
-                {label}
-                {v.filled?.[k] && <small className="kx-rv-provenance"> · from {provenance(v.filled[k])}</small>}
+                <strong>{LABEL[d.field] ?? d.field}</strong>
+                <del>{showValue(d.from).slice(0, 160)}</del>
+                <ins>{showValue(d.to).slice(0, 300)}</ins>
               </span>
-              {kind === "long" ? (
-                <textarea className="kx-rv-input" rows={5} value={draft[k] ?? ""} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />
-              ) : (
-                <input className="kx-rv-input" inputMode={kind === "year" ? "numeric" : undefined} value={draft[k] ?? ""} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} />
-              )}
             </label>
           ))}
+          <div className="kx-rv-step-actions">
+            <Btn small onClick={() => setFound(undefined)}>Cancel</Btn>
+            <Btn
+              small
+              primary
+              disabled={!found.on.size}
+              onClick={() =>
+                void api
+                  .enrich(recordId, Object.fromEntries(found.diff.filter((d) => found.on.has(d.field)).map((d) => [d.field, d.to])), found.source, viewer, true)
+                  .then(() => (setFound(undefined), notify("Record completed", "ok"), after()))
+                  .catch((e) => notify(errorText(e), "error"))
+              }
+            >
+              Take {found.on.size}
+            </Btn>
+          </div>
         </div>
-        {error && <p className="kx-inline-error">{error}</p>}
-        <div className="kx-rv-dialog-actions">
-          {v.removed ? (
-            <Btn onClick={restore}>Restore record</Btn>
-          ) : (
-            <Btn danger onClick={() => setRemoving(true)}>
-              Remove…
+      )}
+      <div className="kx-rv-form kx-rv-record-fields">
+        {EDITABLE.map(([k, label, kind]) => (
+          <label key={k} className="kx-rv-field" data-wide={!["year", "volume", "issue", "pages", "pmid"].includes(k) || undefined}>
+            <span>
+              {label}
+              {v.filled?.[k] && <small className="kx-rv-provenance"> · from {provenance(v.filled[k])}</small>}
+            </span>
+            {kind === "long" ? (
+              <textarea className="kx-rv-input" rows={6} value={draft[k] ?? ""} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} onBlur={() => saveField(k, kind)} aria-label={label} />
+            ) : (
+              <input className="kx-rv-input" aria-label={label} inputMode={kind === "year" ? "numeric" : undefined} value={draft[k] ?? ""} onChange={(e) => setDraft({ ...draft, [k]: e.target.value })} onBlur={() => saveField(k, kind)} onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()} />
+            )}
+          </label>
+        ))}
+      </div>
+      <section
+        className="kx-rv-file-drop"
+        data-over={over || undefined}
+        aria-label="Full text"
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) {
+            e.preventDefault();
+            setOver(true);
+          }
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setOver(false);
+          const f = e.dataTransfer.files[0];
+          if (f) attach(f);
+        }}
+      >
+        <h4>Full text</h4>
+        {v.fulltext.file ? (
+          <p>
+            <Icon name="filePdf" size={12} /> {v.fulltext.file.name} <small className="kx-rv-muted">kept with the review</small>
+          </p>
+        ) : v.hasFullText ? (
+          <p>
+            <Icon name="filePdf" size={12} /> In the library
+          </p>
+        ) : (
+          <p className="kx-rv-muted">None yet. Drop a PDF or saved page here.</p>
+        )}
+        <span className="kx-rv-inline">
+          <Btn small icon="link" onClick={() => file.current?.click()}>
+            {v.hasFullText ? "Replace…" : "Attach…"}
+          </Btn>
+          {v.hasFullText && (
+            <Btn small quiet onClick={() => void api.detach(recordId, viewer).then(() => (notify("Full text removed", "ok"), after()))}>
+              Remove
             </Btn>
           )}
-          <Btn onClick={() => setLinking(true)} title="Several papers about one study: they count once as a study">
-            {v.studyOf ? "Report of a study…" : "Another report of…"}
-          </Btn>
-          <span className="kx-rv-spacer" />
-          <Btn onClick={onClose}>Close</Btn>
-          <Btn primary disabled={!changed.length} onClick={save}>
-            Save changes
-          </Btn>
+          {v.fulltext.file && !v.sourceId && (
+            <Btn small quiet onClick={() => void api.toLibrary(recordId, viewer).then(() => (notify("Added to the library", "ok"), after()))}>
+              Also add to library
+            </Btn>
+          )}
+        </span>
+        <input
+          ref={file}
+          type="file"
+          hidden
+          accept=".pdf,.html,.htm"
+          onChange={(e) => {
+            const f = e.currentTarget.files?.[0];
+            e.currentTarget.value = "";
+            if (f) attach(f);
+          }}
+        />
+      </section>
+      {removing && (
+        <RemoveSheet
+          onClose={() => setRemoving(false)}
+          onRemove={(reason) => api.removeRecords([recordId], true, reason, viewer).then(() => (notify("Record removed", "ok", { label: "Undo", run: () => void restore() }), after()))}
+        />
+      )}
+      {linking && <StudySheet {...{ api, viewer, notify, onChanged }} view={v} onClose={() => setLinking(false)} onDone={after} summary={summary} />}
+      {origin && <RecordOriginSheet {...props} ids={[recordId]} current={v.origin} onClose={() => setOrigin(false)} onDone={after} />}
+    </aside>
+  );
+}
+
+/** Where some records were found, when not where their import says. */
+function RecordOriginSheet(props: StageProps & { ids: string[]; current?: Origin | null; onClose: () => void; onDone: () => void }) {
+  const { api, viewer, notify, onChanged, ids, onClose, onDone } = props;
+  const [own, setOwn] = useState(!!props.current);
+  const [origin, setOrigin] = useState<Partial<Batch>>(props.current ?? { group: "other", name: "Citation searching" });
+  return (
+    <GlobalDialog label="Where these records were found" onClose={onClose}>
+      <form
+        className="kx-rv-dialog"
+        onSubmit={(e) => {
+          e.preventDefault();
+          api
+            .recordOrigin(ids, own ? { group: (origin.group ?? "databases") as Origin["group"], name: origin.name ?? "" } : null, viewer)
+            .then(() => (notify("PRISMA counts updated", "ok"), onChanged(), onDone(), onClose()))
+            .catch((err) => notify(errorText(err), "error"));
+        }}
+      >
+        <h2>Where {ids.length === 1 ? "this record was" : `these ${ids.length.toLocaleString()} records were`} found</h2>
+        <div className="kx-rv-radio-list">
+          <label>
+            <input type="radio" checked={!own} onChange={() => setOwn(false)} /> As their import says
+          </label>
+          <label>
+            <input type="radio" checked={own} onChange={() => setOwn(true)} /> Somewhere else:
+          </label>
         </div>
-      </div>
+        {own && <OriginFields batch={origin} onChange={setOrigin} names={[]} />}
+        <div className="kx-rv-dialog-actions">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <button type="submit" className="kx-rv-btn" data-primary>
+            Save
+          </button>
+        </div>
+      </form>
+    </GlobalDialog>
+  );
+}
+
+function AddRecordSheet({ api, viewer, notify, onChanged, onClose, onDone, invoke, workspaceId }: StageProps & { onClose: () => void; onDone: (id: string) => void }) {
+  const [doi, setDoi] = useState("");
+  const [title, setTitle] = useState("");
+  const [batch, setBatch] = useState<Partial<Batch>>({ group: "other", name: "Citation searching" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  return (
+    <GlobalDialog label="Add a record" onClose={onClose} busy={busy}>
+      <form
+        className="kx-rv-dialog"
+        onSubmit={(e) => {
+          e.preventDefault();
+          setBusy(true);
+          (async () => {
+            // Looked up first, so the record arrives complete; edited in place afterwards.
+            const f = await lookUp(invoke, workspaceId, { doi, title, pmid: "", url: "" }).catch(() => null);
+            const record = { title: (f?.fields.title as string) || title || doi, doi: (f?.fields.doi as string) || doi, authors: (f?.fields.authors as string[]) ?? [], year: (f?.fields.year as number) ?? null, journal: (f?.fields.journal as string) ?? "", abstractText: (f?.fields.abstractText as string) ?? "" };
+            const { report } = await api.importRecords([record], batch, viewer);
+            notify(reportText(report), "ok");
+            onChanged();
+            const added = await api.records({ stage: "ta", filter: "all", batch: report.batchId, scope: "sources", limit: 1 }, viewer);
+            onClose();
+            if (added.rows[0]) onDone(added.rows[0].id);
+          })()
+            .catch((err) => setError(errorText(err)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <h2>Add a record</h2>
+        <p className="kx-rv-muted">A DOI or a title is enough: Key looks the rest up, and you can edit every field after.</p>
+        <div className="kx-rv-form">
+          <label className="kx-rv-field" data-wide>
+            <span>DOI</span>
+            <input className="kx-rv-input" autoFocus value={doi} placeholder="10.…" onChange={(e) => setDoi(e.target.value)} />
+          </label>
+          <label className="kx-rv-field" data-wide>
+            <span>or Title</span>
+            <input className="kx-rv-input" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+        </div>
+        <OriginFields batch={batch} onChange={setBatch} names={[]} />
+        {error && <p className="kx-inline-error">{error}</p>}
+        <div className="kx-rv-dialog-actions">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <button type="submit" className="kx-rv-btn" data-primary disabled={busy || (!doi.trim() && !title.trim())}>
+            {busy ? "Looking up…" : "Add record"}
+          </button>
+        </div>
+      </form>
     </GlobalDialog>
   );
 }
@@ -388,62 +756,105 @@ function StudySheet({ api, viewer, notify, onChanged, view, onClose, onDone }: P
   );
 }
 
-/** Opt-in: the records still without an abstract that have a DOI or PMID, looked up online
- * through Key's own lookups (OpenAlex, Crossref, PubMed), in the background. */
-function LookupSheet({ api, invoke, workspaceId, viewer, notify, onChanged, ids, onClose }: StageProps & { ids: string[]; onClose: () => void }) {
-  const [progress, setProgress] = useState<{ done: number; filled: number }>();
+/** Complete metadata for many records: each looked up by DOI, PMID or title (OpenAlex, Crossref,
+ * PubMed through Key's own lookup), one at a time in the background; then every difference per
+ * field, missing values ticked, to accept. Asked for: nothing is sent until "Look up". */
+function CompleteSheet({ api, invoke, workspaceId, viewer, notify, onChanged, ids, onClose, onDone }: StageProps & { ids: string[]; onClose: () => void; onDone: () => void }) {
+  const [progress, setProgress] = useState<{ done: number; found: number }>();
+  const [results, setResults] = useState<{ id: string; title: string; source: string; diff: ReturnType<typeof diffOf> }[]>([]);
+  const [on, setOn] = useState<Set<string>>(new Set());
+  const [finished, setFinished] = useState(false);
+  const [applying, setApplying] = useState(false);
   const stop = useRef(false);
   const run = async () => {
     stop.current = false;
-    let filled = 0;
-    setProgress({ done: 0, filled: 0 });
-    const metas = await api.records({ stage: "ta", filter: "active", hasAbstract: "no", scope: "sources", limit: 1000 }, viewer);
-    const doiOf = new Map(metas.rows.map((r) => [r.id, r.doi ?? ""]));
-    for (let i = 0; i < ids.length && !stop.current; i++) {
-      const doi = doiOf.get(ids[i]);
-      if (doi) {
-        try {
-          const found = await invoke<{ source: string; abstractText?: string | null; journal?: string | null; year?: number | null; doi?: string | null }>("scholarly_lookup_resource", { resource: doi }, workspaceId);
-          const fields: Record<string, unknown> = {};
-          if (found.abstractText) fields.abstractText = found.abstractText;
-          if (found.journal) fields.journal = found.journal;
-          if (found.year) fields.year = found.year;
-          if (Object.keys(fields).length) filled += (await api.enrich(ids[i], fields, found.source || "online lookup", viewer)).filled > 0 ? 1 : 0;
-        } catch {
-          // Not found or offline: the next one.
+    setProgress({ done: 0, found: 0 });
+    let found = 0;
+    for (let i = 0; i < ids.length && !stop.current; i += 50) {
+      const metas = await Promise.all(ids.slice(i, i + 50).map((id) => api.record(id, "ta", viewer).then((v) => v.meta).catch(() => null)));
+      for (const [j, m] of metas.entries()) {
+        if (stop.current) break;
+        if (m) {
+          try {
+            const f = await lookUp(invoke, workspaceId, m);
+            const diff = f ? diffOf(m, f) : [];
+            if (f && diff.length) {
+              found++;
+              setResults((r) => [...r, { id: m.id, title: m.title, source: f.source, diff }]);
+              setOn((s) => new Set([...s, ...diff.filter((d) => d.missing).map((d) => `${m.id}/${d.field}`)]));
+            }
+          } catch {
+            // Not found or offline: the next one.
+          }
         }
+        setProgress({ done: i + j + 1, found });
       }
-      setProgress({ done: i + 1, filled });
     }
-    notify(`Filled ${plural(filled, "record")} from online lookups`, filled ? "ok" : undefined);
+    setFinished(true);
+  };
+  const apply = async () => {
+    setApplying(true);
+    let n = 0;
+    for (const r of results) {
+      const fields = Object.fromEntries(r.diff.filter((d) => on.has(`${r.id}/${d.field}`)).map((d) => [d.field, d.to]));
+      if (Object.keys(fields).length) {
+        await api.enrich(r.id, fields, r.source, viewer, true);
+        n++;
+      }
+    }
+    notify(`Completed ${plural(n, "record")}`, "ok");
     onChanged();
+    onDone();
     onClose();
   };
+  const toggle = (key: string) => setOn((s) => (s.has(key) ? new Set([...s].filter((x) => x !== key)) : new Set([...s, key])));
   return (
-    <GlobalDialog label="Look up abstracts online" onClose={onClose}>
-      <div className="kx-rv-dialog">
-        <h2>Look up {plural(ids.length, "abstract")} online?</h2>
-        <p>
-          These records have a DOI or PMID but no abstract in their duplicates or the library. Key can ask OpenAlex, Crossref and PubMed for them, one at a time in the background. Each value notes where it came from; nothing that is already
-          there is replaced.
-        </p>
-        {progress && (
+    <GlobalDialog label="Complete metadata" onClose={onClose} busy={applying}>
+      <div className="kx-rv-dialog kx-rv-complete">
+        <h2>Complete the metadata of {plural(ids.length, "record")}</h2>
+        {!progress ? (
+          <p>Key looks each record up by its DOI, PMID or title (OpenAlex, Crossref, PubMed) and shows what differs, field by field. Missing values are ticked; changes to values you have are not, until you tick them. Each value notes where it came from.</p>
+        ) : (
           <p role="status">
-            {progress.done} of {ids.length} looked up · {progress.filled} filled
+            {progress.done.toLocaleString()} of {ids.length.toLocaleString()} looked up · {plural(progress.found, "record")} with something to add{finished ? "" : "…"}
           </p>
+        )}
+        {results.length > 0 && (
+          <ul className="kx-rv-complete-list">
+            {results.map((r) => (
+              <li key={r.id}>
+                <strong>{r.title || "Untitled"}</strong> <small className="kx-rv-muted">from {r.source}</small>
+                {r.diff.map((d) => (
+                  <label key={d.field} className="kx-rv-diff-row">
+                    <input type="checkbox" checked={on.has(`${r.id}/${d.field}`)} onChange={() => toggle(`${r.id}/${d.field}`)} />
+                    <span>
+                      <strong>{LABEL[d.field] ?? d.field}</strong>
+                      <del>{showValue(d.from).slice(0, 120)}</del>
+                      <ins>{showValue(d.to).slice(0, 200)}</ins>
+                    </span>
+                  </label>
+                ))}
+              </li>
+            ))}
+          </ul>
         )}
         <div className="kx-rv-dialog-actions">
           <Btn
             onClick={() => {
               stop.current = true;
-              onClose();
+              if (!progress || finished) onClose();
+              else setFinished(true);
             }}
           >
-            {progress ? "Stop" : "Not now"}
+            {progress && !finished ? "Stop" : "Cancel"}
           </Btn>
-          {!progress && (
+          {!progress ? (
             <Btn primary onClick={() => void run()}>
-              Look up online
+              Look up
+            </Btn>
+          ) : (
+            <Btn primary disabled={!on.size || applying} onClick={() => void apply()}>
+              Take {on.size.toLocaleString()} {on.size === 1 ? "value" : "values"}
             </Btn>
           )}
         </div>

@@ -459,10 +459,8 @@ impl Reviews {
     /// A full text kept with the review for a record (the host has copied the file).
     pub fn attach_file(&self, review: &str, record: &str, file: FileRef, actor: &str) -> Result<()> {
         self.write(review, |state, _, b| {
-            let r = state.record(record).ok_or("This record no longer exists")?;
-            if !state.eligible(r, Stage::Ft) && !state.included().iter().any(|x| x.id == record) {
-                return Err("Full texts are for records at full-text screening".into());
-            }
+            // Any record may get its file, whatever its stage (it is there when it reaches full text).
+            state.record(record).ok_or("This record no longer exists")?;
             Ok((vec![b.event("fulltext.set", actor, Some(record), json!({ "status": "retrieved", "file": file }))], ()))
         })
     }
