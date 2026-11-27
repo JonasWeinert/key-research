@@ -11,7 +11,7 @@ import { AddFromSourceHost } from "./add-from-source";
 import type { SearchPreviewState } from "./search-preview";
 import { TabSwitcher } from "./TabSwitcher";
 import { GroupTabStrip, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./tab-strip";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LibrarySource, type LibraryHit } from "./LibraryHome";
 import "./shell.css";
 import WorkspaceSwitcher from "./WorkspaceSwitcher";
@@ -30,6 +30,8 @@ import WorkspaceContent, { type ContentSpec } from "./WorkspaceContent";
 import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
+import { SignInCard } from "./SignInCard";
+import { WEB_BAR_HEIGHT } from "../shared/browser-layout";
 import { BiblioSheets } from "./BiblioSheets";
 import { MarkdownExportHost } from "./markdown-export";
 import { FileRenameHost } from "./file-names";
@@ -1186,15 +1188,25 @@ export default function App() {
             const v = t.views[0];
             const rect = v?.web && placed.get(v.id);
             if (!v?.web || !rect) return null;
+            const card = v.web.signin?.card;
             return (
-              <BrowserBar
-                key={v.id}
-                state={v.web}
-                viewId={v.id}
-                style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT, width: rect.width }}
-                onStep={(step) => action("history", { viewId: v.id, step })}
-                onPage={(op) => action("web-page", { viewId: v.id, op })}
-              />
+              <Fragment key={v.id}>
+                <BrowserBar
+                  state={v.web}
+                  viewId={v.id}
+                  style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT, width: rect.width }}
+                  onStep={(step) => action("history", { viewId: v.id, step })}
+                  onPage={(op) => action("web-page", { viewId: v.id, op })}
+                />
+                {/* A passkey the page cannot get: the card stands in for the (hidden) page. */}
+                {card && (
+                  <SignInCard
+                    card={card}
+                    style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT + WEB_BAR_HEIGHT, width: rect.width, height: Math.max(0, rect.height - WEB_BAR_HEIGHT) }}
+                    onPage={(op) => action("web-page", { viewId: v.id, op })}
+                  />
+                )}
+              </Fragment>
             );
           })}
           {error && (
