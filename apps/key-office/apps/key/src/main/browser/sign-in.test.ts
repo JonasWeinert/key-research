@@ -25,6 +25,15 @@ describe("a sign-in's sites", () => {
   });
 });
 
+describe("where a sign-in request returns to", () => {
+  it("is the home page of the site in redirect_uri or wreply, never the request", async () => {
+    const { returnSite } = await import("./sign-in");
+    expect(returnSite("https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=a&redirect_uri=https%3A%2F%2Fwww.office.com%2Flandingv2&state=s")).toBe("https://www.office.com/");
+    expect(returnSite("https://fs.uni.edu/adfs/ls/?wa=wsignin1.0&wreply=https%3A%2F%2Fmoodle.uni.edu%2Fauth%2F")).toBe("https://moodle.uni.edu/");
+    expect(returnSite("https://login.microsoftonline.com/common/login")).toBeUndefined();
+  });
+});
+
 describe("what Key remembers per sign-in service", () => {
   it("opens the window by itself where chosen, or where a passkey was asked for and Here was not chosen", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "key-signin-hosts-")), "sign-in-hosts.json");

@@ -682,6 +682,8 @@ export class SignInService {
         .reverse()
         .map((h) => h.url)
         .concat(tab.opener ? [tab.opener] : [])
+        // The site a sign-in request says it returns to: its home page (never the request).
+        .concat(tab.trail.map((h) => returnSite(h.url)).filter((u): u is string => !!u))
         .filter((u) => !isIdentityUrl(u, known) && !seen.has(u) && (seen.add(u), true))
         .slice(0, 5)
         .map((u) => ({ url: u, label: pageLabel(u) }));
@@ -833,6 +835,20 @@ export class SignInService {
       tab.imported = { browser: browser.name, sites: sites.length, names: sites.map((s) => s.site) };
       tab.changed();
     }, 300);
+  }
+}
+
+/** The home page of the site a sign-in request returns to (OAuth `redirect_uri`, WS-Fed
+ * `wreply`), if the address names one. */
+export function returnSite(url: string) {
+  try {
+    const u = new URL(url);
+    const back = u.searchParams.get("redirect_uri") || u.searchParams.get("wreply");
+    if (!back) return undefined;
+    const site = new URL(back);
+    return /^https?:$/.test(site.protocol) && !isIdentityUrl(site.origin + "/") ? `${site.origin}/` : undefined;
+  } catch {
+    return undefined;
   }
 }
 
