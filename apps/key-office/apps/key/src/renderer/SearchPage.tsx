@@ -107,7 +107,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
   const { collapsed, toggle } = useCollapsedGroups();
   const [shutKinds, setShutKinds] = useState<FindKind[]>([]);
   const [current, setCurrent] = useState(-1);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
   // While focused, the sidebar's clicks become filters.

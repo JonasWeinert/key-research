@@ -39,6 +39,7 @@ pub mod html_dom;
 pub mod feeds;
 pub mod reading;
 pub mod priority;
+pub mod selection;
 pub use analysis::{CarriedAnalysis, CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{

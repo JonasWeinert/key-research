@@ -132,7 +132,7 @@ export default function SearchPopup({ invoke, workspaceId, label, placeholder, s
   const [recents] = useState(() => readRecents(workspaceId));
   const [active, setActive] = useState(0);
   const [focusList, setFocusList] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const [wide, measure] = useWide();
   const terms = filterTerms(state.filters);

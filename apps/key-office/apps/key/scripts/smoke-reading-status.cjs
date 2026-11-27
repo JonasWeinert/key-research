@@ -112,7 +112,7 @@ const fixture = path.resolve(__dirname, "../../../../../tests/fixtures/interacti
     await page.locator(".kx-row").first().waitFor();
     await page.locator(".kx-row").first().click({ position: { x: 30, y: 20 } });
     await page.keyboard.press("Meta+a");
-    const batch = page.locator(".kx-batch");
+    const batch = page.locator(".kx-selection");
     await batch.waitFor();
     const mixed = batch.locator('.kx-reading-status[data-status="mixed"]');
     await mixed.waitFor();
