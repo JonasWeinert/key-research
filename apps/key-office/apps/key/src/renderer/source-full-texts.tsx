@@ -91,6 +91,14 @@ export function KeptPageOffer({ invoke, workspaceId, sourceId, onSaved }: { invo
   const load = useCallback(() => void invoke<KeptPage>("find_pdf_page", { sourceId }, workspaceId).then(setPage, () => setPage(undefined)), [invoke, workspaceId, sourceId]);
   useEffect(load, [load]);
   useEffect(() => onLibraryChanged(load), [load]);
+  // Find PDF may be on the page in a tab now: its copy is kept a moment after it loads.
+  const kept = !!page?.kept;
+  useEffect(() => {
+    if (kept) return;
+    let left = 30;
+    const timer = setInterval(() => (--left < 0 ? clearInterval(timer) : load()), 3000);
+    return () => clearInterval(timer);
+  }, [kept, load]);
   if (!page?.kept) return null;
   const save = async () => {
     setBusy(true);

@@ -338,6 +338,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   };
   // No PDF to be had: the reference's web page, saved offline as its file instead.
   const [pdfMissing, setPdfMissing] = useState(false);
+  // A new full text (a page saved meanwhile) ends what the last Find PDF said.
+  useEffect(() => setFinding(""), [source?.fileHash]);
   const fullTexts = useFullTexts(invoke, workspaceId, sourceId, typeof source?.fileHash === "string" ? source.fileHash : undefined);
   const [savingPage, setSavingPage] = useState(false);
   const saveWebPage = async (reader?: string) => {

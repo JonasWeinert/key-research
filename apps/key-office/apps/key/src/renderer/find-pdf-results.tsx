@@ -17,7 +17,8 @@ export function FindPdfResultsList({ invoke, workspaceId }: { invoke: Invoke; wo
   const save = async (id: string) => {
     setBusy(id);
     try {
-      await saveSourceWebPage(invoke, workspaceId, id);
+      // The copy kept when the page was opened from here, else the page loaded again.
+      await invoke("find_pdf_page_save", { sourceId: id }, workspaceId).catch(() => saveSourceWebPage(invoke, workspaceId, id));
       settleFindPdfRow(id);
     } catch (e) {
       setErrors((all) => ({ ...all, [id]: String(e).replace(/^Error: /, "") }));

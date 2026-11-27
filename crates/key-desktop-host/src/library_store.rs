@@ -548,16 +548,6 @@ impl Library {
                     json!({ "fileHash": a.file_hash, "url": a.url, "accepted": a.accepted, "confidence": a.confidence, "alignedAt": a.aligned_at, "report": report })
                 }))
             }),
-            // A landing page Find PDF ended on (its live HTML): the PDF links on it, an access
-            // wall, whether it holds the article's text or only its abstract (key-index landing.rs).
-            "web_landing_page" => (|| {
-                let html: String = arg(args, "html")?;
-                let url: String = arg(args, "url")?;
-                if html.len() > 40 * 1024 * 1024 {
-                    return Err("The page is too large".into());
-                }
-                json_output(key_index::landing::read_landing(&html, &url))
-            })(),
             // Document analysis: how a source was read, its Markdown and its bibliography.
             "store_analysis" => arg::<String>(args, "id").and_then(|id| {
                 json_output(json!({
@@ -870,7 +860,16 @@ impl Library {
     /// stays as another one of its full texts.
     pub fn attach_keeping(&self, id: &str, path: &Path, root: &Path) -> Result<Source, String> {
         let before = self.store.source(id)?.ok_or("Source not found")?;
-        let updated = self.attach_file(id, path, root)?;
+        let mut updated = self.attach_file(id, path, root)?;
+        // A PDF and a saved page swap: the source is the kind of its primary full text.
+        if matches!(before.kind.as_str(), "pdf" | "web") {
+            let kind = updated.file_path().map(|p| classify(&p).0).unwrap_or("reference");
+            if matches!(kind, "pdf" | "web") && kind != updated.kind {
+                let mut patch = Map::new();
+                patch.insert("kind".into(), Json::from(kind));
+                updated = self.store.update_source(id, &patch)?;
+            }
+        }
         if let (Some(old_path), Some(old_hash)) = (before.file_path(), before.file_hash()) {
             if updated.file_hash() != Some(old_hash) && old_path.is_file() {
                 let mime = before.field("mime").map(String::from).unwrap_or_else(|| classify(&old_path).2.to_string());

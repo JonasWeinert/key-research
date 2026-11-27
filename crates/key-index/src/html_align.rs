@@ -394,7 +394,36 @@ pub fn align_outline(layout: &Layout, outline: &HtmlOutline) -> (Layout, Alignme
                 matched += 1;
             }
         }
-        report.references.matched = matched;
+        // The PDF's text has no line breaks between entries: an entry is found in a block whose
+        // words hold it (the block is a reference list then; its entries cannot be split).
+        if matched < 3 {
+            let mut found: HashMap<usize, usize> = HashMap::new();
+            let mut whole_matched = 0;
+            for (_, entry) in &outline.references {
+                let whole = word_set(entry);
+                if whole.len() < 4 {
+                    continue;
+                }
+                let hit = blocks.iter().enumerate().filter(|(i, b)| !furniture(b) && !heading_blocks.contains(i) && out.blocks[*i].caption.is_none()).find(|(i, _)| contained(&whole, &words[*i]) >= 0.85);
+                if let Some((i, _)) = hit {
+                    *found.entry(i).or_default() += 1;
+                    whole_matched += 1;
+                }
+            }
+            if whole_matched >= 3 && whole_matched * 2 >= outline.references.len() {
+                report.references.matched = whole_matched;
+                for (i, count) in found {
+                    let block = &mut out.blocks[i];
+                    used.insert(i);
+                    if count >= 2 && block.kind != "reference_list" {
+                        labels.push(Label { block: i, page: block.page, what: "references", from: block.kind.clone(), to: "reference_list".into(), level: None, score: count as f32 });
+                        block.kind = "reference_list".into();
+                        block.origin = Some(ORIGIN.into());
+                    }
+                }
+            }
+        }
+        report.references.matched = report.references.matched.max(matched);
         if matched >= 3 && matched * 2 >= outline.references.len() {
             for (i, entries) in starts {
                 let block = &mut out.blocks[i];
@@ -700,6 +729,18 @@ mod tests {
         assert!(outline.contains(&"2 Data and methods") && !outline.iter().any(|o| o.starts_with("Figure")), "{outline:?}");
         let references = document.items.iter().find(|i| i.kind == "references").unwrap();
         assert_eq!(references.text.lines().count(), 4, "{}", references.text);
+    }
+
+    #[test]
+    fn finds_references_in_a_block_without_line_breaks() {
+        let mut before = layout();
+        let last = before.blocks.last_mut().unwrap();
+        last.text = last.text.replace('\n', " ");
+        let (after, report) = align(&before, &html());
+        assert_eq!(report.references, Count { html: 4, matched: 4 });
+        let refs = after.blocks.last().unwrap();
+        assert_eq!((refs.kind.as_str(), refs.entries.is_empty()), ("reference_list", true));
+        assert_eq!(texts(&before), texts(&after));
     }
 
     #[test]

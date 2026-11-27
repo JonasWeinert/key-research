@@ -711,11 +711,17 @@ async function findPdfLanded(record: OwnedView, challenge?: boolean) {
   if (!record.pdfFor || !record.findPdf || !contents || !findPdfPages || challenge) return;
   if (record.findPdf.stage === "attached" || record.findPdf.stage === "saved") return;
   const pdfFor = record.pdfFor;
+  // The page did not open (the tab shows its error page): say so, nothing to read there.
+  if (contents.getURL().startsWith("data:")) {
+    record.findPdf = { ...record.findPdf, error: "The publisher’s page didn’t open. Reload it, or try it through your library." };
+    return findPdfChanged(record);
+  }
   const landing = await findPdfPages.landed(pdfFor, contents).catch(() => undefined);
   if (!landing || !record.findPdf) return;
   record.findPdf = {
     ...record.findPdf,
     stage: "landed",
+    error: undefined,
     links: landing.links.slice(0, 3).map((l) => ({ url: l.url, label: l.label })),
     wall: landing.wall,
     signIn: landing.signIn,

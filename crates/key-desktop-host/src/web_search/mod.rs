@@ -710,6 +710,16 @@ pub fn dispatch(web: &WebSearch, library: &dyn Library, command: &str, args: &Js
             let email: Option<String> = arg(args, "email")?;
             json_output(web.find_pdf_for(args, email.as_deref())?)
         })(),
+            // A landing page Find PDF ended on (its live HTML): the PDF links on it, an access
+            // wall, whether it holds the article's text or only its abstract (key-index landing.rs).
+            "web_landing_page" => (|| {
+                let html: String = arg(args, "html")?;
+                let url: String = arg(args, "url")?;
+                if html.len() > 40 * 1024 * 1024 {
+                    return Err("The page is too large".into());
+                }
+                json_output(key_index::landing::read_landing(&html, &url))
+            })(),
         // Add by identifier: DOIs, ISBNs, PMIDs, PMCIDs and arXiv ids, many at once (identifiers.rs).
         "web_add_identifiers" => (|| {
             let text: String = arg(args, "text")?;
