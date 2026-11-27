@@ -34,6 +34,7 @@ import { BiblioSheets } from "./BiblioSheets";
 import { MarkdownExportHost } from "./markdown-export";
 import { FileRenameHost } from "./file-names";
 import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
+import { newReview, openReviewFile, ReviewSheetsHost, ReviewsRow } from "./review/review-entry";
 import { openDatabaseSearch } from "./db-search-entry";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
@@ -791,6 +792,7 @@ export default function App() {
       <AddFromSourceHost invoke={invoke} />
       <ItemLayer />
       <TagManagerHost invoke={invoke} />
+      <ReviewSheetsHost invoke={invoke} />
       <CommandCenter
         invoke={invoke}
         workspaceId={workspaceId}
@@ -801,6 +803,10 @@ export default function App() {
           { id: "library", label: "Show library", icon: "books", run: () => action("open-content", { section: "sources", workspaceId }) },
           ...(workspaceId ? [{ id: "tags", label: "Organise tags…", icon: "tag" as const, run: () => openTagManager(workspaceId) }] : []),
           ...(workspaceId ? [{ id: "databases", label: "Search databases…", icon: "database" as const, keywords: "pubmed scopus web of science openalex systematic review query builder", run: () => openDatabaseSearch(workspaceId) }] : []),
+          ...(workspaceId ? [
+            { id: "review-new", label: "New systematic review…", icon: "checklist" as const, keywords: "systematic review screening prisma meta-analysis cochrane covidence rayyan", run: () => newReview(workspaceId) },
+            { id: "review-open", label: "Open review file…", icon: "checklist" as const, keywords: "systematic review import merge", run: () => openReviewFile(invoke, workspaceId) },
+          ] : []),
           { id: "highlights", label: "All highlights", icon: "quote", shortcut: "⌘⇧H", run: () => action("open-content", { section: "highlights", workspaceId }) },
           { id: "inspector", label: inspectorOpen ? "Hide inspector" : "Show inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => setInspectorOpen((o) => !o) },
           { id: "sidebar", label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: "sidebar", run: () => setSidebarCollapsed((v) => !v) },
@@ -939,6 +945,7 @@ export default function App() {
               />
             )}
             {workspaceId && <InboxRow invoke={invoke} workspaceId={workspaceId} current={section === "inbox"} onOpen={() => action("open-content", { section: "inbox", workspaceId })} />}
+            {workspaceId && <ReviewsRow invoke={invoke} workspaceId={workspaceId} currentId={section === "review" ? activeView?.content?.entityId : undefined} />}
             <WorkspaceSection
               invoke={invoke}
               workspaceId={workspaceId}

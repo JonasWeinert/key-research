@@ -24,7 +24,8 @@ export type TabKind =
   | "source"
   | "home"
   | "pdf"
-  | "web";
+  | "web"
+  | "review";
 
 export interface TabSummary {
   id: string;
@@ -69,6 +70,7 @@ const KIND_GLYPH: Record<TabKind, IconName> = {
   source: "link",
   pdf: "filePdf",
   web: "globe",
+  review: "checklist",
 };
 
 /** The icon a tab shows for a view of `kind`. */

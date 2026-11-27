@@ -1,0 +1,168 @@
+// The systematic review's explanations (spread into help-content.ts's HELP), for people who have
+// never done a systematic review as much as for experienced teams. Same voice and budgets.
+import type { HelpEntry } from "../help-content";
+
+export const REVIEW_HELP = {
+  "review.what": {
+    kind: "explain",
+    title: "What is a systematic review?",
+    body: [
+      "A systematic review answers a question from all the studies on it, found and chosen by rules written down beforehand, so another team would choose the same ones.",
+      "In Key you import what your searches found, screen titles and abstracts, read the full texts of what is left, extract data from the included studies and, if they are alike enough, pool their results in a meta-analysis.",
+      "Key counts everything as you go and draws the PRISMA 2020 flow diagram journals ask for.",
+    ],
+    steps: ["Setup: write the question and the criteria", "Sources: import the records your searches found", "Title & abstract: include, exclude or maybe", "Full text: read and decide, with a reason", "Extraction and Analysis: collect the data and pool it"],
+    links: [{ label: "PRISMA 2020 statement", url: "https://www.prisma-statement.org/prisma-2020" }],
+  },
+  "review.screening": {
+    kind: "explain",
+    title: "Screening titles and abstracts",
+    body: [
+      "Decide from the title and abstract whether a record could meet your criteria. When unsure, keep it with Maybe: the full text settles it.",
+      "Press I to include, E to exclude, M for maybe; the next record follows. ⌘Z takes back your last decision. With two reviewers, each decides on their own; disagreements become conflicts to resolve.",
+    ],
+  },
+  "review.fulltext": {
+    kind: "explain",
+    title: "Full-text screening",
+    body: [
+      "Read each report that passed title and abstract screening and decide against every criterion. Excluding needs a reason, which PRISMA reports.",
+      "Find full text adds the record to your library and looks for an open-access PDF, or opens the publisher's page through your library's access. Reports you cannot get are marked not retrieved.",
+    ],
+  },
+  "review.evidence": { kind: "hint", text: "Highlight passages in the reader beside this tab; they appear here to attach to your decision as evidence." },
+  "review.question": {
+    kind: "explain",
+    title: "The review question",
+    body: [
+      "PICO (population, intervention, comparison, outcome) suits questions about effects of treatments; PECO swaps intervention for exposure; SPIDER suits qualitative evidence.",
+      "Write each part plainly. Your criteria usually follow them, one or more per part.",
+    ],
+    example: "Population: adults with chronic low back pain. Intervention: supervised exercise. Comparison: usual care. Outcome: pain at 12 weeks.",
+  },
+  "review.team": {
+    kind: "explain",
+    title: "Team and roles",
+    body: [
+      "Reviewers screen and extract. A tie-breaker resolves conflicts when the rules say a third person decides. Owners can change everything.",
+      "Choose who is screening at the top of the review: decisions are recorded under that person.",
+    ],
+  },
+  "review.team.local": { kind: "hint", text: "People are local profiles on this Mac for now; working together across Macs comes with sync. Export and import the review file meanwhile." },
+  "review.rules": {
+    kind: "explain",
+    title: "Screening rules",
+    body: [
+      "Cochrane reviews have two people screen each record independently, without seeing each other's decisions (blind), and settle disagreements by discussion or a third person.",
+      "A solo review can start with one reviewer and tighten the rules later. Rule changes after decisions make a new protocol version.",
+    ],
+  },
+  "review.criteria": {
+    kind: "explain",
+    title: "Eligibility criteria",
+    body: [
+      "Inclusion criteria say what a study must have; exclusion criteria what rules it out. Give each a short label and guidance for borderline cases.",
+      "Each criterion can name the exclusion reason a record gets when it fails, and the stages it applies at. Changing criteria after screening started makes a new version and can flag affected decisions for another look.",
+    ],
+  },
+  "review.criteria.hint": { kind: "hint", text: "Short labels screeners can apply at a glance; put the detail in the guidance." },
+  "review.criteria.link": {
+    kind: "explain",
+    title: "Criteria linked to metadata",
+    body: [
+      "Some criteria can be read from a record's details: publication year, document type, language, whether it has an abstract, a custom property of its library source, or a Key formula.",
+      "Linked criteria suggest an exclusion beside each record, with the rule as the reason. Exclude automatically applies it to undecided records as a labelled, undoable decision by Rules, which PRISMA counts as marked ineligible by automation tools.",
+    ],
+    example: "Year is at least 2000; Language is one of en, de; Formula: {hasAbstract}",
+  },
+  "review.reasons": {
+    kind: "explain",
+    title: "Exclusion reasons",
+    body: [
+      "Full-text exclusions need reasons for the PRISMA diagram and the table of excluded studies.",
+      "The order is a hierarchy: when a report fails several criteria, PRISMA reports the first reason in this list, so put the reasons that are quickest to check first.",
+    ],
+  },
+  "review.reasons.order": { kind: "hint", text: "Order matters: when several reasons apply, PRISMA counts the one highest in the list." },
+  "review.keywords": {
+    kind: "explain",
+    title: "Highlighted words",
+    body: ["Words you list are marked in titles and abstracts while you screen: green for words that speak for inclusion, red for words that speak against. They speed reading; they never decide."],
+    example: "randomi* marks randomised, randomized and randomly.",
+  },
+  "review.pilot": {
+    kind: "explain",
+    title: "Pilot rounds",
+    body: [
+      "Before the main round, every reviewer screens the same random sample. Comparing decisions shows where the criteria are unclear.",
+      "Agreement is the share of records decided alike; Cohen's kappa corrects it for agreement by chance. Above 0.6 is usually good enough to go on; below, discuss the disagreements and sharpen the guidance.",
+    ],
+  },
+  "review.assign": {
+    kind: "explain",
+    title: "Who screens what",
+    body: [
+      "By default every reviewer can screen every record until the rules' number of reviewers have. To share the work, split the records by percentage, and have a share of them screened twice to check agreement.",
+      "The split is random but reproducible. Records imported later follow the same rule.",
+    ],
+  },
+  "review.kappa": {
+    kind: "explain",
+    title: "Agreement and kappa",
+    body: ["Cohen's kappa is 1 when two reviewers always agree and 0 when they agree no more than chance would. Landis and Koch's bands: up to 0.2 slight, 0.4 fair, 0.6 moderate, 0.8 substantial, above almost perfect. With three or more reviewers Key uses Fleiss' kappa."],
+  },
+  "review.versions": {
+    kind: "explain",
+    title: "Protocol versions",
+    body: [
+      "Once decisions exist, every change to the rules or criteria makes a new version with a note saying what changed. Each decision records the version it was made under.",
+      "Reviews report deviations from their protocol; the notes here are that record.",
+    ],
+  },
+  "review.audit": { kind: "hint", text: "Every decision, note and change, with who made it and when. Nothing is overwritten: an undo is a new entry." },
+  "review.sources": {
+    kind: "explain",
+    title: "Where records come from",
+    body: [
+      "PRISMA 2020 reports records by how they were found: databases (PubMed, Embase …), registers (ClinicalTrials.gov …) and other methods (citation searching, websites, organisations).",
+      "Export each database's results as RIS, BibTeX, EndNote XML, PubMed .nbib or CSV and import them here, or run a Database search in Key, which keeps the strategy and each database's count.",
+    ],
+  },
+  "review.sources.selection": { kind: "hint", text: "To add a selection from your library, select the sources there and choose Send to review." },
+  "review.import.dedup": { kind: "hint", text: "Records with the same DOI or PubMed ID as one already here are removed as duplicates and counted; look-alikes wait for you to compare." },
+  "review.prisma": {
+    kind: "explain",
+    title: "The PRISMA flow diagram",
+    body: [
+      "PRISMA 2020 asks reviews to show how many records were found, removed as duplicates, screened, excluded, sought, assessed and included, with reasons for full-text exclusions.",
+      "Key draws it from the review's own data, so it is always current. Export it as SVG or PNG for the manuscript, or the numbers as CSV.",
+    ],
+    links: [{ label: "PRISMA 2020 flow diagram", url: "https://www.prisma-statement.org/prisma-2020-flow-diagram" }],
+  },
+  "review.extraction": {
+    kind: "explain",
+    title: "Data extraction",
+    body: [
+      "For each included study, fill in forms: study characteristics, outcome data for meta-analysis, and risk of bias. Build your own or start from a template, and change any field.",
+      "With two extractors, each fills the forms on their own; values that differ show side by side until one is agreed. A quote from the paper backs each value.",
+    ],
+  },
+  "review.extraction.quotes": { kind: "hint", text: "Highlight in the reader, then use the quote button beside a field to take the passage and its page." },
+  "review.forms": { kind: "hint", text: "The risk-of-bias templates summarise each tool's domains in Key's words; use the official guidance documents when judging." },
+  "review.meta": {
+    kind: "explain",
+    title: "Meta-analysis",
+    body: [
+      "A meta-analysis pools studies' effects, weighting each by its precision. A fixed effect assumes one true effect; random effects allow it to differ between studies, which is usually more realistic.",
+      "I² is the share of variation due to real differences rather than chance; the prediction interval shows where a new study's effect would likely fall. Hartung–Knapp gives wider, more honest intervals with few studies.",
+    ],
+    privacy: "Calculated on this Mac. Results match R's metafor package on its published examples.",
+  },
+  "review.egger.few": { kind: "hint", text: "Egger's test needs at least three studies; with fewer than ten, read the funnel plot with care." },
+  "empty.review.screen": { kind: "empty", title: "No records to screen yet", what: "Records your searches found are screened here, one at a time.", todo: "Import a file of search results, or add records from your library." },
+  "empty.review.fulltext": { kind: "empty", title: "Nothing at full text yet", what: "Records included or kept as maybe at title and abstract come here to be read in full.", todo: "Screen titles and abstracts first." },
+  "empty.review.sources": { kind: "empty", title: "No records yet", what: "Each import is listed here with its source and counts for PRISMA.", todo: "Drop a RIS, BibTeX, EndNote XML, PubMed or CSV file on this page." },
+  "empty.review.extraction": { kind: "empty", title: "No included studies yet", what: "Studies included at full text are listed here for data extraction.", todo: "Include studies at full-text screening." },
+  "empty.review.analysis": { kind: "empty", title: "Nothing to analyse yet", what: "Outcome data extracted from included studies is pooled here.", todo: "Include studies, then extract their outcome data." },
+  "empty.review.outcomes": { kind: "empty", title: "No outcome data yet", what: "Add the Outcome data form in Setup › Extraction forms, then fill it in for each study.", todo: "Rows need an outcome name and events, means or an estimate." },
+} satisfies Record<string, HelpEntry>;

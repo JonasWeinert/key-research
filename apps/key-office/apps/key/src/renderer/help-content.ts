@@ -9,6 +9,8 @@
 //   tip      a first-use coach mark, shown once                 <FirstUseTip help="…" />
 //   term     a glossary entry (Settings › General › Glossary)
 
+import { REVIEW_HELP } from "./review/review-help";
+
 export interface HelpLink {
   label: string;
   url: string;
@@ -804,6 +806,8 @@ export const HELP = {
   "term.mesh": term("MeSH", "Medical Subject Headings: the labels PubMed's indexers give each article, so a search finds it whatever words its authors used."),
   "term.grey-literature": term("Grey literature", "Reports, working papers, theses and registrations published outside journals. Reviews search it to avoid publication bias."),
   "term.mirror": term("Mirror folder", "A Finder folder showing your PDFs by collection, using hard links so it takes no extra space."),
+  // ── Systematic reviews (review/review-help.ts) ───────────────────────────────────────
+  ...REVIEW_HELP,
 } satisfies Record<string, HelpEntry>;
 
 export type HelpId = keyof typeof HELP;

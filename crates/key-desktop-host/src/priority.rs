@@ -30,7 +30,7 @@ const INTERACTIVE: &[&str] = &[
     "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
     "store_fill_cell", "store_fill_cell_use_answer", "store_fill_cell_keep", "store_fill_again_ids", "store_fill_source_cells",
     // Systematic reviews (review_commands.rs): screening keystrokes and the reads behind them.
-    "review_get", "review_record", "review_queue", "review_records", "review_decide", "review_undo", "review_retract", "review_resolve", "review_reopen",
+    "review_get", "review_stamp", "review_record", "review_queue", "review_records", "review_decide", "review_undo", "review_retract", "review_resolve", "review_reopen",
     "review_note", "review_labels", "review_flags_clear", "review_fulltext", "review_extract", "review_extraction", "review_pair_resolve", "review_create",
     "review_rename", "review_team_save", "review_protocol_save", "review_protocol_impact",
 ];

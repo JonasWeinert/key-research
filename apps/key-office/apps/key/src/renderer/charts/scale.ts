@@ -42,6 +42,14 @@ export function scale(domain: [number, number], range: [number, number], { log =
     d0 -= log ? d0 / 2 : 1;
     d1 += log ? d1 : 1;
   }
+  if (log && nice && d0 > 0 && d1 > 0) {
+    // Out to the nearest 1, 2 or 5 times a power of ten, so the axis has round ticks.
+    const steps = (p: number) => [1, 2, 5].map((m) => m * 10 ** p);
+    const p0 = Math.floor(Math.log10(d0)),
+      p1 = Math.floor(Math.log10(d1));
+    d0 = [...steps(p0 - 1), ...steps(p0)].filter((v) => v <= d0 * 1.0001).at(-1) ?? d0;
+    d1 = [...steps(p1), ...steps(p1 + 1)].find((v) => v >= d1 * 0.9999) ?? d1;
+  }
   let tickValues = log ? logTicks(d0, d1) : niceTicks(d0, d1, ticks);
   if (nice && !log && tickValues.length) {
     d0 = Math.min(d0, tickValues[0]);

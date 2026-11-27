@@ -431,6 +431,7 @@ function viewKind(v: OwnedView | undefined) {
   if (section === "sources") return "library";
   if (section === "note" || section === "canvas" || section === "search" || section === "inbox") return section;
   if (section === "databases") return "database";
+  if (section === "review") return "review";
   if (section === "webpage") return "web";
   if (section === "source" || section === "file" || ENTITY_SECTIONS.includes(section ?? "")) return "page";
   return "records";
@@ -1841,8 +1842,8 @@ function freezeWindows() {
 }
 
 /** People, journals and topics open as pages of their own; the host command that reads each. */
-const ENTITY_SECTIONS = ["person", "venue", "topic", "tag"];
-const ENTITY_COMMAND: Record<string, string> = { person: "store_person", venue: "store_venue", topic: "store_topic", tag: "store_tag" };
+const ENTITY_SECTIONS = ["person", "venue", "topic", "tag", "review"];
+const ENTITY_COMMAND: Record<string, string> = { person: "store_person", venue: "store_venue", topic: "store_topic", tag: "store_tag", review: "review_get" };
 const contentKey = (section: string, workspaceId?: string, projectId?: string, id?: string | null) =>
   section === "record" && id
     ? JSON.stringify(["record", workspaceId, id])
@@ -1899,7 +1900,7 @@ async function openContent(w: ShellWindow, p: any) {
         : p.section === "note"
           ? String(p.title || "Untitled note").slice(0, 200)
           : p.section === "canvas" || p.section === "file" || p.section === "webpage" || ENTITY_SECTIONS.includes(p.section)
-            ? String(p.title || (p.section === "file" ? "File" : p.section === "canvas" ? "Untitled canvas" : p.section === "person" ? "Person" : p.section === "venue" ? "Journal" : p.section === "tag" ? "Tag" : "Topic")).slice(0, 200)
+            ? String(p.title || (p.section === "file" ? "File" : p.section === "canvas" ? "Untitled canvas" : p.section === "person" ? "Person" : p.section === "venue" ? "Journal" : p.section === "tag" ? "Tag" : p.section === "review" ? "Systematic review" : "Topic")).slice(0, 200)
             : p.section === "highlights"
               ? "Highlights"
               : p.section === "inbox"
@@ -2542,6 +2543,12 @@ else
             await refreshWorkspaces();
             launcher?.changed();
             return renamed;
+          }
+          // A screening suggestion: the review host writes the request and checks the answer; the AI client sends it.
+          if (command === "review_ai_suggest") {
+            const request = await registry.invoke<any>("review_ai_request", args, targetWorkspace);
+            const answer = await ai.ask(request);
+            return registry.invoke("review_ai_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
           }
           if (ai.handles(command)) return ai.handle(command, args, targetWorkspace);
           if (command === "library_download_pdf") {

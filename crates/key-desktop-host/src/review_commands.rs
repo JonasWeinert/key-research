@@ -212,7 +212,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
         Err(e) => return Some(Err(format!("Reviews are not available: {e}"))),
     };
     let lookup = Lookup(library);
-    let review = || arg::<String>(args, "reviewId");
+    let review = || arg::<String>(args, "reviewId").or_else(|_| arg::<String>(args, "id"));
     let actor = || -> Result<String, String> { arg::<String>(args, "actor").map_err(|_| "Choose who is screening".to_string()) };
     let result: Result<Json, String> = (|| {
         Ok(match command {
@@ -226,6 +226,8 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 json!({ "reviewId": id, "actor": owner })
             }
             "review_get" => reviews.summary(&review()?, text(args, "viewer"))?,
+            // Cheap: whether anything changed since the screen last read (another window, a merge).
+            "review_stamp" => reviews.read(&review()?, |state, _| Ok(json!({ "events": state.events, "last": state.last_event.as_ref().map(|e| &e.1) })))?,
             "review_rename" => {
                 reviews.rename(&review()?, text(args, "name"), &actor()?)?;
                 json!(true)
