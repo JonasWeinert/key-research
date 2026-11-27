@@ -1,7 +1,5 @@
-// What a new review starts with, and the extraction form templates. The risk-of-bias templates
-// follow the domains of RoB 2, ROBINS-I and the Newcastle–Ottawa scale with Key's own short
-// summaries: they are editable starting points, not the instruments' text — reviewers should use
-// the official guidance documents alongside them.
+// What a new review starts with, and the extraction form templates. Risk of bias has its own
+// stage and tools (rob.rs); it is no longer offered as an extraction form.
 use crate::model::*;
 
 fn field(id: &str, label: &str, kind: &str) -> Field {
@@ -139,6 +137,7 @@ pub fn default_protocol() -> Protocol {
         label_keys: [("Background".to_string(), "b".to_string()), ("Check later".to_string(), "l".to_string())].into_iter().collect(),
         forms: vec![characteristics_form()],
         shortcuts: Default::default(),
+        plan: Default::default(),
     }
 }
 
@@ -234,94 +233,38 @@ pub fn outcomes_form() -> Form {
     }
 }
 
-fn domain(id: &str, title: &str, summary: &str, options: &[&str]) -> Section {
+fn domain(id: &str, title: &str, options: &[&str]) -> Section {
     Section { show_when: None,
         id: format!("s-{id}"),
         title: title.into(),
-        guidance: summary.into(),
+        guidance: String::new(),
         fields: vec![choice(&format!("{id}_judgement"), "Judgement", options), Field { quote: true, ..field(&format!("{id}_support"), "Support for judgement", "longtext") }],
     }
 }
 
+/// The shape of the risk-of-bias extraction form older reviews used (a judgement and its
+/// support per domain), kept so tests can build such a review; risk of bias now has its own
+/// stage (rob.rs), which brings these answers in. Domain labels are Key's own.
 pub fn rob2_form() -> Form {
     let o = &["Low risk", "Some concerns", "High risk"];
     Form {
         id: "f-rob2".into(),
-        name: "Risk of bias (RoB 2 style, randomised trials)".into(),
+        name: "Risk of bias (randomised trials)".into(),
         kind: "rob".into(),
         sections: vec![
-            domain("d1", "Randomisation process", "Was the allocation sequence random and concealed, and were groups similar at baseline?", o),
-            domain("d2", "Deviations from intended interventions", "Did participants, carers or staff know the assignment, and did that change what people received in a way that could affect the result?", o),
-            domain("d3", "Missing outcome data", "Were outcome data available for nearly everyone, or is there evidence that missingness did not bias the result?", o),
-            domain("d4", "Measurement of the outcome", "Was the outcome measured appropriately and the same way in all groups, and could knowing the assignment have influenced it?", o),
-            domain("d5", "Selection of the reported result", "Was the result chosen from several measurements or analyses on the basis of the findings?", o),
-            domain("overall", "Overall", "Usually the least favourable judgement across domains.", o),
-        ],
-    }
-}
-
-pub fn robins_i_form() -> Form {
-    let o = &["Low", "Moderate", "Serious", "Critical", "No information"];
-    Form {
-        id: "f-robins-i".into(),
-        name: "Risk of bias (ROBINS-I style, non-randomised studies)".into(),
-        kind: "rob".into(),
-        sections: vec![
-            domain("c1", "Confounding", "Could factors that predict both the intervention and the outcome explain the effect, and were they controlled for?", o),
-            domain("c2", "Selection of participants", "Was entry into the study, or into the analysis, related to both intervention and outcome?", o),
-            domain("c3", "Classification of interventions", "Were intervention groups clearly defined and recorded at the start, not from hindsight?", o),
-            domain("c4", "Deviations from intended interventions", "Were there departures from the intended intervention beyond usual practice, and were they balanced?", o),
-            domain("c5", "Missing data", "Were outcome, intervention or confounder data missing for a share of participants that could change the result?", o),
-            domain("c6", "Measurement of outcomes", "Could the measurement have differed between groups, or been influenced by knowing the intervention?", o),
-            domain("c7", "Selection of the reported result", "Was the reported result picked from several outcomes, analyses or subgroups?", o),
-            domain("overall", "Overall", "Usually the most severe judgement across domains.", o),
-        ],
-    }
-}
-
-pub fn nos_form() -> Form {
-    let star = &["Star", "No star", "Not reported"];
-    let item = |id: &str, label: &str, guidance: &str| guided(choice(id, label, star), guidance);
-    Form {
-        id: "f-nos".into(),
-        name: "Quality (Newcastle–Ottawa style, cohort studies)".into(),
-        kind: "rob".into(),
-        sections: vec![
-            Section { show_when: None,
-                id: "s-selection".into(),
-                title: "Selection".into(),
-                guidance: "Up to four stars.".into(),
-                fields: vec![
-                    item("sel_exposed", "Exposed cohort represents the target population", "A community or typical group rather than a select one."),
-                    item("sel_nonexposed", "Non-exposed cohort from the same source", ""),
-                    item("sel_exposure", "Exposure ascertained reliably", "Records or structured interview rather than self-report alone."),
-                    item("sel_absent", "Outcome absent at the start", ""),
-                ],
-            },
-            Section { show_when: None,
-                id: "s-comparability".into(),
-                title: "Comparability".into(),
-                guidance: "Up to two stars: the most important factor, and any additional factor.".into(),
-                fields: vec![choice("comparability", "Cohorts comparable by design or analysis", &["2 stars", "1 star", "No star"])],
-            },
-            Section { show_when: None,
-                id: "s-outcome".into(),
-                title: "Outcome".into(),
-                guidance: "Up to three stars.".into(),
-                fields: vec![
-                    item("out_assessment", "Outcome assessed independently or from records", ""),
-                    item("out_length", "Follow-up long enough for outcomes to occur", ""),
-                    item("out_adequacy", "Follow-up complete, or losses unlikely to bias", ""),
-                ],
-            },
-            Section { show_when: None, id: "s-total".into(), title: "Total".into(), guidance: String::new(), fields: vec![field("nos_total", "Total stars (0–9)", "number")] },
+            domain("d1", "Randomisation", o),
+            domain("d2", "Deviations from the planned intervention", o),
+            domain("d3", "Missing outcome data", o),
+            domain("d4", "Outcome measurement", o),
+            domain("d5", "Choice of the reported result", o),
+            domain("overall", "Overall", o),
         ],
     }
 }
 
 /// The templates the form builder offers.
 pub fn form_templates() -> Vec<Form> {
-    vec![characteristics_form(), outcomes_form(), rob2_form(), robins_i_form(), nos_form(), Form { id: "f-custom".into(), name: "Custom form".into(), kind: "custom".into(), sections: vec![section("s-1", "Section 1", vec![field("field_1", "Field 1", "text")])] }]
+    vec![characteristics_form(), outcomes_form(), Form { id: "f-custom".into(), name: "Custom form".into(), kind: "custom".into(), sections: vec![section("s-1", "Section 1", vec![field("field_1", "Field 1", "text")])] }]
 }
 
 #[cfg(test)]

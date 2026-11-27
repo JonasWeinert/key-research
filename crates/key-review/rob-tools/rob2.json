@@ -1,0 +1,25 @@
+{
+  "id": "rob2",
+  "name": "Randomised trials (RoB 2 structure)",
+  "short": "RoB 2",
+  "version": "2",
+  "design": "Randomised trials",
+  "level": "result",
+  "url": "https://www.riskofbias.info/welcome/rob-2-0-tool",
+  "about": "Key provides the assessment structure: five domains, the judgement scale and a worst-domain overall default. The questions and the decision algorithm are in the official tool: open it beside Key, answer there, and record each domain's judgement and its basis here.",
+  "licence": "RoB 2 © the authors, licensed CC BY-NC-ND 4.0 (stated at https://www.riskofbias.info/welcome/rob-2-0-tool, checked 2026-11-27). Key ships none of its text: only neutral domain labels of its own and a link.",
+  "optionSets": {},
+  "levels": [
+    { "id": "low", "label": "Low risk", "tone": "green", "symbol": "plus", "common": "low" },
+    { "id": "some", "label": "Some concerns", "tone": "amber", "symbol": "minus", "common": "some" },
+    { "id": "high", "label": "High risk", "tone": "red", "symbol": "cross", "common": "high" }
+  ],
+  "domains": [
+    { "id": "d1", "short": "D1", "name": "Randomisation", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "d2", "short": "D2", "name": "Deviations from the planned intervention", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "d3", "short": "D3", "name": "Missing outcome data", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "d4", "short": "D4", "name": "Outcome measurement", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "d5", "short": "D5", "name": "Choice of the reported result", "prompt": "", "questions": [], "rule": { "kind": "manual" } }
+  ],
+  "overall": { "kind": "worst", "note": "Key's default suggestion is the least favourable domain; the official guidance decides the overall judgement." }
+}

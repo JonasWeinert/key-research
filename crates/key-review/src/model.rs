@@ -407,6 +407,10 @@ pub struct Protocol {
     pub forms: Vec<Form>,
     /// Keyboard shortcuts the reviewer changed (action → key).
     pub shortcuts: BTreeMap<String, String>,
+    /// std-A: the protocol document beyond question and criteria (PRISMA-P / PROSPERO fields,
+    /// planned outcomes and analyses, review type), versioned with the rest.
+    #[serde(skip_serializing_if = "crate::protocol_doc::Plan::is_empty")]
+    pub plan: crate::protocol_doc::Plan,
 }
 
 impl Default for Protocol {

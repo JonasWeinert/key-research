@@ -19,7 +19,7 @@ import {
 import { existsSync } from "node:fs";
 import { join, resolve, basename, dirname, extname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { access, copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, copyFile, mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { AiService } from "./ai/service";
 import { secrets as secretStore } from "./services/setup";
@@ -42,13 +42,13 @@ import { deliverDeepLinks, listenForDeepLinks } from "./deep-links";
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
-import { SignInService, type SignInOp } from "./browser/sign-in";
+import { SignInService, signInDiagnostics, type SignInOp } from "./browser/sign-in";
 import { properUrlOf, ProxyService, withLibraryAccess, type ProxyOp } from "./browser/proxy-service";
 import { simulateNetwork } from "./browser/network";
 import { importProxies } from "./browser/proxy-import";
 import { WebSources } from "./web-sources";
 import { PageActions } from "./browser/page-actions";
-import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browser/temp-pdfs";
+import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, isPdfFile, type TempPdf } from "./browser/temp-pdfs";
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
 import { FIND_PDF_BANNER_HEIGHT, webPageRect } from "../shared/browser-layout";
 import { FindPdfPages, shortTitle, type FindPdfBanner } from "./find-pdf-pages";
@@ -118,6 +118,9 @@ type OwnedView = {
   pdfFor?: { workspaceId: string; sourceId: string; title?: string };
   /** The banner over a Find PDF tab: what the publisher's page offers (find-pdf-pages.ts). */
   findPdf?: FindPdfBanner;
+  /** A browser shown inside another view (a review's full-text pane), not as a tab of its own:
+   * placed where that view's renderer says, for one review record's Find PDF attempt. */
+  embedded?: EmbeddedBrowser;
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
   libraryNotice?: "added" | "exists";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
@@ -205,6 +208,8 @@ function panelHost(viewId: string) {
 /** The view whose tab holds `viewId`: itself, or the reader it is docked in. */
 const tabViewId = (viewId: string) => panelHost(viewId)?.id ?? viewId;
 function shellOfView(viewId: string) {
+  const embedded = views.get(viewId)?.embedded;
+  if (embedded) return liveShells().find((w) => w.id === embedded.windowId);
   const id = tabViewId(viewId);
   return liveShells().find((w) => findViewTab(w.state, id));
 }
@@ -510,10 +515,21 @@ const REVIEW_READS = new Set([
   "review_form_templates", "review_criteria_suggestions", "review_protocol_impact", "review_duplicates", "review_fulltexts", "review_fulltext_match",
   "review_fulltext_csv_read", "review_fulltext_info", "review_fulltext_bytes", "review_parse_selection", "review_form_preview", "review_agreement",
   "review_ai_request", "review_ai_extract_request", "review_lookup",
+  // std-B: citation searching, AI use, conduct checks, extraction pilots, contacts (reads).
+  "review_chase_view", "review_chase_status", "review_chase_start", "review_chase_cancel", "review_ai_use", "review_conduct", "review_xpilots", "review_contacts",
+  // std-A: reporting reads
+  "review_checklist", "review_protocol_doc", "review_search_report", "review_report_export",
+  "review_ai_request", "review_ai_extract_request", "review_fulltext_check", "review_links_for_source",
+  // std-C: risk of bias and certainty reads (key_review::certainty::READS).
+  "review_rob_tools", "review_rob_overview", "review_rob_assessment", "review_rob_plots", "review_rob_analyse", "review_grade_overview", "review_grade_outcome", "review_grade_preview", "review_grade_sof",
   // std-D: advanced synthesis, conversions and exports.
   "review_moderators", "review_synthesis", "review_convert", "review_conversion_kinds", "review_export_r", "review_revman_export", "review_revman_check",
   "review_studies_export", "review_bundle", "review_migrate_preview",
 ]);
+/** Review commands that may change the library too (a full text shared with a linked source). */
+/** Library writes a review linked to a source must hear of (its file, a merge, the trash). */
+const LIBRARY_FILE_WRITES = new Set(["store_attach_file", "store_full_text_add", "store_full_text_primary", "store_full_text_remove", "store_trash", "store_restore", "store_merge_sources", "store_merge_exact", "store_delete"]);
+const REVIEW_LIBRARY_WRITES = new Set(["review_fulltext_attach", "review_fulltext_detach", "review_fulltext_reconcile", "review_fulltext_to_library", "review_link_library", "review_links_refresh"]);
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {
   for (const w of liveShells()) w.window.webContents.send(event, value);
@@ -537,6 +553,7 @@ async function refreshReaderTitles(workspaceId: string) {
 }
 function tabsChanged(w: ShellWindow) {
   emitTo(w, "tabs-changed", snapshot(w));
+  for (const v of views.values()) if (v.embedded?.windowId === w.id) emitTo(w, "embedded-browser", embeddedState(v));
   saveWindows();
 }
 function homeView(): OwnedView {
@@ -648,6 +665,8 @@ registerNativeKind("web", {
         if (w) tabsChanged(w);
       },
       open(url, background) {
+        // An embedded browser has no tabs: the link opens in it, still for the same attempt.
+        if (record.embedded) return void record.view?.webContents.loadURL(url).catch(() => undefined);
         const w = shellOfView(record.id) ?? focusedShell();
         const found = w && findViewTab(w.state, record.id);
         const from = { background, referrer: record.title, referrerUrl: webUrl(web.url), pdfFor: record.pdfFor };
@@ -744,7 +763,10 @@ async function findPdfLanded(record: OwnedView, challenge?: boolean) {
   // The page's own PDF link (or a viewer's Download button), pointed at for the person to click.
   const pointer = await pointAtPdf(contents, { urls: landing.links.map((l) => l.url), labels: landing.controls ?? [] }, { scroll: true, accent: pointerAccent() });
   if (!record.findPdf || record.findPdf.stage !== "landed") return;
-  record.findPdf = { ...record.findPdf, pointer: pointer.found ? { label: pointer.label } : undefined };
+  // Somewhere else than the publisher's site, with nothing to point at: still watching, quietly.
+  const site = siteOf(contents.getURL());
+  const home = record.findPdf.home ?? site;
+  record.findPdf = { ...record.findPdf, home, away: !!site && site !== home && !pointer.found && !landing.wall, pointer: pointer.found ? { label: pointer.label } : undefined };
   findPdfChanged(record);
   // The snapshot is taken in the background; the banner says so once it is there.
   void findPdfLandedSnapshot(record);
@@ -755,6 +777,14 @@ async function findPdfLandedSnapshot(v: OwnedView) {
   if (v.findPdf?.stage === "landed" && !!kept !== v.findPdf.snapshot) {
     v.findPdf = { ...v.findPdf, snapshot: !!kept };
     findPdfChanged(v);
+  }
+}
+/** A site by its last two labels (journal.example, not www.journal.example). */
+function siteOf(url: string) {
+  try {
+    return new URL(properUrlOf(url)).hostname.split(".").slice(-2).join(".");
+  } catch {
+    return "";
   }
 }
 /** The pointer's colour: Key's accent in the app's theme (white halo around it on the page). */
@@ -781,6 +811,8 @@ async function findPdfOp(w: ShellWindow, record: OwnedView, op: string, url?: st
   const contents = record.view?.webContents;
   const pdfFor = record.pdfFor;
   if (!pdfFor || !record.findPdf || !contents) throw Error("This tab is not looking for a PDF");
+  // A review's browser: saving the page and giving up are the review's (its record, not a source).
+  if (record.embedded && (op === "save" || op === "unavailable" || op === "source")) return void emitTo(w, "embedded-browser", { ...embeddedState(record), request: op });
   // "Show me": the pointed-at link, scrolled to and pulsing again (pointed at anew if it went).
   if (op === "show") {
     if (!(await showPdfPointer(contents))) {
@@ -833,9 +865,15 @@ async function findPdfOp(w: ShellWindow, record: OwnedView, op: string, url?: st
   } else if (op === "source") await openSourcePage(w, { workspaceId: pdfFor.workspaceId, sourceId: pdfFor.sourceId });
 }
 /** Find PDF's scratch pages, as commands the shell calls (SourcePage, the bulk results, the review tool). */
-const FIND_PDF_PAGE_COMMANDS = new Set(["find_pdf_page", "find_pdf_page_save", "find_pdf_page_discard", "saved_page_capture"]);
+const FIND_PDF_PAGE_COMMANDS = new Set(["find_pdf_page", "find_pdf_page_save", "find_pdf_page_discard", "saved_page_capture", "embedded_browser_pdf"]);
 async function findPdfPageCommand(command: string, args: any, workspaceId: string) {
   if (!findPdfPages) throw Error("The browser is not ready yet");
+  // The PDF a review's browser caught: where it is, and its bytes for the review to read (up to 60 MB).
+  if (command === "embedded_browser_pdf") {
+    const pdf = views.get(String(args?.id ?? ""))?.embedded?.pdf;
+    if (!pdf) throw Error("No PDF is waiting");
+    return { path: pdf.path, name: pdf.name, size: pdf.size, url: pdf.url, base64: pdf.size <= 60 * 1024 * 1024 && args?.bytes !== false ? (await readFile(pdf.path)).toString("base64") : null };
+  }
   const sourceId = args?.sourceId ? String(args.sourceId) : "";
   if (command === "find_pdf_page") {
     const kept = sourceId ? await findPdfPages.kept(workspaceId, sourceId) : undefined;
@@ -866,6 +904,104 @@ async function findPdfPageCommand(command: string, args: any, workspaceId: strin
       return { value: await findPdfPages!.captureTo(contents, landing), access: { access: "unknown" as const, reason: "", telling: false } };
     }),
   );
+}
+// ── A browser inside a review's full-text pane (renderer review/review-browser.tsx) ──
+interface EmbeddedBrowser {
+  windowId: string;
+  /** The view whose renderer hosts it (the review tab). */
+  hostViewId: string;
+  /** Where its page goes, in window coordinates (undefined while the host does not show it). */
+  rect?: { x: number; y: number; width: number; height: number };
+  review: { workspaceId: string; reviewId: string; recordId: string; title: string };
+  /** A PDF caught on the way: kept in a temporary folder until the review takes it. */
+  pdf?: { path: string; directory: string; name: string; size: number; url: string };
+}
+function embeddedState(v: OwnedView) {
+  const summary = viewSummary(v.id);
+  return {
+    id: v.id,
+    hostViewId: v.embedded?.hostViewId,
+    recordId: v.embedded?.review.recordId,
+    web: summary.web && { ...summary.web, findPdf: v.findPdf && { ...v.findPdf, proxy: v.findPdf.stage === "landed" ? proxyService?.proxyNameFor(v.web?.url ?? "") : undefined } },
+    pdf: v.embedded?.pdf && { name: v.embedded.pdf.name, size: v.embedded.pdf.size, url: v.embedded.pdf.url },
+  };
+}
+/** Opens the review record's browser in the review's pane (one per review tab: another record's
+ *  attempt ends the one before). */
+function embeddedOpen(w: ShellWindow, p: any) {
+  const url = webUrl(p?.url);
+  if (!url) throw Error("Give a web address to open");
+  const hostViewId = String(p?.hostViewId || activeViewId(w) || "");
+  const review = p?.review ?? {};
+  for (const v of [...views.values()]) if (v.embedded?.hostViewId === hostViewId) embeddedClose(v.id);
+  const record = webView(url);
+  record.embedded = {
+    windowId: w.id,
+    hostViewId,
+    review: { workspaceId: String(review.workspaceId || w.workspaceId), reviewId: String(review.reviewId ?? ""), recordId: String(review.recordId ?? ""), title: String(review.title ?? "").slice(0, 200) },
+  };
+  record.pdfFor = { workspaceId: record.embedded.review.workspaceId, sourceId: `review-${record.embedded.review.reviewId}-${record.embedded.review.recordId}`, title: record.embedded.review.title };
+  record.findPdf = findPdfBanner(record.pdfFor);
+  views.set(record.id, record);
+  attach(record, w);
+  record.view?.setVisible(false);
+  return { id: record.id, state: embeddedState(record) };
+}
+/** Ends the attempt: its page snapshot and any PDF it held go, and so does the browser. */
+function embeddedClose(id: string) {
+  const record = views.get(id);
+  if (!record?.embedded) return;
+  const { pdfFor } = record;
+  const pdf = record.embedded.pdf;
+  const w = shellOfView(id);
+  if (pdfFor) void findPdfPages?.discard(pdfFor.workspaceId, pdfFor.sourceId).catch(() => undefined);
+  if (pdf) void rm(pdf.directory, { recursive: true, force: true }).catch(() => undefined);
+  nativeKinds.web.dispose(record);
+  views.delete(id);
+  if (w) emitTo(w, "embedded-browser", { id, closed: true });
+}
+/** A PDF caught in a review's browser: kept for the review to check and attach. */
+async function embeddedPdf(record: OwnedView, file: { path: string; url: string; filename: string }) {
+  const embedded = record.embedded!;
+  try {
+    if (!(await isPdfFile(file.path))) throw Error("What came was not a PDF");
+    const directory = await mkdtemp(join(tmpdir(), "key-review-pdf-"));
+    const name = `${safeFileName(embedded.review.title || pdfTitle(file.filename, file.url)).replace(/\.pdf$/i, "").slice(0, 80) || "Full text"}.pdf`;
+    const path = join(directory, name);
+    await copyFile(file.path, path);
+    await rm(file.path, { force: true }).catch(() => undefined);
+    if (!views.has(record.id)) return void rm(directory, { recursive: true, force: true });
+    if (embedded.pdf) await rm(embedded.pdf.directory, { recursive: true, force: true }).catch(() => undefined);
+    embedded.pdf = { path, directory, name, size: (await stat(path)).size, url: properUrlOf(file.url) };
+    record.findPdf = { ...record.findPdf!, stage: "saving", error: undefined };
+    findPdfChanged(record);
+  } catch (error) {
+    await rm(file.path, { force: true }).catch(() => undefined);
+    if (record.pdfFor) findPdfFailed(record.pdfFor, couldNot("take the PDF", error));
+  }
+}
+/** The review's answers about the caught PDF: taken (the attempt ends), or not this one (keep looking). */
+async function embeddedAction(w: ShellWindow, action: string, p: any) {
+  if (action === "embedded-browser-open") return embeddedOpen(w, p);
+  const record = views.get(String(p?.id ?? ""));
+  if (!record?.embedded) return { closed: true };
+  if (action === "embedded-browser-bounds") {
+    const r = p?.rect;
+    record.embedded.rect = r && [r.x, r.y, r.width, r.height].every((n: unknown) => Number.isFinite(Number(n))) && r.width > 0 && r.height > 0 ? { x: Number(r.x), y: Number(r.y), width: Number(r.width), height: Number(r.height) } : undefined;
+    layout(w);
+  } else if (action === "embedded-browser-close") embeddedClose(record.id);
+  else if (action === "embedded-browser-navigate") {
+    const typed = String(p?.url ?? "").trim();
+    const url = webUrl(typed) ?? webUrl(`https://${typed}`);
+    if (url) await record.view?.webContents.loadURL(url).catch(() => undefined);
+  } else if (action === "embedded-browser-reject") {
+    const pdf = record.embedded.pdf;
+    record.embedded.pdf = undefined;
+    if (pdf) await rm(pdf.directory, { recursive: true, force: true }).catch(() => undefined);
+    record.findPdf = { ...record.findPdf!, stage: "landed", error: typeof p?.why === "string" ? p.why.slice(0, 300) : undefined };
+    findPdfChanged(record);
+  }
+  return { id: record.id, state: embeddedState(record) };
 }
 /** Every web link in the app comes here: http(s) opens as a browser tab in the focused group
  * (or at `options`), mail and phone links go to the system, anything else is ignored. */
@@ -939,6 +1075,7 @@ async function tempPdfView(entry: TempPdf): Promise<OwnedView> {
  * straight onto the PDF (it never showed a page) becomes that reader. */
 async function openDownloadedPdf(contents: Electron.WebContents | undefined, file: { path: string; url: string; filename: string }, replace = false) {
   const from = contents && [...views.values()].find((v) => v.kind === "web" && v.view?.webContents === contents);
+  if (from?.embedded) return embeddedPdf(from, file);
   const w = (from && shellOfView(from.id)) ?? focusedShell();
   // The tab in front while the PDF is analysed: when the person moves to another tab
   // meanwhile, the reader opens behind it instead of taking it away.
@@ -1153,6 +1290,10 @@ function placeViews(w: ShellWindow) {
     // A reader with its panel open keeps the left part; the panel is the renderer's.
     record.view.setBounds(record.panel ? layoutPanel(body, record.panel.ratio).main : record.kind === "web" ? webPageRect(body, record.findPdf ? FIND_PDF_BANNER_HEIGHT : 0) : body);
   }
+  for (const record of views.values()) {
+    const rect = record.embedded?.windowId === w.id ? record.embedded.rect : undefined;
+    if (rect && record.view) record.view.setBounds({ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) });
+  }
 }
 /** Which native views show where: when it changes, still frames are captured again. */
 const overlayKey = (w: ShellWindow) => JSON.stringify(shownTabs(w.state).map((t) => [t.viewId, views.get(t.viewId)?.view?.getBounds()]));
@@ -1208,8 +1349,12 @@ function layout(w: ShellWindow = focusedShell()) {
     attach(record, w);
   }
   // Views hosted here that this window no longer shows are hidden (they may now be in another window).
+  // An embedded browser shows while the view hosting it does (and has told where); it goes with it.
+  for (const record of [...views.values()])
+    if (record.embedded?.windowId === w.id && !windowViewIds(w).includes(record.embedded.hostViewId)) embeddedClose(record.id);
+  const showing = (record: OwnedView) => (record.embedded ? shown.has(record.embedded.hostViewId) && !!record.embedded.rect : shown.has(record.id));
   for (const record of views.values())
-    if (record.view && record.host === w) record.view.setVisible(!w.globalOverlay && shown.has(record.id) && !(record.kind === "web" && signInService?.covers(record.view.webContents)));
+    if (record.view && record.host === w) record.view.setVisible(!w.globalOverlay && showing(record) && !(record.kind === "web" && signInService?.covers(record.view.webContents)));
   placeViews(w);
   refreshOverlayFrames(w);
   const shownTab = activeWorkspaceTab(w.state)?.id;
@@ -2663,8 +2808,10 @@ else
       const cleanupEvery = Math.max(1000, Math.min(60 * 60_000, (Number(process.env.KEY_BROWSER_TEMP_TTL_MS) || DEFAULT_TTL) / 2));
       setTimeout(() => void cleanTempPdfs().catch(() => undefined), Math.min(15_000, cleanupEvery));
       setInterval(() => void cleanTempPdfs().catch(() => undefined), cleanupEvery).unref();
-      setInterval(() => void findPdfPages?.cleanup().catch(() => undefined), 60 * 60_000).unref();
-      setTimeout(() => void findPdfPages?.cleanup().catch(() => undefined), 20_000);
+      // An attempt open in a tab never times out; closed ones go after a while.
+      const openAttempts = () => [...views.values()].flatMap((v) => (v.pdfFor && v.findPdf ? [v.pdfFor] : []));
+      setInterval(() => void findPdfPages?.cleanup(undefined, openAttempts()).catch(() => undefined), 60 * 60_000).unref();
+      setTimeout(() => void findPdfPages?.cleanup(undefined, openAttempts()).catch(() => undefined), 20_000);
       const linkedFolders = new LinkedFolders((c, a, w) => registry.invoke(c, a, w), () => liveShells().map((w) => w.workspaceId), (v) => emit("linked-folders-changed", v));
       webSources = new WebSources(
         (c, a, w) => registry.invoke(c, a, w),
@@ -2775,12 +2922,17 @@ else
           if (command === "review_ai_suggest") {
             const request = await registry.invoke<any>("review_ai_request", args, targetWorkspace);
             const answer = await ai.ask(request);
-            return registry.invoke("review_ai_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
+            // std-B: the call as made, for the AI-use log (provider, model asked for and reported).
+            const status = ai.status();
+            const call = { provider: status.provider ?? "", providerName: status.providerName ?? "", model: status.model ?? "", modelReported: answer.model ?? "", tokensIn: answer.tokensIn ?? 0, tokensOut: answer.tokensOut ?? 0 };
+            return registry.invoke("review_ai_answer", { ...args, content: answer.content, model: status.model ?? "", call }, targetWorkspace);
           }
           if (command === "review_ai_extract") {
             const { request } = await registry.invoke<any>("review_ai_extract_request", args, targetWorkspace);
             const answer = await ai.ask(request);
-            return registry.invoke("review_ai_extract_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
+            const status = ai.status();
+            const call = { provider: status.provider ?? "", providerName: status.providerName ?? "", model: status.model ?? "", modelReported: answer.model ?? "", tokensIn: answer.tokensIn ?? 0, tokensOut: answer.tokensOut ?? 0 };
+            return registry.invoke("review_ai_extract_answer", { ...args, content: answer.content, model: status.model ?? "", call }, targetWorkspace);
           }
           if (ai.handles(command)) return ai.handle(command, args, targetWorkspace);
           if (command === "library_download_pdf") {
@@ -2832,6 +2984,9 @@ else
           // A review changed: its open tabs (this window or another) read it again.
           if (command.startsWith("review_") && !REVIEW_READS.has(command))
             emit("review-changed", { workspaceId: targetWorkspace, reviewId: args?.reviewId ?? args?.id ?? (result as any)?.reviewId });
+          // Linked records share their full text with the library: its views follow.
+          if (LIBRARY_FILE_WRITES.has(command)) emit("library-changed");
+          if (REVIEW_LIBRARY_WRITES.has(command) && !(command === "review_links_refresh" && !(result as any)?.linked && !(result as any)?.repointed)) emit("library-changed");
           if (
             [
               "workspace_save_attribute",
@@ -3379,6 +3534,10 @@ else
         shell(event.sender.id);
         await signInService?.forget();
       });
+      ipcMain.handle("key:sign-in-diagnostics", (event) => {
+        shell(event.sender.id);
+        return signInDiagnostics();
+      });
       ipcMain.handle("key:sign-in-host", (event, host: unknown, choice: unknown) => {
         shell(event.sender.id);
         signInService?.setHost(String(host ?? ""), choice === "window" || choice === "here" ? choice : null);
@@ -3506,6 +3665,12 @@ else
             stepHistory(w, String(p.viewId ?? activeViewId(w) ?? ""), Number(p.step) < 0 ? -1 : 1);
             return snapshot(w);
           // A browser tab's bar: reload, and Add to library / In library on an article page.
+          case "embedded-browser-open":
+          case "embedded-browser-bounds":
+          case "embedded-browser-close":
+          case "embedded-browser-navigate":
+          case "embedded-browser-reject":
+            return embeddedAction(w, action, p);
           // The Find PDF banner over a publisher's page (renderer FindPdfBanner).
           case "find-pdf-banner": {
             const view = views.get(String(p.viewId ?? activeViewId(w) ?? ""));

@@ -2,7 +2,7 @@
 // small-study effects and publication bias, and sensitivity tools, each a clearly explained
 // choice; then saving the analysis and the exports others can import. Every number comes from
 // key-review (synthesis.rs and friends); this file lays them out.
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Explain, Hint } from "../explain";
 import { ContourFunnel, ForestPlot, ScatterPlot, type ForestRow } from "../charts/charts";
 import { saveFile, svgMarkup } from "../charts/export";
@@ -14,15 +14,18 @@ import { backTransform, saveBase64, synthesisApi, type AnalysisSpec, type BaseRe
 import type { StageProps } from "./ReviewPage";
 import "./review-synthesis.css";
 
-type Tab = "dependence" | "metareg" | "bias" | "sensitivity";
+type Tab = "pooled" | "dependence" | "metareg" | "bias" | "sensitivity";
 const p3 = (v: number | null | undefined) => (v == null || !Number.isFinite(v) ? "–" : v < 0.001 ? "< 0.001" : v.toFixed(3));
 const n = (v: number | null | undefined, d = 2) => (v == null || !Number.isFinite(v) ? "–" : formatNumber(v, d));
 const key = (m: ModeratorRef) => `${m.source}:${m.form}:${m.field}`;
 
-export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; base: BaseRequest; plots: () => Record<string, string> }) {
+/** The Analysis stage's views: the pooled result (forest plot, leave-one-out), small-study
+ * effects (with the funnel plot and Egger's test), meta-regression, several estimates per
+ * study and sensitivity, with saving and exporting beside them. */
+export function AdvancedSynthesis({ props, base, plots, pooled, funnelSection }: { props: StageProps; base: BaseRequest; plots: () => Record<string, string>; pooled: ReactNode; funnelSection: ReactNode }) {
   const { invoke, workspaceId, reviewId, viewer, notify, summary } = props;
   const api = useMemo(() => synthesisApi(invoke, workspaceId, reviewId), [invoke, workspaceId, reviewId]);
-  const [tab, setTab] = useState<Tab>("bias");
+  const [tab, setTab] = useState<Tab>("pooled");
   const moderators = useLoad(() => api.moderators(), [api, summary.events]);
   const [chosen, setChosen] = useState<ModeratorRef[]>([]);
   const [regMethod, setRegMethod] = useState<"reml" | "fe">("reml");
@@ -61,6 +64,7 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
     return out;
   };
   const tabs: [Tab, string][] = [
+    ["pooled", "Pooled result"],
     ["bias", "Small-study effects"],
     ["metareg", "Meta-regression"],
     ["dependence", multiple && r ? `Several estimates (${r.k} in ${r.studies})` : "Several estimates"],
@@ -70,9 +74,8 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
   const ci = (e: number, l: number, u: number) => `${n(tr(e))} [${n(tr(l))}, ${n(tr(u))}]`;
   const logNote = r && r.transform !== "none" ? (r.transform === "exp" ? " (log scale)" : " (analysis scale)") : "";
   return (
-    <section className="kx-rv-section kx-rv-more" aria-label="More analyses">
-      <div className="kx-rv-section-head">
-        <h2>More analyses</h2>
+    <div className="kx-rv-more" role="region" aria-label="Analyses">
+      <div className="kx-rv-more-bar">
         <Segmented label="Analysis" value={tab} options={tabs} onChange={setTab} />
         <div className="kx-rv-more-actions">
           <Btn
@@ -118,7 +121,7 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
           <Explain help="review.exports" />
         </div>
       </div>
-      {r?.dependenceWarning && tab !== "dependence" && (
+      {r?.dependenceWarning && tab !== "dependence" && tab !== "pooled" && (
         <p className="kx-rv-more-warn">
           {r.dependenceWarning}{" "}
           <button type="button" className="kx-rv-more-link" onClick={() => setTab("dependence")}>
@@ -126,7 +129,8 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
           </button>
         </p>
       )}
-      {result.error && <p className="kx-inline-error">{result.error}</p>}
+      {tab === "pooled" && pooled}
+      {result.error && tab !== "pooled" && <p className="kx-inline-error">{result.error}</p>}
       {tab === "dependence" && (
         <div className="kx-rv-more-body">
           <div className="kx-rv-more-controls">
@@ -229,6 +233,7 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
           )}
         </div>
       )}
+      {tab === "bias" && funnelSection}
       {tab === "bias" && r?.bias && (
         <div className="kx-rv-more-body">
           <div className="kx-rv-more-controls">
@@ -428,10 +433,10 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
           )}
         </div>
       )}
-      {(result.loading || probe.loading) && !r && <p className="kx-rv-muted">Calculating…</p>}
+      {(result.loading || probe.loading) && !r && tab !== "pooled" && <p className="kx-rv-muted">Calculating…</p>}
       {bundleOpen && <BundleSheet onClose={() => setBundleOpen(false)} run={(anon) => api.bundle(viewer, myPlots(), spec(), anon).then(saveBase64)} />}
       {revman && <RevmanSheet problems={revman} onClose={() => setRevman(undefined)} />}
-    </section>
+    </div>
   );
 }
 

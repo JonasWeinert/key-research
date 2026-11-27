@@ -6,6 +6,14 @@ import "./sign-in-card.css";
 
 type Card = NonNullable<NonNullable<WebBarState["signin"]>["card"]>;
 
+/** Copies what the last sign-ins did (hosts and steps only: no addresses, no cookies), for
+ * sending when a sign-in does not work. */
+async function copyDiagnostics() {
+  const key = (window as unknown as { key: { signInDiagnostics?(): Promise<string>; writeClipboard?(data: { text: string }): Promise<void> } }).key;
+  const text = (await key.signInDiagnostics?.()) ?? "";
+  await key.writeClipboard?.({ text });
+}
+
 function Steps({ steps }: { steps: Array<[IconName, string]> }) {
   return (
     <ol className="kx-signin-steps">
@@ -34,11 +42,11 @@ export function SignInCard({ card, style, onPage }: { card: Card; style?: CSSPro
         <div className="kx-signin-icon" data-busy>
           <Icon name="phone" size={22} />
         </div>
-        <h2>{card.auto ? `Signing in in ${browser}…` : `Finish signing in in ${browser}`}</h2>
+        <h2>{card.auto ? `Signing in in ${browser}…` : `Waiting for you to finish signing in in ${browser}…`}</h2>
         <p>
           A small {browser} window has opened for {site}. Sign in there as usual. To use your phone, choose <b>Use a phone or tablet</b> and scan the QR code.
         </p>
-        <p className="kx-signin-quiet">Key brings the sign-in back here by itself and closes the window.</p>
+        <p className="kx-signin-quiet">When the site appears there, Key continues by itself, or choose I’m signed in (or Return to Key at the top of that window).</p>
         <div className="kx-signin-actions">
           <button type="button" className="kx-button-primary" data-primary onClick={() => onPage("signin-focus")}>
             Show window
@@ -139,7 +147,7 @@ export function SignInCard({ card, style, onPage }: { card: Card; style?: CSSPro
         <p>{card.problem || `The ${browser} window closed before the sign-in was finished.`}</p>
         <div className="kx-signin-actions">
           <button type="button" className="kx-button-primary" data-primary onClick={() => onPage("signin-window")}>
-            Try again
+            Open the sign-in window again
           </button>
           <button type="button" className="kx-settings-button" onClick={() => onPage("signin-dismiss")}>
             Not now
@@ -217,7 +225,7 @@ export function SignInCard({ card, style, onPage }: { card: Card; style?: CSSPro
     <section className="kx-signin-card-layer" style={style} data-stage={card.stage} data-way={card.way} aria-label="Passkey sign-in">
       <div className="kx-signin-card" role="dialog" aria-live="polite">
         {body}
-        <Explain help="browser.signin.window" label="How does this work?" className="kx-signin-explain" />
+        <Explain help="browser.signin.window" label="How does this work?" className="kx-signin-explain" actions={[{ label: "Copy sign-in diagnostics", run: copyDiagnostics }]} />
       </div>
     </section>
   );

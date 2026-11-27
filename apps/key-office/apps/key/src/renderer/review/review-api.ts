@@ -130,6 +130,8 @@ export interface Protocol {
   shortcuts: Record<string, string>;
   /** label → one-letter key */
   labelKeys: Record<string, string>;
+  /** std-A: the protocol document's plan (review-reporting-api.ts). */
+  plan?: import("./review-reporting-api").Plan;
 }
 export interface Member {
   id: string;
@@ -223,6 +225,8 @@ export interface Summary {
   fulltexts: { need: number; have: number };
   /** Imports PRISMA cannot report as they stand (an unnamed database, "Manual"). */
   originsToCheck: { batchId: string; name: string; group: string; kind: string; records: number; why: string }[];
+  /** std-A: registration lock and review type. */
+  reporting?: { locked: boolean; registration: import("./review-reporting-api").Registration | null; reviewType: string; deviations: number };
 }
 export interface RecordMeta {
   id: string;

@@ -109,7 +109,7 @@ fn crossref_work(doi: &str, mailto: &str) -> Result<Option<Json>, String> {
 }
 
 /// The most serious notice Crossref lists for a DOI (Retraction Watch and publishers).
-fn crossref_notice(doi: &str, mailto: &str) -> Result<Option<Notice>, String> {
+pub(crate) fn crossref_notice(doi: &str, mailto: &str) -> Result<Option<Notice>, String> {
     let items = match crossref_fixture("crossref-updates.json") {
         Some(items) => items,
         None => {

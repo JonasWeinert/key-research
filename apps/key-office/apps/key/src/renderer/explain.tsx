@@ -37,7 +37,7 @@ export function Hint({ help, id, className }: { help: HintId; id?: string; class
 /** An (i) button, or with `label` a "What is …?" link, that opens a compact explanation.
  *  The (i) is named "Explain" and described by the explainer's title ("Explain, button,
  *  What is library access?"), so it never shares a name with the control it explains. */
-export function Explain({ help, label, className }: { help: ExplainId; label?: boolean | string; className?: string }) {
+export function Explain({ help, label, className, actions }: { help: ExplainId; label?: boolean | string; className?: string; actions?: Array<{ label: string; run(): void | Promise<void> }> }) {
   const entry = HELP[help] as ExplainEntry;
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -66,12 +66,26 @@ export function Explain({ help, label, className }: { help: ExplainId; label?: b
         <Icon name="info" size={label ? 11 : 12} aria-hidden="true" />
         {label && <span>{text}</span>}
       </button>
-      {open && <ExplainPopover id={popoverId} entry={entry} help={help} anchor={trigger} onClose={() => setOpen(false)} />}
+      {open && <ExplainPopover id={popoverId} entry={entry} help={help} anchor={trigger} actions={actions} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-function ExplainPopover({ id, entry, help, anchor, onClose }: { id: string; entry: ExplainEntry; help: string; anchor: RefObject<HTMLElement | null>; onClose: () => void }) {
+function ExplainPopover({
+  id,
+  entry,
+  help,
+  anchor,
+  actions,
+  onClose,
+}: {
+  id: string;
+  entry: ExplainEntry;
+  help: string;
+  anchor: RefObject<HTMLElement | null>;
+  actions?: Array<{ label: string; run(): void | Promise<void> }>;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<{ left: number; top: number; maxHeight: number }>();
   const titleId = `${id}-title`;
@@ -149,6 +163,19 @@ function ExplainPopover({ id, entry, help, anchor, onClose }: { id: string; entr
         >
           {link.label}
           <Icon name="arrowRight" size={10} />
+        </button>
+      ))}
+      {actions?.map((action) => (
+        <button
+          key={action.label}
+          type="button"
+          className="kx-explain-open"
+          onClick={() => {
+            onClose();
+            void action.run();
+          }}
+        >
+          {action.label}
         </button>
       ))}
       {entry.privacy && (

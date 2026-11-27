@@ -5,7 +5,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 if (!GlobalWorkerOptions.workerSrc) GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-export async function pdfFirstPages(data: ArrayBuffer, pages = 2): Promise<{ title: string; text: string }> {
+export async function pdfFirstPages(data: ArrayBuffer, pages = 2): Promise<{ title: string; text: string; pages: number }> {
   const task = getDocument({ data: new Uint8Array(data) });
   const doc = await task.promise;
   try {
@@ -15,7 +15,7 @@ export async function pdfFirstPages(data: ArrayBuffer, pages = 2): Promise<{ tit
       const content = await (await doc.getPage(i)).getTextContent();
       text += content.items.map(item => ('str' in item ? item.str : '')).join(' ') + '\n';
     }
-    return { title: info?.Title?.trim() ?? '', text: text.slice(0, 12000) };
+    return { title: info?.Title?.trim() ?? '', text: text.slice(0, 12000), pages: doc.numPages };
   } finally {
     void task.destroy();
   }

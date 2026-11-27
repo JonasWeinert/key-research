@@ -10,6 +10,12 @@ import { PrismaDiagram } from "./prisma-diagram";
 import { Btn, Confirm, MenuButton, errorText, useLoad } from "./review-ui";
 import { OriginSheet } from "./review-sources";
 import type { StageId, StageProps } from "./ReviewPage";
+// std-B
+import { ConductPanel } from "./review-conduct";
+// std-A: Overview's reporting views (PRISMA checklist, search report)
+import { ChecklistPage, type OverviewView } from "./review-checklist";
+import { SearchReportPage } from "./review-search-report";
+import { takeFocus } from "./review-reporting-api";
 
 function nextStep(s: Summary, viewer: string): { title: string; body: string; action: string; stage: StageId; icon: IconName } {
   const ta = s.stages.ta,
@@ -46,7 +52,41 @@ function StageBar({ label, done, total, parts, onClick }: { label: string; done:
   );
 }
 
+// std-A: Overview shows the flow and progress, the PRISMA checklist or the search report.
+const OVERVIEW_FOCUS = ["flow", "checklist", "search", "checklist:abstract", "checklist:prismas"] as const;
 export function Overview(props: StageProps) {
+  const [focus] = useState(() => takeFocus(props.reviewId, OVERVIEW_FOCUS));
+  const [view, setView] = useState<OverviewView>(() => (focus?.startsWith("checklist") ? "checklist" : ((focus as OverviewView) ?? "flow")));
+  const [list, setList] = useState(focus?.startsWith("checklist:") ? focus.slice(10) : undefined);
+  const show = (v: string) => {
+    if (v.startsWith("checklist:")) setList(v.slice(10));
+    setView((v.startsWith("checklist") ? "checklist" : v) as OverviewView);
+  };
+  return (
+    <div className="kx-rp-overview" data-view={view}>
+      <div className="kx-rv-toolbar">
+        <div className="kx-rv-seg" role="radiogroup" aria-label="Overview view">
+          {(
+            [
+              ["flow", "Progress & flow"],
+              ["checklist", "PRISMA checklist"],
+              ["search", "Search report"],
+            ] as [OverviewView, string][]
+          ).map(([id, label]) => (
+            <button key={id} type="button" role="radio" aria-checked={view === id} onClick={() => setView(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {view === "flow" && <FlowOverview {...props} />}
+      {view === "checklist" && <ChecklistPage key={list} {...props} initialList={list} onView={show} />}
+      {view === "search" && <SearchReportPage {...props} onView={show} />}
+    </div>
+  );
+}
+
+function FlowOverview(props: StageProps) {
   const { summary, api, viewer, go, notify } = props;
   const prisma = useLoad(() => api.prisma(), [api, summary.events]);
   const svg = useRef<SVGSVGElement>(null);
@@ -108,6 +148,8 @@ export function Overview(props: StageProps) {
             )}
           </dl>
         </section>
+        {/* std-B: soft conduct warnings and AI use */}
+        <ConductPanel {...props} />
       </div>
       <section className="kx-rv-section kx-rv-prisma-card">
         <div className="kx-rv-section-head">

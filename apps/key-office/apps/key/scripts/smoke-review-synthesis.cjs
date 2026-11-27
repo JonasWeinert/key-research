@@ -140,7 +140,9 @@ const STUDIES = [
     await page.getByRole("tab", { name: /Analysis/ }).click();
     await page.locator(".kx-forest").waitFor();
     await page.getByRole("combobox", { name: "Effect measure" }).selectOption("MD");
-    const more = page.getByRole("region", { name: "More analyses" });
+    const more = page.getByRole("region", { name: "Analyses", exact: true });
+    await shot(page, "02b-pooled-result", more);
+    await more.getByRole("radio", { name: "Small-study effects" }).click();
     await more.getByText("PET-PEESE", { exact: true }).first().waitFor();
     await more.getByRole("radio", { name: "Several estimates (14 in 12)" }).waitFor();
     await shot(page, "03-small-study-effects", more);

@@ -321,6 +321,14 @@ pub struct State {
     pub alias_recorded: bool,
     /// Retracted decision event ids (so a replay of a retract before its target still works).
     retracted: HashSet<String>,
+    /// std-B: citation searching rounds, AI log and audits, conduct dismissals, pilots, contacts.
+    pub std_b: crate::conduct::StdB,
+    // std-A: registration, checklist notes and PRISMA-S details (reporting.rs).
+    pub reporting: crate::reporting::Reporting,
+    // std-C: risk of bias (rob.rs) and certainty of evidence (grade.rs).
+    pub rob: crate::rob::RobState,
+    pub grade: crate::grade::GradeState,
+    // end std-C
 }
 
 #[derive(Deserialize, Default)]
@@ -359,6 +367,12 @@ impl State {
             migrated: false,
             alias_recorded: false,
             retracted: HashSet::new(),
+            std_b: Default::default(),
+            // std-A
+            reporting: Default::default(),
+            // std-C
+            rob: Default::default(),
+            grade: Default::default(),
         }
     }
 
@@ -402,6 +416,8 @@ impl State {
         self.events += 1;
         self.info.updated_at = self.info.updated_at.max(e.at);
         self.last_event = Some((e.at, e.id.clone()));
+        // std-B
+        crate::conduct::observe(&mut self.std_b, e);
         let p = &e.payload;
         let text = |key: &str| p.get(key).and_then(Json::as_str).unwrap_or("").to_string();
         let stage = || p.get("stage").and_then(|s| serde_json::from_value::<Stage>(s.clone()).ok());
@@ -789,6 +805,15 @@ impl State {
                     self.analyses.push(p.clone());
                 }
             }
+            // std-A: registration, checklist notes, PRISMA-S details (reporting.rs).
+            k if crate::reporting::KINDS.contains(&k) => {
+                let version = self.version.clone();
+                self.reporting.apply(e, &version);
+            }
+            // std-C: risk of bias and certainty of evidence.
+            k if k.starts_with("rob.") => self.rob.apply(e),
+            k if k.starts_with("grade.") => self.grade.apply(e),
+            // end std-C
             _ => {}
         }
     }

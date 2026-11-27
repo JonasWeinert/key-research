@@ -139,13 +139,15 @@ export interface ForestPlotProps {
   label?: string;
   /** Limits of the axis; default: the intervals'. */
   domain?: [number, number];
+  /** Marks in columns right of the weight (risk of bias per domain): headers, and each row's marks. */
+  marks?: { headers: string[]; titles?: string[]; of: (rowId: string) => (Mark | null)[] };
 }
 
 const ROW = 20;
 
 /** Studies' estimates with their intervals, and pooled diamonds, on one axis. */
 export const ForestPlot = forwardRef<SVGSVGElement, ForestPlotProps>(function ForestPlot(
-  { rows, columnHeaders = [], log = false, nullValue = log ? 1 : 0, axisLabel, favours, width = 760, digits = 2, label = "Forest plot", domain },
+  { rows, columnHeaders = [], log = false, nullValue = log ? 1 : 0, axisLabel, favours, width = 760, digits = 2, label = "Forest plot", domain, marks },
   ref,
 ) {
   const clipId = useId().replace(/:/g, "");
@@ -153,7 +155,9 @@ export const ForestPlot = forwardRef<SVGSVGElement, ForestPlotProps>(function Fo
   const colWidths = columnHeaders.map((h, i) => Math.max(textWidth(h) + 14, ...rows.map((r) => textWidth(r.columns?.[i] ?? "") + 14)));
   const estWidth = Math.max(textWidth("Estimate [95% CI]") + 12, ...rows.map((r) => textWidth(estimateText(r, digits)) + 12));
   const weightWidth = rows.some((r) => r.weight != null) ? 56 : 0;
-  const fixed = studyWidth + colWidths.reduce((a, b) => a + b, 0) + estWidth + weightWidth;
+  const marksWidth = marks?.headers.length ? marks.headers.length * MARK_STEP + 10 : 0;
+  const right = width - marksWidth;
+  const fixed = studyWidth + colWidths.reduce((a, b) => a + b, 0) + estWidth + weightWidth + marksWidth;
   const plotWidth = Math.max(160, width - fixed - 16);
   const plotLeft = studyWidth + colWidths.reduce((a, b) => a + b, 0) + 8;
   const values = rows.flatMap((r) => [r.lower, r.upper, r.estimate]).filter((v): v is number => v != null && Number.isFinite(v) && (!log || v > 0));
@@ -190,10 +194,16 @@ export const ForestPlot = forwardRef<SVGSVGElement, ForestPlotProps>(function Fo
           Estimate [95% CI]
         </text>
         {weightWidth > 0 && (
-          <text x={width - 4} y={16} textAnchor="end">
+          <text x={right - 4} y={16} textAnchor="end">
             Weight
           </text>
         )}
+        {marks?.headers.map((h, i) => (
+          <text key={`m-${i}`} x={right + 10 + i * MARK_STEP + MARK_STEP / 2} y={16} textAnchor="middle">
+            {marks.titles?.[i] && <title>{marks.titles[i]}</title>}
+            {h}
+          </text>
+        ))}
       </g>
       <line x1={0} x2={width} y1={header - 4} y2={header - 4} style={stroke("--kx-line")} />
       <line x1={x(nullValue)} x2={x(nullValue)} y1={header} y2={axisY} style={stroke("--kx-line-strong")} />
@@ -239,10 +249,11 @@ export const ForestPlot = forwardRef<SVGSVGElement, ForestPlotProps>(function Fo
               </text>
             )}
             {weightWidth > 0 && row.weight != null && kind !== "heading" && (
-              <text x={width - 4} y={y} textAnchor="end" dominantBaseline="central" fontSize={FONT_SIZE} style={ink("--kx-text-3")} className="kx-chart-num">
+              <text x={right - 4} y={y} textAnchor="end" dominantBaseline="central" fontSize={FONT_SIZE} style={ink("--kx-text-3")} className="kx-chart-num">
                 {`${row.weight.toFixed(1)}%`}
               </text>
             )}
+            {marks && kind === "study" && marks.of(row.id).map((m, i) => (m ? <RobMark key={`m-${i}`} mark={m} x={right + 10 + i * MARK_STEP + MARK_STEP / 2} y={y} r={6.5} /> : null))}
             {row.note && (
               <text x={0} y={y + ROW} dominantBaseline="central" fontSize={10} style={ink("--kx-text-3")}>
                 {row.note}
@@ -346,6 +357,193 @@ export const FunnelPlot = forwardRef<SVGSVGElement, { points: FunnelPoint[]; cen
     </svg>
   );
 });
+
+// ── std-C: risk of bias (traffic-light plot, summary bars, marks beside a forest plot) ──────
+// Each judgement is a coloured disc with a symbol (plus, minus, cross, exclamation, question
+// mark), so the plots read without colour too; the data come from key_review::certainty.
+
+export interface Mark {
+  tone: "green" | "amber" | "red" | "darkred" | "muted";
+  symbol: "plus" | "minus" | "cross" | "excl" | "query";
+  title?: string;
+  label?: string;
+}
+const MARK_STEP = 18;
+const MARK_TONE: Record<Mark["tone"], string> = { green: "--kx-green", amber: "--kx-amber", red: "--kx-red", darkred: "--kx-red", muted: "--kx-text-3" };
+
+/** One judgement: a disc with its symbol drawn as strokes (no font glyphs). */
+export function RobMark({ mark, x, y, r = 8 }: { mark: Mark; x: number; y: number; r?: number }) {
+  const k = r * 0.45;
+  const line = { ...stroke("--kx-bg", Math.max(1.6, r / 4)), strokeLinecap: "round" as const };
+  return (
+    <g data-symbol={mark.symbol}>
+      {mark.title && <title>{mark.title}</title>}
+      <circle cx={x} cy={y} r={r} style={{ ...ink(MARK_TONE[mark.tone]), ...(mark.tone === "darkred" ? { stroke: "var(--kx-text)", strokeWidth: 1.6 } : {}) }} />
+      {mark.symbol === "plus" && <path d={`M${x - k} ${y}H${x + k}M${x} ${y - k}V${y + k}`} style={line} />}
+      {mark.symbol === "minus" && <path d={`M${x - k} ${y}H${x + k}`} style={line} />}
+      {mark.symbol === "cross" && <path d={`M${x - k * 0.8} ${y - k * 0.8}L${x + k * 0.8} ${y + k * 0.8}M${x + k * 0.8} ${y - k * 0.8}L${x - k * 0.8} ${y + k * 0.8}`} style={line} />}
+      {mark.symbol === "excl" && (
+        <>
+          <path d={`M${x} ${y - k * 1.1}V${y + k * 0.25}`} style={line} />
+          <circle cx={x} cy={y + k * 0.95} r={Math.max(0.9, r / 7)} style={ink("--kx-bg")} />
+        </>
+      )}
+      {mark.symbol === "query" && (
+        <>
+          <path d={`M${x - k * 0.65} ${y - k * 0.55}A${k * 0.65} ${k * 0.65} 0 1 1 ${x} ${y + k * 0.15}V${y + k * 0.35}`} style={line} />
+          <circle cx={x} cy={y + k * 1.05} r={Math.max(0.9, r / 7)} style={ink("--kx-bg")} />
+        </>
+      )}
+    </g>
+  );
+}
+
+export interface TrafficRow {
+  id: string;
+  label: string;
+  /** One mark per column (null: not judged). */
+  marks: (Mark | null)[];
+}
+
+/** Studies × domains: each cell the agreed judgement; a key of domains and levels below. */
+export const TrafficLight = forwardRef<SVGSVGElement, { columns: { short: string; name: string }[]; rows: TrafficRow[]; levels: Mark[]; width?: number; label?: string; title?: string }>(function TrafficLight(
+  { columns, rows, levels, width: wanted, label = "Risk of bias: traffic-light plot", title },
+  ref,
+) {
+  const cell = 26;
+  const labelWidth = Math.min(240, Math.max(100, ...rows.map((r) => textWidth(r.label) + 16)));
+  // The overall column stands apart from the domains.
+  const apart = columns.at(-1)?.short === "Overall" ? 22 : 0;
+  const cx = (i: number) => labelWidth + i * cell + cell / 2 + (apart && i === columns.length - 1 ? apart : 0);
+  const gridWidth = columns.length * cell + apart;
+  const width = Math.max(wanted ?? 0, labelWidth + gridWidth + 16, 360);
+  const top = title ? 44 : 26;
+  const gridBottom = top + rows.length * cell;
+  const keyed = columns.filter((c) => c.short !== "Overall");
+  const keyLines = Math.ceil(keyed.length / 2);
+  const height = gridBottom + 18 + keyLines * 16 + 12 + 20;
+  return (
+    <svg ref={ref} className="kx-chart kx-traffic" viewBox={`0 0 ${width} ${height}`} width="100%" style={{ maxWidth: width }} role="img" aria-label={label}>
+      {title && (
+        <text x={0} y={14} fontSize={12} fontWeight={600} style={ink("--kx-text")}>
+          {title}
+        </text>
+      )}
+      {columns.map((c, i) => (
+        <text key={c.short + i} x={cx(i)} y={top - 8} textAnchor="middle" fontSize={FONT_SIZE} fontWeight={600} style={ink("--kx-text-2")}>
+          <title>{c.name}</title>
+          {c.short}
+        </text>
+      ))}
+      {rows.map((r, j) => {
+        const y = top + j * cell + cell / 2;
+        return (
+          <g key={r.id}>
+            {j % 2 === 0 && <rect x={0} y={y - cell / 2} width={labelWidth + gridWidth} height={cell} rx={4} style={ink("--kx-fill")} />}
+            <text x={8} y={y} dominantBaseline="central" fontSize={FONT_SIZE} style={ink("--kx-text")}>
+              {clip(r.label, labelWidth - 16)}
+            </text>
+            {r.marks.map((m, i) =>
+              m ? (
+                <RobMark key={i} mark={{ ...m, title: `${r.label} · ${columns[i]?.name}: ${m.label ?? m.title ?? ""}` }} x={cx(i)} y={y} r={9} />
+              ) : (
+                <circle key={i} cx={cx(i)} cy={y} r={8.5} style={stroke("--kx-line-strong", 1, "2 2")} />
+              ),
+            )}
+          </g>
+        );
+      })}
+      <g fontSize={10} style={ink("--kx-text-3")}>
+        {keyed.map((c, i) => (
+          <text key={c.short + i} x={(i % 2) * (width / 2)} y={gridBottom + 22 + Math.floor(i / 2) * 16}>
+            {clip(`${c.short}: ${c.name}`, width / 2 - 8)}
+          </text>
+        ))}
+      </g>
+      <Legend levels={levels} x={0} y={gridBottom + 22 + keyLines * 16 + 10} width={width} />
+    </svg>
+  );
+});
+
+function Legend({ levels, x, y, width }: { levels: Mark[]; x: number; y: number; width: number }) {
+  const step = Math.max(110, width / Math.max(1, levels.length));
+  return (
+    <g>
+      {levels.map((l, i) => (
+        <g key={l.label ?? i}>
+          <RobMark mark={l} x={x + i * step + 7} y={y} r={7} />
+          <text x={x + i * step + 19} y={y} dominantBaseline="central" fontSize={10} style={ink("--kx-text-2")}>
+            {l.label}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+export interface SummaryBar {
+  label: string;
+  /** Percent per level, in the order of `levels`. */
+  shares: number[];
+}
+
+/** Per domain, the share of studies (or of the weight) at each level as one 100% bar. */
+export const RobSummary = forwardRef<SVGSVGElement, { bars: SummaryBar[]; levels: Mark[]; width?: number; label?: string; title?: string }>(function RobSummary({ bars, levels, width = 640, label = "Risk of bias: summary", title }, ref) {
+  const labelWidth = Math.min(width * 0.4, Math.max(90, ...bars.map((b) => textWidth(b.label) + 12)));
+  const plot = width - labelWidth - 8;
+  const bar = 18;
+  const gap = 8;
+  const top = title ? 26 : 6;
+  const axisY = top + bars.length * (bar + gap);
+  const height = axisY + 18 + 26;
+  return (
+    <svg ref={ref} className="kx-chart kx-rob-summary" viewBox={`0 0 ${width} ${height}`} width="100%" style={{ maxWidth: width }} role="img" aria-label={label}>
+      {title && (
+        <text x={0} y={14} fontSize={12} fontWeight={600} style={ink("--kx-text")}>
+          {title}
+        </text>
+      )}
+      {bars.map((b, j) => {
+        const y = top + j * (bar + gap);
+        let x = labelWidth;
+        return (
+          <g key={b.label + j}>
+            <text x={labelWidth - 8} y={y + bar / 2} textAnchor="end" dominantBaseline="central" fontSize={FONT_SIZE} style={ink("--kx-text-2")}>
+              {clip(b.label, labelWidth - 10)}
+            </text>
+            <rect x={labelWidth} y={y} width={plot} height={bar} rx={3} style={ink("--kx-fill")} />
+            {b.shares.map((share, i) => {
+              const w = (share / 100) * plot;
+              const at = x;
+              x += w;
+              const l = levels[i];
+              if (w <= 0 || !l) return null;
+              return (
+                <g key={i}>
+                  <title>{`${b.label}: ${l.label ?? ""} ${share.toFixed(0)}%`}</title>
+                  <rect x={at} y={y} width={w} height={bar} style={ink(MARK_TONE[l.tone])} />
+                  {w >= 22 && <RobMark mark={l} x={at + 10} y={y + bar / 2} r={6} />}
+                  {w >= 52 && (
+                    <text x={at + w - 5} y={y + bar / 2} textAnchor="end" dominantBaseline="central" fontSize={10} fontWeight={600} style={ink("--kx-bg")} className="kx-chart-num">
+                      {`${share.toFixed(0)}%`}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        );
+      })}
+      {[0, 25, 50, 75, 100].map((t) => (
+        <text key={t} x={labelWidth + (t / 100) * plot} y={axisY + 6} textAnchor={t === 0 ? "start" : t === 100 ? "end" : "middle"} fontSize={10} style={ink("--kx-text-3")}>
+          {`${t}%`}
+        </text>
+      ))}
+      <Legend levels={levels} x={labelWidth} y={axisY + 30} width={plot} />
+    </svg>
+  );
+});
+// ── end std-C ───────────────────────────────────────────────────────────────────────────
 
 // ── std-D: scatter, bubble and contour-enhanced funnel plots ───────────────────────────
 

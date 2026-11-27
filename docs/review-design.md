@@ -68,6 +68,17 @@ Event kinds (payload fields in `docs/review-sync.md`):
 | `extract.final` | the consensus value after dual extraction |
 | `ai.suggest` | an AI suggestion (never a decision) |
 | `analysis.set` | a saved meta-analysis setup |
+| `chase.round` | a citation-searching round: direction, seeds, service, date, found / already in the review / new, its batch |
+| `ai.prompt`, `ai.audit` | an AI prompt template's text once per version (id, version, SHA-256); a blind audit sample |
+| `conduct.dismiss`, `conduct.retractions` | a conduct check dismissed with its reason; a retraction check of the included studies |
+| `xpilot.set`, `form.piloted` | an extraction pilot round; forms recorded as piloted (date, studies, agreement, form hashes) |
+| `contact.log` | a contact with a study's authors: date, who, how, what was asked, reply, data received |
+| `protocol.register` | the protocol's registration (registry, id, date, address), or its withdrawal |
+| `checklist.note` | where the manuscript reports a checklist item, and notes |
+| `search.source`, `search.peer_review`, `search.prior` | PRISMA-S details of a source, a peer review of the strategies, reused prior work |
+| `rob.tool`, `rob.setup`, `rob.study` | risk-of-bias tools of the review, assessors and blind mode, a study's tool and results |
+| `rob.answer`, `rob.evidence`, `rob.complete`, `rob.final` | one assessor's answers, judgements and supporting passages; done; the agreed judgement |
+| `grade.set`, `grade.order` | an outcome's certainty rating (GRADE); the Summary of findings order |
 
 **Derived state** (`derive.rs`) is a fold over events: current decision per (record, stage,
 reviewer), each record's status per stage (undecided, needs another reviewer, conflict, included,
@@ -198,8 +209,8 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   source column per field and a data dictionary (field, type, options, show-when, checks). Form
   builder (sections; text, long text, number, choice, multi-choice, date,
   yes/no, table / repeating group; guidance, required, quote required), templates (study
-  characteristics, dichotomous / continuous / generic outcomes, RoB 2-style, ROBINS-I-style,
-  Newcastle–Ottawa-style — Key's own wording), dual extraction with comparison and consensus,
+  characteristics, dichotomous / continuous / generic outcomes; risk of bias has its own
+  stage), dual extraction with comparison and consensus,
   AI pre-fill as suggestions with source passages. Export: wide CSV, an outcome table for RevMan-style entry (not a RevMan import file), tidy
   long CSV for R.
 - **Analysis**: pick an outcome; effect measure (RR, OR, RD, MD, SMD/Hedges' g, generic inverse
@@ -218,7 +229,7 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   funnel (`pubbias.rs`); influence diagnostics, Baujat plot, cumulative analysis and a model
   comparison (`sensitivity.rs`). Each is tested against metafor 5.2-1 (run locally), R's lm, or
   clubSandwich results printed in metafor's documentation; no R at runtime. A risk-of-bias
-  moderator comes from the "rob-covariates" export when RoB assessments exist.
+  moderator comes from `rob::covariates` when assessments exist.
 - **Conversions** (`conversions.rs`, UI `review-convert.tsx`): the helper on an outcome row
   computes SE/CI/p/t, SDs from SE/CI/IQR/range, mean and SD from medians (Luo/Wan/Shi, as
   conv.fivenum, with the skewness check), change-score SDs, combined groups, events from
@@ -231,6 +242,112 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   studies as RIS/BibTeX/CSV; a replication bundle (zip with README, manifest and SHA-256 sums,
   optional anonymised reviewers); and an import of records and decisions from Covidence, Rayyan
   or any CSV with a column mapping.
+- **Risk of bias** (`rob.rs`, `certainty.rs`, `review-rob.tsx`): an assessment belongs to a study
+  and, for result-level tools (RoB 2, ROBINS-I, ROBINS-E), to one result: an outcome and time
+  point of the outcome tables ("whole study" otherwise, and the fallback for a result without
+  its own). A tool is data (`crates/key-review/rob-tools/*.json`, editable per review, exported
+  and imported as JSON, built from scratch in the tool builder): judgement levels (colour,
+  symbol, what they count as in analyses), domains, points to consider with response options,
+  and a suggestion rule per domain (the answer raising most concern, or stars) and overall (the
+  least favourable domain, or none). Shipped: Key's own basic checklist (its own questions and
+  suggestion rule), and the structure only of RoB 2, ROBINS-I v2, ROBINS-E, Newcastle–Ottawa and
+  QUADAS-2: Key's neutral domain labels, the judgement scale, a worst-domain overall default and
+  a link per domain. Their questions and algorithms stay in the official tools (RoB 2 and the
+  ROBINS tools are CC BY-NC-ND; the others state no licence; see LICENSES.md): the assessor
+  answers there and records each judgement, its basis and supporting passages in Key. Anyone
+  holding the rights to a fuller version imports it as a tool definition (JSON) into their
+  review. A judgement that differs from a suggestion needs a reason. The reader is the main
+  panel, the assessment the sidebar; a selection becomes support for the domain in focus with
+  its page and boxes. Two (or more) assessors work independently; blind until all have
+  finished; then differing domains are conflicts (a queue) agreed by consensus or a
+  tie-breaker. Answers in old RoB extraction forms are brought in on request ("Bring them in",
+  once per study and form). Plots: traffic light (studies × domains) and summary bars, unweighted
+  and weighted by an outcome's analysis, light and dark on screen, print palette in SVG/PNG.
+  In Analysis: the per-domain judgements beside the forest plot, a flag for studies without an
+  assessment, the analysis without the studies at high risk, and subgroups by overall risk.
+  Other analyses read `rob::covariates` (or the `rob-covariates` export).
+- **Certainty** (`grade.rs`, `review-grade.tsx`): GRADE per outcome, linked to that outcome's
+  analysis (measure and model). Start high (randomised) or low (non-randomised; high when rated
+  with ROBINS-I); five domains to rate down, three to rate up for non-randomised evidence; each
+  judgement other than "not serious", or other than Key's suggestion, needs a footnote. Key
+  suggests from the data and says why, never applying it: risk of bias from the share of
+  weight at high (or some) risk and the estimate without those studies; inconsistency from I²,
+  the prediction interval and overlap of intervals; imprecision from the interval against no
+  effect and the smallest important difference (per 1,000 for dichotomous outcomes) and the
+  optimal information size; publication bias from Egger's test with ten or more studies;
+  indirectness by hand. The Summary of findings: outcomes in the reviewer's order with
+  importance, assumed risk (studies' median control risk, or entered), risk with the
+  intervention and the difference per 1,000 with intervals (odds ratios converted through the
+  odds), relative effect, participants and studies, certainty with GRADE's circles and
+  footnotes, and a plain-language statement ("probably", "may"). Export for Word (HTML),
+  Markdown, CSV. GRADEpro has no public import format for such a table (it imports RevMan
+  data packages), so Key writes none.
+
+## Standards in conduct (citation searching, AI use, conduct checks, pilots)
+
+- **Citation searching** (Sources › Citation searching; `chasing.rs`): from the included studies
+  not chased yet (or any chosen), backward (reference lists) and forward (citing works) through
+  OpenAlex as a background job with progress and Stop; requests are batched (50 ids or DOIs
+  each, citing works by cursor) and cached for a day. A seed without a DOI is found by title,
+  year and first author with the review's duplicate matcher; one OpenAlex does not know uses the
+  reference list Key read from its full text. The counts come first (found, already in the
+  review, new), then the new records go in as one batch under PRISMA's other methods, "Citation
+  searching", with the strategy line PRISMA-S reads, most linked to the seeds first when chosen
+  (co-citation and bibliographic coupling). A round that finds nothing new is the hint to stop.
+- **AI use** (Overview › Conduct › AI use; `ai_audit.rs`): every AI suggestion's event carries the
+  provider, the model asked for and as reported, the prompt template id, version and SHA-256 (the
+  text kept once per version), the request's hash, settings and the fields read. What the person
+  did (accepted, changed, rejected) is read from their own later events. Agreement with the final
+  decisions (2×2 table, sensitivity, specificity, false-negative rate, Cohen's κ; per field for
+  extraction), a blind audit sample (MAER-Net 2026: the larger of 10 % or 100 records, of 10 % or
+  20 studies for coding; the AI's suggestion is hidden from the auditor until they decide), and a
+  statement for the methods with the prompts as an appendix (export "AI use statement").
+- **Conduct checks** (`conduct.rs`): soft warnings in Key's words with a link to MECIR, Campbell,
+  MAER-Net or TARCiS, per the review type in Setup (systematic, scoping, rapid, living): single
+  screening or extraction, no calibration round, fewer than two databases, no register, grey
+  literature or citation searching, searches over 12 months old once data are extracted,
+  retractions not checked (one click checks Crossref and OpenAlex and records it), full-text
+  exclusions without reasons, no or single risk-of-bias assessment, outcomes the protocol's plan
+  does not name, open conflicts, records awaiting classification, AI not audited. Dismissed with a
+  reason, kept in the log. `conduct::reporting_facts(state)` is what the PRISMA checklist reads.
+- **Extraction pilots and contacts** (Extraction toolbar; `xpilot.rs`): a seeded sample of included
+  studies every chosen extractor fills in; agreement per field (percent; Cohen's or Fleiss' κ for
+  choices; ICC(2,1) and mean absolute difference for numbers); "Forms piloted" records the date,
+  studies and agreement, and later changes to a piloted form show with their protocol versions. The
+  contact log feeds the missing-data reporting and exports (CSV).
+
+## Reporting (PRISMA checklist, protocol, search report)
+
+- **Overview › PRISMA checklist** (`checklist.rs`): PRISMA 2020's 42 rows and its 12 abstract
+  items, PRISMA-S's 16, PRISMA-ScR's 22 for a scoping review and two PRISMA-LSR additions for a
+  living one, each with a status computed from the review (evidenced, partly, missing, not
+  applicable, not recorded yet), the rule that decided it, links to where it shows (a Setup
+  section, a Sources view, the search report, an export), the one action that closes a gap, a
+  draft sentence from the data, and where the manuscript reports it (`checklist.note`).
+  "Generate methods section" drafts Methods and the Results flow paragraph (deterministic text,
+  no model). Exports: Markdown, HTML for Word, CSV, in the official order with attribution
+  (CC BY 4.0; descriptions are Key's paraphrases). Parts other review modules supply (AI use,
+  risk of bias, certainty, analysis and sharing statements) come through
+  `reporting_hooks::facts`.
+- **Setup › Protocol** (`protocol_doc.rs`): the protocol in PRISMA-P 2015's order. What Key knows
+  is written in (question, criteria, rules, forms, searches); the rest is `Protocol::plan`
+  (text fields, authors with guarantor and contact, outcomes with priority, planned subgroup and
+  sensitivity analyses, review type), versioned with the protocol. A completeness meter counts
+  the required fields. `protocol.register` records the registration (registry, id, date,
+  address); from then on any change the protocol states is a new version that needs a reason,
+  and the versions after the registered one are the **deviations from protocol** (PRISMA 24c,
+  exported as CSV or Markdown). Exports: a PRISMA-P protocol (Markdown, HTML), a PROSPERO copy
+  sheet (fields in the form's order, the review's stage derived from the log; the 2025 form's
+  labels come from a secondary description, as PROSPERO needs an account) and an OSF outline.
+  Nothing is submitted anywhere.
+- **Overview › Search report** (`search_report.rs`): PRISMA-S for the whole review. Database
+  search runs give platform, dates, every query as sent with its counts and Key's
+  reconstruction from their log (`db_strategy`); file imports are completed by the reviewer
+  (`search.source`: platform, coverage, date, strategy as run, limits with reasons, cited
+  filters, notes) with what is missing named per source; other methods with dates and counts;
+  update searches; prior work (`search.prior`); peer review of the strategies (`search.peer_review`,
+  PRESS 2015 by default); totals before and after de-duplication with the method described.
+  Exports: an appendix (Markdown, HTML), a CSV and the machine-readable JSON.
 
 ## PRISMA counts
 

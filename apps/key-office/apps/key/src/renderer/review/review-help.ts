@@ -145,7 +145,7 @@ export const REVIEW_HELP = {
   },
   "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text and choose Use for a field, or press ⌥S with the field focused." },
   "review.outcomes.table": { kind: "hint", text: "Not a RevMan import file: one row per study and outcome, laid out for typing into RevMan or another tool." },
-  "review.forms": { kind: "hint", text: "The risk-of-bias templates summarise each tool's domains in Key's words; use the official guidance documents when judging." },
+  "review.forms": { kind: "hint", text: "Risk of bias has its own stage with dual assessment, plots and use in analyses." },
   "review.meta": {
     kind: "explain",
     title: "Meta-analysis",
@@ -160,8 +160,122 @@ export const REVIEW_HELP = {
   "empty.review.fulltext": { kind: "empty", title: "Nothing at full text yet", what: "Records included or kept as maybe at title and abstract come here to be read in full.", todo: "Screen titles and abstracts first." },
   "empty.review.sources": { kind: "empty", title: "No records yet", what: "Each import is listed here with its source and counts for PRISMA.", todo: "Drop a RIS, BibTeX, EndNote XML, PubMed or CSV file on this page." },
   "empty.review.extraction": { kind: "empty", title: "No included studies yet", what: "Studies included at full text are listed here for data extraction.", todo: "Include studies at full-text screening." },
+  // std-B: citation searching, conduct checks, AI use and audit, extraction pilots.
+  "review.chase": {
+    kind: "explain",
+    title: "Citation searching",
+    body: [
+      "Studies you include point to others: the works they cite (backward) and the works citing them (forward). Cochrane requires checking reference lists; TARCiS recommends both directions.",
+      "Key looks the studies up in OpenAlex, removes what the review already has and shows the counts before adding anything. Repeat on newly included studies until a round finds nothing new.",
+    ],
+    privacy: "Sends the studies' DOIs, OpenAlex ids or titles to OpenAlex. Nothing else leaves this Mac.",
+  },
+  "review.conduct": {
+    kind: "explain",
+    title: "Conduct checks",
+    body: [
+      "Soft reminders of what Cochrane's conduct standards (MECIR) and the Campbell standards expect of a review like yours, in Key's own words with a link to each standard.",
+      "They never block. If one does not apply, dismiss it with the reason: the reason is kept for the methods section. The review type in Setup changes which checks apply.",
+    ],
+  },
+  "review.ai.audit": {
+    kind: "explain",
+    title: "Reporting AI use",
+    body: [
+      "Journals and the Cochrane, Campbell and JBI position on AI ask which tool and version was used, for what, with which prompts, and how well it agreed with people.",
+      "Key logs every suggestion with the model, its version, the date and the prompt, compares it with the reviewers' final decisions, and drafts the statement. A blind audit sample measures how many includes the AI would have missed.",
+    ],
+  },
+  "review.xpilot": {
+    kind: "explain",
+    title: "Piloting the extraction forms",
+    body: [
+      "Before the main extraction, everyone who extracts fills in the same few studies on their own. Fields with low agreement need clearer wording or guidance.",
+      "Agreement is the share of studies with the same value; kappa corrects choices for chance, and the ICC does the same for numbers. Closing the pilot records the date and number of studies for the methods.",
+    ],
+  },
   "empty.review.analysis": { kind: "empty", title: "Nothing to analyse yet", what: "Outcome data extracted from included studies is pooled here.", todo: "Include studies, then extract their outcome data." },
   "empty.review.outcomes": { kind: "empty", title: "No outcome data yet", what: "Add the Outcome data form in Setup › Extraction forms, then fill it in for each study.", todo: "Rows need an outcome name and events, means or an estimate." },
+  // std-A: reporting (PRISMA checklist, protocol, search report)
+  "review.checklist": {
+    kind: "explain",
+    title: "The PRISMA checklist",
+    body: [
+      "Journals ask for a filled PRISMA 2020 checklist with a systematic review: one line per item saying where the manuscript reports it. Key reads each item from the review itself and says whether its data show it, which rule decided, and the one thing that would close a gap.",
+      "Items only the manuscript can show (the title, the discussion) count once you note where they are. Drafts are sentences written from the review's numbers: copy them, check them, adjust them.",
+    ],
+    steps: ["Open Needs attention and work down the gaps", "Copy a draft into your manuscript", "Note where each item is reported", "Export the filled checklist for the journal"],
+    links: [{ label: "PRISMA 2020 checklist", url: "https://www.prisma-statement.org/prisma-2020-checklist" }],
+  },
+  "review.protocol": {
+    kind: "explain",
+    title: "Writing and registering the protocol",
+    body: [
+      "A protocol says before the review starts what it will do: the question, how studies are found and chosen, what data are taken, how they are combined. Registering it shows readers the methods were not chosen after seeing the results.",
+      "Key fills in what it knows from Setup and lists the rest in PRISMA-P's order. Once you record the registration, every change to the protocol is kept as a dated amendment with its reason, which the final report lists as deviations.",
+    ],
+    steps: ["Choose the review type", "Write the fields Key cannot know (rationale, funding, outcomes)", "Register with PROSPERO or OSF using the copy sheet", "Record the registration here"],
+    links: [{ label: "PRISMA-P", url: "https://www.prisma-statement.org/extensions" }, { label: "PROSPERO", url: "https://www.crd.york.ac.uk/prospero/" }, { label: "OSF Registries", url: "https://osf.io/registries" }],
+  },
+  "review.searchreport": {
+    kind: "explain",
+    title: "Reporting the search",
+    body: [
+      "PRISMA-S asks for enough about each search that someone else could run it again: the database and its platform, the date, the strategy exactly as run, any limits and filters with their reasons, other ways studies were found, and how duplicates were removed.",
+      "Searches run with Key's Database search fill most of this from their log. For a file exported from another platform, add the platform, the date and the strategy you ran.",
+    ],
+    links: [{ label: "PRISMA-S", url: "https://www.prisma-statement.org/extensions" }],
+  },
+  // std-C: risk of bias and certainty of evidence.
+  "review.rob": {
+    kind: "explain",
+    title: "Risk of bias",
+    body: [
+      "Risk of bias asks whether a study's design or conduct could have pushed its result away from the truth. Each tool splits this into domains, such as how groups were formed or how outcomes were measured.",
+      "For RoB 2, ROBINS-I, ROBINS-E, Newcastle–Ottawa and QUADAS-2, Key provides the assessment structure; the questions are in the official tool. Answer them there, then record each domain's judgement, its basis and supporting passages here. RoB 2 and ROBINS-I judge each result, so one study can be rated per outcome.",
+      "Key's own basic checklist has questions of its own, and Key suggests a judgement from them; a judgement that differs needs a reason.",
+    ],
+    links: [{ label: "RoB 2 and ROBINS tools", url: "https://www.riskofbias.info" }, { label: "Cochrane Handbook, chapter 8", url: "https://training.cochrane.org/handbook/current/chapter-08" }],
+  },
+  "review.rob.dual": {
+    kind: "explain",
+    title: "Two assessors, independently",
+    body: [
+      "Cochrane expects two people to assess risk of bias independently. With blind on, neither sees the other's answers until both have marked theirs complete.",
+      "Then judgements that differ are conflicts, listed under Conflicts. Agree on each one together, or let the tie-breaker decide, as the review's rules say.",
+    ],
+  },
+  "review.rob.plots": {
+    kind: "explain",
+    title: "Traffic-light and summary plots",
+    body: [
+      "The traffic-light plot shows each study's agreed judgement per domain, as a colour and a symbol, so it reads in print and without colour.",
+      "The summary plot shows, per domain, the share of studies at each level. Choose a result to also see it weighted by each study's weight in that outcome's analysis, which says more about how much the pooled result depends on studies at risk.",
+    ],
+  },
+  "review.rob.keys": { kind: "hint", text: "↑ ↓ move, a number answers, Enter takes the suggestion, ⌥S uses the selection as support, ⌘↩ completes, ⌥↓ goes on." },
+  "review.rob.weighted": { kind: "hint", text: "Choose a result with outcome data to weight the summary by each study's weight in its analysis." },
+  "review.rob.licence": { kind: "hint", text: "Key ships the official tools' structure only; their questions stay with their authors. Build a tool, or import one you may use." },
+  "review.rob.import": { kind: "hint", text: "Import tool definition (JSON): a tool file you or your institution may use, with its questions; it stays in this review." },
+  "review.rob.analysis": { kind: "hint", text: "Risk of bias from the Risk of bias stage: leave out studies at high risk, or compare studies by their overall judgement." },
+  "empty.review.rob": { kind: "empty", title: "No included studies yet", what: "Studies included at full text are assessed for risk of bias here.", todo: "Include studies at full-text screening." },
+  "empty.review.rob.conflicts": { kind: "empty", title: "No conflicts", what: "When assessors' judgements differ once both are done, the domain is listed here to settle.", todo: "Nothing to do here for now." },
+  "empty.review.rob.plots": { kind: "empty", title: "No agreed judgements yet", what: "The plots show judgements that the assessors agreed or settled.", todo: "Finish assessments in Assess." },
+  "review.grade": {
+    kind: "explain",
+    title: "Certainty of the evidence (GRADE)",
+    body: [
+      "GRADE rates how sure you can be about each outcome's pooled result: high, moderate, low or very low. Evidence from randomised trials starts high, from non-randomised studies low.",
+      "Rate down for risk of bias, inconsistency, indirectness, imprecision or publication bias; non-randomised evidence can also be rated up. Key suggests each judgement from the data with its reasons, and never applies one for you.",
+      "Each judgement that rates down or up needs a footnote: it explains the Summary of findings table.",
+    ],
+    links: [{ label: "GRADE handbook", url: "https://gdt.gradepro.org/app/handbook/handbook.html" }, { label: "Cochrane Handbook, chapter 14", url: "https://training.cochrane.org/handbook/current/chapter-14" }],
+  },
+  "review.grade.statement": { kind: "hint", text: "Key words the statement from the size of the effect and its certainty: “probably” for moderate, “may” for low." },
+  "review.grade.levels": { kind: "hint", text: "High: the true effect is close to the estimate. Moderate: probably close. Low: may differ a lot. Very low: likely to differ a lot." },
+  "review.grade.gradepro": { kind: "hint", text: "GRADEpro has no public import format for this table; it imports RevMan data packages. Export for Word, Markdown or CSV." },
+  "empty.review.sof": { kind: "empty", title: "No outcomes rated yet", what: "Each outcome you rate in Rate outcomes becomes a row of the Summary of findings table.", todo: "Rate the certainty of an outcome first." },
+  // end std-C
   // std-D: advanced synthesis and exports.
   ...SYNTHESIS_HELP,
 } satisfies Record<string, HelpEntry>;

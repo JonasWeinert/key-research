@@ -171,7 +171,12 @@ const assert = require("node:assert/strict");
     // The title is sized for the pane, and pinned in a compact bar once it scrolls away.
     assert.ok(Number.parseFloat(await tabPage.locator(".kx-page-title").evaluate((el) => getComputedStyle(el).getPropertyValue("--kx-title-size"))) >= 18);
     await toggle.click();
-    await tabPage.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+    // Docked beside the reader the page's body scrolls under its bar; elsewhere the page does.
+    await tabPage.evaluate((el) => {
+      const body = el.querySelector(":scope > .kx-item-page-body");
+      const scroller = body && /auto|scroll/.test(getComputedStyle(body).overflowY) ? body : el;
+      scroller.scrollTo({ top: scroller.scrollHeight });
+    });
     await tabPage.locator('.kx-page-pinned[data-visible="true"] button', { hasText: "Health versus income" }).waitFor();
     await tabPage.locator(".kx-page-pinned button").click();
     await tabPage.locator('.kx-page-pinned[data-visible="false"]').waitFor({ state: "attached" });

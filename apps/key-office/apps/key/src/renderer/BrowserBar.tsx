@@ -34,7 +34,7 @@ export interface WebBarState {
    * another browser, or one just brought back. */
   signin?: {
     card?: {
-      stage: "offer" | "open" | "failed" | "arrival" | "where" | "loop";
+      stage: "offer" | "open" | "failed" | "arrival" | "where" | "loop" | "passkey" | "passkey-busy";
       site: string;
       way: "window" | "handoff";
       browser: string;
@@ -64,7 +64,10 @@ type SignInOp =
   | "signin-here"
   | "signin-key-instead"
   | "signin-pick"
-  | "signin-keep";
+  | "signin-keep"
+  | "signin-passkey-continue"
+  | "signin-passkey-cancel"
+  | "signin-passkey-show";
 export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo" | "proxy-off" | "proxy-remember" | "proxy-not-now" | "proxy-dismiss" | "proxy-use" | SignInOp;
 
 /** A sign-in that needs a passkey Key's browser cannot offer: what is happening and the way on. */
@@ -74,6 +77,32 @@ function SignInNotice({ signin, onPage }: { signin: NonNullable<WebBarState["sig
       <Icon name="close" size={10} />
     </button>
   );
+  // A passkey request answered by the browser's passkey window (the page stays shown).
+  const passkey = signin.card?.stage === "passkey" || signin.card?.stage === "passkey-busy" ? signin.card : undefined;
+  if (passkey)
+    return (
+      <span className="key-web-proxy key-web-signin" role="status" data-passkey={passkey.stage} title={hintText("browser.signin.passkey")}>
+        <Icon name="key" size={12} />
+        <span className="key-web-proxy-text">
+          {passkey.stage === "passkey" ? `${passkey.site} asks for your passkey` : `Use the passkey window to continue…`}
+        </span>
+        {passkey.stage === "passkey" ? (
+          <button type="button" data-primary onClick={() => onPage?.("signin-passkey-continue")} title={`Open ${passkey.browser}’s passkey window: phone (QR code), security key or a saved passkey`}>
+            Use passkey
+          </button>
+        ) : (
+          <button type="button" data-primary onClick={() => onPage?.("signin-passkey-show")} title={`Bring ${passkey.browser}’s passkey window to the front`}>
+            Show window
+          </button>
+        )}
+        <button type="button" onClick={() => onPage?.("signin-window")} title={`Sign in to the whole site in a ${passkey.browser} window instead, then bring the sign-in over`}>
+          Use a {passkey.browser} window
+        </button>
+        <button type="button" onClick={() => onPage?.("signin-passkey-cancel")}>
+          Cancel
+        </button>
+      </span>
+    );
   if (signin.handoff)
     return (
       <span className="key-web-proxy key-web-signin" role="status" data-handoff title={hintText("browser.signin.handoff")}>

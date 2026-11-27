@@ -64,6 +64,32 @@ pub const KINDS: &[&str] = &[
     "study.link",
     "extract.complete",
     "analysis.set",
+    // std-B: citation searching, AI-use log and audit, conduct checks, extraction pilots, contacts.
+    "chase.round",
+    "ai.prompt",
+    "ai.audit",
+    "conduct.dismiss",
+    "conduct.retractions",
+    "xpilot.set",
+    "form.piloted",
+    "contact.log",
+    // std-A: protocol registration, checklist notes, PRISMA-S search details
+    "protocol.register",
+    "checklist.note",
+    "search.source",
+    "search.peer_review",
+    "search.prior",
+    // std-C: risk of bias (rob.rs) and certainty of evidence (grade.rs).
+    "rob.tool",
+    "rob.setup",
+    "rob.study",
+    "rob.answer",
+    "rob.evidence",
+    "rob.complete",
+    "rob.final",
+    "grade.set",
+    "grade.order",
+    // end std-C
 ];
 
 pub fn now_ms() -> i64 {

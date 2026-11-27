@@ -35,12 +35,12 @@ describe("where a sign-in request returns to", () => {
 });
 
 describe("what Key remembers per sign-in service", () => {
-  it("opens the window by itself where chosen, or where a passkey was asked for and Here was not chosen", async () => {
+  it("opens the window by itself only where the person chose it (passkeys go through the proxy)", async () => {
     const file = join(mkdtempSync(join(tmpdir(), "key-signin-hosts-")), "sign-in-hosts.json");
     const hosts = new SignInHosts(file);
     expect(hosts.automatic("login.microsoftonline.com")).toBe(false);
     hosts.notePasskey("login.microsoftonline.com");
-    expect(hosts.automatic("login.microsoftonline.com")).toBe(true);
+    expect(hosts.automatic("login.microsoftonline.com")).toBe(false);
     hosts.set("login.microsoftonline.com", "here");
     expect(hosts.automatic("login.microsoftonline.com")).toBe(false);
     hosts.set("idp.uni.edu", "window");

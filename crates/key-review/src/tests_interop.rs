@@ -190,7 +190,7 @@ fn bundle_has_every_file_with_checksums() {
     let (reviews, id, owner, _) = bcg_review();
     reviews.save_analysis(&id, serde_json::to_value(spec()).unwrap(), &owner).unwrap();
     let plots: BTreeMap<String, String> = [("tuberculosis-forest.svg".to_string(), "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string())].into();
-    let (name, bytes) = reviews.bundle(&id, &owner, &plots, None, true).unwrap();
+    let (name, bytes) = reviews.bundle(&id, &owner, &plots, None, true, &Default::default()).unwrap();
     assert_eq!(name, "vaccine-trials-replication.zip");
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let names: Vec<String> = (0..zip.len()).map(|i| zip.by_index(i).unwrap().name().to_string()).collect();

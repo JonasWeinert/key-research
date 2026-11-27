@@ -12,7 +12,9 @@ serde_json.workspace = true
 key-store = { path = "../key-store" }
 key-biblio = { path = "../key-biblio" }
 regex = "1"
+# std-B: prompt template and request hashes (AI audit)
 sha2.workspace = true
+# std-D: zip exports (RevMan files, R scripts, replication bundle)
 zip.workspace = true
 
 [dev-dependencies]

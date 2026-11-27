@@ -42,6 +42,17 @@ const INTERACTIVE: &[&str] = &[
     "review_rename", "review_team_save", "review_protocol_save", "review_protocol_impact", "review_complete_form", "review_parse_selection",
     "review_records_remove", "review_record_edit", "review_study_link", "review_duplicates", "review_fulltexts", "review_fulltext_bytes", "review_fulltext_info",
     "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match",
+    // std-B: citation searching (the search itself runs on a background thread), AI use and audit,
+    // conduct checks, extraction pilots, contacts with authors.
+    "review_chase_view", "review_chase_start", "review_chase_status", "review_chase_cancel", "review_ai_use", "review_ai_audit_draw", "review_ai_audit_close",
+    "review_conduct", "review_conduct_dismiss", "review_xpilots", "review_xpilot_create", "review_xpilot_close", "review_contacts", "review_contact_save",
+    // std-A: reporting edits typed into fields
+    "review_checklist_note", "review_search_source", "review_search_peer_review", "review_search_prior", "review_protocol_register",
+    "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match", "review_fulltext_check",
+    // std-C: risk of bias and certainty, assessed key by key.
+    "review_rob_overview", "review_rob_assessment", "review_rob_answer", "review_rob_evidence", "review_rob_complete", "review_rob_final",
+    "review_grade_outcome", "review_grade_set",
+    // end std-C
     // std-D: the conversion helper answers as a reviewer types.
     "review_convert", "review_conversion_kinds",
 ];
@@ -62,7 +73,11 @@ const BACKGROUND: &[&str] = &[
 ];
 
 /// Network or long work: never interactive, and bounded in flight by the bridge.
-const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "web_read_page", "review_import", "review_link_library", "review_db_runs", "review_bundle", "review_synthesis", "review_migrate", "store_structure_hint", "web_landing_page", "store_full_text_add", "store_full_text_primary"];
+const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "web_read_page", "review_import", "review_link_library", "review_db_runs", "store_structure_hint", "web_landing_page", "store_full_text_add", "store_full_text_primary",
+    // std-B: importing a citation-searching round; the retraction check of included studies.
+    "review_chase_import", "review_conduct_retractions",
+    // std-D: the replication bundle, the advanced synthesis and moving a review in.
+    "review_bundle", "review_synthesis", "review_migrate"];
 
 /// Exceptions to the prefixes: quick despite their family.
 const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_md_export_restore", "store_file_mirror_config", "store_autoexport_targets"];

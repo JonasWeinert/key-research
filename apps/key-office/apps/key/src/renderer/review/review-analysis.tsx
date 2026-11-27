@@ -1,9 +1,11 @@
 // Analysis: pool an extracted outcome across the included studies (key-review's meta.rs) and
 // show the forest plot, heterogeneity, subgroups, leave-one-out and the funnel plot with Egger's
-// test. Every number comes from Rust; this file only lays them out.
+// test. Every number comes from Rust; this file only lays them out. Below the model controls and
+// the headline, the views (review-synthesis.tsx): pooled result, small-study effects,
+// meta-regression, several estimates per study and sensitivity.
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState, Explain, Hint } from "../explain";
-import { ForestPlot, FunnelPlot, type ForestRow } from "../charts/charts";
+import { ForestPlot, type ForestPlotProps, type ForestRow } from "../charts/charts";
 import { pngBlob, saveFile, svgMarkup } from "../charts/export";
 import { formatNumber } from "../charts/scale";
 import type { Analysis, Pooled } from "./review-api";
@@ -11,6 +13,10 @@ import { MenuButton, Segmented, Toggle, errorText, useLoad } from "./review-ui";
 import { AdvancedSynthesis } from "./review-synthesis";
 import { backTransform } from "./review-synthesis-api";
 import type { StageProps } from "./ReviewPage";
+// std-C: risk of bias in the analysis (forest plot columns, sensitivity, subgroups) and GRADE.
+import { RateCertainty, RobControl, RobFlags, useRobAnalysis } from "./review-rob-analysis";
+import "./review-rob.css";
+// end std-C
 
 const MEASURES: Record<string, [string, string][]> = {
   dichotomous: [
@@ -46,8 +52,8 @@ interface Input {
   sd2?: number | null;
 }
 
-export function AnalysisView(props: StageProps) {
-  const { api, summary, notify, go } = props;
+export function AnalysisView(stageProps: StageProps) {
+  const { api, summary, notify, go } = stageProps;
   const outcomes = useLoad(() => api.outcomes(), [api, summary.events]);
   const [choice, setChoice] = useState(0);
   const chosen = outcomes.value?.[choice];
@@ -64,13 +70,15 @@ export function AnalysisView(props: StageProps) {
     () => (chosen ? api.analyse({ outcome: chosen.outcome, timepoint: chosen.timepoint, options: { measure, method, hartungKnapp: hk, level: 0.95 }, subgroups }) : Promise.resolve(undefined)),
     [api, chosen?.outcome, chosen?.timepoint, measure, method, hk, subgroups, summary.events],
   );
+  // std-C
+  const rob = useRobAnalysis(stageProps, chosen, { measure, method, hartungKnapp: hk, level: 0.95 }, subgroups);
   const forest = useRef<SVGSVGElement>(null);
-  const funnel = useRef<SVGSVGElement>(null);
   if (!summary.included) return <EmptyState help="empty.review.analysis" icon="activity" learnMore="review.meta" />;
   if (outcomes.value && !outcomes.value.length)
     return <EmptyState help="empty.review.outcomes" icon="table" action={{ label: "Add an outcome data form in Setup", onClick: () => go("setup") }} learnMore="review.meta" />;
-  const a = result.value?.analysis;
-  const input = (result.value?.input ?? []) as Input[];
+  const shown = rob.override ?? result.value; // std-C: with a risk-of-bias option on
+  const a = shown?.analysis;
+  const input = (shown?.input ?? []) as Input[];
   const base = `${(chosen?.outcome ?? "outcome").replace(/[^\w]+/g, "-").toLowerCase()}`;
   return (
     <div className="kx-rv-analysis">
@@ -108,77 +116,77 @@ export function AnalysisView(props: StageProps) {
           <span>Subgroups</span>
           <Toggle label="Subgroups" checked={subgroups} onChange={setSubgroups} />
         </label>
+        <RobControl rob={rob} />
         <Explain help="review.meta" />
+        {a && <RateCertainty rob={rob} />}
       </div>
       {result.error && <p className="kx-inline-error">{result.error}</p>}
       {a && (
         <>
           <Headline a={a} />
-          <section className="kx-rv-section">
-            <div className="kx-rv-section-head">
-              <h2>Forest plot</h2>
-              <MenuButton
-                label="Export forest plot"
-                icon="download"
-                items={[
-                  { label: "SVG image", run: () => forest.current && saveFile(`${base}-forest.svg`, svgMarkup(forest.current)) },
-                  { label: "PNG image", run: () => forest.current && void pngBlob(forest.current, 3).then((b) => saveFile(`${base}-forest.png`, b)).catch((e) => notify(errorText(e), "error")) },
-                ]}
-              />
-            </div>
-            <ForestFigure ref={forest} a={a} input={input} kind={kind} />
-            {a.skipped.length > 0 && (
-              <p className="kx-rv-muted">
-                Left out: {a.skipped.map(([s, why]) => `${s} (${why.replace(`${s}: `, "")})`).join("; ")}
-              </p>
-            )}
-          </section>
-          <div className="kx-rv-analysis-grid">
-            <section className="kx-rv-section">
-              <div className="kx-rv-section-head">
-                <h2>Small-study effects</h2>
-                <MenuButton label="Export funnel plot" icon="download" items={[{ label: "SVG image", run: () => funnel.current && saveFile(`${base}-funnel.svg`, svgMarkup(funnel.current)) }]} />
-              </div>
-              <FunnelPlot ref={funnel} points={a.studies.map((s) => ({ estimate: s.yi, se: Math.sqrt(s.vi), label: s.label }))} center={a.main.estimate} axisLabel={a.ratio ? `${a.measureLabel} (log scale)` : a.measureLabel} tickFormat={a.ratio ? (v) => formatNumber(Math.exp(v), 2) : undefined} />
-              {a.egger ? (
-                <p>
-                  Egger’s test: t = {a.egger.t.toFixed(2)}, df = {a.egger.df}, p = {p(a.egger.p)}. {a.studies.length < 10 ? "With fewer than 10 studies the test has little power." : a.egger.p < 0.1 ? "The funnel may be asymmetric." : "No clear asymmetry."}
-                </p>
-              ) : (
-                <Hint help="review.egger.few" />
-              )}
-            </section>
-            {a.leaveOneOut.length > 0 && (
-              <section className="kx-rv-section">
-                <div className="kx-rv-section-head">
-                  <h2>Leave one out</h2>
-                </div>
-                <table className="kx-rv-table">
-                  <thead>
-                    <tr>
-                      <th>Without</th>
-                      <th className="kx-rv-num">Estimate [95% CI]</th>
-                      <th className="kx-rv-num">I²</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {a.leaveOneOut.map((l) => (
-                      <tr key={l.id}>
-                        <td>{l.label}</td>
-                        <td className="kx-rv-num">{ci(a, l.estimate, l.lower, l.upper)}</td>
-                        <td className="kx-rv-num">{l.i2.toFixed(0)}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-            )}
-          </div>
+          <RobFlags rob={rob} ratio={a.ratio} />
           {chosen && (
             <AdvancedSynthesis
-              props={props}
+              props={stageProps}
               base={{ outcome: chosen.outcome, timepoint: chosen.timepoint, options: { measure, method, hartungKnapp: hk, level: 0.95 }, subgroups }}
-              plots={() => ({ ...(forest.current ? { [`${base}-forest.svg`]: svgMarkup(forest.current) } : {}), ...(funnel.current ? { [`${base}-funnel.svg`]: svgMarkup(funnel.current) } : {}) })}
+              pooled={
+                <>
+                  <section className="kx-rv-section">
+                    <div className="kx-rv-section-head">
+                      <h2>Forest plot</h2>
+                      <MenuButton
+                        label="Export forest plot"
+                        icon="download"
+                        items={[
+                          { label: "SVG image", run: () => forest.current && saveFile(`${base}-forest.svg`, svgMarkup(forest.current)) },
+                          { label: "PNG image", run: () => forest.current && void pngBlob(forest.current, 3).then((b) => saveFile(`${base}-forest.png`, b)).catch((e) => notify(errorText(e), "error")) },
+                        ]}
+                      />
+                    </div>
+                    <ForestFigure ref={forest} a={a} input={input} kind={kind} marks={rob.marks} />
+                    {a.skipped.length > 0 && (
+                      <p className="kx-rv-muted">
+                        Left out: {a.skipped.map(([s, why]) => `${s} (${why.replace(`${s}: `, "")})`).join("; ")}
+                      </p>
+                    )}
+                  </section>
+                  {a.leaveOneOut.length > 0 && (
+                    <section className="kx-rv-section">
+                      <div className="kx-rv-section-head">
+                        <h2>Leave one out</h2>
+                      </div>
+                      <table className="kx-rv-table">
+                        <thead>
+                          <tr>
+                            <th>Without</th>
+                            <th className="kx-rv-num">Estimate [95% CI]</th>
+                            <th className="kx-rv-num">I²</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {a.leaveOneOut.map((l) => (
+                            <tr key={l.id}>
+                              <td>{l.label}</td>
+                              <td className="kx-rv-num">{ci(a, l.estimate, l.lower, l.upper)}</td>
+                              <td className="kx-rv-num">{l.i2.toFixed(0)}%</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </section>
+                  )}
+                </>
+              }
+              funnelSection={
+                a.egger ? (
+                  <p className="kx-rv-more-egger">
+                    Egger’s test: t = {a.egger.t.toFixed(2)}, df = {a.egger.df}, p = {p(a.egger.p)}. {a.studies.length < 10 ? "With fewer than 10 studies the test has little power." : a.egger.p < 0.1 ? "The funnel may be asymmetric." : "No clear asymmetry."}
+                  </p>
+                ) : (
+                  <Hint help="review.egger.few" />
+                )
+              }
+              plots={() => (forest.current ? { [`${base}-forest.svg`]: svgMarkup(forest.current) } : {})}
             />
           )}
         </>
@@ -241,7 +249,7 @@ function Headline({ a }: { a: Analysis }) {
 }
 
 
-const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; kind: string }>(function ForestFigure({ a, input, kind }, ref) {
+const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; kind: string; marks?: ForestPlotProps["marks"] }>(function ForestFigure({ a, input, kind, marks }, ref) {
   const rows = useMemo(() => {
     const byId = new Map(input.map((s) => [s.id, s]));
     const columns = (id: string) => {
@@ -267,5 +275,5 @@ const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; ki
     return out;
   }, [a, input, kind]);
   const headers = kind === "dichotomous" ? ["Events/total (1)", "Events/total (2)"] : kind === "continuous" ? ["Mean (SD) n (1)", "Mean (SD) n (2)"] : [];
-  return <ForestPlot ref={ref} rows={rows} columnHeaders={headers} log={a.ratio} axisLabel={a.measureLabel} favours={["Favours group 1", "Favours group 2"]} label={`Forest plot: ${a.measureLabel}`} />;
+  return <ForestPlot ref={ref} rows={rows} columnHeaders={headers} log={a.ratio} axisLabel={a.measureLabel} favours={["Favours group 1", "Favours group 2"]} label={`Forest plot: ${a.measureLabel}`} marks={marks} width={marks ? 760 + marks.headers.length * 18 + 10 : 760} />;
 });

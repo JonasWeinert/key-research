@@ -4,9 +4,10 @@
 // browser they are stale. The service also ties its sign-in to the browser (user agent).
 // A. a passkey request in a cross-site iframe covers the page with the card within a second;
 //    Not now puts it aside (the bar keeps Stop waiting, which ends the request);
-// B. app.localhost → (one-time hop) → gateway.localhost/idp/profile/…: the tab ARRIVES at the
-//    sign-in service and is offered the sign-in window at once; Continue here is remembered; the
-//    page asks for a passkey and the card offers the window again; the window starts on the
+// (Passkey requests here go to Electron, KEY_PASSKEY_PROXY=0: the proxy has its own smoke,
+// smoke-passkey-proxy.cjs.)
+// B. app.localhost → (one-time hop) → gateway.localhost/idp/profile/…: the page asks for a
+//    passkey and the card offers the window (remembered for the service); the window starts on the
 //    site's page (never the stale sign-in address), the real WebAuthn ceremony (Chrome headless,
 //    virtual authenticator for the phone) completes there, the sign-in's cookies come over and
 //    Key goes back to the site's page, signed in. No request is ever stale.
@@ -128,10 +129,65 @@ async function serve() {
         return go("/home", { "set-cookie": "strict_session=ok; Path=/; Secure; SameSite=None; Partitioned" });
       }
     }
+    // More services on the same sign-in service, each ending its sign-in differently:
+    // discovery → … → portal (a different host than the entry; "Stay signed in?" last, an
+    // auto-POST, a meta refresh, background polling and a hidden sign-in frame on the landing page);
+    // popup (the sign-in runs in a second window); kiosk (a visible sign-in frame on the landing
+    // page); stuck (never finishes).
+    if (host === "discovery.localhost" && url.pathname === "/find") return go(`${base("gateway")}/idp/profile/SAML2/Redirect/SSO?SAMLRequest=${id()}&RelayState=portal`);
+    if (host === "portal.localhost") {
+      if (url.pathname === "/acs" && req.method === "POST")
+        return page(html("Signing in", `<p>Signing you in…</p><meta http-equiv="refresh" content="0.4;url=/home">`), { "set-cookie": "portal_session=ok; Path=/; HttpOnly; SameSite=Lax" });
+      if (url.pathname === "/home") {
+        if (jar.portal_session !== "ok") return go(`${base("discovery")}/find?inst=uni`);
+        return page(
+          html("Portal", `<h1 id="who">Signed in to the portal</h1><iframe src="${base("gateway")}/idp/profile/SAML2/Redirect/SSO?silent=1" style="width:0;height:0;border:0"></iframe>
+            <script>setInterval(() => fetch("/ping").catch(() => {}), 300)</script>`),
+        );
+      }
+      if (url.pathname === "/ping") return (res.writeHead(204), res.end());
+    }
+    if (host === "popup.localhost") {
+      if (url.pathname === "/start") {
+        if (jar.popup_session === "ok") return page(html("Popup app", `<h1 id="who">Signed in to the popup app</h1>`));
+        const relay = id();
+        relays.set(relay, false);
+        return page(html("Popup app", `<p>Signing in in a popup…</p><script>setTimeout(() => window.open(${JSON.stringify(`${base("gateway")}/idp/profile/SAML2/Redirect/SSO?SAMLRequest=${relay}&RelayState=popup`)}, "signin", "popup,width=420,height=600"), 300)</script>`), {
+          "set-cookie": `popup_relay=${relay}; Path=/; HttpOnly`,
+        });
+      }
+      if (url.pathname === "/acs") {
+        const relay = url.searchParams.get("relay");
+        if (jar.popup_relay !== relay || relays.get(relay) !== false) return stale(req, res, "popup response");
+        relays.set(relay, true);
+        return page(html("Done", `<p>Done</p><script>if (opener) opener.location.href = "/start"; setTimeout(() => window.close(), 200)</script>`), { "set-cookie": "popup_session=ok; Path=/; HttpOnly; SameSite=Lax" });
+      }
+    }
+    if (host === "kiosk.localhost") {
+      if (url.pathname === "/start") return jar.kiosk_session === "ok" ? go("/home") : go(`${base("gateway")}/idp/profile/SAML2/Redirect/SSO?SAMLRequest=${id()}&RelayState=kiosk`);
+      if (url.pathname === "/acs") return go("/home", { "set-cookie": "kiosk_session=ok; Path=/; HttpOnly; SameSite=Lax" });
+      if (url.pathname === "/home")
+        return page(html("Kiosk", `<h1 id="who">Signed in to the kiosk</h1><iframe src="${base("gateway")}/idp/profile/account" style="width:420px;height:260px"></iframe>`));
+    }
+    if (host === "stuck.localhost" && url.pathname === "/start") return go(`${base("gateway")}/idp/profile/SAML2/Redirect/SSO?SAMLRequest=${id()}&RelayState=stuck`);
     // The sign-in service: one-time requests bound to its JSESSIONID cookie, sessions bound to the browser.
     if (host === "gateway.localhost") {
-      const acs = (service, relay) => (service === "strict" ? `${base("strict")}/acs?relay=${relay}` : `${base(service)}/Shibboleth.sso/SAML2/POST?relay=${relay}&SAMLResponse=ok`);
+      const acs = (service, relay) =>
+        service === "strict" ? `${base("strict")}/acs?relay=${relay}`
+        : service === "portal" ? `${base("gateway")}/idp/profile/kmsi?relay=${relay}`
+        : service === "popup" ? `${base("popup")}/acs?relay=${relay}`
+        : service === "kiosk" ? `${base("kiosk")}/acs?relay=${relay}`
+        : service === "stuck" ? `${base("gateway")}/idp/profile/wait`
+        : `${base(service)}/Shibboleth.sso/SAML2/POST?relay=${relay}&SAMLResponse=ok`;
+      // "Stay signed in?": answered after a moment (as a person would), then an auto-POST to the site.
+      if (url.pathname === "/idp/profile/kmsi")
+        return page(html("Stay signed in?", `<h1>Stay signed in?</h1><button id="yes">Yes</button><script>setTimeout(() => location.href = "/idp/profile/post", 1200)</script>`));
+      if (url.pathname === "/idp/profile/post")
+        return page(html("Working…", `<form method="post" action="${base("portal")}/acs"><input type="hidden" name="SAMLResponse" value="ok"></form><script>document.forms[0].submit()</script>`));
+      if (url.pathname === "/idp/profile/wait") return page(html("Please wait", `<p>Please wait…</p>`));
+      if (url.pathname === "/idp/profile/account") return page(html("Account", `<p>Your account</p>`));
       if (url.pathname === "/idp/profile/SAML2/Redirect/SSO") {
+        if (url.searchParams.get("silent")) return page(html("Silent", "ok"));
         if (url.searchParams.has("SAMLRequest")) {
           const request = url.searchParams.get("SAMLRequest");
           const service = url.searchParams.get("RelayState");
@@ -187,6 +243,8 @@ async function serve() {
       KEY_SIGNIN_VIRTUAL_AUTHENTICATOR: "1",
       KEY_SIGNIN_SETTLE_MS: "600",
       KEY_SIGNIN_LOOP_MS: "1500",
+      // This smoke is about the sign-in window: passkey requests go to Electron, not the proxy.
+      KEY_PASSKEY_PROXY: "0",
       KEY_USER_DATA: path.join(temp, "profile"),
       KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
     },
@@ -203,10 +261,12 @@ async function serve() {
     };
     const open = (url) => shell.evaluate((url) => window.key.tabAction("open-url", { url }), url);
     const tabAt = (prefix) => until(() => app.windows().find((p) => p.url().startsWith(prefix)), `a tab at ${prefix}`);
-    const signedIn = async (prefix, what) => {
-      const page = await tabAt(prefix);
-      await until(() => page.evaluate(() => document.getElementById("who")?.textContent).catch(() => ""), what, 30000);
-    };
+    // Some tab at that address shows it is signed in (a popup's opener tab may stay behind).
+    const signedIn = async (prefix, what) =>
+      until(async () => {
+        for (const page of app.windows().filter((p) => p.url().startsWith(prefix)))
+          if (await page.evaluate(() => document.getElementById("who")?.textContent).catch(() => "")) return true;
+      }, what, 30000);
     const waitForWindow = async (what) =>
       until(async () => {
         const s = await signin();
@@ -228,17 +288,9 @@ async function serve() {
     await shell.click(".key-web-signin[data-waiting] button:has-text('Stop waiting')");
     assert((await result) === "frame:NotAllowedError", "Stop waiting ends the frame's request");
 
-    // B. Arrival at the sign-in service, Continue here, then the passkey: the window, from the site's page.
+    // B. The page asks for a passkey: the window, from the site's page.
     await open(`${base("app")}/article`);
-    const arrival = await until(async () => ((await signin())?.card?.stage === "arrival" ? (await signin()).card : undefined), "the card on arrival at the sign-in service", 8000).catch(() => undefined);
-    report.arrival = arrival ? { host: arrival.host } : "missing";
-    if (arrival) {
-      assert(arrival.host === "gateway.localhost", `the arrival card names the sign-in service: ${JSON.stringify(arrival)}`);
-      await shell.waitForSelector(".kx-signin-card-layer[data-stage=arrival]");
-      await wait(300);
-      await shell.screenshot({ path: path.join(shots, "1-arrival.png") });
-      await shell.click(".kx-signin-card button:has-text('Continue here')");
-    }
+    // (No arrival card by default any more: only where the window was chosen for the service.)
     await until(async () => (await signin())?.card?.stage === "offer", "the card when the page asks for a passkey", 10000);
     await shell.click(".kx-signin-card button[data-primary]");
     const back = await waitForWindow("the sign-in to come back");
@@ -247,7 +299,6 @@ async function serve() {
     report.windowEntry = entry?.entry;
     // The failure the owner saw: the window replayed a one-time sign-in request.
     assert(!log.stale.some((s) => s.by === "window"), `no stale request in the sign-in window: ${JSON.stringify(log.stale)} (window started on ${entry?.entry ?? entry?.current})`);
-    assert(arrival, "the tab is offered the sign-in window when it arrives at the sign-in service");
     assert(entry?.entry === `${base("app")}/article`, `the window starts on the site's page: ${JSON.stringify(entry)}`);
     assert(back.imported?.names?.includes("app.localhost") && back.imported.names.includes("gateway.localhost") && !back.imported.names.includes("tracker.localhost"), `brought over for the chain's sites: ${JSON.stringify(back)}`);
     await signedIn(`${base("app")}/article`, "the site's page signed in, in Key");
@@ -284,6 +335,84 @@ async function serve() {
     await wait(300);
     await shell.screenshot({ path: path.join(shots, "4-loop.png") });
     report.loop = loop.card.failed;
+    await shell.click(".kx-signin-card button:has-text('Not now')");
+
+    const traceSince = async (from) => (await traceOf()).slice(from);
+    const completeReason = (lines) => lines.filter((t) => t.event === "window-complete").map((t) => t.reason).at(-1);
+
+    // G. Ends on another host than the entry, after "Stay signed in?", an auto-POST and a meta
+    //    refresh, on a page that polls and carries a hidden sign-in frame.
+    let mark = (await traceOf()).length;
+    await open(`${base("discovery")}/find?inst=uni`);
+    const portal = await waitForWindow("the portal sign-in to come back");
+    assert(portal.imported?.names?.includes("portal.localhost"), `the portal's sign-in came back: ${JSON.stringify(portal)}`);
+    await signedIn(`${base("portal")}/home`, "the portal page signed in, in Key (the window's landing page)");
+    report.portal = completeReason(await traceSince(mark));
+
+    // H. The sign-in runs in a second window (a popup) and the first page lands signed in.
+    mark = (await traceOf()).length;
+    await open(`${base("popup")}/start`);
+    const popup = await waitForWindow("the popup sign-in to come back");
+    assert(popup.imported?.names?.includes("popup.localhost"), `the popup app's sign-in came back: ${JSON.stringify(popup)}`);
+    await signedIn(`${base("popup")}/start`, "the popup app signed in, in Key");
+    report.popup = completeReason(await traceSince(mark));
+
+    // I. A visible sign-in frame on the landing page: Return to Key (the bar in the window) ends it.
+    mark = (await traceOf()).length;
+    await app.evaluate(() => (globalThis.keySignInClickBar = true));
+    await open(`${base("kiosk")}/start`);
+    await waitForWindow("the kiosk sign-in to come back");
+    await signedIn(`${base("kiosk")}/home`, "the kiosk signed in, in Key");
+    const kioskTrace = await traceSince(mark);
+    assert(kioskTrace.some((t) => t.event === "window-bar") && kioskTrace.some((t) => t.event === "window-bar-clicked"), `the bar was shown and used: ${JSON.stringify(kioskTrace.filter((t) => /bar|complete|check/.test(t.event)))}`);
+    report.kiosk = completeReason(kioskTrace);
+
+    // J. A second attempt while the first window is still open reuses it (one process).
+    mark = (await traceOf()).length;
+    await open(`${base("stuck")}/start`);
+    await until(async () => (await signin())?.card?.stage === "open", "the stuck sign-in window", 15000);
+    await wait(1500);
+    await app.evaluate(async ({ session }) => {
+      const ses = session.fromPartition("persist:key-browser");
+      for (const c of await ses.cookies.get({})) if (/app\.localhost|gateway\.localhost/.test(c.domain ?? "")) await ses.cookies.remove(`http://${c.domain.replace(/^\./, "")}${c.path}`, c.name);
+    });
+    await open(`${base("app")}/article`);
+    await waitForWindow("the second attempt to come back");
+    await signedIn(`${base("app")}/article`, "the article signed in again, in Key");
+    const reuse = await traceSince(mark);
+    assert(reuse.filter((t) => t.event === "window-start").length === 1 && reuse.some((t) => t.event === "window-reuse"), `one browser process, reused: ${JSON.stringify(reuse.filter((t) => /window-(start|reuse)/.test(t.event)))}`);
+    const firsts = reuse.filter((t) => t.event === "window-first");
+    assert(firsts.length >= 2 && firsts.every((t) => t.entry === true), `the window only ever opened on the entry: ${JSON.stringify(firsts)}`);
+
+    // K. A second attempt after the first browser process was killed: a fresh one, on the entry.
+    mark = (await traceOf()).length;
+    await open(`${base("stuck")}/start`);
+    await until(async () => (await signin())?.card?.stage === "open", "the stuck sign-in window again", 15000);
+    const first = await until(async () => (await traceSince(mark)).find((t) => t.event === "window-start"), "the window process");
+    await wait(1000);
+    process.kill(first.pid, "SIGKILL");
+    await until(async () => (await signin())?.card?.stage === "failed", "the card to say the window closed", 15000);
+    await shell.click(".kx-signin-card button[data-primary]");
+    await until(async () => (await signin())?.card?.stage === "open", "the window to open again", 15000);
+    const again = await until(async () => {
+      const lines = await traceSince(mark);
+      return lines.filter((t) => t.event === "window-first").length >= 2 ? lines : undefined;
+    }, "the new window's first page", 20000);
+    const starts = again.filter((t) => t.event === "window-start");
+    assert(starts.length === 2 && starts[1].pid !== first.pid, `a new process: ${JSON.stringify(starts)}`);
+    assert(again.filter((t) => t.event === "window-first").every((t) => t.entry === true), "the new window opened on the entry");
+    report.retryAfterKill = again.filter((t) => t.event === "window-entry").map((t) => ({ entry: t.entry, retry: t.retry }));
+    await shell.click(".kx-signin-card button:has-text('Cancel')");
+
+    // L. The browser program cannot be driven (no DevTools pipe): a plain error, no window left.
+    await app.evaluate(() => (globalThis.keySignInChromium = "/usr/bin/false"));
+    await open(`${base("stuck")}/start`);
+    const broken = await until(async () => ((await signin())?.card?.stage === "failed" ? (await signin()).card : undefined), "the card to say the window could not open", 30000);
+    assert(/could not open the sign-in window/.test(broken.problem), `it says so: ${JSON.stringify(broken)}`);
+    await shell.waitForSelector(".kx-signin-card-layer[data-stage=failed]");
+    await wait(300);
+    await shell.screenshot({ path: path.join(shots, "6-failed.png") });
+    await app.evaluate(() => (globalThis.keySignInChromium = undefined));
     await shell.click(".kx-signin-card button:has-text('Not now')");
 
     // F. Settings: the remembered service is listed; Forget sign-ins removes the profile.

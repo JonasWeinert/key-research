@@ -1,0 +1,27 @@
+{
+  "id": "quadas2",
+  "name": "Diagnostic accuracy studies (QUADAS-2 structure)",
+  "short": "QUADAS-2",
+  "version": "2",
+  "design": "Diagnostic test accuracy studies",
+  "level": "study",
+  "url": "https://www.bristol.ac.uk/population-health-sciences/projects/quadas/",
+  "about": "Key provides the assessment structure: four bias domains and three applicability domains with their ratings. The questions are in the official tool: open it beside Key, answer there, and record each domain's rating and its basis here. Bristol now lists QUADAS-3 as the successor; build its structure with New tool if you use it.",
+  "licence": "QUADAS-2 is published by the University of Bristol; no licence for the tool is stated (site: \"Copyright © 2026 University of Bristol. All rights reserved.\"; checked 2026-11-27 at https://www.bristol.ac.uk/population-health-sciences/projects/quadas/history/quadas-2/, which also says QUADAS-2 is superseded by QUADAS-3). Treated as restricted: Key ships none of its text.",
+  "optionSets": {},
+  "levels": [
+    { "id": "low", "label": "Low", "tone": "green", "symbol": "plus", "common": "low" },
+    { "id": "high", "label": "High", "tone": "red", "symbol": "cross", "common": "high" },
+    { "id": "unclear", "label": "Unclear", "tone": "muted", "symbol": "query", "common": "unclear" }
+  ],
+  "domains": [
+    { "id": "patients", "short": "P", "name": "Participants", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "index", "short": "I", "name": "Index test", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "reference", "short": "R", "name": "Reference standard", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "flow", "short": "F", "name": "Flow and timing", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "a-patients", "short": "AP", "name": "Applicability: participants", "applicability": true, "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "a-index", "short": "AI", "name": "Applicability: index test", "applicability": true, "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "a-reference", "short": "AR", "name": "Applicability: reference standard", "applicability": true, "prompt": "", "questions": [], "rule": { "kind": "manual" } }
+  ],
+  "overall": { "kind": "worst", "note": "Key's default suggestion is the least favourable bias domain (applicability not counted)." }
+}

@@ -99,7 +99,8 @@ fn text(v: &Json) -> String {
 }
 
 /// Fields and columns that can serve as moderators, with how many studies have a value.
-pub fn moderator_choices(state: &State, rows: &[crate::export::OutcomeRow], rob: Option<&Json>) -> Vec<ModeratorChoice> {
+pub fn moderator_choices(state: &State, rows: &[crate::export::OutcomeRow]) -> Vec<ModeratorChoice> {
+    let rob = crate::rob::covariates_json(state);
     let mut out = Vec::new();
     let included = state.included();
     for form in &state.protocol.forms {
@@ -123,7 +124,7 @@ pub fn moderator_choices(state: &State, rows: &[crate::export::OutcomeRow], rob:
             }
         }
     }
-    if let Some(Json::Object(map)) = rob {
+    if let Json::Object(map) = &rob {
         if !map.is_empty() {
             out.push(ModeratorChoice { moderator: ModeratorRef { source: "rob".into(), kind: "categorical".into(), name: "Risk of bias (overall)".into(), ..Default::default() }, label: "Risk of bias (overall)".into(), studies: map.len() });
         }
@@ -132,7 +133,9 @@ pub fn moderator_choices(state: &State, rows: &[crate::export::OutcomeRow], rob:
 }
 
 /// A moderator's values for each estimate in `rows`.
-pub fn moderator_values(state: &State, m: &ModeratorRef, rows: &[&StudyData], raw: &[crate::export::OutcomeRow], rob: Option<&Json>, outcome_key: &str) -> Moderator {
+/// `outcome` and `timepoint` pick the risk-of-bias result (rob::covariates, std-C).
+pub fn moderator_values(state: &State, m: &ModeratorRef, rows: &[&StudyData], raw: &[crate::export::OutcomeRow], outcome: &str, timepoint: Option<&str>) -> Moderator {
+    let rob = if m.source == "rob" { crate::rob::covariates(state, outcome, timepoint) } else { Default::default() };
     let kind = if m.kind.is_empty() { "categorical".to_string() } else { m.kind.clone() };
     let continuous = kind == "continuous";
     let to = |v: Option<Json>| -> ModValue {
@@ -153,10 +156,8 @@ pub fn moderator_values(state: &State, m: &ModeratorRef, rows: &[&StudyData], ra
         .map(|r| match m.source.as_str() {
             "column" => to(raw.iter().find(|x| x.record == r.id && Some(x.index) == r.row).and_then(|x| x.values.get(&m.field).cloned())),
             "rob" => {
-                let entry = rob.and_then(|j| j.get(&r.id));
-                let by = entry.and_then(|e| e.pointer(&format!("/byResult/{}", outcome_key.replace('~', "~0").replace('/', "~1"))));
-                let pick = by.or(entry);
-                if continuous { pick.and_then(|p| p.get("rank")).and_then(Json::as_f64).map(ModValue::Num).unwrap_or(ModValue::Missing) } else { pick.and_then(|p| p.get("overall")).and_then(Json::as_str).filter(|s| !s.is_empty()).map(|s| ModValue::Cat(s.to_string())).unwrap_or(ModValue::Missing) }
+                let c = rob.get(&r.id);
+                if continuous { c.map(|c| ModValue::Num(c.rank as f64)).unwrap_or(ModValue::Missing) } else { c.filter(|c| !c.overall.is_empty()).map(|c| ModValue::Cat(c.overall.clone())).unwrap_or(ModValue::Missing) }
             }
             _ => to(resolved_value(state, &r.id, &m.form, &m.field).map(|(v, _)| v)),
         })
@@ -167,16 +168,14 @@ pub fn moderator_values(state: &State, m: &ModeratorRef, rows: &[&StudyData], ra
 impl Reviews {
     /// Moderators available for an outcome.
     pub fn moderators(&self, review: &str) -> Result<Vec<ModeratorChoice>> {
-        let rob = self.export(review, "rob-covariates", "").ok().and_then(|f| f.get("content").and_then(Json::as_str).and_then(|c| serde_json::from_str::<Json>(c).ok()));
         self.read(review, |state, conn| {
             let ids: Vec<String> = state.included().iter().map(|r| r.id.clone()).collect();
             let rows = outcome_rows(state, &metas(conn, review, &ids)?);
-            Ok(moderator_choices(state, &rows, rob.as_ref()))
+            Ok(moderator_choices(state, &rows))
         })
     }
 
     pub fn synthesis(&self, review: &str, req: &SynthesisRequest) -> Result<Json> {
-        let rob = if req.moderators.iter().any(|m| m.source == "rob") { self.export(review, "rob-covariates", "").ok().and_then(|f| f.get("content").and_then(Json::as_str).and_then(|c| serde_json::from_str::<Json>(c).ok())) } else { None };
         self.read(review, |state, conn| {
             let ids: Vec<String> = state.included().iter().map(|r| r.id.clone()).collect();
             let raw = outcome_rows(state, &metas(conn, review, &ids)?);
@@ -200,7 +199,6 @@ impl Reviews {
             if rows.is_empty() {
                 return Err("No included study has usable data for this outcome and effect measure".into());
             }
-            let outcome_key = format!("{}|{}", req.outcome, timepoint.unwrap_or(""));
             let y: Vec<f64> = rows.iter().map(|r| r.effect.yi).collect();
             let v: Vec<f64> = rows.iter().map(|r| r.effect.vi).collect();
             let effects: Vec<Effect> = rows.iter().map(|r| r.effect).collect();
@@ -227,7 +225,7 @@ impl Reviews {
             let studies = cluster.iter().collect::<std::collections::BTreeSet<_>>().len();
             let multiple = studies < rows.len();
             let datas: Vec<&StudyData> = rows.iter().map(|r| &r.data).collect();
-            let mods: Vec<Moderator> = req.moderators.iter().map(|m| moderator_values(state, m, &datas, &raw, rob.as_ref(), &outcome_key)).collect();
+            let mods: Vec<Moderator> = req.moderators.iter().map(|m| moderator_values(state, m, &datas, &raw, &req.outcome, timepoint)).collect();
             let err = |e: String| json!({ "error": e });
             let mut out = json!({
                 "k": rows.len(),

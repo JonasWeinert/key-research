@@ -16,11 +16,17 @@ import { Sources } from "./review-sources";
 import { Screening } from "./review-screen";
 import { Extraction } from "./review-extract";
 import { AnalysisView } from "./review-analysis";
+// std-C: risk of bias and certainty of evidence.
+import { RiskOfBias } from "./review-rob";
+import { Certainty } from "./review-grade";
+// end std-C
 import "./review.css";
+// std-A
+import { setFocus } from "./review-reporting-api";
 // std-D: moving a review in from Covidence or Rayyan.
 import { MigrateHost, openMigrate } from "./review-migrate";
 
-export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis";
+export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis" | /* std-C */ "rob" | "certainty";
 const stageKey = (id: string) => `key.review.stage:${id}`;
 
 export interface StageProps {
@@ -49,6 +55,8 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
   });
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // std-A: opening a view of the stage already shown (the PRISMA checklist from the menu).
+  const [opened, setOpened] = useState(0);
   const { show, view: notice, clear } = useNotice();
   const setStage = useCallback(
     (s: StageId) => {
@@ -112,6 +120,10 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
     { id: "extract", label: "Extraction", badge: summary.included ? `${summary.extraction.mine}/${summary.included}` : undefined, title: `${summary.included} included studies` },
     { id: "analysis", label: "Analysis" },
   ];
+  // std-C: Risk of bias before Analysis, Certainty after it.
+  tabs.splice(tabs.findIndex((t) => t.id === "analysis"), 0, { id: "rob", label: "Risk of bias", title: "Risk of bias of the included studies and their results" });
+  tabs.splice(tabs.findIndex((t) => t.id === "analysis") + 1, 0, { id: "certainty", label: "Certainty", title: "Certainty of the evidence (GRADE) and the Summary of findings" });
+  // end std-C
   const props: StageProps = { api, summary, viewer, invoke, workspaceId, reviewId, active, onChanged: reload, notify: show, go: setStage };
   const exportFile = (kind: string) =>
     api
@@ -167,6 +179,13 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
               { label: "Export screening decisions (CSV)", icon: "table", run: () => void exportFile("screening") },
               { label: "Export audit trail (CSV)", icon: "clock", run: () => void exportFile("audit") },
               { label: "Save protocol as template…", icon: "copy", run: () => void exportFile("template") },
+              // std-A: reporting
+              null,
+              { label: "PRISMA checklist…", icon: "checklist", run: () => (setFocus(reviewId, "checklist"), setOpened((n) => n + 1), setStage("overview")) },
+              { label: "Export PRISMA checklist (Markdown)", icon: "fileMarkdown", run: () => void exportFile("prisma-checklist") },
+              { label: "Export methods draft (Markdown)", icon: "doc", run: () => void exportFile("methods-draft") },
+              { label: "Export protocol (PRISMA-P)", icon: "fileMarkdown", run: () => void exportFile("protocol") },
+              { label: "Export search report (PRISMA-S)", icon: "fileMarkdown", run: () => void exportFile("search-report") },
               // std-D: moving a review in.
               { label: "Import from Covidence or Rayyan…", icon: "upload", run: openMigrate },
               null,
@@ -177,13 +196,16 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
         </div>
       </header>
       <SegmentedTabs className="kx-rv-stages" label="Review stages" value={stage} onChange={setStage} minTabWidth={92} tabs={tabs} />
-      <main className="kx-rv-body" key={stage}>
+      <main className="kx-rv-body" key={`${stage}:${opened}`}>
         {stage === "overview" && <Overview {...props} />}
         {stage === "setup" && <Setup {...props} />}
         {stage === "sources" && <Sources {...props} />}
         {(stage === "ta" || stage === "ft") && <Screening {...props} stage={stage} />}
         {stage === "extract" && <Extraction {...props} />}
         {stage === "analysis" && <AnalysisView {...props} />}
+        {/* std-C */}
+        {stage === "rob" && <RiskOfBias {...props} />}
+        {stage === "certainty" && <Certainty {...props} />}
       </main>
       {notice}
       {/* std-D: moving a review in. */}

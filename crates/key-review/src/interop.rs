@@ -164,11 +164,12 @@ pub fn reporting_facts(state: &State) -> Json {
             "statement": statement,
             "metaRegression": metareg,
             "sensitivity": sensitivity,
-            "publicationBias": bias,
+            "publicationBias": if specs.is_empty() { Vec::new() } else { bias },
             "conversions": conversions,
         },
         "sharing": {
-            "statement": "Data, analytic code (R scripts using metafor) and the review's audit trail are available in the replication bundle exported from Key.",
+            // Only once an analysis is saved: before that there is no analytic code to share.
+            "statement": if specs.is_empty() { "" } else { "Data, analytic code (R scripts using metafor) and the review's audit trail are in the replication bundle exported from Key." },
             "rScript": !specs.is_empty(),
             "revman": true,
             "bundle": true,
@@ -358,7 +359,6 @@ impl Reviews {
             Some(r) => Some(self.synthesis(review, r)?),
             None => None,
         };
-        let rob = if adv.as_ref().is_some_and(|a| a.moderators.iter().any(|m| m.source == "rob")) { self.export(review, "rob-covariates", "").ok().and_then(|f| f.get("content").and_then(Json::as_str).and_then(|c| serde_json::from_str::<Json>(c).ok())) } else { None };
         let (data, mods, title) = self.read(review, |state, conn| {
             let ids: Vec<String> = state.included().iter().map(|r| r.id.clone()).collect();
             let raw = outcome_rows(state, &metas(conn, review, &ids)?);
@@ -369,9 +369,8 @@ impl Reviews {
                     d.subgroup = None;
                 }
             }
-            let key = format!("{}|{}", base.outcome, tp.unwrap_or(""));
             let refs: Vec<&crate::meta::StudyData> = data.iter().collect();
-            let mods: Vec<crate::metareg::Moderator> = adv.as_ref().map(|a| a.moderators.iter().map(|m: &ModeratorRef| crate::synthesis::moderator_values(state, m, &refs, &raw, rob.as_ref(), &key)).collect()).unwrap_or_default();
+            let mods: Vec<crate::metareg::Moderator> = adv.as_ref().map(|a| a.moderators.iter().map(|m: &ModeratorRef| crate::synthesis::moderator_values(state, m, &refs, &raw, &base.outcome, tp)).collect()).unwrap_or_default();
             let title = format!("{} — {}{}", state.info.name, base.outcome, tp.map(|t| format!(" ({t})")).unwrap_or_default());
             Ok((data, mods, title))
         })?;
@@ -413,7 +412,8 @@ impl Reviews {
 
     /// The replication bundle as zip bytes. `plots` are SVGs the Analysis stage drew
     /// (path → markup), placed under analyses/; `anonymise` replaces reviewer names.
-    pub fn bundle(&self, review: &str, viewer: &str, plots: &BTreeMap<String, String>, current: Option<&AnalysisSpec>, anonymise: bool) -> Result<(String, Vec<u8>)> {
+    /// `strategies` are the database runs' logs the host has at hand (std-A's search report).
+    pub fn bundle(&self, review: &str, viewer: &str, plots: &BTreeMap<String, String>, current: Option<&AnalysisSpec>, anonymise: bool, strategies: &std::collections::HashMap<String, Json>) -> Result<(String, Vec<u8>)> {
         let mut files: Vec<(OutFile, &str)> = Vec::new();
         let (name, members, specs) = self.read(review, |state, _| Ok((state.info.name.clone(), state.team.iter().map(|m| (m.id.clone(), m.name.clone())).collect::<Vec<_>>(), saved(state))))?;
         let add_export = |kind: &str, path: &str, what: &'static str, files: &mut Vec<(OutFile, &str)>| {
@@ -423,8 +423,12 @@ impl Reviews {
                 files.push((OutFile::text(path, c), what));
             }
         };
-        // Protocol, search and checklist (std-A), when present.
-        for (kind, path, what) in [
+        // Protocol, search report and checklist (std-A's reporting_hooks), risk of bias and
+        // certainty (std-C's certainty exports), called directly.
+        let mut direct: Vec<(OutFile, &str)> = Vec::new();
+        self.read(review, |state, conn| {
+            let base = slug(&state.info.name);
+            for (kind, path, what) in [
             ("protocol", "protocol/protocol.md", "The protocol in PRISMA-P order."),
             ("prospero-sheet", "protocol/prospero-sheet.md", "Text for each PROSPERO registration field."),
             ("osf-prereg", "protocol/osf-preregistration.md", "The protocol as an OSF preregistration."),
@@ -434,9 +438,28 @@ impl Reviews {
             ("prisma-checklist", "reporting/prisma-checklist.md", "The PRISMA 2020 checklist filled from the review."),
             ("prisma-checklist-csv", "reporting/prisma-checklist.csv", "The same checklist as CSV."),
             ("methods-draft", "reporting/methods-draft.md", "A draft methods section built from the review's data."),
-        ] {
-            add_export(kind, path, what, &mut files);
-        }
+            ] {
+                if let Ok((_, content, _)) = crate::reporting_hooks::export_with(state, kind, strategies)
+                    && !content.trim().is_empty()
+                {
+                    direct.push((OutFile::text(path, content), what));
+                }
+            }
+            for (kind, path, what) in [
+                ("rob-csv", "risk-of-bias/risk-of-bias.csv", "Risk-of-bias judgements per study, result and domain, with support."),
+                ("sof-md", "certainty/summary-of-findings.md", "Summary of findings with GRADE certainty."),
+                ("sof-csv", "certainty/summary-of-findings.csv", "The same table as CSV."),
+                ("grade-csv", "certainty/grade.csv", "GRADE judgements per outcome and domain with footnotes."),
+            ] {
+                if let Some(Ok((_, content, _))) = crate::certainty::export(state, conn, kind, &base)
+                    && content.lines().count() > 1
+                {
+                    direct.push((OutFile::text(path, content), what));
+                }
+            }
+            Ok(())
+        })?;
+        files.extend(direct);
         for (kind, path, what) in [
             ("prisma", "prisma/prisma-counts.csv", "PRISMA 2020 flow diagram numbers."),
             ("screening", "screening/screening-decisions.csv", "Every record with its decisions and reasons, per stage and reviewer."),
@@ -444,10 +467,6 @@ impl Reviews {
             ("extraction-long", "extraction/extraction-long.csv", "Extracted data, one row per value, with reviewer, agreement, quote and page."),
             ("dictionary", "extraction/data-dictionary.csv", "What each extraction field means (forms, fields, types, options)."),
             ("outcomes", "extraction/outcomes.csv", "Outcome data with escalc()-style columns."),
-            ("rob-csv", "risk-of-bias/risk-of-bias.csv", "Risk-of-bias judgements per study, result and domain, with support."),
-            ("sof-md", "certainty/summary-of-findings.md", "Summary of findings with GRADE certainty."),
-            ("sof-csv", "certainty/summary-of-findings.csv", "The same table as CSV."),
-            ("grade-csv", "certainty/grade.csv", "GRADE judgements per outcome and domain with footnotes."),
             ("audit", "audit/audit-trail.csv", "Every event in the review's log, in words, with time, person and protocol version."),
         ] {
             add_export(kind, path, what, &mut files);

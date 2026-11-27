@@ -17,6 +17,9 @@ use serde_json::{Map, Value as Json, json};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+#[path = "review_commands/library_links.rs"]
+mod library_links;
+
 static REVIEWS: OnceLock<Result<Reviews, String>> = OnceLock::new();
 
 fn reviews(root: &Path) -> Result<&'static Reviews, String> {
@@ -83,8 +86,22 @@ fn attach_full_text(root: &Path, library: &Library, reviews: &Reviews, review: &
         return Err(format!("{} is not a file", path.display()));
     }
     let hash = key_index::file_hash(path)?;
+    // The same file again: nothing to add.
+    let same = reviews.read(review, |s, _| Ok(s.record(record).and_then(|r| r.fulltext.file.as_ref()).is_some_and(|f| f.hash == hash)))?;
+    if same {
+        if owned_temp {
+            if let Some(parent) = path.parent().filter(|p| p.starts_with(std::env::temp_dir()) && *p != std::env::temp_dir()) {
+                let _ = std::fs::remove_dir_all(parent);
+            }
+        }
+        return Ok(json!({ "same": true, "hash": hash }));
+    }
     let name = if name.trim().is_empty() { path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() } else { name.to_string() };
-    let result = if let Some(source) = library.store.source_by_hash(&hash)?.filter(|s| s.trashed_at.is_none()) {
+    // A record linked to a library source shares its full text with it (library_links.rs).
+    let (shared, conflict) = library_links::share_on_attach(library, root, reviews, review, record, path, &hash, actor)?;
+    let result = if let Some(shared) = shared {
+        shared
+    } else if let Some(source) = library.store.source_by_hash(&hash)?.filter(|s| s.trashed_at.is_none()) {
         reviews.fulltext(review, record, Some("retrieved"), None, Some(Some(&source.id)), actor)?;
         json!({ "linked": source.id, "hash": hash })
     } else {
@@ -98,7 +115,7 @@ fn attach_full_text(root: &Path, library: &Library, reviews: &Reviews, review: &
         let size = std::fs::metadata(&stored).map(|m| m.len()).unwrap_or(0);
         let file = key_review::derive::FileRef { hash: hash.clone(), name, mime: mime_of(&ext).into(), size, origin: origin.into() };
         reviews.attach_file(review, record, file.clone(), actor)?;
-        json!({ "file": file, "hash": hash })
+        json!({ "file": file, "hash": hash, "conflict": conflict })
     };
     if owned_temp {
         if let Some(parent) = path.parent().filter(|p| p.starts_with(std::env::temp_dir()) && *p != std::env::temp_dir()) {
@@ -274,6 +291,26 @@ fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library
         batch.count = batch.per_source.values().sum();
     }
     Ok((batch, records))
+}
+
+// std-A: each database search run's own strategy log (queries as sent, dates, Key's
+// reconstruction), for the PRISMA-S report; runs whose log is gone are left out (the report
+// then uses the strategy stored with the import).
+fn run_strategies(reviews: &Reviews, review: &str, databases: &Arc<Databases>, web: &web_search::WebSearch, library: &Library, root: &Path) -> std::collections::HashMap<String, Json> {
+    let runs: Vec<String> = reviews.read(review, |s, _| Ok(s.batches.iter().filter(|b| !b.db_run_id.is_empty()).map(|b| b.db_run_id.clone()).collect())).unwrap_or_default();
+    let store_library = StoreLibrary { library, root };
+    let mut out = std::collections::HashMap::new();
+    for run in runs {
+        if out.contains_key(&run) {
+            continue;
+        }
+        if let Ok(v) = call_db(databases, web, &store_library, "db_strategy", json!({ "runId": run, "format": "json" })) {
+            if let Some(parsed) = v.get("content").and_then(Json::as_str).and_then(|c| serde_json::from_str::<Json>(c).ok()) {
+                out.insert(run, parsed);
+            }
+        }
+    }
+    out
 }
 
 /// Search runs imported before databases and registers were told apart: classified once from
@@ -718,6 +755,12 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             // Full texts.
             "review_fulltexts" => reviews.fulltext_status(&review()?)?,
             "review_fulltext_match" => json!(reviews.match_dropped(&review()?, &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
+            // Links with the library (library_links.rs): refreshed, a conflict decided, a source's reviews.
+            "review_links_refresh" => library_links::refresh_links(library, root, reviews, &review()?, &actor()?)?,
+            "review_fulltext_reconcile" => library_links::reconcile(library, root, reviews, &review()?, text(args, "recordId"), text(args, "choice"), &actor()?)?,
+            "review_links_for_source" => library_links::links_for_source(library, reviews, text(args, "sourceId"))?,
+            // A PDF caught in the review's browser for one record: is it that record's work?
+            "review_fulltext_check" => reviews.check_dropped(&review()?, text(args, "recordId"), &arg::<key_review::records::DroppedFile>(args, "file")?)?,
             "review_fulltext_csv_read" => json!(reviews.read_csv(&review()?, text(args, "text"), &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
             "review_fulltext_attach" => {
                 let path = std::path::PathBuf::from(arg::<String>(args, "path")?);
@@ -801,13 +844,63 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                     let form = state.protocol.forms.iter().find(|f| f.id == form_id).ok_or("This form no longer exists")?;
                     key_review::ai::parse_extraction(text(args, "content"), form, &passages)
                 })?;
-                json!({ "suggested": reviews.ai_extract(&id, &record, &form_id, &suggested, text(args, "model"))? })
+                // std-B: logged with the call (provider, model as reported, prompt version and hash).
+                let call: key_review::ai_audit::CallInfo = args.get("call").cloned().and_then(|c| serde_json::from_value(c).ok()).unwrap_or_else(|| key_review::ai_audit::CallInfo { model: text(args, "model").into(), ..Default::default() });
+                let request = reviews.read(&id, |state, _| Ok(state.protocol.forms.iter().find(|f| f.id == form_id).map(|form| key_review::ai::extraction_request(form, &meta, &passages)).unwrap_or(Json::Null)))?;
+                let labels: Vec<String> = passages.iter().map(|(l, _)| l.clone()).collect();
+                json!({ "suggested": reviews.ai_log_extraction(&id, &record, &form_id, &suggested, &request, &call, &labels)? })
             }
             "review_ai_answer" => {
                 let suggestion = key_review::ai::parse_answer(text(args, "content"), text(args, "model"))?;
-                reviews.ai_suggest(&review()?, text(args, "recordId"), stage(args)?, suggestion.clone(), "ai")?;
+                // std-B: logged with the call (provider, model as reported, prompt version and hash).
+                let id = review()?;
+                let record = text(args, "recordId").to_string();
+                let stage = stage(args)?;
+                let call: key_review::ai_audit::CallInfo = args.get("call").cloned().and_then(|c| serde_json::from_value(c).ok()).unwrap_or_else(|| key_review::ai_audit::CallInfo { model: text(args, "model").into(), ..Default::default() });
+                let meta = reviews.metas(&id, std::slice::from_ref(&record))?.remove(&record).ok_or("This record no longer exists")?;
+                let request = reviews.read(&id, |state, _| Ok(key_review::ai::screening_request(&state.protocol, stage, &meta)))?;
+                reviews.ai_log_screening(&id, &record, stage, suggestion.clone(), &request, &call)?;
                 suggestion
             }
+            // std-B: citation searching, AI use and audit, conduct checks, extraction pilots, contacts.
+            c if super::review_std_b::handles(c) => super::review_std_b::dispatch(reviews, library, &lookup, c, args)?,
+            // std-A: reporting — PRISMA checklists, protocol document and registration, PRISMA-S report.
+            "review_checklist" => {
+                let id = review()?;
+                reviews.checklist(&id, &run_strategies(reviews, &id, databases, web, library, root))?
+            }
+            "review_checklist_note" => {
+                reviews.checklist_note(&review()?, text(args, "list"), text(args, "item"), text(args, "location"), text(args, "text"), &actor()?)?;
+                json!(true)
+            }
+            "review_protocol_doc" => reviews.protocol_doc(&review()?)?,
+            "review_protocol_register" => {
+                reviews.register_protocol(&review()?, &arg::<key_review::reporting::Registration>(args, "registration")?, &actor()?)?;
+                json!(true)
+            }
+            "review_protocol_unregister" => {
+                reviews.unregister_protocol(&review()?, &actor()?)?;
+                json!(true)
+            }
+            "review_search_report" => {
+                let id = review()?;
+                reviews.search_report(&id, &run_strategies(reviews, &id, databases, web, library, root))?
+            }
+            "review_search_source" => {
+                reviews.set_source_detail(&review()?, args.get("detail").cloned().unwrap_or(Json::Null), &actor()?)?;
+                json!(true)
+            }
+            "review_search_peer_review" => json!(reviews.set_peer_review(&review()?, args.get("entry").cloned().unwrap_or(Json::Null), &actor()?)?),
+            "review_search_prior" => json!(reviews.set_prior_work(&review()?, args.get("entry").cloned().unwrap_or(Json::Null), &actor()?)?),
+            "review_report_export" => {
+                let id = review()?;
+                let strategies = run_strategies(reviews, &id, databases, web, library, root);
+                let (filename, content, mime) = reviews.read(&id, |state, _| key_review::reporting_hooks::export_with(state, text(args, "kind"), &strategies))?;
+                json!({ "filename": filename, "content": content, "mime": mime })
+            }
+            // std-C: risk of bias and certainty of evidence (key_review::certainty).
+            c if c.starts_with("review_rob_") || c.starts_with("review_grade_") => key_review::certainty::command(reviews, &review()?, c, args)?,
+            // end std-C
             // std-D: advanced synthesis, conversions and exports others can import.
             "review_moderators" => json!(reviews.moderators(&review()?)?),
             "review_synthesis" => reviews.synthesis(&review()?, &arg::<key_review::synthesis::SynthesisRequest>(args, "request")?)?,
@@ -836,7 +929,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             "review_bundle" => {
                 let plots = args.get("plots").cloned().map(serde_json::from_value::<std::collections::BTreeMap<String, String>>).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
                 let current = args.get("current").filter(|c| !c.is_null()).cloned().map(serde_json::from_value::<key_review::interop::AnalysisSpec>).transpose().map_err(|e| e.to_string())?;
-                let (name, bytes) = reviews.bundle(&review()?, text(args, "viewer"), &plots, current.as_ref(), args.get("anonymise").and_then(Json::as_bool).unwrap_or(false))?;
+                let (name, bytes) = { let id = review()?; let strategies = run_strategies(reviews, &id, databases, web, library, root); reviews.bundle(&id, text(args, "viewer"), &plots, current.as_ref(), args.get("anonymise").and_then(Json::as_bool).unwrap_or(false), &strategies)? };
                 json!({ "filename": name, "content": key_review::interop::base64(&bytes), "encoding": "base64", "mime": "application/zip" })
             }
             "review_migrate_preview" => json!(key_review::migrate::preview(text(args, "text"))?),

@@ -1189,7 +1189,7 @@ export default function App() {
             const v = t.views[0];
             const rect = v?.web && placed.get(v.id);
             if (!v?.web || !rect) return null;
-            const card = v.web.signin?.card;
+            const card = v.web.signin?.card?.stage.startsWith("passkey") ? undefined : v.web.signin?.card;
             const banner = v.web.findPdf ? FIND_PDF_BANNER_HEIGHT : 0;
             return (
               <Fragment key={v.id}>

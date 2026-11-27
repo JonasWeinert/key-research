@@ -1,0 +1,29 @@
+{
+  "id": "robins-i",
+  "name": "Non-randomised studies of interventions (ROBINS-I structure)",
+  "short": "ROBINS-I",
+  "version": "2",
+  "design": "Non-randomised studies of interventions",
+  "level": "result",
+  "url": "https://www.riskofbias.info/welcome/robins-i-v2",
+  "about": "Key provides the assessment structure: seven domains, the judgement scale and a worst-domain overall default. The questions and the decision algorithms are in the official tool (ROBINS-I version 2): open it beside Key, answer there, and record each domain's judgement and its basis here.",
+  "licence": "ROBINS-I © the authors, licensed CC BY-NC-ND 4.0 (stated at https://www.riskofbias.info/welcome/rob-2-0-tool for RoB 2, ROBINS-I, ROBINS-E and ROB-ME, checked 2026-11-27). Key ships none of its text: only neutral domain labels of its own and a link.",
+  "optionSets": {},
+  "levels": [
+    { "id": "low", "label": "Low", "tone": "green", "symbol": "plus", "common": "low" },
+    { "id": "moderate", "label": "Moderate", "tone": "amber", "symbol": "minus", "common": "some" },
+    { "id": "serious", "label": "Serious", "tone": "red", "symbol": "cross", "common": "high" },
+    { "id": "critical", "label": "Critical", "tone": "darkred", "symbol": "excl", "common": "critical" },
+    { "id": "noinfo", "label": "No information", "tone": "muted", "symbol": "query", "common": "unclear" }
+  ],
+  "domains": [
+    { "id": "c1", "short": "D1", "name": "Confounding", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "c2", "short": "D2", "name": "Classifying the interventions", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "c3", "short": "D3", "name": "Selecting participants", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "c4", "short": "D4", "name": "Deviations from the planned intervention", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "c5", "short": "D5", "name": "Missing data", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "c6", "short": "D6", "name": "Outcome measurement", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "c7", "short": "D7", "name": "Choice of the reported result", "prompt": "", "questions": [], "rule": { "kind": "manual" } }
+  ],
+  "overall": { "kind": "worst", "note": "Key's default suggestion is the most severe domain; the official guidance decides the overall judgement." }
+}
