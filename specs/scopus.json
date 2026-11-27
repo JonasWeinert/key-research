@@ -1,0 +1,412 @@
+{
+  "format": 1,
+  "id": "scopus",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "Scopus",
+  "description": "Elsevier's abstract and citation database of peer-reviewed journals, books and conference papers in all fields.",
+  "homepage": "https://www.scopus.com/",
+  "category": "multidisciplinary",
+  "coverage": "About 100 million records from 30,000 active journals, books and conferences; social sciences, health, life and physical sciences; strong from 1996.",
+  "terms": "Needs an Elsevier API key (free from dev.elsevier.com) and a Scopus subscription at your institution: searches work from the institution's network, or anywhere with an institutional token. Elsevier's API terms allow searching for your own research; results may not be redistributed. Quota: 20,000 search requests per week per key, at most 9 per second. Key uses at most 6 per second, stops when the quota is used up and shows what is left.",
+  "kind": "api",
+  "credentials": [
+    {
+      "id": "apikey",
+      "label": "Elsevier API key",
+      "required": true,
+      "secret": "elsevier",
+      "help": "Create a free key at dev.elsevier.com (My API Key). Searches only return results when you are on your institution's network, or with an institutional token.",
+      "url": "https://dev.elsevier.com/apikey/manage"
+    },
+    {
+      "id": "insttoken",
+      "label": "Institutional token",
+      "required": false,
+      "secret": "elsevier-insttoken",
+      "help": "Optional. Your library can request one from Elsevier so the key also works off campus. Keep it private.",
+      "url": "https://dev.elsevier.com/support.html"
+    }
+  ],
+  "hosts": [
+    "api.elsevier.com"
+  ],
+  "politeness": {
+    "minIntervalMs": 170,
+    "retries": 3,
+    "backoffMs": 2000,
+    "maxPages": 400,
+    "quota": {
+      "remainingHeader": "X-RateLimit-Remaining",
+      "resetHeader": "X-RateLimit-Reset",
+      "exhaustedBody": "QUOTA_EXCEEDED"
+    }
+  },
+  "options": [
+    {
+      "id": "view",
+      "label": "Detail",
+      "default": "STANDARD",
+      "choices": [
+        {
+          "value": "STANDARD",
+          "label": "Standard (first author, no abstract)"
+        },
+        {
+          "value": "COMPLETE",
+          "label": "Complete (all authors, abstract, keywords; needs institutional access)"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "abstract",
+      "keywords",
+      "subject",
+      "author",
+      "journal",
+      "affiliation",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": true,
+    "dates": "year",
+    "filters": [
+      "types",
+      "languages",
+      "openAccess"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "pmid",
+      "issn",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "ALL({q})",
+      "title": "TITLE({q})",
+      "title_abstract": "TITLE-ABS-KEY({q})",
+      "abstract": "ABS({q})",
+      "keywords": "KEY({q})",
+      "subject": "INDEXTERMS({q})",
+      "author": "AUTHOR-NAME({q})",
+      "journal": "SRCTITLE({q})",
+      "affiliation": "AFFIL({q})",
+      "identifier": "DOI({q})"
+    },
+    "defaultField": "title_abstract",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "proximity": {
+      "wordJoin": " W/{n} "
+    },
+    "and": " AND ",
+    "or": " OR ",
+    "not": " AND NOT ",
+    "group": "({q})",
+    "notStyle": "andNot",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "{",
+        "replace": ""
+      },
+      {
+        "find": "}",
+        "replace": ""
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "vars": {
+      "dateFrom": {
+        "template": "{yearFrom}",
+        "else": "1800"
+      },
+      "dateTo": {
+        "template": "{yearTo}",
+        "else": "2100"
+      }
+    },
+    "filters": {
+      "types": {
+        "join": " OR ",
+        "template": "{q} AND DOCTYPE({v})",
+        "values": {
+          "article": "ar",
+          "review": "re",
+          "book": "bk",
+          "chapter": "ch",
+          "conference": "cp",
+          "preprint": "ar"
+        }
+      },
+      "languages": {
+        "join": " OR ",
+        "template": "{q} AND LANGUAGE({v})",
+        "values": {
+          "en": "english",
+          "de": "german",
+          "fr": "french",
+          "es": "spanish",
+          "pt": "portuguese",
+          "zh": "chinese"
+        }
+      },
+      "openAccess": {
+        "template": "{q} AND OPENACCESS(1)"
+      }
+    },
+    "maxLength": 7000,
+    "chunk": "or-split",
+    "maxChunks": 20
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://api.elsevier.com/content/search/scopus",
+      "params": {
+        "query": "{query}",
+        "view": "{opt.view}",
+        "count": "{pageSize}",
+        "cursor": "{cursor}",
+        "date": {
+          "join": "-",
+          "parts": [
+            "{dateFrom}",
+            "{dateTo}"
+          ]
+        }
+      },
+      "headers": {
+        "X-ELS-APIKey": "{cred.apikey}",
+        "X-ELS-Insttoken": "{cred.insttoken?}",
+        "Accept": "application/json"
+      },
+      "format": "json"
+    },
+    "pageSize": 25,
+    "paging": {
+      "style": "cursor",
+      "firstCursor": "*",
+      "next": "$[\"search-results\"].cursor[\"@next\"]",
+      "stopWhenFewer": true
+    },
+    "total": "$[\"search-results\"][\"opensearch:totalResults\"]",
+    "items": "$[\"search-results\"].entry[*]",
+    "itemsWhere": "$.eid",
+    "record": {
+      "sourceId": "$.eid",
+      "title": {
+        "path": "$[\"dc:title\"]",
+        "type": "text"
+      },
+      "authors": {
+        "first": [
+          "$.author[*]",
+          "$[\"dc:creator\"]"
+        ],
+        "all": true,
+        "name": {
+          "family": "$.surname",
+          "given": "$[\"given-name\"]",
+          "literal": "$"
+        }
+      },
+      "year": {
+        "path": "$[\"prism:coverDate\"]",
+        "type": "year"
+      },
+      "date": {
+        "path": "$[\"prism:coverDate\"]",
+        "type": "date"
+      },
+      "venue": "$[\"prism:publicationName\"]",
+      "abstract": {
+        "path": "$[\"dc:description\"]",
+        "type": "text"
+      },
+      "doi": {
+        "path": "$[\"prism:doi\"]",
+        "type": "doi"
+      },
+      "pmid": "$[\"pubmed-id\"]",
+      "issn": {
+        "first": [
+          "$[\"prism:issn\"]",
+          "$[\"prism:eIssn\"]"
+        ]
+      },
+      "keywords": {
+        "path": "$.authkeywords",
+        "split": "re:\\s*\\|\\s*",
+        "all": true
+      },
+      "url": {
+        "path": "$.link[?@ref=scopus][\"@href\"]",
+        "type": "url"
+      },
+      "type": {
+        "path": "$.subtype",
+        "map": {
+          "ar": "article",
+          "re": "article",
+          "le": "article",
+          "ed": "article",
+          "no": "article",
+          "sh": "article",
+          "er": "article",
+          "cp": "article",
+          "bk": "book",
+          "ch": "chapter",
+          "cr": "article",
+          "dp": "report"
+        }
+      },
+      "extras": {
+        "fields": {
+          "subtype": "$.subtypeDescription",
+          "citedBy": "$[\"citedby-count\"]",
+          "openAccess": "$.openaccessFlag",
+          "affiliation": {
+            "path": "$.affiliation[*].affilname",
+            "all": true,
+            "join": "; "
+          },
+          "countries": {
+            "path": "$.affiliation[*][\"affiliation-country\"]",
+            "all": true,
+            "join": "; "
+          }
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "Scopus is a large subscription database of peer-reviewed literature in all fields, run by Elsevier. Many systematic reviews search it next to PubMed because it covers social-science, economics and engineering journals that PubMed does not.",
+    "coverage": "About 100 million records from more than 30,000 journals, plus books and conference papers. Best from 1996; older records have fewer abstracts and references.",
+    "fields": "Title and abstract uses Scopus's TITLE-ABS-KEY field, which also searches author and index keywords. Subject searches the controlled index terms (such as MeSH or Emtree). Journal searches the source title. Identifier matches a DOI. The Standard detail level returns the first author only and no abstract; Complete returns every author, the abstract and keywords, but needs your institution's subscription (campus network or institutional token).",
+    "limits": [
+      "Needs a Scopus subscription at your institution. Off campus, searches fail unless your library gives you an institutional token.",
+      "20,000 search requests per key per week. Complete detail returns 25 records per request, so a search of 10,000 records uses 400 requests.",
+      "Scopus treats a phrase in double quotes loosely (word forms and punctuation vary); Key does not use Scopus's exact-phrase braces.",
+      "Proximity uses Scopus's W/n operator between the words of a term."
+    ],
+    "credentials": "Required: an Elsevier API key. Sign in at dev.elsevier.com with your institutional e-mail, choose 'Create API key', accept the API terms, and paste the key in Key Settings, Services & API keys, Scopus. Optional: an institutional token from your library for use off campus.",
+    "tips": [
+      "Check the number of hits with the estimate before you run a large search, so you do not spend the weekly quota by accident.",
+      "If you only have web access to Scopus, use the Scopus (web) connector: Key writes the search for you and imports the exported file."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance-title",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words",
+                "field": "title_abstract"
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "random",
+                "mode": "words",
+                "truncate": true,
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2015,
+          "yearTo": 2020
+        }
+      },
+      "native": "TITLE-ABS-KEY(microfinance) AND TITLE-ABS-KEY(random*)",
+      "options": {
+        "view": "COMPLETE"
+      },
+      "minTotal": 1,
+      "minResults": 2,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "venue"
+      ],
+      "fixture": "microfinance-title",
+      "pageSize": 5
+    },
+    {
+      "name": "standard-view-first-author",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "group lending",
+                "mode": "phrase",
+                "field": "title"
+              }
+            ]
+          }
+        ]
+      },
+      "native": "TITLE(\"group lending\")",
+      "options": {
+        "view": "STANDARD"
+      },
+      "pageSize": 5,
+      "minTotal": 1,
+      "minResults": 2,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "venue",
+        "authors",
+        "doi"
+      ],
+      "fixture": "standard-view-first-author"
+    }
+  ]
+}

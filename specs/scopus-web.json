@@ -1,0 +1,203 @@
+{
+  "format": 1,
+  "id": "scopus-web",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "Scopus (web)",
+  "description": "Elsevier's abstract and citation database of peer-reviewed journals, books and conference papers in all fields.",
+  "homepage": "https://www.scopus.com/",
+  "category": "multidisciplinary",
+  "coverage": "About 100 million records from 30,000 active journals, books and conferences; social sciences, health, life and physical sciences; strong from 1996.",
+  "terms": "Manual. For when you have Scopus through your library's website but no API key: Key writes the search in Scopus syntax and opens the site in its browser; you export the results and import the file.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "abstract",
+      "keywords",
+      "subject",
+      "author",
+      "journal",
+      "affiliation",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": true,
+    "dates": "year",
+    "filters": [
+      "types",
+      "languages",
+      "openAccess"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "pmid",
+      "issn",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "ALL({q})",
+      "title": "TITLE({q})",
+      "title_abstract": "TITLE-ABS-KEY({q})",
+      "abstract": "ABS({q})",
+      "keywords": "KEY({q})",
+      "subject": "INDEXTERMS({q})",
+      "author": "AUTHOR-NAME({q})",
+      "journal": "SRCTITLE({q})",
+      "affiliation": "AFFIL({q})",
+      "identifier": "DOI({q})"
+    },
+    "defaultField": "title_abstract",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "proximity": {
+      "wordJoin": " W/{n} "
+    },
+    "and": " AND ",
+    "or": " OR ",
+    "not": " AND NOT ",
+    "group": "({q})",
+    "notStyle": "andNot",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "{",
+        "replace": ""
+      },
+      {
+        "find": "}",
+        "replace": ""
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "filters": {
+      "types": {
+        "join": " OR ",
+        "template": "{q} AND DOCTYPE({v})",
+        "values": {
+          "article": "ar",
+          "review": "re",
+          "book": "bk",
+          "chapter": "ch",
+          "conference": "cp",
+          "preprint": "ar"
+        }
+      },
+      "languages": {
+        "join": " OR ",
+        "template": "{q} AND LANGUAGE({v})",
+        "values": {
+          "en": "english",
+          "de": "german",
+          "fr": "french",
+          "es": "spanish",
+          "pt": "portuguese",
+          "zh": "chinese"
+        }
+      },
+      "openAccess": {
+        "template": "{q} AND OPENACCESS(1)"
+      }
+    },
+    "maxLength": 100000,
+    "chunk": "none",
+    "maxChunks": 20
+  },
+  "manual": {
+    "url": "https://www.scopus.com/search/form.uri?display=advanced",
+    "steps": [
+      "Sign in to Scopus through your library (Key opens the advanced search page).",
+      "Paste the search Key copied for you into the advanced search box and run it.",
+      "Set your years with the year range limiter on the results page.",
+      "Select all results, choose Export, pick RIS, include 'Citation information' and 'Abstract & keywords', and save the file. Scopus exports up to 20,000 records at a time.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [
+      "ris",
+      "bibtex",
+      "csv"
+    ],
+    "importHint": "Save the export file, then drag it onto Key's library or choose File, Import. Key reads RIS, BibTeX and CSV files and merges duplicates with what you already have."
+  },
+  "guide": {
+    "summary": "Scopus is a large subscription database of peer-reviewed literature in all fields, run by Elsevier. Many systematic reviews search it next to PubMed because it covers social-science, economics and engineering journals that PubMed does not.",
+    "coverage": "About 100 million records from more than 30,000 journals, plus books and conference papers. Best from 1996; older records have fewer abstracts and references.",
+    "fields": "Title and abstract uses Scopus's TITLE-ABS-KEY field, which also searches author and index keywords. Subject searches the controlled index terms (such as MeSH or Emtree). Journal searches the source title. Identifier matches a DOI. The Standard detail level returns the first author only and no abstract; Complete returns every author, the abstract and keywords, but needs your institution's subscription (campus network or institutional token).",
+    "limits": [
+      "Needs a Scopus subscription at your institution. Off campus, searches fail unless your library gives you an institutional token.",
+      "Proximity uses Scopus's W/n operator between the words of a term."
+    ],
+    "credentials": "Your library's subscription and sign-in. No API key is needed.",
+    "tips": [
+      "Check the number of hits with the estimate before you run a large search, so you do not spend the weekly quota by accident.",
+      "If you only have web access to Scopus, use the Scopus (web) connector: Key writes the search for you and imports the exported file."
+    ]
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "$schema": "../schema/connector-1.schema.json",
+  "format": 1,
+  "id": "crossref-series",
+  "version": "1.0.2",
+  "minEngine": "1.1.0",
+  "name": "Working-paper series (Crossref)",
+  "description": "Working papers and reports that institutions register with Crossref, found by DOI prefix: useful for series whose own websites cannot be searched.",
+  "homepage": "https://www.crossref.org/documentation/retrieve-metadata/rest-api/",
+  "category": "grey-literature",
+  "coverage": "Whatever the chosen publisher deposits with Crossref under its DOI prefix (titles, authors, dates; abstracts for some).",
+  "terms": "Crossref's REST API is open. Requests with a contact address go to the 'polite' pool; metadata is free to reuse (CC0), abstracts may not be.",
+  "kind": "api",
+  "guide": {
+    "summary": "Searches one publisher's papers in Crossref, the registry behind DOIs.",
+    "coverage": "Pick the series (DOI prefix) in the options; any prefix can be typed.",
+    "fields": "Crossref has no field search: Key sends each term of the smallest concept and applies your whole query to titles and abstracts itself.",
+    "limits": ["Crossref search ranks by relevance and has no AND/OR, so Key stops paging a term when a page has no matching record.", "Abstracts are missing for many working papers, so a title/abstract filter mostly checks titles."],
+    "tips": ["Use short, distinctive terms in one concept; put the rest of your query in other concepts."]
+  },
+  "credentials": [],
+  "hosts": ["api.crossref.org"],
+  "politeness": { "minIntervalMs": 1000, "retries": 4, "backoffMs": 3000, "maxPages": 20 },
+  "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
+    "fields": ["all"],
+    "phrase": false, "truncation": false, "proximity": false, "dates": "year",
+    "filters": [],
+    "maxResults": 4000,
+    "sort": ["relevance"],
+    "exportFields": ["title", "authors", "year", "venue", "abstract", "doi", "type", "publisher"]
+  },
+  "options": [
+    {
+      "id": "prefix", "label": "Series (DOI prefix)", "default": "10.18235", "free": true, "pattern": "^10\\.[0-9]{4,9}$",
+      "help": "The DOI prefix the publisher registers its papers under.",
+      "choices": [
+        { "value": "10.18235", "label": "Inter-American Development Bank" },
+        { "value": "10.35188", "label": "UNU-WIDER" },
+        { "value": "10.3386", "label": "NBER" },
+        { "value": "10.1596", "label": "World Bank" },
+        { "value": "10.2139", "label": "SSRN" },
+        { "value": "10.1787", "label": "OECD" },
+        { "value": "10.5089", "label": "IMF" }
+      ]
+    },
+    { "id": "pageSize", "label": "Records per request", "default": "100", "choices": [ { "value": "100", "label": "100" }, { "value": "20", "label": "20" } ] }
+  ],
+  "query": {
+    "mode": "terms",
+    "fields": { "all": "{q}" },
+    "defaultField": "all",
+    "phrase": "{text}",
+    "words": "{text}",
+    "vars": {
+      "dateFrom": { "template": "from-pub-date:{yearFrom}" },
+      "dateTo": { "template": "until-pub-date:{yearTo}" }
+    },
+    "localFilter": true
+  },
+  "search": {
+    "request": {
+      "url": "https://api.crossref.org/works",
+      "params": {
+        "query.bibliographic": "{query}",
+        "filter": { "join": ",", "parts": ["prefix:{opt.prefix}", "{dateFrom?}", "{dateTo?}"] },
+        "rows": "{pageSize}",
+        "cursor": "{cursor}",
+        "sort": "score",
+        "order": "desc",
+        "select": "DOI,title,author,issued,published,abstract,type,container-title,group-title,URL,publisher,subject,link",
+        "mailto": "{mailto?}"
+      },
+      "format": "json"
+    },
+    "pageSize": "{opt.pageSize}",
+    "paging": { "style": "cursor", "firstCursor": "*", "next": "$.message.next-cursor", "stopWhenNoLocalMatch": true },
+    "total": "$.message.total-results",
+    "items": "$.message.items[*]",
+    "record": {
+      "sourceId": "$.DOI",
+      "doi": { "path": "$.DOI", "type": "doi" },
+      "title": { "path": "$.title[0]", "type": "text" },
+      "authors": { "path": "$.author[*]", "all": true, "name": { "family": "$.family", "given": "$.given", "literal": "$.name" } },
+      "year": { "first": ["$.issued.date-parts[0][0]", "$.published.date-parts[0][0]"], "type": "year" },
+      "date": { "first": ["$.issued.date-parts[0]", "$.published.date-parts[0]"], "type": "date" },
+      "venue": { "first": ["$.container-title[0]", "$.group-title"], "type": "text" },
+      "publisher": "$.publisher",
+      "abstract": { "path": "$.abstract", "type": "text" },
+      "url": { "path": "$.DOI", "template": "https://doi.org/{value}" },
+      "pdfUrl": { "path": "$.link[?content-type=application/pdf].URL", "type": "url" },
+      "type": { "path": "$.type", "map": { "report": "working-paper", "report-component": "working-paper", "posted-content": "preprint", "journal-article": "article", "book": "book", "monograph": "book", "book-chapter": "chapter", "dataset": "dataset", "dissertation": "thesis" } },
+      "keywords": { "path": "$.subject[*]", "all": true }
+    }
+  },
+  "lookup": {
+    "request": { "url": "https://api.crossref.org/works/{id}", "params": { "mailto": "{mailto?}" }, "format": "json" },
+    "items": "$.message"
+  },
+  "tests": [
+    {
+      "name": "series-term",
+      "query": { "concepts": [ { "terms": [ { "text": "pandemic" } ] } ], "filters": { "yearFrom": 2020 } },
+      "native": "pandemic",
+      "options": { "prefix": "10.18235", "pageSize": "20" },
+      "minTotal": 50,
+      "minResults": 5,
+      "pages": 1,
+      "fields": ["title", "year", "doi"],
+      "mustFind": [ { "doi": "10.18235/0002284" } ],
+      "fixture": "series-term"
+    }
+  ]
+}

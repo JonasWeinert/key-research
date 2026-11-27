@@ -1,0 +1,329 @@
+{
+  "format": 1,
+  "id": "wos-starter",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "Web of Science",
+  "description": "Clarivate's Web of Science Core Collection through the Web of Science Starter API: journal articles, proceedings and books with citation counts.",
+  "homepage": "https://www.webofscience.com/",
+  "category": "multidisciplinary",
+  "coverage": "About 95 million records in the Core Collection (Science, Social Sciences and Arts & Humanities Citation Indexes, Emerging Sources, conference and book indexes), from 1900 onwards depending on your institution's subscription.",
+  "terms": "Needs a Web of Science Starter API key from the Clarivate developer portal. The free trial plan allows 1 request per second and 50 requests per day (no citation counts); the free institutional plan for subscribing organisations allows 5 per second and 5,000 per day. Clarivate's terms allow searching for your own research; records may not be redistributed. The Starter API returns no abstracts.",
+  "kind": "api",
+  "credentials": [
+    {
+      "id": "apikey",
+      "label": "Web of Science Starter API key",
+      "required": true,
+      "secret": "clarivate-wos",
+      "help": "Register an application for the Web of Science Starter API at developer.clarivate.com. Choose the institutional plan if your organisation subscribes to Web of Science.",
+      "url": "https://developer.clarivate.com/apis/wos-starter"
+    }
+  ],
+  "hosts": [
+    "api.clarivate.com"
+  ],
+  "politeness": {
+    "minIntervalMs": 1100,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 100,
+    "quota": {
+      "remainingHeader": "x-ratelimit-remaining-day"
+    }
+  },
+  "options": [
+    {
+      "id": "db",
+      "label": "Database",
+      "default": "WOS",
+      "choices": [
+        {
+          "value": "WOS",
+          "label": "Web of Science Core Collection"
+        },
+        {
+          "value": "WOK",
+          "label": "All databases you subscribe to"
+        },
+        {
+          "value": "MEDLINE",
+          "label": "MEDLINE"
+        },
+        {
+          "value": "BIOSIS",
+          "label": "BIOSIS"
+        },
+        {
+          "value": "PPRN",
+          "label": "Preprint Citation Index"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "keywords",
+      "author",
+      "journal",
+      "affiliation",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": false,
+    "dates": "year",
+    "filters": [
+      "types"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "doi",
+      "pmid",
+      "issn",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "TS={q}",
+      "title": "TI={q}",
+      "title_abstract": "TS={q}",
+      "keywords": "TS={q}",
+      "author": "AU={q}",
+      "journal": "SO={q}",
+      "affiliation": "OG={q}",
+      "identifier": "DO={q}"
+    },
+    "fallback": {
+      "abstract": "title_abstract",
+      "subject": "title_abstract",
+      "fulltext": "all"
+    },
+    "defaultField": "title_abstract",
+    "phrase": "\"{text}\"",
+    "words": "({text})",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "=",
+        "replace": " "
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "dates": {
+      "template": "{q} AND PY=({from}-{to})",
+      "from": "{yearFrom}",
+      "to": "{yearTo}",
+      "openFrom": "1900",
+      "openTo": "2100"
+    },
+    "filters": {
+      "types": {
+        "join": " OR ",
+        "template": "{q} AND DT=({v})",
+        "values": {
+          "article": "Article",
+          "review": "Review",
+          "book": "Book",
+          "chapter": "Book Chapter",
+          "conference": "Proceedings Paper",
+          "preprint": "Preprint"
+        }
+      }
+    },
+    "maxLength": 5000,
+    "maxOperators": 49,
+    "chunk": "or-split",
+    "maxChunks": 20
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://api.clarivate.com/apis/wos-starter/v1/documents",
+      "params": {
+        "db": "{opt.db}",
+        "q": "{query}",
+        "limit": "{pageSize}",
+        "page": "{page}"
+      },
+      "headers": {
+        "X-ApiKey": "{cred.apikey}",
+        "Accept": "application/json"
+      },
+      "format": "json"
+    },
+    "pageSize": 50,
+    "paging": {
+      "style": "page",
+      "start": 1,
+      "stopWhenFewer": true
+    },
+    "total": "$.metadata.total",
+    "items": "$.hits[*]",
+    "record": {
+      "sourceId": "$.uid",
+      "title": {
+        "path": "$.title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.names.authors[*]",
+        "all": true,
+        "name": {
+          "literal": "$.wosStandard"
+        }
+      },
+      "year": {
+        "path": "$.source.publishYear",
+        "type": "year"
+      },
+      "venue": "$.source.sourceTitle",
+      "doi": {
+        "path": "$.identifiers.doi",
+        "type": "doi"
+      },
+      "pmid": "$.identifiers.pmid",
+      "issn": {
+        "first": [
+          "$.identifiers.issn",
+          "$.identifiers.eissn"
+        ]
+      },
+      "isbn": "$.identifiers.isbn",
+      "keywords": {
+        "path": "$.keywords.authorKeywords[*]",
+        "all": true
+      },
+      "url": {
+        "path": "$.links.record",
+        "type": "url"
+      },
+      "type": {
+        "path": "$.types[0]",
+        "map": {
+          "Article": "article",
+          "Review": "article",
+          "Proceedings Paper": "article",
+          "Book": "book",
+          "Book Chapter": "chapter",
+          "Preprint": "preprint",
+          "Meeting Abstract": "other",
+          "Editorial Material": "other"
+        }
+      },
+      "extras": {
+        "fields": {
+          "documentTypes": {
+            "path": "$.types[*]",
+            "all": true,
+            "join": "; "
+          },
+          "citedBy": "$.citations[?db=WOS].count",
+          "volume": "$.source.volume",
+          "issue": "$.source.issue",
+          "pages": "$.source.pages.range"
+        }
+      }
+    }
+  },
+  "lookup": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://api.clarivate.com/apis/wos-starter/v1/documents/{id}",
+      "headers": {
+        "X-ApiKey": "{cred.apikey}",
+        "Accept": "application/json"
+      },
+      "format": "json"
+    },
+    "pageSize": 1,
+    "paging": {
+      "style": "none"
+    },
+    "items": "$"
+  },
+  "guide": {
+    "summary": "Web of Science is Clarivate's subscription citation database. Key searches it through the Web of Science Starter API, which returns titles, authors, journals, DOIs and keywords, but no abstracts.",
+    "coverage": "About 95 million records from selected journals, conference proceedings and books, from 1900 on depending on your library's subscription. Strong in the sciences and the established social-science journals.",
+    "fields": "Title and abstract uses Web of Science's Topic field (TS), which searches title, abstract and keywords on Clarivate's side, even though the abstract itself is not returned. Journal searches the source title, affiliation the organisation, identifier the DOI. Author expects 'Family I' (for example Smith J*).",
+    "limits": [
+      "No abstracts: the Starter API does not return them, so you screen on titles here or look the records up elsewhere (Key fills in abstracts from other sources where it can).",
+      "The free trial key allows only 50 requests a day (about 2,500 records). An institutional key allows 5,000 a day.",
+      "Very long searches are split, because Web of Science limits the number of operators in one query.",
+      "The Web of Science Expanded API (full records with abstracts) needs a separate paid licence; use the Web of Science Expanded connector if your institution has one."
+    ],
+    "credentials": "Required. Sign in at developer.clarivate.com, open 'Web of Science Starter API', choose a plan (Free Trial for anyone, or Institutional Member if your organisation subscribes), register an application and copy its API key into Key Settings, Services & API keys, Web of Science.",
+    "tips": [
+      "Run the estimate first to see the number of hits; each page of 50 records is one request from your daily budget."
+    ]
+  },
+  "tests": [
+    {
+      "name": "school-feeding-topic",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase",
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2015,
+          "yearTo": 2020
+        }
+      },
+      "native": "TS=\"school feeding\" AND PY=(2015-2020)",
+      "minTotal": 1,
+      "minResults": 2,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "venue",
+        "authors"
+      ],
+      "fixture": "school-feeding-topic",
+      "pageSize": 5
+    }
+  ]
+}

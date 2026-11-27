@@ -1,0 +1,133 @@
+{
+  "format": 1,
+  "id": "cepr",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "CEPR discussion papers",
+  "description": "Discussion papers of the Centre for Economic Policy Research (CEPR), a European network of economists.",
+  "homepage": "https://cepr.org/publications",
+  "category": "economics",
+  "coverage": "About 20,000 discussion papers from 1984 onwards, plus the Covid Economics papers (2020-2022) and VoxEU columns.",
+  "terms": "Manual. cepr.org refuses automated clients (it returns HTTP 403 and its robots.txt shuts out crawlers and AI agents by name), and there is no API. Key writes the search and opens the CEPR site in its browser. CEPR discussion papers are also indexed in RePEc (series repec:cpr:ceprdp), which is often the easier route.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 100000,
+    "chunk": "none"
+  },
+  "manual": {
+    "url": "https://cepr.org/search?keywords={query}",
+    "steps": [
+      "Key opens CEPR's search with your words. CEPR's search is simple: use a few words, not a long boolean search.",
+      "Filter the results to Discussion Papers.",
+      "CEPR has no export. For each paper you want, open it and use its DOI or SSRN link, or find it in RePEc (IDEAS) and export it there.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [],
+    "importHint": "CEPR has no export file. Paste DOIs or titles into Key's Add by identifier, or export the same papers from IDEAS (RIS) and import that."
+  },
+  "guide": {
+    "summary": "CEPR's discussion papers are a large European economics working-paper series. Key cannot search the CEPR site itself, so it opens it for you.",
+    "coverage": "About 20,000 papers since 1984, all fields of economics, plus the Covid Economics: Vetted and Real-Time Papers series.",
+    "fields": "CEPR's site search reads titles and abstracts; it does not take boolean searches reliably.",
+    "limits": [
+      "No export: collect papers by DOI or through RePEc.",
+      "Most CEPR papers are also on SSRN and in RePEc."
+    ],
+    "credentials": "Reading discussion papers may need a free CEPR account.",
+    "tips": [
+      "Search RePEc (IDEAS) with series CEPR to get the same papers with an export."
+    ]
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

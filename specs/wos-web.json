@@ -1,0 +1,183 @@
+{
+  "format": 1,
+  "id": "wos-web",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "Web of Science (web)",
+  "description": "Clarivate's Web of Science Core Collection through the Web of Science Starter API: journal articles, proceedings and books with citation counts.",
+  "homepage": "https://www.webofscience.com/",
+  "category": "multidisciplinary",
+  "coverage": "About 95 million records in the Core Collection (Science, Social Sciences and Arts & Humanities Citation Indexes, Emerging Sources, conference and book indexes), from 1900 onwards depending on your institution's subscription.",
+  "terms": "Manual. For when you have Web of Science through your library's website but no API key: Key writes the search in Web of Science syntax and opens the site in its browser; you export the results and import the file.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "keywords",
+      "author",
+      "journal",
+      "affiliation",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": false,
+    "dates": "year",
+    "filters": [
+      "types"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "doi",
+      "pmid",
+      "issn",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "TS={q}",
+      "title": "TI={q}",
+      "title_abstract": "TS={q}",
+      "keywords": "TS={q}",
+      "author": "AU={q}",
+      "journal": "SO={q}",
+      "affiliation": "OG={q}",
+      "identifier": "DO={q}"
+    },
+    "fallback": {
+      "abstract": "title_abstract",
+      "subject": "title_abstract",
+      "fulltext": "all"
+    },
+    "defaultField": "title_abstract",
+    "phrase": "\"{text}\"",
+    "words": "({text})",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "=",
+        "replace": " "
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "dates": {
+      "template": "{q} AND PY=({from}-{to})",
+      "from": "{yearFrom}",
+      "to": "{yearTo}",
+      "openFrom": "1900",
+      "openTo": "2100"
+    },
+    "filters": {
+      "types": {
+        "join": " OR ",
+        "template": "{q} AND DT=({v})",
+        "values": {
+          "article": "Article",
+          "review": "Review",
+          "book": "Book",
+          "chapter": "Book Chapter",
+          "conference": "Proceedings Paper",
+          "preprint": "Preprint"
+        }
+      }
+    },
+    "maxLength": 100000,
+    "chunk": "none",
+    "maxChunks": 20
+  },
+  "manual": {
+    "url": "https://www.webofscience.com/wos/woscc/advanced-search",
+    "steps": [
+      "Sign in to Web of Science through your library (Key opens the advanced search page).",
+      "Paste the search Key copied for you into the query box and run it.",
+      "Choose Export, then RIS (or BibTeX), records 1 to 1,000 at a time, with 'Full record', and save each file.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [
+      "ris",
+      "bibtex"
+    ],
+    "importHint": "Save the export file, then drag it onto Key's library or choose File, Import. Key reads RIS, BibTeX and CSV files and merges duplicates with what you already have."
+  },
+  "guide": {
+    "summary": "Web of Science is Clarivate's subscription citation database. Key searches it through the Web of Science Starter API, which returns titles, authors, journals, DOIs and keywords, but no abstracts.",
+    "coverage": "About 95 million records from selected journals, conference proceedings and books, from 1900 on depending on your library's subscription. Strong in the sciences and the established social-science journals.",
+    "fields": "Title and abstract uses Web of Science's Topic field (TS), which searches title, abstract and keywords on Clarivate's side, even though the abstract itself is not returned. Journal searches the source title, affiliation the organisation, identifier the DOI. Author expects 'Family I' (for example Smith J*).",
+    "limits": [
+      "Very long searches are split, because Web of Science limits the number of operators in one query.",
+      "The Web of Science Expanded API (full records with abstracts) needs a separate paid licence; use the Web of Science Expanded connector if your institution has one."
+    ],
+    "credentials": "Your library's subscription and sign-in. No API key is needed.",
+    "tips": [
+      "Run the estimate first to see the number of hits; each page of 50 records is one request from your daily budget."
+    ]
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

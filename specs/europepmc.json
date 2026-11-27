@@ -1,0 +1,371 @@
+{
+  "format": 1,
+  "id": "europepmc",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "Europe PMC",
+  "description": "Life-science and health literature: everything in PubMed plus PubMed Central full texts, preprints, patents, agricultural records and theses.",
+  "homepage": "https://europepmc.org/",
+  "category": "biomedical",
+  "coverage": "About 45 million records: MEDLINE/PubMed, PMC, preprints from 30+ servers, Agricola, Chinese Biological Abstracts, patents.",
+  "terms": "Free, no key. EMBL-EBI asks for reasonable use; Key waits 250 ms between requests. Abstracts may be copyrighted by their publishers.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.ebi.ac.uk"
+  ],
+  "politeness": {
+    "minIntervalMs": 250,
+    "retries": 4,
+    "backoffMs": 2000,
+    "maxPages": 50,
+    "mailtoParam": "email"
+  },
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "abstract",
+      "keywords",
+      "subject",
+      "author",
+      "journal",
+      "affiliation",
+      "fulltext",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": true,
+    "dates": "year",
+    "filters": [
+      "types",
+      "languages",
+      "openAccess"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "pmid",
+      "pmcid",
+      "keywords",
+      "type",
+      "language"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}",
+      "title": "TITLE:{q}",
+      "title_abstract": "TITLE_ABS:{q}",
+      "abstract": "ABSTRACT:{q}",
+      "keywords": "KW:{q}",
+      "subject": "MESH:{q}",
+      "author": "AUTH:{q}",
+      "journal": "JOURNAL:{q}",
+      "affiliation": "AFF:{q}",
+      "fulltext": "BODY:{q}",
+      "identifier": "(EXT_ID:{q} OR DOI:{q})"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": true,
+    "truncate": "{text}*",
+    "proximity": "\"{text}\"~{n}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": ":",
+        "replace": " "
+      }
+    ],
+    "dates": {
+      "template": "{q} AND (PUB_YEAR:[{from} TO {to}])",
+      "from": "{yearFrom}",
+      "to": "{yearTo}",
+      "openFrom": "1800",
+      "openTo": "3000"
+    },
+    "filters": {
+      "types": {
+        "join": " OR ",
+        "template": "{q} AND ({v})",
+        "values": {
+          "article": "PUB_TYPE:\"journal article\"",
+          "review": "PUB_TYPE:\"review\"",
+          "preprint": "SRC:PPR",
+          "trial": "PUB_TYPE:\"clinical trial\"",
+          "book": "SRC:NBK",
+          "thesis": "SRC:ETH",
+          "patent": "SRC:PAT"
+        }
+      },
+      "languages": {
+        "join": " OR ",
+        "template": "{q} AND ({v})",
+        "values": {
+          "en": "LANG:eng",
+          "de": "LANG:ger",
+          "fr": "LANG:fre",
+          "es": "LANG:spa",
+          "pt": "LANG:por",
+          "zh": "LANG:chi"
+        }
+      },
+      "openAccess": {
+        "template": "{q} AND (OPEN_ACCESS:y)"
+      }
+    },
+    "maxLength": 30000,
+    "chunk": "or-split",
+    "maxChunks": 20
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "POST",
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST",
+      "form": {
+        "query": "{query}",
+        "format": "json",
+        "resultType": "core",
+        "pageSize": "{pageSize}",
+        "cursorMark": "{cursor}",
+        "synonym": "false"
+      },
+      "format": "json"
+    },
+    "pageSize": 1000,
+    "paging": {
+      "style": "cursor",
+      "firstCursor": "*",
+      "next": "$.nextCursorMark",
+      "stopWhenFewer": true
+    },
+    "total": "$.hitCount",
+    "items": "$.resultList.result[*]",
+    "record": {
+      "sourceId": {
+        "first": [
+          "$.pmid",
+          "$.pmcid",
+          "$.id"
+        ]
+      },
+      "title": {
+        "path": "$.title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.authorList.author[*]",
+        "all": true,
+        "name": {
+          "family": "$.lastName",
+          "given": "$.firstName",
+          "literal": "$.fullName"
+        }
+      },
+      "year": {
+        "first": [
+          "$.pubYear",
+          "$.bookOrReportDetails.yearOfPublication"
+        ],
+        "type": "year"
+      },
+      "date": {
+        "path": "$.firstPublicationDate",
+        "type": "date"
+      },
+      "venue": {
+        "first": [
+          "$.journalInfo.journal.title",
+          "$.bookOrReportDetails.publisher"
+        ]
+      },
+      "abstract": {
+        "path": "$.abstractText",
+        "type": "text"
+      },
+      "doi": {
+        "path": "$.doi",
+        "type": "doi"
+      },
+      "pmid": "$.pmid",
+      "pmcid": "$.pmcid",
+      "issn": {
+        "first": [
+          "$.journalInfo.journal.issn",
+          "$.journalInfo.journal.essn"
+        ]
+      },
+      "keywords": {
+        "path": "$.keywordList.keyword[*]",
+        "all": true
+      },
+      "language": {
+        "path": "$.language",
+        "type": "language"
+      },
+      "type": {
+        "path": "$.pubTypeList.pubType[0]",
+        "map": {
+          "Preprint": "preprint",
+          "preprint": "preprint",
+          "Journal Article": "article",
+          "research-article": "article",
+          "review-article": "article",
+          "Review": "article",
+          "Clinical Trial": "article",
+          "Randomized Controlled Trial": "article",
+          "Patent": "other"
+        }
+      },
+      "url": {
+        "path": "$.id",
+        "template": "https://europepmc.org/article/{$.source}/{value}"
+      },
+      "extras": {
+        "fields": {
+          "source": "$.source",
+          "openAccess": "$.isOpenAccess",
+          "citedBy": "$.citedByCount"
+        }
+      }
+    }
+  },
+  "lookup": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/search",
+      "params": {
+        "query": "EXT_ID:{id}",
+        "format": "json",
+        "resultType": "core",
+        "pageSize": "1"
+      },
+      "format": "json"
+    },
+    "pageSize": 1,
+    "paging": {
+      "style": "none"
+    },
+    "items": "$.resultList.result[*]"
+  },
+  "guide": {
+    "summary": "Europe PMC is a free search of the life-science and health literature run by EMBL-EBI. It contains all of PubMed, the full texts in PubMed Central, and preprints from servers such as medRxiv, bioRxiv, Research Square and SSRN.",
+    "coverage": "About 45 million records from 1800 onwards. Medicine, public health, biology, plus a growing set of preprints (labelled as such). Records from PubMed carry MeSH subject terms; preprints do not.",
+    "fields": "Title and abstract search the record's title and abstract. Keywords are the authors' keywords. Subject searches MeSH terms (only on records from MEDLINE). Full text searches the body of open-access articles in PMC. Identifier matches a PMID, PMCID or DOI.",
+    "limits": [
+      "MeSH subject searching only finds records indexed by MEDLINE; new articles and preprints are missed. Pair a subject term with free-text words.",
+      "Wildcards (*) need at least three letters before the star.",
+      "Europe PMC adds synonyms by default; Key turns that off so the search is the one you wrote."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Use the Preprints only connector (Europe PMC preprints) when you want only preprints, for example to check for unpublished studies.",
+      "Proximity (words within n of each other) works on phrases in title and abstract."
+    ]
+  },
+  "tests": [
+    {
+      "name": "malaria-bed-nets",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "malaria",
+                "mode": "words",
+                "field": "title_abstract"
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "bed net",
+                "mode": "phrase",
+                "truncate": true,
+                "field": "title_abstract"
+              },
+              {
+                "text": "insecticide-treated nets",
+                "mode": "phrase",
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2015,
+          "yearTo": 2020
+        }
+      },
+      "native": "TITLE_ABS:malaria AND (TITLE_ABS:\"bed net*\" OR TITLE_ABS:\"insecticide-treated nets\") AND (PUB_YEAR:[2015 TO 2020])",
+      "minTotal": 300,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract"
+      ],
+      "fixture": "malaria-bed-nets",
+      "pageSize": 10
+    },
+    {
+      "name": "doi-lookup-by-identifier",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "10.1371/journal.pmed.1000097",
+                "mode": "phrase",
+                "field": "identifier"
+              }
+            ]
+          }
+        ]
+      },
+      "minTotal": 1,
+      "minResults": 1,
+      "mustFind": [
+        {
+          "doi": "10.1371/journal.pmed.1000097"
+        }
+      ],
+      "fields": [
+        "title",
+        "year",
+        "doi"
+      ],
+      "fixture": "doi-lookup-by-identifier",
+      "pageSize": 10
+    }
+  ]
+}

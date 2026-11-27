@@ -1,0 +1,221 @@
+{
+  "format": 1,
+  "id": "ipa",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "IPA studies",
+  "description": "Innovations for Poverty Action's database of randomised evaluations and other studies in low- and middle-income countries.",
+  "homepage": "https://poverty-action.org/our-studies",
+  "category": "grey-literature",
+  "coverage": "About 1,000 study pages (finished and ongoing), mostly randomised evaluations, in some 50 countries.",
+  "terms": "Free. IPA has no API; Key reads the public study listing with its keyword filter (poverty-action.org/our-studies?keys=...; robots.txt allows it and disallows only /search/) at one request every 1.5 seconds, plus one request per study page for its summary. Study pages are summaries, not papers. The page layout may change, which would stop this connector until it is updated.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "poverty-action.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1500,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 30
+  },
+  "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
+    "fields": [
+      "all"
+    ],
+    "phrase": false,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 1000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "{text}",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 200,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://poverty-action.org/our-studies",
+      "params": {
+        "keys": "{query}",
+        "page": "{page}"
+      },
+      "format": "html"
+    },
+    "pageSize": 10,
+    "paging": {
+      "style": "page",
+      "start": 0,
+      "stopWhenFewer": false,
+      "stopWhenNoNew": true
+    },
+    "items": "article.teaser-wrapper",
+    "record": {
+      "sourceId": {
+        "path": ":scope@about",
+        "regex": "^/?(.+)$"
+      },
+      "title": {
+        "path": "h3.title",
+        "type": "text"
+      },
+      "url": {
+        "path": ":scope@about",
+        "type": "url"
+      },
+      "authors": {
+        "path": ".tag:contains(Researchers) a",
+        "all": true,
+        "type": "text",
+        "name": {
+          "literal": "$"
+        }
+      },
+      "keywords": {
+        "path": ".tag:contains(Program Area) a",
+        "all": true,
+        "type": "text"
+      },
+      "publisher": {
+        "path": ":scope",
+        "template": "Innovations for Poverty Action"
+      },
+      "type": {
+        "path": ":scope",
+        "template": "report"
+      },
+      "abstract": {
+        "path": ".content",
+        "type": "text"
+      },
+      "extras": {
+        "fields": {
+          "country": {
+            "path": ".tag:contains(Country) a",
+            "all": true,
+            "type": "text",
+            "join": "; "
+          },
+          "studyType": {
+            "path": ".tag:contains(Type) p",
+            "type": "text"
+          },
+          "status": {
+            "path": ".tag:contains(Status) p",
+            "type": "text"
+          },
+          "topics": {
+            "path": ".tag:contains(Topics) a",
+            "all": true,
+            "type": "text",
+            "join": "; "
+          }
+        }
+      }
+    },
+    "detail": {
+      "perRecord": true,
+      "when": {
+        "field": "abstract",
+        "minLength": 1
+      },
+      "request": {
+        "method": "GET",
+        "url": "{record.url}",
+        "format": "html"
+      },
+      "record": {
+        "abstract": {
+          "path": "meta[name=description]@content",
+          "type": "text"
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "IPA (Innovations for Poverty Action) runs and publishes randomised evaluations of programmes in low- and middle-income countries. Its study pages list ongoing and finished evaluations, often before any paper exists.",
+    "coverage": "About 1,000 study pages with title, researchers, country, programme area, study type (for example randomised evaluation) and status (in progress or completed).",
+    "fields": "IPA's keyword search reads the study pages; there are no separate title or abstract fields. Key sends each word or phrase separately and keeps the studies that match your whole search in their title and tags. Programme areas appear as keywords; country, study type and status appear in the record's extras. Key reads each study page once for its short summary, which is used as the abstract.",
+    "limits": [
+      "Study pages are summaries; they link to papers where those exist but are not papers themselves.",
+      "The listing shows no dates, so year filters are not applied here.",
+      "This connector reads IPA's web pages; if IPA redesigns its site it may stop working until Key updates it."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Use IPA, J-PAL, the 3ie portal and the AEA RCT Registry together to find evaluations that are not yet published."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "minResults": 1,
+      "pages": 1,
+      "fields": [
+        "title",
+        "url",
+        "authors"
+      ],
+      "fixture": "microfinance",
+      "maxRecords": 3
+    }
+  ]
+}

@@ -1,0 +1,247 @@
+{
+  "format": 1,
+  "id": "jpal",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "J-PAL evaluations",
+  "description": "The Abdul Latif Jameel Poverty Action Lab's database of randomised evaluations by its affiliated researchers.",
+  "homepage": "https://www.povertyactionlab.org/evaluations",
+  "category": "grey-literature",
+  "coverage": "About 1,200 evaluation summaries in some 90 countries, finished and ongoing, with links to papers, data and AEA RCT Registry entries.",
+  "terms": "Free. J-PAL has no API; Key reads the public evaluations listing with its full-text filter (www.povertyactionlab.org/evaluations?search_api_fulltext=...; robots.txt allows /evaluations and disallows only /search) and each evaluation page once, at one request every 1.5 seconds. The page layout may change, which would stop this connector until it is updated.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.povertyactionlab.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1500,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 1
+  },
+  "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
+    "fields": [
+      "all"
+    ],
+    "phrase": false,
+    "truncation": false,
+    "proximity": false,
+    "dates": "year",
+    "filters": [],
+    "maxResults": 40,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "abstract",
+      "keywords"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "{text}",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 200,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://www.povertyactionlab.org/evaluations",
+      "params": {
+        "search_api_fulltext": "{query}"
+      },
+      "format": "html"
+    },
+    "pageSize": 40,
+    "paging": {
+      "style": "none"
+    },
+    "items": ".views-row",
+    "itemsWhere": "h2 a, h3.evaluation-teaser-title a",
+    "record": {
+      "sourceId": {
+        "first": [
+          "h3.evaluation-teaser-title a@href",
+          "h2 a@href"
+        ],
+        "regex": "/evaluation/([^/?#]+)"
+      },
+      "title": {
+        "first": [
+          "h3.evaluation-teaser-title a",
+          "h2 a"
+        ],
+        "type": "text"
+      },
+      "url": {
+        "first": [
+          "h3.evaluation-teaser-title a@href",
+          "h2 a@href"
+        ],
+        "type": "url"
+      },
+      "authors": {
+        "path": ".person-title-title a",
+        "all": true,
+        "type": "text",
+        "name": {
+          "literal": "$"
+        }
+      },
+      "publisher": {
+        "path": ":scope",
+        "template": "J-PAL"
+      },
+      "type": {
+        "path": ":scope",
+        "template": "report"
+      }
+    },
+    "detail": {
+      "perRecord": true,
+      "request": {
+        "method": "GET",
+        "url": "{record.url}",
+        "format": "html"
+      },
+      "record": {
+        "abstract": {
+          "path": "meta[name=description]@content",
+          "type": "text"
+        },
+        "year": {
+          "path": ".evaluation-full-timeline",
+          "regex": "(\\d{4})",
+          "type": "year"
+        },
+        "keywords": {
+          "path": ".evaluation-full-intervention-type li",
+          "all": true,
+          "type": "text"
+        },
+        "extras": {
+          "fields": {
+            "timeline": {
+              "path": ".evaluation-full-timeline",
+              "replace": [
+                {
+                  "find": "^\\s*Timeline:\\s*",
+                  "with": ""
+                }
+              ],
+              "type": "text"
+            },
+            "sample": {
+              "path": ".evaluation-full-sample",
+              "replace": [
+                {
+                  "find": "^\\s*Sample:\\s*",
+                  "with": ""
+                }
+              ],
+              "type": "text"
+            },
+            "outcomes": {
+              "path": ".evaluation-full-outcome-interest li",
+              "all": true,
+              "type": "text",
+              "join": "; "
+            },
+            "targetGroup": {
+              "path": ".evaluation-full-target-group li",
+              "all": true,
+              "type": "text",
+              "join": "; "
+            },
+            "registration": {
+              "path": ".evaluation-full-rct-number a",
+              "type": "text"
+            },
+            "papers": {
+              "path": ".evaluation-full-research-papers li a@href",
+              "all": true,
+              "join": " "
+            }
+          }
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "J-PAL's evaluation database summarises randomised evaluations by J-PAL affiliated researchers, with links to the papers, data and trial registrations.",
+    "coverage": "About 1,200 evaluations in some 90 countries, in progress and completed. Each summary names the researchers, timeline, sample, outcomes and intervention types.",
+    "fields": "J-PAL's search reads the whole summary. Key sends each word or phrase separately, opens each evaluation page once for its summary (used as the abstract), and keeps the evaluations that match your whole search. The year is the first year of the evaluation's timeline. Intervention types appear as keywords; outcomes, sample, registration number and paper links appear in the extras.",
+    "limits": [
+      "J-PAL's search shows only the 25 to 40 most relevant evaluations for each word, with no further pages. Use specific words, several terms, or combine with IPA, 3ie and the AEA RCT Registry.",
+      "Summaries, not papers: follow the paper links in the extras to get the publication.",
+      "This connector reads J-PAL's web pages; if J-PAL redesigns its site it may stop working until Key updates it."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "The AEA RCT registration number in the extras lets you find the matching AEA RCT Registry entry."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "minResults": 3,
+      "pages": 1,
+      "fields": [
+        "title",
+        "url",
+        "abstract",
+        "year"
+      ],
+      "fixture": "microfinance",
+      "maxRecords": 3
+    }
+  ]
+}

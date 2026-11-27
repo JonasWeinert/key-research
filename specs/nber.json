@@ -1,0 +1,296 @@
+{
+  "format": 1,
+  "id": "nber",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "NBER working papers",
+  "description": "Working papers of the National Bureau of Economic Research, the largest US economics working-paper series.",
+  "homepage": "https://www.nber.org/papers",
+  "category": "economics",
+  "coverage": "About 33,000 working papers from 1973 onwards, all fields of economics; new papers every week.",
+  "terms": "Free. Key uses the JSON search endpoint that nber.org's own search page calls (www.nber.org/api/v1/working_page_listing; robots.txt does not disallow /api/) and, for abstracts the listing cuts off, the public paper pages (www.nber.org/papers/wNNNNN, allowed by robots.txt), at one request per second. The endpoint is not a documented public API and may change. NBER's bulk metadata on data.nber.org is disallowed for robots, so it is not used.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.nber.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1100,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 30
+  },
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 3000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "abstract",
+      "doi",
+      "number"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "localFilter": true,
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "maxLength": 1500,
+    "maxTerms": 16,
+    "chunk": "or-split",
+    "maxChunks": 30
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://www.nber.org/api/v1/working_page_listing/contentType/working_paper/_/_/search",
+      "params": {
+        "q": "{query}",
+        "page": "{page}",
+        "perPage": "{pageSize}"
+      },
+      "format": "json"
+    },
+    "pageSize": 100,
+    "paging": {
+      "style": "page",
+      "start": 1,
+      "stopWhenFewer": true
+    },
+    "total": "$.totalResults",
+    "sanity": {
+      "maxTotal": 15000,
+      "error": "NBER's search returned most of its catalogue, which happens when a query is too long or uses a word it treats oddly. Shorten the search or split it into parts."
+    },
+    "items": "$.results[*]",
+    "itemsWhere": "$.url",
+    "record": {
+      "sourceId": {
+        "path": "$.url",
+        "regex": "/papers/(w\\d+)"
+      },
+      "number": {
+        "path": "$.url",
+        "regex": "/papers/(w\\d+)"
+      },
+      "title": {
+        "path": "$.title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.authors[*]",
+        "all": true,
+        "type": "text",
+        "name": {
+          "literal": "$"
+        }
+      },
+      "year": {
+        "path": "$.displaydate",
+        "type": "year"
+      },
+      "abstract": {
+        "path": "$.abstract",
+        "type": "text"
+      },
+      "doi": {
+        "path": "$.url",
+        "regex": "/papers/(w\\d+)",
+        "template": "10.3386/{value}",
+        "type": "doi"
+      },
+      "url": {
+        "path": "$.url",
+        "template": "https://www.nber.org{value}",
+        "type": "url"
+      },
+      "series": {
+        "path": "$.url",
+        "template": "NBER Working Paper"
+      },
+      "publisher": {
+        "path": "$.url",
+        "template": "National Bureau of Economic Research"
+      },
+      "type": {
+        "path": "$.url",
+        "template": "working-paper"
+      }
+    },
+    "detail": {
+      "perRecord": true,
+      "when": {
+        "field": "abstract",
+        "atLeast": 290
+      },
+      "request": {
+        "method": "GET",
+        "url": "{record.url}",
+        "format": "html"
+      },
+      "record": {
+        "abstract": {
+          "path": ".page-header__intro-inner",
+          "type": "text"
+        },
+        "date": {
+          "path": "meta[name=citation_publication_date]@content",
+          "replace": [
+            {
+              "find": "/",
+              "with": "-"
+            }
+          ],
+          "type": "date"
+        },
+        "pdfUrl": {
+          "path": "meta[name=citation_pdf_url]@content",
+          "type": "url"
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "The NBER working-paper series is where much applied economics appears first, often years before the journal version. Key searches NBER's own search, which covers titles, abstracts and author names.",
+    "coverage": "About 33,000 papers since 1973, in every field of economics, by NBER affiliates (mainly US-based researchers). Every paper has a DOI (10.3386/wNNNNN).",
+    "fields": "NBER has one search box over title, abstract and authors, so every term is searched there. When you set a term to title only, Key keeps only the papers that have it in the title. The listing shortens abstracts to 300 characters; Key reads the full abstract from the paper's page.",
+    "limits": [
+      "No wildcards and no date filter at NBER: write out word forms; Key applies your years after the search.",
+      "NBER's search breaks with long queries (more than about 20 words), so Key splits long searches into several smaller ones.",
+      "Reading full abstracts takes one extra request per paper, at one request per second."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "The published version usually has a different DOI; Key merges the two when the titles match."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words",
+                "field": "all"
+              }
+            ]
+          }
+        ]
+      },
+      "minTotal": 20,
+      "minResults": 3,
+      "pages": 1,
+      "mustFind": [
+        {
+          "doi": "10.3386/w17743"
+        }
+      ],
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract",
+        "doi"
+      ],
+      "fixture": "microfinance",
+      "pageSize": 10,
+      "maxRecords": 3
+    },
+    {
+      "name": "minimum-wage-employment",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "minimum wage",
+                "mode": "phrase",
+                "field": "title"
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "employment",
+                "mode": "words"
+              },
+              {
+                "text": "jobs",
+                "mode": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "native": "\"minimum wage\" AND (employment OR jobs)",
+      "minTotal": 30,
+      "minResults": 3,
+      "pages": 1,
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "doi"
+      ],
+      "fixture": "minimum-wage-employment",
+      "pageSize": 10,
+      "maxRecords": 3
+    }
+  ]
+}

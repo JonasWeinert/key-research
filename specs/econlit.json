@@ -1,0 +1,148 @@
+{
+  "format": 1,
+  "id": "econlit",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "EconLit",
+  "description": "The American Economic Association's bibliography of economics journals, books, working papers and dissertations.",
+  "homepage": "https://www.aeaweb.org/econlit/",
+  "category": "economics",
+  "coverage": "About 2 million records from 1886 onwards, with JEL codes and abstracts; available through EBSCOhost or ProQuest with a library subscription.",
+  "terms": "Manual. EconLit is a subscription database reached through your library's EBSCOhost or ProQuest login; it has no API for individual users. Key writes the search in EBSCO syntax for you to paste.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "abstract",
+      "keywords",
+      "subject",
+      "author",
+      "journal",
+      "affiliation"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": true,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}",
+      "title": "TI {q}",
+      "title_abstract": "(TI {q} OR AB {q})",
+      "abstract": "AB {q}",
+      "keywords": "KW {q}",
+      "subject": "SU {q}",
+      "author": "AU {q}",
+      "journal": "SO {q}",
+      "affiliation": "AF {q}"
+    },
+    "fallback": {
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 100000,
+    "chunk": "none",
+    "proximity": {
+      "wordJoin": " N{n} "
+    }
+  },
+  "manual": {
+    "url": "https://search.ebscohost.com/",
+    "steps": [
+      "Open EconLit through your library (the library's database list, or EBSCOhost after signing in). Key opens EBSCOhost; you may need to sign in through your library first.",
+      "Choose Advanced Search, paste the search Key copied for you into the first box and leave the field menu on 'Select a field'.",
+      "Set the years and document types with the limiters on the page.",
+      "Select all results (add them to a folder), then Export, choose RIS, and save the file.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [
+      "ris",
+      "csv"
+    ],
+    "importHint": "Save the export file, then drag it onto Key's library or choose File, Import. Key reads RIS, BibTeX and CSV files and merges duplicates with what you already have."
+  },
+  "guide": {
+    "summary": "EconLit is the standard bibliography of economics, run by the American Economic Association. Most systematic reviews in economics search it. It needs a library subscription, so Key writes the search and you run it in EBSCOhost (or ProQuest).",
+    "coverage": "About 2 million records since 1886: journal articles, books, chapters, dissertations and working papers, all with JEL codes.",
+    "fields": "Key writes EBSCO field codes: TI title, AB abstract, KW author keywords, SU subject (JEL descriptors), AU author, SO journal, AF affiliation. Nn finds words within n words of each other.",
+    "limits": [
+      "Needs your library's subscription and sign-in.",
+      "On ProQuest the field codes differ (ti(), ab()); adjust before you run the search."
+    ],
+    "credentials": "Your library account.",
+    "tips": [
+      "Export in batches of a few hundred records if EBSCOhost limits the export size."
+    ]
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

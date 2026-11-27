@@ -1,0 +1,140 @@
+{
+  "format": 1,
+  "id": "repec-ideas",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "RePEc (IDEAS and EconPapers)",
+  "description": "The RePEc index of economics working papers, articles, books and software from about 2,000 publishers and series.",
+  "homepage": "https://ideas.repec.org/",
+  "category": "economics",
+  "coverage": "About 5 million items: working-paper series of central banks, universities and institutes (including NBER, CEPR, IZA, CGD, IGC, IDB and UNU-WIDER), plus most economics journals.",
+  "terms": "Manual. RePEc's search engines run under paths that robots.txt closes to programs (ideas.repec.org/cgi-bin/, econpapers.repec.org/scripts/), and the RePEc API has no search function and needs an access code granted on request. Key writes the search for you and opens IDEAS in its browser; you run it and save what you find.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all",
+      "title",
+      "abstract",
+      "keywords",
+      "author"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "and": " + ",
+    "or": " | ",
+    "not": " -",
+    "group": "({q})",
+    "notStyle": "prefix",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 100000,
+    "chunk": "none"
+  },
+  "manual": {
+    "url": "https://ideas.repec.org/cgi-bin/htsearch2?q={query}&form=extended&wm=wrd&wf=4BFF&s=R&dt=range&db={yearFrom?}&de={yearTo?}",
+    "steps": [
+      "Key opens IDEAS with your search filled in. Check the search box: | means OR, + means AND, * truncates a word.",
+      "Under 'Search in' choose the whole record (title, abstract, keywords), and set the type: working papers and articles are searched separately.",
+      "IDEAS has no bulk export. Open the results you want and use 'Export reference' (RIS or BibTeX) on each item, or add them to a MyIDEAS list and export that.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [
+      "ris",
+      "bibtex"
+    ],
+    "importHint": "Save the export file, then drag it onto Key's library or choose File, Import. Key reads RIS, BibTeX and CSV files and merges duplicates with what you already have."
+  },
+  "guide": {
+    "summary": "RePEc is the main index of economics research, and the best single place to find working papers from central banks, universities and research institutes. Key cannot search it directly, so it prepares the search and you run it on IDEAS.",
+    "coverage": "About 5 million items from some 2,000 archives, including the NBER, CEPR, IZA, CGD, IGC, IDB and UNU-WIDER series and most economics journals.",
+    "fields": "IDEAS searches the whole record or, if you choose, title, abstract, keywords or authors. Key writes your search in IDEAS syntax: | for OR, + for AND, - for NOT, * for truncation.",
+    "limits": [
+      "No export of a whole result list; save items one by one or through a MyIDEAS list.",
+      "OpenAlex indexes RePEc too and can be searched by Key directly, but with less complete coverage of working papers."
+    ],
+    "credentials": "No account needed (a free MyIDEAS account helps to collect items).",
+    "tips": [
+      "One IDEAS search covers many working-paper series at once; it is worth doing even when you also search NBER or IZA."
+    ]
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

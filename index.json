@@ -1,0 +1,224 @@
+{
+  "bundle": 1,
+  "sequence": 100003,
+  "created": "2026-11-27T16:51:45Z",
+  "minEngine": "1.0.0",
+  "connectors": [
+    {
+      "id": "3ie-dep",
+      "version": "1.0.1",
+      "sha256": "c8547f88e895294652c0e69de6ea36fba0b449963ee96f6b61653fbadfcfa18b",
+      "size": 8562,
+      "path": "specs/3ie-dep.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "aea-rct-registry",
+      "version": "1.0.2",
+      "sha256": "e72377cab2e152640dccc075174dd6292d0a4d7de7134c320d622db6d3f7cb18",
+      "size": 6977,
+      "path": "specs/aea-rct-registry.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "cepr",
+      "version": "1.0.1",
+      "sha256": "f37b97e2bb9ff39cf4d1c07e59d2143976893fd1278e570c7bd5979409d2d436",
+      "size": 4081,
+      "path": "specs/cepr.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "cgd",
+      "version": "1.0.1",
+      "sha256": "51a54095aefb236775d71101f3a93b5802d371fc36faf0437561ce47be149da4",
+      "size": 3728,
+      "path": "specs/cgd.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "clinicaltrials-gov",
+      "version": "1.0.2",
+      "sha256": "ed05d12b41560b276c96b3d3b465717c87a913d25083bf6d9429da85eefd36de",
+      "size": 11352,
+      "path": "specs/clinicaltrials-gov.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "crossref-series",
+      "version": "1.0.2",
+      "sha256": "aa6f4d1751e09877990eb2b73a7fc7b0c65f353b5a2fc0567f35ba2d1a0cf8ed",
+      "size": 5650,
+      "path": "specs/crossref-series.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "crossref",
+      "version": "1.0.1",
+      "sha256": "411922980860eaba22b799caa4fd308a7d368a448f0c406035c3fdf0037a35a1",
+      "size": 8508,
+      "path": "specs/crossref.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "econlit",
+      "version": "1.0.1",
+      "sha256": "1a1847b029eb60c994153204779abe393acbcfacf8df77635358f99de501a9c5",
+      "size": 4641,
+      "path": "specs/econlit.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "econstor",
+      "version": "1.0.1",
+      "sha256": "976cf7832b2abd9adedac544ea5ae060b1383dcc69ecab4c97d4e2ccf575cc6b",
+      "size": 5457,
+      "path": "specs/econstor.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "europepmc-preprints",
+      "version": "1.0.1",
+      "sha256": "e4fe3318b2e11049ecf2eb0bde4b0342d4534260f010b4e6924e5bd81620f3f3",
+      "size": 7486,
+      "path": "specs/europepmc-preprints.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "europepmc",
+      "version": "1.0.1",
+      "sha256": "a324ee3ae981759486f9450282ac11c1f572799258b800188d230f4799af8d5c",
+      "size": 9737,
+      "path": "specs/europepmc.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "igc",
+      "version": "1.0.1",
+      "sha256": "4df64a59686311826d11af65a5e15b1cc8909926ffd15f90c3f5596ad705cb6a",
+      "size": 5173,
+      "path": "specs/igc.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "ipa",
+      "version": "1.0.1",
+      "sha256": "e70d07c21eb8fd3ecfabe54f15e5ae50cad348c08c6b280b1797b9d17823b569",
+      "size": 6146,
+      "path": "specs/ipa.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "iza",
+      "version": "1.0.1",
+      "sha256": "f78d46d66e1a181a33fcab7b78377470d85fc0359fd3ed43b6e67f7245fd8eb8",
+      "size": 4903,
+      "path": "specs/iza.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "jpal",
+      "version": "1.0.1",
+      "sha256": "a5e8611eac662ebf4cb243568c7d5a9704c5b60736b1936edfd1f7de878b6e01",
+      "size": 7034,
+      "path": "specs/jpal.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "nber",
+      "version": "1.0.1",
+      "sha256": "dd6adb70f1d0150ce83d2e49e258aed9884994b7642aea63871e0e6815ad1bc9",
+      "size": 7795,
+      "path": "specs/nber.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "openalex",
+      "version": "1.0.1",
+      "sha256": "69e3254f3b41fc6313640c6f0d99a7a47ee2e8e8fdc3c205a768da1ed36f9b20",
+      "size": 10655,
+      "path": "specs/openalex.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "pubmed",
+      "version": "1.0.1",
+      "sha256": "02a98fe9f6fa57d84d8abb1c0ab7f57385bfe9e1ca8d142130ac7773cf960898",
+      "size": 7746,
+      "path": "specs/pubmed.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "repec-ideas",
+      "version": "1.0.1",
+      "sha256": "fee54c3d7df186f68aac22ba4e25eb07fa1aa36af6beb75d2c287c8ef1dea493",
+      "size": 4855,
+      "path": "specs/repec-ideas.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "scopus-web",
+      "version": "1.0.1",
+      "sha256": "e6c66ee79e269ec712703d69c7732554464d62024af82a1bbd46f44ab84f9d4b",
+      "size": 6328,
+      "path": "specs/scopus-web.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "scopus",
+      "version": "1.0.1",
+      "sha256": "677b5f91584738fe2edb7086e8415ff273ab4e47ad79ad122cdb3a06130c9a39",
+      "size": 11657,
+      "path": "specs/scopus.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "ssrn-web",
+      "version": "1.0.1",
+      "sha256": "4d072e6b885411fef2c2780dfa1d670eec5bf49b261d8bc2ec5b5a39aded2df2",
+      "size": 3798,
+      "path": "specs/ssrn-web.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "who-ictrp",
+      "version": "1.0.2",
+      "sha256": "4f290c4ae48310cb4ae131143b9ff4891c075e8eb488514ebd7ab11d4135a2b4",
+      "size": 3865,
+      "path": "specs/who-ictrp.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "worldbank",
+      "version": "1.0.1",
+      "sha256": "d1a2c397e923e9851a7f37be96243a01191d50755c9ef0abdfa2cb112af6ff37",
+      "size": 8449,
+      "path": "specs/worldbank.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "wos-expanded",
+      "version": "1.0.1",
+      "sha256": "c870c7c37a88d30d387c1a9576b771f4e705e082c5df50ff1b26061e107ef0f8",
+      "size": 9725,
+      "path": "specs/wos-expanded.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "wos-starter",
+      "version": "1.0.1",
+      "sha256": "4bd8a13701cea24bdc730554c5105b9665c4933e666265e290baec516083ac7f",
+      "size": 9493,
+      "path": "specs/wos-starter.json",
+      "minEngine": "1.1.0"
+    },
+    {
+      "id": "wos-web",
+      "version": "1.0.1",
+      "sha256": "02971226a07c1c1a11317e382b2a39d407e2ff4910035c7536bf546b4caad2ec",
+      "size": 5740,
+      "path": "specs/wos-web.json",
+      "minEngine": "1.1.0"
+    }
+  ]
+}

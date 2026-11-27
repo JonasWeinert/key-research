@@ -1,0 +1,249 @@
+{
+  "format": 1,
+  "id": "aea-rct-registry",
+  "version": "1.0.2",
+  "minEngine": "1.1.0",
+  "name": "AEA RCT Registry",
+  "description": "The American Economic Association's registry of randomised controlled trials in economics and other social sciences.",
+  "homepage": "https://www.socialscienceregistry.org/",
+  "category": "registries",
+  "prisma": "register",
+  "coverage": "About 10,000 registered trials from 2012 onwards (some registered retrospectively) in more than 160 countries, with design, interventions, outcomes and links to papers.",
+  "terms": "Free, no login. Key uses the registry's own CSV export of a search (www.socialscienceregistry.org/trials/search.csv; robots.txt allows /trials/), one request per search word, at one request every 2 seconds. Registrations name investigators; Key removes e-mail addresses from what it keeps. For a complete copy, the registry posts periodic snapshots on Harvard Dataverse.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.socialscienceregistry.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 2000,
+    "retries": 3,
+    "backoffMs": 4000,
+    "maxPages": 1,
+    "maxResponseBytes": 33554432
+  },
+  "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
+    "fields": [
+      "all"
+    ],
+    "phrase": false,
+    "truncation": false,
+    "proximity": false,
+    "dates": "year",
+    "filters": [],
+    "maxResults": 10000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "abstract",
+      "doi",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "{text}",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 200,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://www.socialscienceregistry.org/trials/search.csv",
+      "params": {
+        "query": "{query}"
+      },
+      "format": "csv"
+    },
+    "pageSize": 10000,
+    "paging": {
+      "style": "none"
+    },
+    "items": "$",
+    "itemsWhere": "RCT_ID",
+    "record": {
+      "sourceId": "RCT_ID",
+      "number": "RCT_ID",
+      "title": {
+        "path": "Title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "Primary Investigator",
+        "replace": [
+          {
+            "find": "\\s*\\(?\\S+@\\S+\\)?",
+            "with": ""
+          }
+        ],
+        "all": true,
+        "type": "text",
+        "name": {
+          "literal": "$"
+        }
+      },
+      "year": {
+        "path": "First registered on",
+        "type": "year"
+      },
+      "date": {
+        "path": "First registered on",
+        "type": "date"
+      },
+      "abstract": {
+        "path": "Abstract",
+        "type": "text"
+      },
+      "doi": {
+        "path": "DOI Number",
+        "type": "doi"
+      },
+      "url": {
+        "path": "Url",
+        "replace": [
+          {
+            "find": "^http:",
+            "with": "https:"
+          }
+        ],
+        "type": "url"
+      },
+      "venue": {
+        "path": "RCT_ID",
+        "template": "AEA RCT Registry"
+      },
+      "keywords": {
+        "path": "Keywords",
+        "replace": [
+          {
+            "find": "[\\[\\]\"]",
+            "with": ""
+          }
+        ],
+        "split": "re:\\s*,\\s*",
+        "all": true
+      },
+      "type": {
+        "path": "RCT_ID",
+        "template": "trial"
+      },
+      "extras": {
+        "fields": {
+          "status": "Status",
+          "countries": "Country names",
+          "otherInvestigators": {
+            "path": "Other Primary Investigators",
+            "replace": [
+              {
+                "find": "\\s*\\(?\\S+@\\S+\\)?",
+                "with": ""
+              }
+            ],
+            "type": "text"
+          },
+          "jel": "Jel code",
+          "start": "Start date",
+          "end": "End date",
+          "intervention": {
+            "path": "Intervention",
+            "type": "text"
+          },
+          "primaryOutcomes": {
+            "path": "Primary outcome end points",
+            "type": "text"
+          },
+          "design": {
+            "path": "Experimental design",
+            "type": "text"
+          },
+          "randomizationUnit": "Randomization unit",
+          "sampleSize": "Sample size number observations",
+          "arms": "Sample size number arms",
+          "sponsors": "Sponsors",
+          "papers": {
+            "path": "Relevant papers for csv",
+            "type": "text"
+          }
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "The AEA RCT Registry is where economists and other social scientists register their randomised trials, often before any results exist. Searching it finds ongoing and unpublished trials and links to the papers that report finished ones.",
+    "coverage": "About 10,000 registrations since 2012, from more than 160 countries: field experiments, policy trials and lab-in-the-field studies. Each record is a registration, not a paper.",
+    "fields": "The registry's search reads the whole registration. Key sends each word or phrase separately and keeps registrations that match your whole search in their title, abstract and keywords. The year is the year of first registration. Status, countries, intervention, outcomes, design, sample size and linked papers appear in the extras.",
+    "limits": [
+      "Each search word returns all its matches in one file, so very common words (for example 'health') can take a while to download.",
+      "Registrations are self-reported by the researchers and are not checked for completeness.",
+      "Key removes investigators' e-mail addresses; contact details stay on the registry's own pages."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "J-PAL evaluation summaries list the AEA registration number, which helps to match a registration with its evaluation and papers."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "minResults": 3,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "url",
+        "abstract"
+      ],
+      "fixture": "microfinance",
+      "maxRecords": 5
+    }
+  ]
+}

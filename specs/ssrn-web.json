@@ -1,0 +1,131 @@
+{
+  "format": 1,
+  "id": "ssrn-web",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "SSRN (web)",
+  "description": "SSRN's preprint and working-paper library in the social sciences, economics, law and health.",
+  "homepage": "https://papers.ssrn.com/",
+  "category": "preprints",
+  "coverage": "About 1.4 million papers from 1994 onwards.",
+  "terms": "Manual. SSRN blocks automated clients and has no public search API. Key writes the search and opens SSRN in its browser. SSRN papers have DOIs (10.2139/ssrn.NNNN): the SSRN via Crossref connector finds them by title, without abstracts.",
+  "kind": "manual",
+  "credentials": [],
+  "hosts": [],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 100000,
+    "chunk": "none"
+  },
+  "manual": {
+    "url": "https://papers.ssrn.com/sol3/results.cfm?txtKey_Words={query}",
+    "steps": [
+      "Key opens SSRN's search with your words. SSRN reads title, abstract and keywords; if it refuses brackets, search one part of your search at a time.",
+      "Sort by date or relevance and open the papers you want.",
+      "SSRN has no export of a result list. Add papers by their DOI (on each paper's page) or collect them in SSRN's 'My Library' and copy the DOIs.",
+      "Write down the number of hits and the date for your search log."
+    ],
+    "exportFormats": [],
+    "importHint": "Paste the SSRN DOIs (10.2139/ssrn....) into Key's Add by identifier; Key fetches the details."
+  },
+  "guide": {
+    "summary": "SSRN holds working papers and preprints in economics, finance, law and the social sciences, often long before publication. Key cannot search SSRN itself, so it opens it for you.",
+    "coverage": "About 1.4 million papers since 1994.",
+    "fields": "SSRN's search reads title, abstract and keywords.",
+    "limits": [
+      "No export of result lists.",
+      "The SSRN via Crossref connector reaches SSRN papers by title automatically, but without abstracts."
+    ],
+    "credentials": "A free SSRN account is needed to download some papers.",
+    "tips": []
+  },
+  "tests": [
+    {
+      "name": "translates",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meal",
+                "mode": "phrase",
+                "truncate": true
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "attendance",
+                "mode": "words"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010,
+          "yearTo": 2020
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,411 @@
+{
+  "format": 1,
+  "id": "openalex",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "OpenAlex",
+  "description": "An open catalogue of the world's research: journal articles, preprints, working papers, reports, books and datasets in every field.",
+  "homepage": "https://openalex.org/",
+  "category": "multidisciplinary",
+  "coverage": "About 250 million works from Crossref, PubMed, repositories (including RePEc and institutional archives) and the web, all fields.",
+  "terms": "Free; data CC0. Without a key all users on one network share a small daily budget (about 1,000 list requests a day); a free personal key gives its own budget. Key sends the key and your contact address only to api.openalex.org.",
+  "kind": "api",
+  "credentials": [
+    {
+      "id": "api_key",
+      "label": "OpenAlex API key",
+      "required": false,
+      "secret": "openalex",
+      "help": "Optional but recommended: without a key everyone on your network shares one small daily budget.",
+      "url": "https://openalex.org/settings/api"
+    }
+  ],
+  "hosts": [
+    "api.openalex.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 250,
+    "minIntervalMsWithKey": 120,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 50,
+    "mailtoParam": "mailto",
+    "quota": {
+      "remainingHeader": "x-ratelimit-remaining",
+      "resetHeader": "x-ratelimit-reset"
+    }
+  },
+  "options": [
+    {
+      "id": "type",
+      "label": "Document types",
+      "default": "",
+      "choices": [
+        {
+          "value": "",
+          "label": "All types"
+        },
+        {
+          "value": "type:article",
+          "label": "Journal articles"
+        },
+        {
+          "value": "type:preprint|report",
+          "label": "Preprints and working papers"
+        },
+        {
+          "value": "type:book|book-chapter",
+          "label": "Books and chapters"
+        },
+        {
+          "value": "type:dataset",
+          "label": "Datasets"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "title_abstract",
+      "title",
+      "abstract",
+      "fulltext"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "year",
+    "filters": [
+      "languages",
+      "openAccess"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "openalex",
+      "pmid",
+      "type",
+      "language"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "title_abstract": "{q}",
+      "title": "{q}",
+      "abstract": "{q}",
+      "fulltext": "{q}"
+    },
+    "fallback": {
+      "all": "title_abstract",
+      "keywords": "title_abstract",
+      "subject": "title_abstract",
+      "author": "title_abstract",
+      "journal": "title_abstract",
+      "affiliation": "title_abstract",
+      "identifier": "title_abstract"
+    },
+    "defaultField": "title_abstract",
+    "localFilter": true,
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": ",",
+        "replace": " "
+      },
+      {
+        "find": "|",
+        "replace": " "
+      },
+      {
+        "find": ":",
+        "replace": " "
+      }
+    ],
+    "vars": {
+      "dateFrom": {
+        "template": "from_publication_date:{yearFrom}-01-01"
+      },
+      "dateTo": {
+        "template": "to_publication_date:{yearTo}-12-31"
+      }
+    },
+    "filters": {
+      "languages": {
+        "var": "langFilter",
+        "join": "|",
+        "template": "language:{v}",
+        "values": {
+          "en": "en",
+          "de": "de",
+          "fr": "fr",
+          "es": "es",
+          "pt": "pt",
+          "zh": "zh"
+        }
+      },
+      "openAccess": {
+        "var": "oaFilter",
+        "template": "open_access.is_oa:true"
+      }
+    },
+    "maxLength": 3500,
+    "chunk": "or-split",
+    "maxChunks": 10
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://api.openalex.org/works",
+      "params": {
+        "filter": {
+          "join": ",",
+          "parts": [
+            "title_and_abstract.search:{query}",
+            "{dateFrom?}",
+            "{dateTo?}",
+            "{opt.type?}",
+            "{langFilter?}",
+            "{oaFilter?}"
+          ]
+        },
+        "per_page": "{pageSize}",
+        "cursor": "{cursor}",
+        "select": "id,doi,title,authorships,publication_year,publication_date,abstract_inverted_index,primary_location,type,language,ids,keywords,open_access",
+        "api_key": "{cred.api_key?}",
+        "mailto": "{mailto?}"
+      },
+      "format": "json"
+    },
+    "pageSize": 200,
+    "paging": {
+      "style": "cursor",
+      "firstCursor": "*",
+      "next": "$.meta.next_cursor",
+      "stopWhenFewer": true
+    },
+    "total": "$.meta.count",
+    "items": "$.results[*]",
+    "record": {
+      "sourceId": {
+        "path": "$.id",
+        "regex": "(W\\d+)$"
+      },
+      "openalex": {
+        "path": "$.id",
+        "regex": "(W\\d+)$"
+      },
+      "title": {
+        "path": "$.title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.authorships[*].author.display_name",
+        "all": true,
+        "name": {
+          "literal": "$"
+        }
+      },
+      "year": {
+        "path": "$.publication_year",
+        "type": "year"
+      },
+      "date": {
+        "path": "$.publication_date",
+        "type": "date"
+      },
+      "venue": {
+        "first": [
+          "$.primary_location.source.display_name",
+          "$.primary_location.raw_source_name"
+        ]
+      },
+      "abstract": {
+        "path": "$.abstract_inverted_index",
+        "type": "inverted-index"
+      },
+      "doi": {
+        "path": "$.doi",
+        "type": "doi"
+      },
+      "pmid": {
+        "path": "$.ids.pmid",
+        "regex": "(\\d+)$"
+      },
+      "pmcid": {
+        "path": "$.ids.pmcid",
+        "regex": "(PMC\\d+)"
+      },
+      "issn": "$.primary_location.source.issn_l",
+      "url": {
+        "first": [
+          "$.primary_location.landing_page_url",
+          "$.id"
+        ],
+        "type": "url"
+      },
+      "pdfUrl": {
+        "path": "$.primary_location.pdf_url",
+        "type": "url"
+      },
+      "language": {
+        "path": "$.language",
+        "type": "language"
+      },
+      "keywords": {
+        "path": "$.keywords[*].display_name",
+        "all": true
+      },
+      "type": {
+        "path": "$.type",
+        "map": {
+          "article": "article",
+          "preprint": "preprint",
+          "report": "report",
+          "book": "book",
+          "book-chapter": "chapter",
+          "dataset": "dataset",
+          "dissertation": "thesis",
+          "review": "article"
+        }
+      },
+      "extras": {
+        "fields": {
+          "openAccess": "$.open_access.oa_status",
+          "sourceType": "$.primary_location.source.type"
+        }
+      }
+    }
+  },
+  "lookup": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://api.openalex.org/works",
+      "params": {
+        "filter": "openalex:{id}",
+        "per_page": "1",
+        "api_key": "{cred.api_key?}",
+        "mailto": "{mailto?}"
+      },
+      "format": "json"
+    },
+    "pageSize": 1,
+    "paging": {
+      "style": "none"
+    },
+    "items": "$.results[*]"
+  },
+  "guide": {
+    "summary": "OpenAlex is a free, open index of scholarly works in all fields. It is a good catch-all for working papers, reports and preprints that the subject databases miss, because it also reads repositories such as RePEc and university archives.",
+    "coverage": "About 250 million works of every type, from Crossref, PubMed, arXiv, RePEc, institutional repositories and more. Coverage of abstracts is patchy: many publishers do not share them.",
+    "fields": "OpenAlex searches title and abstract together. A term set to title only is also searched in title and abstract, and Key then keeps only the records that have it in the title. Full text searches the text of open-access works where OpenAlex has it.",
+    "limits": [
+      "No wildcards: OpenAlex stems words itself (vaccinate also finds vaccination).",
+      "Without a key, everyone on your network shares one small daily budget; when it runs out Key stops and tells you when it resets.",
+      "Records without an abstract can only match on their title."
+    ],
+    "credentials": "Optional. Get a free key at openalex.org/settings/api (sign in, then copy the key) and paste it in Key Settings, Services & API keys, OpenAlex.",
+    "tips": [
+      "Choose 'Preprints and working papers' under Document types to search grey literature such as World Bank, IMF or university working papers.",
+      "Very long queries are split into several requests; each uses part of the daily budget."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance-working-papers",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words",
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2015
+        }
+      },
+      "options": {
+        "type": "type:preprint|report"
+      },
+      "minTotal": 1000,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "openalex"
+      ],
+      "fixture": "microfinance-working-papers",
+      "pageSize": 10
+    },
+    {
+      "name": "title-only-local-filter",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "minimum wage",
+                "mode": "phrase",
+                "field": "title"
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "employment",
+                "mode": "words",
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2020,
+          "yearTo": 2022
+        }
+      },
+      "minTotal": 200,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "authors"
+      ],
+      "fixture": "title-only-local-filter",
+      "pageSize": 10
+    }
+  ]
+}

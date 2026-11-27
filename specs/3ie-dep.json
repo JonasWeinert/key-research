@@ -1,0 +1,309 @@
+{
+  "format": 1,
+  "id": "3ie-dep",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "3ie Development Evidence Portal",
+  "description": "3ie's portal of impact evaluations and systematic reviews of development programmes in low- and middle-income countries.",
+  "homepage": "https://developmentevidence.3ieimpact.org/",
+  "category": "grey-literature",
+  "coverage": "About 18,000 impact evaluations and systematic reviews from 1990 onwards, screened and coded by 3ie (design, method, country and income group).",
+  "terms": "Free, no login. Key uses the search endpoint that the portal's own web app calls (api.developmentevidence.3ieimpact.org/graphql, operation keywordSearch; robots.txt allows everything) at one request every 1.5 seconds. It is not a documented public API and may change; if it does, use the portal's own export (see the guide).",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "api.developmentevidence.3ieimpact.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1500,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 100
+  },
+  "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": false,
+    "dates": "year",
+    "filters": [],
+    "maxResults": 2000,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "keywords",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "localFilter": true,
+    "phrase": "\"{text}\"",
+    "words": "({text})",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " AND NOT ",
+    "group": "({q})",
+    "notStyle": "andNot",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "maxLength": 2000,
+    "chunk": "or-split",
+    "maxChunks": 10
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "POST",
+      "url": "https://api.developmentevidence.3ieimpact.org/graphql",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "operationName": "KEYWORD_SEARCH",
+        "query": "query KEYWORD_SEARCH($data: KeywordSearchInput!) {{ keywordSearch(data: $data) {{ total_count search_result {{ id title product_type year_of_publication doi publication_url journal publication_type evaluation_design evaluation_method abstract synopsis keywords authors {{ author }} continent {{ continent countries {{ country income_level }} }} }} }} }}",
+        "variables": {
+          "data": {
+            "keyword": "{query}",
+            "from": "{offset}",
+            "size": "{pageSize}"
+          }
+        }
+      },
+      "format": "json"
+    },
+    "pageSize": 20,
+    "paging": {
+      "style": "offset",
+      "start": 0,
+      "stopWhenFewer": true
+    },
+    "total": "$.data.keywordSearch.total_count",
+    "items": "$.data.keywordSearch.search_result[*]",
+    "record": {
+      "sourceId": "$.id",
+      "title": {
+        "path": "$.title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.authors[*].author",
+        "all": true,
+        "name": {
+          "literal": "$"
+        }
+      },
+      "year": {
+        "path": "$.year_of_publication",
+        "type": "year"
+      },
+      "venue": {
+        "path": "$.journal",
+        "drop": [
+          "None",
+          "N/A"
+        ]
+      },
+      "abstract": {
+        "first": [
+          "$.abstract",
+          "$.synopsis"
+        ],
+        "drop": [
+          "None",
+          "N/A",
+          ""
+        ],
+        "type": "text"
+      },
+      "doi": {
+        "path": "$.doi",
+        "drop": [
+          "No DOI",
+          "None",
+          "N/A"
+        ],
+        "type": "doi"
+      },
+      "url": {
+        "path": "$.publication_url",
+        "drop": [
+          "None",
+          "N/A",
+          ""
+        ],
+        "type": "url"
+      },
+      "keywords": {
+        "path": "$.keywords[*]",
+        "all": true
+      },
+      "type": {
+        "path": "$.product_type",
+        "map": {
+          "ier": "article",
+          "sr": "article",
+          "egm": "report"
+        }
+      },
+      "extras": {
+        "fields": {
+          "productType": {
+            "path": "$.product_type",
+            "map": {
+              "ier": "Impact evaluation",
+              "sr": "Systematic review",
+              "egm": "Evidence gap map"
+            }
+          },
+          "publicationType": "$.publication_type",
+          "design": "$.evaluation_design",
+          "method": "$.evaluation_method",
+          "region": {
+            "path": "$.continent[*].continent",
+            "all": true,
+            "join": "; "
+          },
+          "countries": {
+            "path": "$.continent[*].countries[*].country",
+            "all": true,
+            "join": "; "
+          },
+          "incomeGroups": {
+            "path": "$.continent[*].countries[*].income_level",
+            "all": true,
+            "join": "; "
+          },
+          "portalPage": {
+            "path": "$.id",
+            "template": "https://developmentevidence.3ieimpact.org/search-result-details/{$.product_type}/x/{value}"
+          }
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "3ie's Development Evidence Portal collects impact evaluations and systematic reviews of programmes in low- and middle-income countries, each screened and coded by 3ie. It is one of the best single places to look for evaluations in development.",
+    "coverage": "About 18,000 records from 1990 on: published and unpublished impact evaluations (journal articles, working papers, reports) and systematic reviews. Every record is an evaluation or a review, so you rarely need design words in your search.",
+    "fields": "The portal's search reads titles, abstracts and keywords; there is no field choice, so title-only terms are checked by Key afterwards. Records carry 3ie's coding in the extras: evaluation design (for example experimental, quasi-experimental), method (for example difference-in-differences), country, region and income group.",
+    "limits": [
+      "The year filter is applied by Key after the search.",
+      "The search endpoint is the portal's own; if 3ie changes it this connector stops until Key updates it. Manual route: search on the portal, then use its 'Export' button and import the file into Key."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Use 'Systematic review' in the extras to spot reviews, which are a good source of further studies."
+    ]
+  },
+  "tests": [
+    {
+      "name": "school-feeding",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meals",
+                "mode": "phrase"
+              }
+            ]
+          }
+        ]
+      },
+      "native": "(\"school feeding\" OR \"school meals\")",
+      "minTotal": 50,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract"
+      ],
+      "fixture": "school-feeding",
+      "pageSize": 10
+    },
+    {
+      "name": "microfinance-women",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words"
+              },
+              {
+                "text": "microcredit",
+                "mode": "words"
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "women",
+                "mode": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "minTotal": 100,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "abstract"
+      ],
+      "fixture": "microfinance-women",
+      "pageSize": 10
+    }
+  ]
+}

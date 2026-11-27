@@ -1,0 +1,182 @@
+{
+  "format": 1,
+  "id": "igc",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
+  "name": "IGC publications",
+  "description": "Working papers, project reports and policy briefs of the International Growth Centre (LSE and Oxford) on economic growth in developing countries.",
+  "homepage": "https://www.theigc.org/publications",
+  "category": "grey-literature",
+  "coverage": "About 4,000 publications from 2009 onwards, mostly on countries in Africa and South Asia.",
+  "terms": "Free. IGC has no API; Key reads the public publications listing with its full-text filter (www.theigc.org/publications?search_api_fulltext=...; robots.txt disallows only /search/) at one request every 1.5 seconds. The page layout may change, which would stop this connector until it is updated.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.theigc.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1500,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 10
+  },
+  "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
+    "fields": [
+      "all"
+    ],
+    "phrase": false,
+    "truncation": false,
+    "proximity": false,
+    "dates": "none",
+    "filters": [],
+    "maxResults": 100,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "{text}",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 200,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://www.theigc.org/publications",
+      "params": {
+        "search_api_fulltext": "{query}",
+        "page": "{page}"
+      },
+      "format": "html"
+    },
+    "pageSize": 10,
+    "paging": {
+      "style": "page",
+      "start": 0,
+      "stopWhenFewer": true,
+      "stopWhenNoNew": true
+    },
+    "items": ".views-row a.c-list-item",
+    "record": {
+      "sourceId": {
+        "path": ":scope@href",
+        "regex": "/publications/([^/?#]+)"
+      },
+      "title": {
+        "path": ".c-list-item__title",
+        "type": "text"
+      },
+      "url": {
+        "path": ":scope@href",
+        "type": "url"
+      },
+      "authors": {
+        "path": ".c-list-item__meta-item",
+        "type": "text",
+        "split": "re:\\s*,\\s*",
+        "all": true,
+        "name": {
+          "literal": "$"
+        }
+      },
+      "series": {
+        "path": ".c-list-item__type",
+        "type": "text"
+      },
+      "publisher": {
+        "path": ":scope",
+        "template": "International Growth Centre"
+      },
+      "type": {
+        "path": ".c-list-item__type",
+        "type": "text",
+        "map": {
+          "Working paper": "working-paper",
+          "Project report": "report",
+          "Policy brief": "report",
+          "Policy paper": "report",
+          "Case study": "report",
+          "Evidence paper": "report"
+        },
+        "default": "report"
+      }
+    }
+  },
+  "guide": {
+    "summary": "The International Growth Centre funds and publishes research on growth and policy in developing countries: working papers, project reports and short policy briefs, many from projects run with governments.",
+    "coverage": "About 4,000 publications since 2009, mostly on Africa and South Asia. The listing shows title, authors and publication type.",
+    "fields": "IGC's search reads the whole publication page and lists results newest first. Key sends each word or phrase separately, reads up to ten pages of results, and keeps the publications whose title matches your whole search, so treat this as a title search.",
+    "limits": [
+      "No abstracts or dates in the listing: matching is on titles only, and year filters are not applied.",
+      "Results come newest first, so Key reads at most 100 results per word; older matches may be missed.",
+      "Many IGC working papers also appear in RePEc and EconStor with abstracts.",
+      "This connector reads IGC's web pages; if IGC redesigns its site it may stop working until Key updates it."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Policy briefs summarise a project; search for the project's working paper for the full study."
+    ]
+  },
+  "tests": [
+    {
+      "name": "tax",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "tax",
+                "mode": "words"
+              }
+            ]
+          }
+        ]
+      },
+      "minResults": 1,
+      "pages": 3,
+      "fields": [
+        "title",
+        "url"
+      ],
+      "fixture": "tax"
+    }
+  ]
+}
