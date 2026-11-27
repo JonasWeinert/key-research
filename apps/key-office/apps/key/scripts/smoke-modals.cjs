@@ -185,7 +185,7 @@ const MARGIN = 20;
     assert.equal(Math.round(scrim[3]), scrim[5]);
     await close();
 
-    // Tab bars: the library's segmented bars fill their row, the pill sits under the chosen tab.
+    // Tab bars: the library's segmented tabs fill their bar, the pill sits under the chosen tab.
     await theme(false);
     await resize([1200, 800]);
     const [ws] = await page.evaluate(() => window.key.workspaces());
@@ -204,7 +204,8 @@ const MARGIN = 20;
     });
     result.tabBar = geometry;
     assert.ok(geometry.used >= geometry.track - 10, `The tabs don't fill their bar: ${JSON.stringify(geometry)}`);
-    assert.ok(geometry.bar > geometry.row * 0.4, `The bar doesn't take its row's width: ${JSON.stringify(geometry)}`);
+    // The library's view tabs are compact (sized to their tabs), not stretched over the row.
+    assert.ok(geometry.bar <= geometry.track + 12, `The bar is wider than its tabs: ${JSON.stringify(geometry)}`);
     assert.ok(Math.abs(geometry.pill[0] - geometry.chosen[0]) < 1.5 && Math.abs(geometry.pill[1] - geometry.chosen[1]) < 1.5, `The pill isn't under the chosen tab: ${JSON.stringify(geometry)}`);
     // Arrow keys move the choice and the pill follows.
     await bar.locator("[role=tab][aria-selected=true]").focus();

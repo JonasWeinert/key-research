@@ -53,4 +53,16 @@ function killTree(root, { marker } = {}) {
   return killed;
 }
 
-module.exports = { killTree, treeOf, testRunMarker };
+/** Test apps whose driver is gone (parent is launchd): marked ones, and Playwright-started
+ *  Electron apps from a Key checkout (older runs, before the marker; any worktree). Returns their count. */
+function reapOrphans(appDir) {
+  let n = 0;
+  for (const r of table()) {
+    if (r.ppid !== 1) continue;
+    const ours = r.command.includes("--key-test-run=") || ((r.command.includes(appDir) || r.command.includes("apps/key-office/apps/key")) && /Electron/.test(r.command) && /--remote-debugging-port=0|--inspect=0/.test(r.command));
+    if (ours) n += killTree(r.pid);
+  }
+  return n;
+}
+
+module.exports = { killTree, treeOf, testRunMarker, reapOrphans };

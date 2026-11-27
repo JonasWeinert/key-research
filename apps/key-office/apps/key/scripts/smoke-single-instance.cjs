@@ -5,7 +5,8 @@ const { tmpdir } = require('node:os');
 const path = require('node:path');
 (async () => {
   const executablePath = process.env.KEY_ELECTRON_EXECUTABLE;
-  if (!executablePath) throw Error('Set KEY_ELECTRON_EXECUTABLE to the packaged Key executable');
+  // Exit 77: skipped (run-smokes.cjs).
+  if (!executablePath) return void (console.log('skip: set KEY_ELECTRON_EXECUTABLE to the packaged Key executable'), process.exit(77));
   const temp = await mkdtemp(path.join(tmpdir(), 'key-single-instance-'));
   const env = { ...process.env, KEY_SKIP_ONBOARDING: '1', KEY_USER_DATA: path.join(temp, 'profile'), KEY_WORKSPACE_PARENT: path.join(temp, 'workspaces') };
   const app = await electron.launch({ executablePath, args: [], env });
