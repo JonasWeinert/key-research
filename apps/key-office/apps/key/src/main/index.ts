@@ -510,6 +510,8 @@ const REVIEW_READS = new Set([
   "review_form_templates", "review_criteria_suggestions", "review_protocol_impact", "review_duplicates", "review_fulltexts", "review_fulltext_match",
   "review_fulltext_csv_read", "review_fulltext_info", "review_fulltext_bytes", "review_parse_selection", "review_form_preview", "review_agreement",
   "review_ai_request", "review_ai_extract_request", "review_lookup",
+  // std-A: reporting reads
+  "review_checklist", "review_protocol_doc", "review_search_report", "review_report_export",
 ]);
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {

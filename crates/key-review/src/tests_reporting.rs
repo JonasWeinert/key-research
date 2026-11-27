@@ -113,7 +113,7 @@ fn checklist_follows_the_review_data() {
     assert_eq!(flow.status, "evidenced");
     let f = flow.draft.as_deref().unwrap();
     // 5 identified, 1 duplicate, 4 screened, 3 excluded, 1 sought, 1 assessed, 0 excluded, 1 included.
-    assert!(f.contains("identified 5 records") && f.contains("removing 1 duplicates") && f.contains("4 records were screened") && f.contains("3 excluded") && f.contains("1 study (1 report)"), "{f}");
+    assert!(f.contains("identified 5 records") && f.contains("removing 1 duplicate,") && f.contains("4 records were screened") && f.contains("3 excluded") && f.contains("1 study (1 report)"), "{f}");
     assert!(c.methods.contains("### Selection process") && c.methods.contains("Example database"), "{}", c.methods);
 
     // A manuscript location evidences a manuscript-only item.

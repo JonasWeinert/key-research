@@ -42,6 +42,8 @@ const INTERACTIVE: &[&str] = &[
     "review_rename", "review_team_save", "review_protocol_save", "review_protocol_impact", "review_complete_form", "review_parse_selection",
     "review_records_remove", "review_record_edit", "review_study_link", "review_duplicates", "review_fulltexts", "review_fulltext_bytes", "review_fulltext_info",
     "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match",
+    // std-A: reporting edits typed into fields
+    "review_checklist_note", "review_search_source", "review_search_peer_review", "review_search_prior", "review_protocol_register",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but

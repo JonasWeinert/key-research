@@ -277,7 +277,7 @@ fn results_flow(c: &Ctx) -> String {
         t.push_str(&format!(" ({} from databases and {} from registers)", thousands(dbs), thousands(regs)));
     }
     t.push('.');
-    let mut removed = vec![format!("{} duplicates", thousands(p.duplicates))];
+    let mut removed = vec![plural(p.duplicates, "duplicate", "duplicates")];
     if p.automation > 0 {
         removed.push(format!("{} marked ineligible by automation tools", thousands(p.automation)));
     }

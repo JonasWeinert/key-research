@@ -10,10 +10,15 @@ import { ELEMENT_LABEL, ELEMENT_PART, plural, reasonText, type Condition, type C
 import { Btn, MenuButton, Row, Segmented, Toggle, errorText, formatTime, useLoad } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
 import { FormsEditor } from "./review-forms";
+// std-A: the protocol document (PRISMA-P / PROSPERO / OSF), registration and deviations
+import { ProtocolSection } from "./review-protocol";
+import { takeFocus } from "./review-reporting-api";
 
-type Section = "question" | "team" | "criteria" | "keywords" | "forms" | "splits" | "history";
+type Section = "question" | "protocol" | "team" | "criteria" | "keywords" | "forms" | "splits" | "history";
 const SECTIONS: [Section, string][] = [
   ["question", "Question"],
+  // std-A
+  ["protocol", "Protocol"],
   ["team", "Team & rules"],
   ["criteria", "Criteria"],
   ["keywords", "Keywords & labels"],
@@ -28,7 +33,7 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 export function Setup(props: StageProps) {
   const { summary, api, viewer, notify, onChanged } = props;
-  const [section, setSection] = useState<Section>(() => (summary.active ? "criteria" : "question"));
+  const [section, setSection] = useState<Section>(() => takeFocus(props.reviewId, SECTIONS.map(([id]) => id)) ?? (summary.active ? "criteria" : "question"));
   const [draft, setDraft] = useState<Protocol>(() => clone(summary.protocol));
   const base = useRef(summary.protocol);
   // Start from the latest protocol (another window may have saved one since this tab last read).
@@ -41,7 +46,8 @@ export function Setup(props: StageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summary.protocol]);
   const dirty = !same(draft, summary.protocol);
-  const versioned = summary.versionHasDecisions;
+  // std-A: a registered protocol changes only by an amendment with a reason (never as typed).
+  const versioned = summary.versionHasDecisions || !!summary.reporting?.locked;
   // Before decisions exist, edits save as they are made.
   useEffect(() => {
     if (!dirty || versioned) return;
@@ -107,6 +113,7 @@ export function Setup(props: StageProps) {
       </nav>
       <div className="kx-rv-setup-body">
         {section === "question" && <QuestionSection {...child} />}
+        {section === "protocol" && <ProtocolSection {...child} />}
         {section === "team" && <TeamSection {...child} />}
         {section === "criteria" && <CriteriaSection {...child} />}
         {section === "keywords" && <KeywordsSection {...child} />}
@@ -134,7 +141,11 @@ function SaveBar({ api, summary, viewer, draft, notify, onChanged, onDiscard }: 
     <div className="kx-rv-savebar" role="region" aria-label="Save protocol changes">
       <Icon name="info" size={14} />
       <span className="kx-rv-savebar-text">
-        Decisions were made under version {summary.versionNumber}. Saving makes version {summary.versionNumber + 1}.
+        {summary.reporting?.locked && impact.value?.newVersion !== false
+          ? `The protocol is registered: saving records an amendment (version ${summary.versionNumber + 1}), listed with its reason as a deviation from the protocol.`
+          : !impact.value?.newVersion && impact.value
+            ? "This change does not alter what the protocol says: it saves without a new version."
+            : `Decisions were made under version ${summary.versionNumber}. Saving makes version ${summary.versionNumber + 1}.`}
         {affected > 0 && (
           <label className="kx-check">
             <input type="checkbox" checked={rescreen} onChange={(e) => setRescreen(e.target.checked)} />
@@ -146,7 +157,7 @@ function SaveBar({ api, summary, viewer, draft, notify, onChanged, onDiscard }: 
       <Btn onClick={onDiscard}>Discard</Btn>
       <Btn
         primary
-        disabled={busy || !note.trim()}
+        disabled={busy || (!note.trim() && impact.value?.newVersion !== false)}
         onClick={() => {
           setBusy(true);
           api
@@ -159,7 +170,7 @@ function SaveBar({ api, summary, viewer, draft, notify, onChanged, onDiscard }: 
             .finally(() => setBusy(false));
         }}
       >
-        Save version {summary.versionNumber + 1}
+        {impact.value?.newVersion === false ? "Save" : `Save version ${summary.versionNumber + 1}`}
       </Btn>
     </div>
   );
