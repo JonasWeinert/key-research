@@ -255,6 +255,7 @@ fn converts_to_a_property_and_removes_tags() {
     assert_eq!(change.items, 3);
     let del = plan(&messy(), TagPlan::Delete { tags: strings(&["1234"]) }).unwrap();
     assert_eq!(del.operation.replace.len(), 1);
+    assert_eq!(del.operation.replace[0].from, "1234");
     assert!(del.operation.replace[0].to.is_empty());
     // Items holding several of a select property's tags are counted for the panel's note.
     let index = index_of(&[vec!["a1", "b1"], vec!["a1"], vec!["b1"]], json!({}));
