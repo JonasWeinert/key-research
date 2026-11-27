@@ -16,6 +16,7 @@ pub mod changes;
 pub mod formula;
 pub mod formula_catalog;
 mod formula_scope;
+mod formula_values;
 pub mod find;
 mod openalex;
 mod properties;
@@ -304,6 +305,10 @@ pub struct ListQuery {
     /// Sort levels, first one wins; replaces `sort`/`descending` when given.
     #[serde(default)]
     pub sorts: Vec<SortKey>,
+    /// A sort field (`property:<name>`, `year`, `type` …) to group rows by: they come
+    /// ordered by it first, and the page lists the groups.
+    #[serde(default)]
+    pub group: Option<String>,
     #[serde(default)]
     pub offset: usize,
     #[serde(default)]
@@ -348,6 +353,28 @@ pub struct SourcePage {
     pub total: usize,
     pub next_offset: Option<usize>,
     pub counts: Counts,
+    /// With `group`: the view's groups in order, with their sizes (rows carry `groupValue`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Group>,
+}
+
+/// One group of a grouped list: the value its rows share, and how many there are.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Group {
+    pub value: Json,
+    pub count: usize,
+}
+
+/// A SQL value as JSON (a group's value).
+fn sql_json(value: rusqlite::types::ValueRef<'_>) -> Json {
+    use rusqlite::types::ValueRef;
+    match value {
+        ValueRef::Null => Json::Null,
+        ValueRef::Integer(n) => Json::from(n),
+        ValueRef::Real(f) => serde_json::Number::from_f64(f).map_or(Json::Null, Json::Number),
+        ValueRef::Text(t) => Json::String(String::from_utf8_lossy(t).into_owned()),
+        ValueRef::Blob(_) => Json::Null,
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -456,6 +483,9 @@ pub struct Store {
     reader: Arc<priority::PriorityPool<Connection>>,
     /// The duplicate matcher's index of the library (duplicates.rs), rebuilt when it changed.
     duplicates: Arc<Mutex<duplicates::Cache>>,
+    /// Sources a read worked out because their stored formula values were stale: the
+    /// formula worker stores these first (formula_values.rs).
+    formula_first: Arc<Mutex<Vec<String>>>,
 }
 
 /// Read-only connections: a user's list or search never waits for one background query.
@@ -529,21 +559,21 @@ impl Store {
         fill::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
         changes::ensure_schema(&conn)?;
-        let formula_cache = formula::FormulaCache::new(root.clone());
-        formula::register(&conn, &formula_cache)?;
+        formula::register(&conn)?;
+        formula_values::ensure_schema(&conn)?;
         // The change log only serves the duplicate index (duplicates.rs), which rebuilds when it lags further.
         conn.execute("DELETE FROM source_key_changes WHERE seq <= (SELECT max(seq) FROM source_key_changes) - 20000", []).map_err(e)?;
         let readers = (0..READERS)
             .map(|_| {
                 let reader = Connection::open(root.join("key.db")).map_err(e)?;
-                formula::register(&reader, &formula_cache)?;
+                formula::register(&reader)?;
                 duplicates::register(&reader)?;
                 cancel::install(&reader);
                 reader.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
                 Ok(reader)
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default() })
+        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default(), formula_first: Default::default() })
     }
 
     pub fn root(&self) -> &Path {
@@ -667,7 +697,8 @@ impl Store {
         if let Some(source) = source.as_mut() {
             identify::decorate(&db, source)?;
             citation_keys::decorate(&db, source)?;
-            formula::decorate(&db, std::slice::from_mut(source))?;
+            let worked_out = formula::decorate(&db, std::slice::from_mut(source))?;
+            self.formula_ask_first(worked_out);
         }
         Ok(source)
     }
@@ -684,6 +715,13 @@ impl Store {
     }
 
     pub fn list_sources(&self, query: &ListQuery) -> Result<SourcePage> {
+        // Sorting, filtering or grouping by a formula reads stored values: a small backlog
+        // (an edit just made) is stored first, a large refill is not waited for.
+        if query.group.iter().chain(query.sorts.iter().map(|k| &k.field)).chain(query.sort.iter()).any(|f| f.starts_with("property:"))
+            || query.filters.iter().any(|f| f.field == "property")
+        {
+            self.formula_settle()?;
+        }
         let db = self.read()?;
         let (clause, values) = where_clause(query);
         let levels = if query.sorts.is_empty() {
@@ -691,9 +729,11 @@ impl Store {
         } else {
             query.sorts.clone()
         };
-        let order = levels
+        let group = query.group.as_deref().filter(|g| !g.is_empty()).map(sort_expression);
+        let order = group
             .iter()
-            .map(|k| format!("{} {} NULLS LAST", sort_expression(&k.field), if k.descending { "DESC" } else { "ASC" }))
+            .map(|g| format!("{g} ASC NULLS LAST"))
+            .chain(levels.iter().map(|k| format!("{} {} NULLS LAST", sort_expression(&k.field), if k.descending { "DESC" } else { "ASC" })))
             .collect::<Vec<_>>()
             .join(", ");
         let direction = if levels[0].descending { "DESC" } else { "ASC" };
@@ -716,7 +756,23 @@ impl Store {
             .map_err(e)?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(e)?;
-        formula::decorate(&db, &mut items)?;
+        let worked_out = formula::decorate(&db, &mut items)?;
+        self.formula_ask_first(worked_out);
+        let groups = match &group {
+            Some(g) => {
+                // Each row's group, and every group of the whole view with its size.
+                let list = serde_json::to_string(&items.iter().map(|s| &s.id).collect::<Vec<_>>()).map_err(e)?;
+                let mut statement = db.prepare(&format!("SELECT s.id, {g} FROM sources s WHERE s.id IN (SELECT value FROM json_each(?1))")).map_err(e)?;
+                let keys: HashMap<String, Json> = statement.query_map([list], |r| Ok((r.get::<_, String>(0)?, sql_json(r.get_ref(1)?)))).map_err(e)?.collect::<std::result::Result<_, _>>().map_err(e)?;
+                for item in &mut items {
+                    item.fields.insert("groupValue".into(), keys.get(&item.id).cloned().unwrap_or(Json::Null));
+                }
+                let mut statement = db.prepare(&format!("SELECT g, count(*) FROM (SELECT {g} AS g FROM sources s {clause}) GROUP BY g ORDER BY g ASC NULLS LAST LIMIT 1000")).map_err(e)?;
+                let rows = statement.query_map(params_from_iter(values.iter()), |r| Ok(Group { value: sql_json(r.get_ref(0)?), count: r.get::<_, i64>(1)? as usize })).map_err(e)?;
+                rows.collect::<std::result::Result<Vec<_>, _>>().map_err(e)?
+            }
+            None => Vec::new(),
+        };
         let next = query.offset + items.len();
         let counts = counts(&db, query)?;
         Ok(SourcePage {
@@ -724,6 +780,7 @@ impl Store {
             total,
             next_offset: (next < total).then_some(next),
             counts,
+            groups,
         })
     }
 
