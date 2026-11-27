@@ -4,9 +4,10 @@
 // browser they are stale. The service also ties its sign-in to the browser (user agent).
 // A. a passkey request in a cross-site iframe covers the page with the card within a second;
 //    Not now puts it aside (the bar keeps Stop waiting, which ends the request);
-// B. app.localhost → (one-time hop) → gateway.localhost/idp/profile/…: the tab ARRIVES at the
-//    sign-in service and is offered the sign-in window at once; Continue here is remembered; the
-//    page asks for a passkey and the card offers the window again; the window starts on the
+// (Passkey requests here go to Electron, KEY_PASSKEY_PROXY=0: the proxy has its own smoke,
+// smoke-passkey-proxy.cjs.)
+// B. app.localhost → (one-time hop) → gateway.localhost/idp/profile/…: the page asks for a
+//    passkey and the card offers the window (remembered for the service); the window starts on the
 //    site's page (never the stale sign-in address), the real WebAuthn ceremony (Chrome headless,
 //    virtual authenticator for the phone) completes there, the sign-in's cookies come over and
 //    Key goes back to the site's page, signed in. No request is ever stale.
@@ -242,6 +243,8 @@ async function serve() {
       KEY_SIGNIN_VIRTUAL_AUTHENTICATOR: "1",
       KEY_SIGNIN_SETTLE_MS: "600",
       KEY_SIGNIN_LOOP_MS: "1500",
+      // This smoke is about the sign-in window: passkey requests go to Electron, not the proxy.
+      KEY_PASSKEY_PROXY: "0",
       KEY_USER_DATA: path.join(temp, "profile"),
       KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
     },
@@ -285,17 +288,9 @@ async function serve() {
     await shell.click(".key-web-signin[data-waiting] button:has-text('Stop waiting')");
     assert((await result) === "frame:NotAllowedError", "Stop waiting ends the frame's request");
 
-    // B. Arrival at the sign-in service, Continue here, then the passkey: the window, from the site's page.
+    // B. The page asks for a passkey: the window, from the site's page.
     await open(`${base("app")}/article`);
-    const arrival = await until(async () => ((await signin())?.card?.stage === "arrival" ? (await signin()).card : undefined), "the card on arrival at the sign-in service", 8000).catch(() => undefined);
-    report.arrival = arrival ? { host: arrival.host } : "missing";
-    if (arrival) {
-      assert(arrival.host === "gateway.localhost", `the arrival card names the sign-in service: ${JSON.stringify(arrival)}`);
-      await shell.waitForSelector(".kx-signin-card-layer[data-stage=arrival]");
-      await wait(300);
-      await shell.screenshot({ path: path.join(shots, "1-arrival.png") });
-      await shell.click(".kx-signin-card button:has-text('Continue here')");
-    }
+    // (No arrival card by default any more: only where the window was chosen for the service.)
     await until(async () => (await signin())?.card?.stage === "offer", "the card when the page asks for a passkey", 10000);
     await shell.click(".kx-signin-card button[data-primary]");
     const back = await waitForWindow("the sign-in to come back");
@@ -304,7 +299,6 @@ async function serve() {
     report.windowEntry = entry?.entry;
     // The failure the owner saw: the window replayed a one-time sign-in request.
     assert(!log.stale.some((s) => s.by === "window"), `no stale request in the sign-in window: ${JSON.stringify(log.stale)} (window started on ${entry?.entry ?? entry?.current})`);
-    assert(arrival, "the tab is offered the sign-in window when it arrives at the sign-in service");
     assert(entry?.entry === `${base("app")}/article`, `the window starts on the site's page: ${JSON.stringify(entry)}`);
     assert(back.imported?.names?.includes("app.localhost") && back.imported.names.includes("gateway.localhost") && !back.imported.names.includes("tracker.localhost"), `brought over for the chain's sites: ${JSON.stringify(back)}`);
     await signedIn(`${base("app")}/article`, "the site's page signed in, in Key");
