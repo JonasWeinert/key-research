@@ -12,7 +12,7 @@
 //   Dock are recorded in `globalThis.__keyTest` instead of happening.
 // - Chromium keeps no secrets in the login Keychain (--use-mock-keychain).
 // Must be imported first in main/index.ts: it sets Chromium switches before the app is ready.
-import { app, BaseWindow, BrowserWindow, Menu, clipboard, globalShortcut, ipcMain, nativeImage, session, shell, type NativeImage } from "electron";
+import { app, BaseWindow, BrowserWindow, Menu, clipboard, globalShortcut, ipcMain, nativeImage, screen, session, shell, type NativeImage } from "electron";
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -140,6 +140,14 @@ function installWindows() {
   };
   proto.setSimpleFullScreen = proto.setFullScreen;
   proto.isSimpleFullScreen = proto.isFullScreen;
+  // A hidden window renders at the scale of the display it is on; macOS centres it on the one
+  // the person is using (maybe an external 1x screen). Runs stay on the main display, so
+  // screenshots have the same resolution whatever the person does.
+  proto.center = function (this: BaseWindow) {
+    const area = screen.getPrimaryDisplay().workArea;
+    const [width, height] = this.getSize();
+    this.setPosition(Math.round(area.x + (area.width - width) / 2), Math.round(area.y + (area.height - height) / 2));
+  };
   proto.moveTop = function () {};
   proto.flashFrame = function () {};
   proto.setAlwaysOnTop = function () {};
