@@ -31,7 +31,8 @@ import { ReaderPanel, type ReaderPanelTab } from "./ReaderPanel";
 import { WebReaderPanel, type WebPanelTab } from "./WebReaderPanel";
 import { BrowserBar, type WebBarState } from "./BrowserBar";
 import { SignInCard } from "./SignInCard";
-import { WEB_BAR_HEIGHT } from "../shared/browser-layout";
+import { FindPdfBanner } from "./FindPdfBanner";
+import { FIND_PDF_BANNER_HEIGHT, WEB_BAR_HEIGHT } from "../shared/browser-layout";
 import { BiblioSheets } from "./BiblioSheets";
 import { MarkdownExportHost } from "./markdown-export";
 import { FileRenameHost } from "./file-names";
@@ -1189,6 +1190,7 @@ export default function App() {
             const rect = v?.web && placed.get(v.id);
             if (!v?.web || !rect) return null;
             const card = v.web.signin?.card;
+            const banner = v.web.findPdf ? FIND_PDF_BANNER_HEIGHT : 0;
             return (
               <Fragment key={v.id}>
                 <BrowserBar
@@ -1198,11 +1200,19 @@ export default function App() {
                   onStep={(step) => action("history", { viewId: v.id, step })}
                   onPage={(op) => action("web-page", { viewId: v.id, op })}
                 />
+                {/* Find PDF on a publisher's page: what happened and the ways on, above the page. */}
+                {v.web.findPdf && (
+                  <FindPdfBanner
+                    state={v.web.findPdf}
+                    style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT + WEB_BAR_HEIGHT, width: rect.width }}
+                    onOp={(op, url) => action("find-pdf-banner", { viewId: v.id, op, url })}
+                  />
+                )}
                 {/* A passkey the page cannot get: the card stands in for the (hidden) page. */}
                 {card && (
                   <SignInCard
                     card={card}
-                    style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT + WEB_BAR_HEIGHT, width: rect.width, height: Math.max(0, rect.height - WEB_BAR_HEIGHT) }}
+                    style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT + WEB_BAR_HEIGHT + banner, width: rect.width, height: Math.max(0, rect.height - WEB_BAR_HEIGHT - banner) }}
                     onPage={(op) => action("web-page", { viewId: v.id, op })}
                   />
                 )}
