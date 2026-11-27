@@ -49,7 +49,7 @@ import {
   type PropertySheetState,
 } from "./PropertySheets";
 import { DatabaseToolbar, DatabaseView, useDatabaseViewState, type DatabaseViewHandle } from "./DatabaseView";
-import { DEFAULT_SORTS, SOURCE_SORTS, SourceCard, legacyColumnSettings, useSourceColumns } from "./library-columns";
+import { DEFAULT_SORTS, SOURCE_GROUPS, SOURCE_SORTS, SourceCard, groupLabel, legacyColumnSettings, useSourceColumns } from "./library-columns";
 import BatchEditor from "./BatchEditor";
 import { DuplicatesView, SourceMergeSheet } from "./DuplicatesView";
 import MetadataUpdateSheet from "./MetadataUpdateSheet";
@@ -60,6 +60,7 @@ import { readablePaths } from "./file-names";
 import { EmptyState as Guide } from "./explain";
 
 const PAGE = 300;
+const groupKey = (source: Source) => JSON.stringify(source.groupValue ?? null);
 const ROW = 58;
 const SCOPES: [string, string][] = [
   ["all", "All"],
@@ -113,6 +114,7 @@ export default function ReferenceLibrary({
   const [items, setItems] = useState<Source[]>([]);
   const [total, setTotal] = useState(0);
   const [counts, setCounts] = useState<SourcePage["counts"]>();
+  const [groups, setGroups] = useState<SourcePage["groups"]>();
   const [facets, setFacets] = useState<Facets>({ tags: [], itemTypes: [], kinds: [], years: [] });
   const [collections, setCollections] = useState<Collection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,6 +155,12 @@ export default function ReferenceLibrary({
   });
   const sorts = viewState.sorts.length ? viewState.sorts : DEFAULT_SORTS;
   const listRef = useRef<DatabaseViewHandle>(null);
+  // Grouping (table and list): by a built-in field or a property, such as a formula's result.
+  const groupFields = useMemo<[string, string][]>(
+    () => [...SOURCE_GROUPS, ...definitions.filter((d) => d.type !== "multiselect").map<[string, string]>((d) => [`property:${d.name}`, d.name])],
+    [definitions],
+  );
+  const group = viewState.layout !== "grid" && groupFields.some(([id]) => id === viewState.group) ? viewState.group : undefined;
   // Details panel width: dragged live through a CSS variable, saved when released.
   const libraryRef = useRef<HTMLElement>(null);
   const [inspectorWidth, setInspectorWidth] = useState(() => {
@@ -236,8 +244,8 @@ export default function ReferenceLibrary({
 
   const query = useMemo(
     // "Recently read" lists the latest read first, whatever the view sorts by.
-    () => ({ collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), text: null, sort: sorts[0].field, descending: sorts[0].descending, sorts: scope === "recent" ? [{ field: "lastRead", descending: true }] : sorts }),
-    [collectionId, scope, kind, tag, filters, sorts],
+    () => ({ collectionId: collectionId ?? null, scope, kind: kind ?? null, tag: tag ?? null, filters: storeFilters(filters), text: null, sort: sorts[0].field, descending: sorts[0].descending, sorts: scope === "recent" ? [{ field: "lastRead", descending: true }] : sorts, group: group ?? null }),
+    [collectionId, scope, kind, tag, filters, sorts, group],
   );
 
   const listKey = useRef(`list:${Math.random().toString(36).slice(2)}`);
@@ -253,6 +261,7 @@ export default function ReferenceLibrary({
         ]);
         if (id !== request.current) return;
         setItems((previous) => (offset ? [...previous, ...page.items] : page.items));
+        if (!offset) setGroups(page.groups);
         setTotal(page.total);
         setCounts(page.counts);
         if (nextFacets) setFacets(nextFacets);
@@ -310,6 +319,7 @@ export default function ReferenceLibrary({
       void invoke<SourcePage>("store_sources", { ...query, offset: 0, limit: Math.max(PAGE, items.length) }, workspaceId)
         .then((page) => {
           setItems(page.items);
+          setGroups(page.groups);
           setCounts(page.counts);
         })
         .catch(() => {});
@@ -323,6 +333,7 @@ export default function ReferenceLibrary({
     void invoke<SourcePage>("store_sources", { ...query, offset: 0, limit: Math.max(PAGE, items.length) }, workspaceId)
       .then((page) => {
         setItems(page.items);
+        setGroups(page.groups);
         setCounts(page.counts);
       })
       .catch(() => {});
@@ -796,6 +807,7 @@ export default function ReferenceLibrary({
                 onChange={setViewState}
                 columns={columns}
                 sortFields={[...SOURCE_SORTS, ...definitions.map<[string, string]>((d) => [`property:${d.name}`, d.name])]}
+                groupFields={groupFields}
                 columnFooter={
                   <button onClick={() => setSheet({ mode: "new", targets: [] })}>
                     <Icon name="plus" size={13} /> New property…
@@ -854,6 +866,18 @@ export default function ReferenceLibrary({
             onDragStart={dragSources}
             onRange={(first, last) => setRange((r) => (r[0] === first && r[1] === last ? r : [first, last]))}
             renderCard={(source) => <SourceCard source={source} />}
+            groupOf={group ? groupKey : undefined}
+            renderGroup={(key) => {
+              const value = JSON.parse(key) as unknown;
+              const definition = group?.startsWith("property:") ? definitions.find((d) => `property:${d.name}` === group) : undefined;
+              const count = groups?.find((g) => JSON.stringify(g.value ?? null) === key)?.count;
+              return (
+                <>
+                  <span>{groupLabel(group ?? "", value, definition)}</span>
+                  {count !== undefined && <span className="kx-count">{count.toLocaleString()}</span>}
+                </>
+              );
+            }}
             renderListRow={(source, top, row) => (
               <SourceRow
                 key={source.id}

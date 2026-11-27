@@ -25,6 +25,24 @@ export const SOURCE_SORTS: [string, string][] = [
   ["lastRead", "Last read"],
 ];
 export const DEFAULT_SORTS: SortLevel[] = [{ field: "added", descending: true }];
+/** Built-in fields the library can be grouped by (properties are added per workspace). */
+export const SOURCE_GROUPS: [string, string][] = [
+  ["year", "Year"],
+  ["type", "Item type"],
+  ["container", "Journal / container"],
+  ["status", "Reading status"],
+];
+const READING = ["Unread", "Reading", "Read"];
+
+/** A group header's label: the value as the field shows it. */
+export function groupLabel(field: string, value: unknown, definition?: { type?: string; resultType?: string }): string {
+  if (value === null || value === undefined || value === "" || value === "[]") return "Empty";
+  if (field === "status") return READING[Number(value)] ?? String(value);
+  const type = definition?.type === "formula" ? definition.resultType : definition?.type;
+  if (type === "boolean" || type === "checkbox") return value === 1 || value === true || value === "true" ? "Yes" : "No";
+  if (typeof value === "number") return value.toLocaleString();
+  return String(value);
+}
 
 /** Built-in columns followed by one per typed property (hidden until shown). */
 export function useSourceColumns({
@@ -99,7 +117,7 @@ export function useSourceColumns({
     const properties = definitions.map<DatabaseColumn<Source>>((d) => ({
       id: `property:${d.name}`,
       label: d.name,
-      mark: d.type === "formula" ? "ƒ " : undefined,
+      icon: d.type === "formula" ? "function" : undefined,
       width: 130,
       hidden: true,
       numeric: d.type === "number" || (d.type === "formula" && d.resultType === "number" && d.display !== "progress"),
