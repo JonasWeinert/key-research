@@ -51,6 +51,8 @@ import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/
 import { webPageRect } from "../shared/browser-layout";
 import { feedsEnvironmentRequest, watchFeedsEnvironment } from "./feeds-environment";
 import { forgetReading, reportReading } from "./reading-events";
+import { TabSwitcher } from "./tab-switcher";
+import { switcherOrder, touchMru } from "../shared/tab-switcher";
 import { WindowStateStore, type SavedGroup, type SavedTab, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
 import {
   activateWorkspaceTab,
@@ -171,6 +173,8 @@ type ShellWindow = {
   globalOverlay?: string;
   overlayCaptureSequence: number;
   overlayCaptureKey: string;
+  /** Tab ids, most recently shown first (for Ctrl-Tab). */
+  mru?: string[];
   closed?: boolean;
 };
 const shells = new Map<string, ShellWindow>();
@@ -892,6 +896,7 @@ function attach(record: OwnedView, w: ShellWindow) {
   const view = kind.create(record);
   record.view = view;
   relayDismiss(view.webContents, () => record.host?.window);
+  tabSwitcher.attach(view.webContents, () => record.host);
   w.window.contentView.addChildView(view);
   record.host = w;
   view.webContents.on("focus", () => {
@@ -992,6 +997,8 @@ function layout(w: ShellWindow = focusedShell()) {
     if (record.view && record.host === w) record.view.setVisible(!w.globalOverlay && shown.has(record.id));
   placeViews(w);
   refreshOverlayFrames(w);
+  const shownTab = activeWorkspaceTab(w.state)?.id;
+  if (shownTab && w.mru?.[0] !== shownTab) w.mru = touchMru(w.mru ?? [], shownTab, new Set(allTabs(w.state).map((t) => t.id)));
   // Only the two most recently used PDF renderers retain their raster/GPU caches, across all windows.
   const visible = new Set(liveShells().flatMap((s) => shownViewIds(s)));
   const pdfs = [...views.values()].filter((v) => v.kind === "pdf" && v.view);
@@ -1531,6 +1538,9 @@ function createShell(
   // The window's title names its workspace, not the page.
   window.on("page-title-updated", (event) => event.preventDefault());
   relayDismiss(window.webContents, () => window);
+  tabSwitcher.attach(window.webContents, () => w, true);
+  // Ctrl let go while another app had focus: no switch. (Smokes: other apps take the foreground.)
+  if (process.env.KEY_SKIP_ONBOARDING !== "1") window.on("blur", () => tabSwitcher.cancel(w));
   dismissOnBlur(window);
   dismissOnMove(window);
   window.webContents.on("did-start-loading", () => {
@@ -2094,6 +2104,28 @@ function selectTab(index: number) {
   w.state = activateWorkspaceTab(w.state, tab.id);
   layout(w);
 }
+/** Ctrl-Tab: the window's tabs in most-recently-used order (main/tab-switcher.ts). */
+const tabSwitcher = new TabSwitcher<ShellWindow>({
+  order: (w) => switcherOrder(w.mru ?? [], allTabs(w.state).map((t) => t.id)),
+  activate: (w, tabId) => {
+    if (!findTab(w.state, tabId)) return;
+    w.state = activateWorkspaceTab(w.state, tabId);
+    layout(w);
+    focusShown(w);
+  },
+  close: (w, tabId) => closeTab(w, tabId),
+  restoreFocus: (w) => focusShown(w),
+  focusShell: (w) => w.window.webContents.focus(),
+  send: (w, event) => emitTo(w, "tab-switcher", event),
+  capture: (w) => (w.globalOverlay ? Promise.resolve([]) : captureOverlayFrames(w)),
+  cover: (w, covered) => {
+    if (covered ? w.globalOverlay : w.globalOverlay !== "tab-switcher") return;
+    w.globalOverlay = covered ? "tab-switcher" : undefined;
+    w.overlayCaptureKey = covered ? overlayKey(w) : "";
+    if (!covered) ++w.overlayCaptureSequence;
+    layout(w);
+  },
+});
 /** Previous / next tab of the focused group. */
 function stepTab(delta: number) {
   const w = focusedShell();
@@ -2250,6 +2282,8 @@ function baseMenu() {
           { type: "separator" },
           { label: "Show Previous Tab", accelerator: "CmdOrCtrl+Shift+[", click: () => stepTab(-1) },
           { label: "Show Next Tab", accelerator: "CmdOrCtrl+Shift+]", click: () => stepTab(1) },
+          // Ctrl-Tab itself is read from key events (main/tab-switcher.ts); the menu only shows it.
+          { label: "Show All Tabs", accelerator: "Ctrl+Tab", registerAccelerator: false, click: () => focusedShell() && tabSwitcher.open(focusedShell()) },
           pane("Pin Tab", undefined, (w, tabId) => pinTab(w, tabId, !findTab(w.state, tabId)?.tab.pinned)),
           {
             label: "Go to Tab",
@@ -3474,6 +3508,14 @@ else
           case "activate":
             w.state = activateWorkspaceTab(w.state, p.tabId);
             break;
+          // The tab switcher's overlay: "Show all tabs", a row clicked or hovered, a close button, the backdrop.
+          case "tab-switcher":
+            if (p.op === "open") tabSwitcher.open(w);
+            else if (p.op === "pick") tabSwitcher.pick(w, String(p.tabId));
+            else if (p.op === "select") tabSwitcher.select(w, Number(p.index));
+            else if (p.op === "close-tab") await tabSwitcher.closeTab(w, String(p.tabId));
+            else tabSwitcher.cancel(w);
+            return snapshot(w);
           case "focus":
             focus(p.viewId);
             break;

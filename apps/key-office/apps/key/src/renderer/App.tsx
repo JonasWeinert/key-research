@@ -9,6 +9,7 @@ import { bridge, type AppInfo, type AppSettings, type Note } from "./library-api
 import { GlobalDrawerHost, GlobalDialog } from "./GlobalDrawer";
 import { AddFromSourceHost } from "./add-from-source";
 import type { SearchPreviewState } from "./search-preview";
+import { TabSwitcher } from "./TabSwitcher";
 import { GroupTabStrip, type DropTarget, type TabDrop, type TabSummary, type TabsApi } from "./tab-strip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type LibrarySource, type LibraryHit } from "./LibraryHome";
@@ -786,6 +787,7 @@ export default function App() {
       }}
     >
       <GlobalDrawerHost />
+      <TabSwitcher tabs={tabs.tabs} groups={tabs.groups.map((g) => g.id)} />
       <AddFromSourceHost invoke={invoke} />
       <ItemLayer />
       <TagManagerHost invoke={invoke} />
@@ -807,6 +809,7 @@ export default function App() {
           { id: "settings", label: "Key Settings", icon: "gear", shortcut: "⌘,", run: () => setSettingsSection("general") },
           { id: "workspace-settings", label: "Workspace settings…", icon: "folder", shortcut: "⌥⌘,", run: () => openSettingsTarget({ window: "workspace", section: "workspace" }) },
           { id: "shortcuts", label: "Keyboard shortcuts", icon: "info", shortcut: "⌘/", run: () => window.dispatchEvent(new CustomEvent("key:shortcuts")) },
+          { id: "all-tabs", label: "Show all tabs", icon: "tabs", shortcut: "⌃⇥", keywords: "switch tab overview open tabs", run: () => setTimeout(() => void action("tab-switcher", { op: "open" })) },
         ]}
       />
       {prefs && workspaceSettings && !welcome && workspaces.length > 0 && (
