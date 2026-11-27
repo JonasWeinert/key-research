@@ -20,11 +20,15 @@ pub mod views;
 // std-D: advanced synthesis and interop.
 pub mod conversions;
 pub mod dependence;
+pub mod interop;
 pub mod linalg;
 pub mod metareg;
 pub mod multilevel;
 pub mod pubbias;
+pub mod revman;
+pub mod rscript;
 pub mod sensitivity;
+pub mod synthesis;
 // std-D end.
 
 pub use ops::{Library, NoLibrary};
@@ -34,3 +38,5 @@ pub use store::Reviews;
 mod tests;
 #[cfg(test)]
 mod tests_records;
+#[cfg(test)]
+mod tests_interop;

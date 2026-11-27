@@ -12,6 +12,8 @@ serde_json.workspace = true
 key-store = { path = "../key-store" }
 key-biblio = { path = "../key-biblio" }
 regex = "1"
+sha2.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

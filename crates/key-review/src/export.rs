@@ -437,7 +437,7 @@ fn extraction_long(state: &State, conn: &rusqlite::Connection) -> Result<String>
     Ok(out)
 }
 
-const OUTCOME_KEYS: [&str; 19] = ["outcome", "timepoint", "unit", "type", "group1", "group2", "e1", "n1", "e2", "n2", "m1", "sd1", "m2", "sd2", "measure", "estimate", "lower", "upper", "se"];
+pub const OUTCOME_KEYS: [&str; 19] = ["outcome", "timepoint", "unit", "type", "group1", "group2", "e1", "n1", "e2", "n2", "m1", "sd1", "m2", "sd2", "measure", "estimate", "lower", "upper", "se"];
 
 /// One row per study, outcome and time point, with the columns metafor's escalc() and meta's
 /// metabin()/metacont()/metagen() take (ai/n1i …: e1, n1, e2, n2; m1i …: m1, sd1, n1 …).
