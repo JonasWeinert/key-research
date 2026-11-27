@@ -130,6 +130,36 @@ and `inbox_state { works }` (owned by the Inbox module); `DbRecord` is a valid `
   `clarivate-wos`, `clarivate-wos-expanded`, `openalex`.
 - `db_suggest_terms` answers `[]` for now.
 
+## Boolean search, plans and the search strategy
+
+- `Query.expr` is the Boolean tree (`key_connectors::boolean::Node`): `{ type: "group", op: "and" |
+  "or", items: Node[], not?: true, label? }` or `{ type: "term", text, mode: "words" | "phrase",
+  truncate, field, proximity?, not?: true }`. When present it is the search; `concepts`/`exclude`
+  are the older form (still read). Fields: `all`, `title`, `abstract`, `title_abstract`,
+  `keywords`, `subject`, `author`, `journal`, `affiliation`, `fulltext`, `identifier`, `year`
+  (text `2015-2024`), `type`, `language`.
+- `db_query_parse { text }` -> `{ ok: true, tree, text /* canonical */, notes: {message, start,
+  end}[] }` or `{ ok: false, error: { message, start, end } }` (character offsets of the problem).
+  Syntax: `(health OR doctor) AND ((AI OR ML) NOT regression)`, `"exact phrase"`, `word*`,
+  `"hand washing"~3`, field tags `title:`, `abstract:`, `tiab:`, `keywords:`, `mesh:`, `author:`,
+  `journal:`, `year:`, `type:`, `lang:` (or a suffix `word[ti]`); AND binds before OR.
+- `db_query_format { tree }` -> `{ text }`.
+- `db_translate` entries carry `strategy`: `{ original, kind: "single" | "split" | "terms" |
+  "harvest", subqueries: { native, neutral, verified, exact }[], postFilter, keepUnknown, steps:
+  string[], approximate: string[], decision?: { kind: "tooMany" | "nothing", message, queries } }`.
+  `Progress` carries the same `strategy` plus `rejected`, `unverified`, `repeats`.
+- `db_search_start` takes `allow: string[]`: connectors whose `decision` the user accepted (others
+  with a decision are skipped with its message).
+- `db_strategy { runId } | { query, connectors, options?, overrides?, label? }, format: "markdown" |
+  "text" | "json" | "csv"` -> `{ filename, content, mime }`: per database the exact strings sent,
+  when, reported/read/kept per query, the reconstruction steps, approximate notes, de-duplication
+  counts. The JSON (`format: "key-search-strategy"`) has `rerun: { query, connectors, options,
+  overrides }` to run it again.
+- `db_run { runId }` -> the whole `RunReport` (live or from disk): `sources[]` with `strategy`,
+  `chunkTotals`, `chunkRaw`, `chunkKept`, `rejected`, `repeats`, `unverified`; `fetched`,
+  `duplicatesRemoved`, `unique`, `records[]` with provenance; `rerun` (with `savedId`). `db_runs`
+  lists runs (`savedId`, `fetched`, `duplicatesRemoved` too).
+
 Environment (tests and smokes only): `KEY_CONNECTORS_MOCK` (a loopback base URL every request
 goes to, as `/<host>/<path>`), `KEY_CONNECTORS_DEV_TRUST=1` (trust the public dev key),
 `KEY_CONNECTORS_UPDATE_URL`, `KEY_CONNECTORS_DIR`, `KEY_CONNECTORS_NO_AUTO_CHECK`.

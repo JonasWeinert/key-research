@@ -85,14 +85,29 @@ What the visual query builder may offer for this connector (and what the engine 
   "filters": ["types", "languages"],
   "maxResults": 10000,           // what one query can return; above it the engine chunks (query.chunk)
   "sort": ["relevance", "date"],
-  "exportFields": ["title", "authors", "year", "venue", "abstract", "doi", "pmid", "keywords"]
+  "exportFields": ["title", "authors", "year", "venue", "abstract", "doi", "pmid", "keywords"],
+  "boolean": { "and": true, "or": true, "not": true, "nesting": 8 }
 }
 ```
+
+`boolean` says what the query language can combine: `and`, `or`, `not` and how deep brackets
+may go (`nesting`: 1 = one flat group such as `a AND b AND c`). Left out, it follows
+`query.mode` (native: everything; terms and harvest: nothing). Key plans each search from it
+(`crates/key-connectors/src/plan.rs`): what the service can do is sent; what it cannot is relaxed
+to a superset (a phrase becomes its words, an unsupported field a broader one, a NOT or a
+year/type term is left out), the search is split into one query per AND-combination when there
+is no OR or no nesting, or into one query per term of its narrowest part when there is no AND;
+then Key checks the full search on every record returned and keeps each record once.
+`exportFields` matter here: a part of the search on a field the service does not return
+(no abstracts, say) cannot be checked, and the plan is marked approximate with the reason.
 
 Neutral fields: `all`, `title`, `title_abstract`, `abstract`, `keywords`, `subject` (controlled
 vocabulary such as MeSH or JEL), `fulltext`, `author`, `journal`, `affiliation`, `identifier`.
 
 ## The neutral query (what the builder sends)
+
+Current builders send a Boolean tree in `expr` (see `connectors/COMMANDS.md`, "Boolean search"):
+nested AND/OR groups of terms, any item negated. The older form below is still read.
 
 ```jsonc
 {
