@@ -21,5 +21,11 @@ Notable components:
 - opendataloader-pdf (crates/opendataloader-pdf-rs, a Rust port of version 2.0 or later),
   Apache License 2.0.
 - PP-DocLayoutV3 and Snowflake Arctic Embed XS models, Apache License 2.0.
+- Systematic reviews' conduct checks and AI audit (crates/key-review conduct.rs,
+  ai_audit.rs) state in Key's own words what these standards expect and link to them;
+  no standard's text is reproduced: Cochrane MECIR conduct standards (© Cochrane), the
+  Campbell Collaboration's standards (Aloe et al. 2024, CC BY 4.0), the MAER-Net 2026
+  reporting guidelines (Cook et al., J Econ Surv, CC BY 4.0; audit sample sizes) and
+  TARCiS (Hirt et al. 2024, CC BY 4.0).
 
 Portions of this software use FreeType Project code (https://www.freetype.org).

@@ -17,6 +17,8 @@ import { plural, type ExtractionView, type Field, type Form, type SourcePos, typ
 import { Btn, MenuButton, errorText, useLoad } from "./review-ui";
 import type { ReaderSelectionAction, ReviewReaderHandle } from "./review-reader";
 import type { StageProps } from "./ReviewPage";
+// std-B
+import { ExtractionTools } from "./review-xpilot";
 
 const ReviewReader = lazy(() => import("./review-reader").then((m) => ({ default: m.ReviewReader })));
 
@@ -90,6 +92,8 @@ export function Extraction(props: StageProps) {
           {study?.conflicts ? ` · ${study.conflicts} differ` : ""}
         </span>
         <span className="kx-rv-spacer" />
+        {/* std-B: extraction pilot and contacts with authors */}
+        <ExtractionTools {...props} studyId={current} onPick={setCurrent} />
         <MenuButton
           label="Export extraction"
           icon="download"

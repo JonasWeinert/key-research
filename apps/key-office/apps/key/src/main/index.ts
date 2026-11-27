@@ -510,6 +510,8 @@ const REVIEW_READS = new Set([
   "review_form_templates", "review_criteria_suggestions", "review_protocol_impact", "review_duplicates", "review_fulltexts", "review_fulltext_match",
   "review_fulltext_csv_read", "review_fulltext_info", "review_fulltext_bytes", "review_parse_selection", "review_form_preview", "review_agreement",
   "review_ai_request", "review_ai_extract_request", "review_lookup",
+  // std-B: citation searching, AI use, conduct checks, extraction pilots, contacts (reads).
+  "review_chase_view", "review_chase_status", "review_chase_start", "review_chase_cancel", "review_ai_use", "review_conduct", "review_xpilots", "review_contacts",
 ]);
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {
@@ -2772,12 +2774,17 @@ else
           if (command === "review_ai_suggest") {
             const request = await registry.invoke<any>("review_ai_request", args, targetWorkspace);
             const answer = await ai.ask(request);
-            return registry.invoke("review_ai_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
+            // std-B: the call as made, for the AI-use log (provider, model asked for and reported).
+            const status = ai.status();
+            const call = { provider: status.provider ?? "", providerName: status.providerName ?? "", model: status.model ?? "", modelReported: answer.model ?? "", tokensIn: answer.tokensIn ?? 0, tokensOut: answer.tokensOut ?? 0 };
+            return registry.invoke("review_ai_answer", { ...args, content: answer.content, model: status.model ?? "", call }, targetWorkspace);
           }
           if (command === "review_ai_extract") {
             const { request } = await registry.invoke<any>("review_ai_extract_request", args, targetWorkspace);
             const answer = await ai.ask(request);
-            return registry.invoke("review_ai_extract_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
+            const status = ai.status();
+            const call = { provider: status.provider ?? "", providerName: status.providerName ?? "", model: status.model ?? "", modelReported: answer.model ?? "", tokensIn: answer.tokensIn ?? 0, tokensOut: answer.tokensOut ?? 0 };
+            return registry.invoke("review_ai_extract_answer", { ...args, content: answer.content, model: status.model ?? "", call }, targetWorkspace);
           }
           if (ai.handles(command)) return ai.handle(command, args, targetWorkspace);
           if (command === "library_download_pdf") {

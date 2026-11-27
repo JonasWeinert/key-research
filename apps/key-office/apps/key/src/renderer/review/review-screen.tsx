@@ -437,6 +437,13 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
           ))}
         </div>
       )}
+      {/* std-B: a record in a blind AI audit */}
+      {(view as { aiBlind?: boolean }).aiBlind && (
+        <div className="kx-rv-ai" data-blind>
+          <Icon name="lock" size={11} />
+          <span>In the blind AI audit: decide without the AI’s suggestion. It shows once you have decided.</span>
+        </div>
+      )}
       {view.ai && (
         <div className="kx-rv-ai" data-value={view.ai.value}>
           <Icon name="sparkle" size={11} />

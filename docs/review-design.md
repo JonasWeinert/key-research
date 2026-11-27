@@ -68,6 +68,11 @@ Event kinds (payload fields in `docs/review-sync.md`):
 | `extract.final` | the consensus value after dual extraction |
 | `ai.suggest` | an AI suggestion (never a decision) |
 | `analysis.set` | a saved meta-analysis setup |
+| `chase.round` | a citation-searching round: direction, seeds, service, date, found / already in the review / new, its batch |
+| `ai.prompt`, `ai.audit` | an AI prompt template's text once per version (id, version, SHA-256); a blind audit sample |
+| `conduct.dismiss`, `conduct.retractions` | a conduct check dismissed with its reason; a retraction check of the included studies |
+| `xpilot.set`, `form.piloted` | an extraction pilot round; forms recorded as piloted (date, studies, agreement, form hashes) |
+| `contact.log` | a contact with a study's authors: date, who, how, what was asked, reply, data received |
 
 **Derived state** (`derive.rs`) is a fold over events: current decision per (record, stage,
 reviewer), each record's status per stage (undecided, needs another reviewer, conflict, included,
@@ -206,6 +211,39 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   variance); fixed and random effects (DerSimonian–Laird, REML; Hartung–Knapp); heterogeneity (Q,
   I², τ², prediction interval); subgroups; leave-one-out; Egger's test; forest and funnel plots
   (`src/renderer/charts/`), exportable.
+
+## Standards in conduct (citation searching, AI use, conduct checks, pilots)
+
+- **Citation searching** (Sources › Citation searching; `chasing.rs`): from the included studies
+  not chased yet (or any chosen), backward (reference lists) and forward (citing works) through
+  OpenAlex as a background job with progress and Stop; requests are batched (50 ids or DOIs
+  each, citing works by cursor) and cached for a day. A seed without a DOI is found by title,
+  year and first author with the review's duplicate matcher; one OpenAlex does not know uses the
+  reference list Key read from its full text. The counts come first (found, already in the
+  review, new), then the new records go in as one batch under PRISMA's other methods, "Citation
+  searching", with the strategy line PRISMA-S reads, most linked to the seeds first when chosen
+  (co-citation and bibliographic coupling). A round that finds nothing new is the hint to stop.
+- **AI use** (Overview › Conduct › AI use; `ai_audit.rs`): every AI suggestion's event carries the
+  provider, the model asked for and as reported, the prompt template id, version and SHA-256 (the
+  text kept once per version), the request's hash, settings and the fields read. What the person
+  did (accepted, changed, rejected) is read from their own later events. Agreement with the final
+  decisions (2×2 table, sensitivity, specificity, false-negative rate, Cohen's κ; per field for
+  extraction), a blind audit sample (MAER-Net 2026: the larger of 10 % or 100 records, of 10 % or
+  20 studies for coding; the AI's suggestion is hidden from the auditor until they decide), and a
+  statement for the methods with the prompts as an appendix (export "AI use statement").
+- **Conduct checks** (`conduct.rs`): soft warnings in Key's words with a link to MECIR, Campbell,
+  MAER-Net or TARCiS, per the review type in Setup (systematic, scoping, rapid, living): single
+  screening or extraction, no calibration round, fewer than two databases, no register, grey
+  literature or citation searching, searches over 12 months old once data are extracted,
+  retractions not checked (one click checks Crossref and OpenAlex and records it), full-text
+  exclusions without reasons, no or single risk-of-bias assessment, outcomes the protocol's plan
+  does not name, open conflicts, records awaiting classification, AI not audited. Dismissed with a
+  reason, kept in the log. `conduct::reporting_facts(state)` is what the PRISMA checklist reads.
+- **Extraction pilots and contacts** (Extraction toolbar; `xpilot.rs`): a seeded sample of included
+  studies every chosen extractor fills in; agreement per field (percent; Cohen's or Fleiss' κ for
+  choices; ICC(2,1) and mean absolute difference for numbers); "Forms piloted" records the date,
+  studies and agreement, and later changes to a piloted form show with their protocol versions. The
+  contact log feeds the missing-data reporting and exports (CSV).
 
 ## PRISMA counts
 
