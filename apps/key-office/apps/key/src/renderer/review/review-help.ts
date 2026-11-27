@@ -31,7 +31,7 @@ export const REVIEW_HELP = {
       "The full text opens inside the review. Select a passage to mark a criterion as not met, with its place. Files you attach stay with the review unless you add them to the library.",
     ],
   },
-  "review.evidence": { kind: "hint", text: "Select a passage in the full text and choose Does not meet or Meets: it is kept with its page as evidence." },
+  "review.evidence": { kind: "hint", text: "Select a passage in the full text: the menu lists the criteria. A number marks it not met, Shift and the number met; it is kept with its place as evidence and marked in the text. Enter then excludes and goes to the next record; ⌘Z takes the mark back." },
   "review.question": {
     kind: "explain",
     title: "The review question",
@@ -141,7 +141,7 @@ export const REVIEW_HELP = {
       "With two extractors, each fills the forms on their own; values that differ show side by side until one is agreed.",
     ],
   },
-  "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text and choose Use for a field, or press ⌥S with the field focused." },
+  "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text: the menu offers the fields it fits, the focused one first (Enter). The passage is kept as the value's source and focus moves to the next empty field. A field's pick button (or ⌥P) takes the next selection with no menu; ⌘Z takes a fill back." },
   "review.outcomes.table": { kind: "hint", text: "Not a RevMan import file: one row per study and outcome, laid out for typing into RevMan or another tool." },
   "review.forms": { kind: "hint", text: "Risk of bias has its own stage with dual assessment, plots and use in analyses." },
   "review.meta": {

@@ -104,6 +104,16 @@ export function characterIndexAtPoint(
   return closest && closest.distance <= maximumDistance ? closest.index : null;
 }
 
+/** A host's mark in the page (a review's evidence or a value's source; SelectionMenu.tsx):
+ * boxes in fractions of the page, drawn apart from the user's highlights. */
+export interface HostMark {
+  id: string;
+  page: number;
+  bounds: NativeBounds[];
+  tone: string;
+  label: string;
+}
+
 interface SelectionDrag {
   pointerId: number;
   anchor: TextPosition;
@@ -119,6 +129,9 @@ export class PdfJsTextOverlayManager {
   private readonly hosts: PageHost[];
   private readonly pending = new Map<number, Promise<NativeTextPage>>();
   private annotations: ReaderAnnotation[] = [];
+  private hostMarks: HostMark[] = [];
+  private hostMarkListener?: (mark: HostMark, rect: DOMRect) => void;
+  private flashMarkId: string | null = null;
   private searchMatches: ReaderSearchMatch[] = [];
   private activeSearchId: string | null = null;
   private resultTarget: ReaderSearchMatch | null = null;
@@ -167,6 +180,35 @@ export class PdfJsTextOverlayManager {
 
   onSelection(listener: (snapshot: SelectionSnapshot | null) => void) {
     this.selectionListener = listener;
+  }
+
+  /** The host's marks; a click on one goes to `onHostMarkActivation`. */
+  setHostMarks(marks: HostMark[]) {
+    this.hostMarks = marks;
+    this.renderAll();
+    for (const page of new Set(marks.map(m => m.page))) if (!this.textPages.has(page)) this.renderPage(page);
+  }
+
+  onHostMarkActivation(listener: (mark: HostMark, rect: DOMRect) => void) {
+    this.hostMarkListener = listener;
+  }
+
+  /** Lights up a host mark briefly (its source chip was clicked). */
+  flashHostMark(id: string, duration = 1800) {
+    this.flashMarkId = id;
+    this.renderAll();
+    for (const m of this.hostMarks.filter(m => m.id === id)) this.renderPage(m.page);
+    window.setTimeout(() => {
+      if (this.flashMarkId !== id) return;
+      this.flashMarkId = null;
+      this.renderAll();
+    }, duration);
+  }
+
+  hostMarkRect(id: string): DOMRect | null {
+    const mark = this.hostMarks.find(m => m.id === id);
+    const host = mark && this.hosts[mark.page]?.element;
+    return mark && host ? viewportRectForBounds(host, mark.bounds) ?? null : null;
   }
 
   onAnnotationActivation(
@@ -474,6 +516,20 @@ export class PdfJsTextOverlayManager {
       this.paintBounds(layer, bounds, className, annotation.id);
       if (bounds.length) (markers ?? layer).append(this.marginMarker(page, annotation, bounds));
     }
+    for (const mark of this.hostMarks) {
+      if (mark.page !== page || !mark.bounds.length) continue;
+      this.paintBounds(layer, mark.bounds, `pdfjs-host-mark tone-${mark.tone}${mark.id === this.flashMarkId ? ' flash' : ''}`, mark.id);
+      // Its label at the start, in the margin's colour: what the passage is for.
+      const first = mark.bounds.reduce((a, b) => (b.top < a.top - 0.002 || (Math.abs(b.top - a.top) <= 0.002 && b.left < a.left) ? b : a));
+      const tag = document.createElement('div');
+      tag.className = `pdfjs-host-mark-tag tone-${mark.tone}`;
+      tag.dataset.id = mark.id;
+      tag.textContent = mark.label.split(":")[0];
+      tag.style.left = `${first.left * 100}%`;
+      tag.style.top = `${first.top * 100}%`;
+      tag.title = mark.label;
+      (markers ?? layer).append(tag);
+    }
     if (!text) return;
     for (const match of this.searchMatches.filter(match => match.page === page)) {
       this.paintBounds(
@@ -644,6 +700,16 @@ export class PdfJsTextOverlayManager {
       const rect = host.getBoundingClientRect();
       const x = (clientX - rect.left) / rect.width;
       const y = (clientY - rect.top) / rect.height;
+      const hit = (b: NativeBounds) => x >= b.left && x <= b.right && y >= b.top - 0.004 && y <= b.bottom + 0.004;
+      const mark = [...this.hostMarks].reverse().find(m => m.page === page && m.bounds.some(hit));
+      if (mark && this.hostMarkListener) {
+        const rect = viewportRectForBounds(host, mark.bounds);
+        if (rect) {
+          this.annotationListener?.(null);
+          this.hostMarkListener(mark, rect);
+          return;
+        }
+      }
       const text = this.textPages.get(page);
       if (!text) return;
       const annotation = [...this.annotations]

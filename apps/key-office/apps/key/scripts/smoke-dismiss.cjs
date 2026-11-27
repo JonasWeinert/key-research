@@ -202,7 +202,7 @@ const assert = require("node:assert/strict");
     report.pdfPressClosesShell = true;
 
     // The reader's selection toolbar: a press in the shell closes it; so does scrolling the page.
-    const toolbar = pdf.locator(".pdfjs-selection-toolbar");
+    const toolbar = pdf.locator(".ksm");
     const select = async () => {
       // Two runs of text well inside the view, a few lines apart.
       const [a, b] = await pdf.evaluate(() => {

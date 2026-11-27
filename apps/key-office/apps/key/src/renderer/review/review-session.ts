@@ -89,3 +89,17 @@ export function onChoice(rule: ReasonRule, value: Choice, criteria: number, chos
 /** While choosing: does picking this criterion finish the decision (the rule wants just the
  * first one and auto-advance is on)? */
 export const finishesOnPick = (rule: ReasonRule, autoAdvance: boolean) => rule === "first" && autoAdvance;
+
+/** The keys of a stage's criteria, in list order: 1–9, then the letters the screening view does
+ * not already use (decision, label, note and navigation keys are `taken`); none once they run
+ * out (those are reached by clicking, arrows or the filter). Stable for a criteria version. */
+export function criterionKeys(count: number, taken: string[]): (string | undefined)[] {
+  const used = new Set(taken.map((k) => k.toLowerCase()).filter(Boolean));
+  const letters = "abcdefghijklmnopqrstuvwxyz".split("").filter((l) => !used.has(l));
+  return Array.from({ length: count }, (_, i) => (i < 9 ? String(i + 1) : letters[i - 9]));
+}
+
+/** What the screening view already binds (criteria keys must not clash with these). */
+export function boundKeys(shortcuts: { include?: string; exclude?: string; maybe?: string }, labelKeys: Record<string, string>): string[] {
+  return [shortcuts.include || "i", shortcuts.exclude || "e", shortcuts.maybe || "m", ...Object.values(labelKeys), "n", "j", "k", "u"].filter(Boolean).map((k) => k.toLowerCase());
+}

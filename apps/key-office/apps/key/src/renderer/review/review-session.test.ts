@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { afterDecision, counter, current, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step, toggle } from "./review-session";
+import { afterDecision, boundKeys, counter, criterionKeys, current, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step, toggle } from "./review-session";
 
 describe("screening session counter", () => {
   it("counts through the session's list, not what is left", () => {
@@ -80,5 +80,23 @@ describe("decision steps", () => {
     expect(finishesOnPick("first", true)).toBe(true);
     expect(finishesOnPick("first", false)).toBe(false);
     expect(finishesOnPick("all", true)).toBe(false);
+  });
+});
+
+describe("criterion keys", () => {
+  it("numbers the first nine, then free letters, then none", () => {
+    const taken = boundKeys({ include: "i", exclude: "e", maybe: "m" }, { Background: "b", "Check later": "l" });
+    expect(taken).toEqual(["i", "e", "m", "b", "l", "n", "j", "k", "u"]);
+    const keys = criterionKeys(14, taken);
+    expect(keys.slice(0, 9)).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+    expect(keys.slice(9)).toEqual(["a", "c", "d", "f", "g"]);
+    expect(keys.some((k) => k && taken.includes(k))).toBe(false);
+    // Letters run out: the rest have no key.
+    const many = criterionKeys(40, taken);
+    expect(many.filter(Boolean)).toHaveLength(9 + 17);
+    expect(many[39]).toBeUndefined();
+    // Custom decision keys free their defaults.
+    expect(criterionKeys(10, boundKeys({ include: "y", exclude: "x" }, {}))[9]).toBe("a");
+    expect(boundKeys({ include: "y", exclude: "x" }, {})).toContain("y");
   });
 });

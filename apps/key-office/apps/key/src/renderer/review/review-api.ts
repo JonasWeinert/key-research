@@ -512,6 +512,24 @@ export interface ExtractionView {
   extractors: number;
   formState: Record<string, { visible: string[]; issues: Issue[]; completed: boolean; shownWhen: Record<string, string> }>;
 }
+/** A place a selected passage can go (key-review selection.rs `Target`). */
+export interface SelectionTarget {
+  id: string;
+  formId: string;
+  fieldId: string;
+  form: string;
+  section: string;
+  label: string;
+  kind: string;
+  fills: { fieldId: string; label: string; value: unknown; display: string }[];
+  preview: string;
+  focused: boolean;
+  row: number | null;
+  newRow: boolean;
+  /** Nothing in the passage fits the field: choosing it adds the passage as its source only. */
+  sourceOnly: boolean;
+  score: number;
+}
 export interface StudyRow {
   id: string;
   title: string;
@@ -614,6 +632,8 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
       call("review_extract", { recordId, formId, fieldId, value, ...extra, actor }),
     completeForm: (recordId: string, formId: string, actor: string) => call("review_complete_form", { recordId, formId, actor }),
     formPreview: (form: Form, answers: Record<string, unknown>) => call<{ visible: string[]; shownWhen: Record<string, string>; error: string | null }>("review_form_preview", { form, answers }),
+    // Where a selected passage can go in the study's forms (key-review selection.rs).
+    selectionTargets: (text: string, forms: Form[], values: Record<string, unknown>, focus?: { formId: string; fieldId: string }) => call<{ parsed: Record<string, unknown>; targets: SelectionTarget[] }>("review_selection_targets", { text, forms, values, focus: focus ?? null }),
     parseSelection: (text: string) => call<{ numbers: number[]; estimate?: number; lower?: number; upper?: number; mean?: number; sd?: number; n?: number; events?: number; total?: number; percent?: number; min?: number; max?: number }>("review_parse_selection", { text }),
     removeRecords: (recordIds: string[], removed: boolean, reason: string, actor: string) => call("review_records_remove", { recordIds, removed, reason, actor }),
     editRecord: (recordId: string, fields: Partial<RecordMeta>, actor: string) => call("review_record_edit", { recordId, fields, actor }),

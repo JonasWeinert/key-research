@@ -39,7 +39,7 @@ const INTERACTIVE: &[&str] = &[
     // Systematic reviews (review_commands.rs): screening keystrokes and the reads behind them.
     "review_get", "review_stamp", "review_record", "review_queue", "review_records", "review_decide", "review_undo", "review_retract", "review_resolve", "review_reopen",
     "review_note", "review_labels", "review_flags_clear", "review_fulltext", "review_extract", "review_extraction", "review_pair_resolve", "review_create",
-    "review_rename", "review_team_save", "review_protocol_save", "review_protocol_impact", "review_complete_form", "review_parse_selection",
+    "review_rename", "review_team_save", "review_protocol_save", "review_protocol_impact", "review_complete_form", "review_parse_selection", "review_selection_targets",
     "review_records_remove", "review_record_edit", "review_study_link", "review_duplicates", "review_fulltexts", "review_fulltext_bytes", "review_fulltext_info",
     "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match",
     // std-B: citation searching (the search itself runs on a background thread), AI use and audit,

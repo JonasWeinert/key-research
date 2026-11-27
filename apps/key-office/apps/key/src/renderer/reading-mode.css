@@ -261,7 +261,6 @@
 }
 
 /* The selection's toolbar and the popovers share the reader's floating material. */
-.kx-reading-selection,
 .kx-reading-popover {
   position: fixed;
   z-index: 1000;
@@ -273,12 +272,6 @@
     0 10px 30px -8px color-mix(in srgb, var(--key-ui-text) 30%, transparent);
   color: var(--key-ui-text);
   font: 13px var(--kx-reading-sans);
-}
-.kx-reading-selection {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 6px;
 }
 .kx-reading-swatch {
   width: 20px;
@@ -758,4 +751,25 @@ button.kx-reading-comment:hover {
   font-family: var(--kx-reading-sans);
   font-size: 0.8em;
   white-space: pre-line;
+}
+
+/* A host's mark brought into view (a review value's source chip). */
+.kx-reading-article:has(.kx-reading-mark-flash) {
+  position: relative;
+}
+.kx-reading-mark-flash {
+  position: absolute;
+  border-radius: 4px;
+  outline: 2px solid var(--kx-accent);
+  background: var(--kx-accent-soft);
+  pointer-events: none;
+  animation: kx-reading-mark-flash 1.8s ease-out forwards;
+}
+@keyframes kx-reading-mark-flash {
+  70% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }

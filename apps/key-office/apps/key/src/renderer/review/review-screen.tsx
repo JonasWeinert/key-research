@@ -17,8 +17,9 @@ import { highlightPage, type Highlight } from "../item-actions";
 import { GlobalDialog } from "../GlobalDrawer";
 import { CHOICE_LABEL, ELEMENT_LABEL, STAGE_LABEL, asks, plural, reasonText, type Choice, type Criterion, type DecisionInfo, type Evidence, type ListRow, type ReasonRule, type RecordView, type Stage } from "./review-api";
 import { Btn, Highlighted, MenuButton, StatusPill, errorText, formatDate, type MenuItem } from "./review-ui";
-import { afterDecision, counter, current as sessionCurrent, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step as sessionStep, toggle, type Session } from "./review-session";
-import type { ReaderSelectionAction, ReviewReaderHandle } from "./review-reader";
+import { afterDecision, boundKeys, counter, criterionKeys, current as sessionCurrent, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step as sessionStep, toggle, type Session } from "./review-session";
+import type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
+import { MarksLegend, evidenceKey, evidenceLabel, evidenceMarks, flashRow, useMarksShown } from "./review-marks";
 import { FullTexts, attachFiles } from "./review-fulltexts";
 import type { StageProps } from "./ReviewPage";
 
@@ -116,7 +117,7 @@ function Progress({ summary, stage }: StageProps & { stage: Stage }) {
 
 // ── One record at a time ───────────────────────────────────────────────────────────
 
-type PassageKind = "notMet" | "met";
+type PassageKind = "notMet" | "met" | "include" | "note";
 interface Passage {
   text: string;
   page: number;
@@ -140,7 +141,9 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
   const [recorded, setRecorded] = useState(false);
   const [note, setNote] = useState("");
   const [evidence, setEvidence] = useState<Evidence[]>([]);
-  const [passage, setPassage] = useState<{ passage: Passage; kind: PassageKind }>();
+  /** Marks made in the full text since the record opened, newest last: ⌘Z takes one back. */
+  const markUndo = useRef<Array<{ added: Evidence; removed?: Evidence; reasons: string[]; other: string }>>([]);
+  const [marksShown, setMarksShown] = useMarksShown();
   /** A passage marked as not meeting a criterion: offer to exclude and go on. */
   const [offerExclude, setOfferExclude] = useState(false);
   const [cheats, setCheats] = useState(false);
@@ -153,6 +156,8 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
   }, []);
   // The stage's criteria: what is shown beside the record and what a decision names.
   const reasonsFor = useMemo(() => protocol.criteria.filter((c) => !c.stages.length || c.stages.includes(stage)), [protocol.criteria, stage]);
+  // Each criterion's key: 1–9, then letters nothing else here uses (review-session.ts).
+  const critKeys = useMemo(() => criterionKeys(reasonsFor.length, boundKeys(protocol.shortcuts, protocol.labelKeys ?? {})), [reasonsFor.length, protocol.shortcuts, protocol.labelKeys]);
   const current = session ? sessionCurrent(session) : undefined;
 
   useEffect(() => {
@@ -179,6 +184,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
           setOther(v.mine?.other ?? "");
           setNote(v.mine?.note ?? "");
           setEvidence(v.mine?.evidence ?? []);
+          markUndo.current = [];
           setPicking(undefined);
           setOtherOpen(false);
           setOfferExclude(false);
@@ -293,6 +299,19 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     [picking, rule, reasons, reasonsFor.length, decide],
   );
 
+  const undoMark = useCallback(() => {
+    const last = markUndo.current.pop();
+    if (!last) return;
+    setEvidence((ev) => {
+      const i = ev.map(evidenceKey).lastIndexOf(evidenceKey(last.added));
+      const kept = i < 0 ? ev : [...ev.slice(0, i), ...ev.slice(i + 1)];
+      return last.removed ? [...kept, last.removed] : kept;
+    });
+    setReasons(last.reasons);
+    setOther(last.other);
+    if (!last.reasons.length && !last.other) setOfferExclude(false);
+    notify("Took back the last mark", "ok");
+  }, [notify]);
   // Keys: only while this tab shows and nothing is being typed into.
   const labelKeys = protocol.labelKeys ?? {};
   useEffect(() => {
@@ -300,21 +319,22 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     const keys = { include: protocol.shortcuts.include || "i", exclude: protocol.shortcuts.exclude || "e", maybe: protocol.shortcuts.maybe || "m" };
     const byKey = new Map(Object.entries(labelKeys).filter(([, k]) => k).map(([label, k]) => [k.toLowerCase(), label]));
     const onKey = (e: KeyboardEvent) => {
-      if (document.querySelector(".key-global-drawer.key-modal") || passage) return;
+      if (document.querySelector(".key-global-drawer.key-modal")) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !e.shiftKey && !isTyping(e.target)) {
         e.preventDefault();
-        void undo();
+        // The last mark in the full text first, then the last decision.
+        if (markUndo.current.length) undoMark();
+        else void undo();
         return;
       }
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      if (/^[0-9]$/.test(k)) {
-        if (k === "0") setOtherOpen(true);
-        else {
-          const c = reasonsFor[Number(k) - 1];
-          if (c) pick(c.id);
-        }
-      } else if (e.key === "Enter") {
+      if (k === "0") setOtherOpen(true);
+      else if (k.length === 1 && critKeys.includes(k)) {
+        const c = reasonsFor[critKeys.indexOf(k)];
+        if (c) pick(c.id);
+      } else if (/^[0-9]$/.test(k)) return;
+      else if (e.key === "Enter") {
         if (picking) void decide(picking);
         else if (recorded) void advance();
         else return;
@@ -341,37 +361,105 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, decide, step, undo, reasons, other, picking, recorded, offerExclude, passage, reasonsFor, protocol.shortcuts, labelKeys, pick, toggleLabel, advance]);
+  }, [active, decide, step, undo, undoMark, reasons, other, picking, recorded, offerExclude, reasonsFor, protocol.shortcuts, labelKeys, pick, toggleLabel, advance, critKeys]);
 
-  // The reader's selection actions (the review's own, through the reader's extension point).
-  const readerActions = useMemo<ReaderSelectionAction[]>(
-    () => [
-      { id: "review-not-met", label: "Does not meet…", title: "This passage shows a criterion is not met", run: (p) => setPassage({ passage: p, kind: "notMet" }) },
-      { id: "review-met", label: "Meets…", title: "This passage shows a criterion is met", run: (p) => setPassage({ passage: p, kind: "met" }) },
-      { id: "review-include", label: "Evidence for include", run: (p) => setEvidence((ev) => [...ev, { kind: "include", quote: p.text, text: p.text, page: p.page, rects: p.rects }]) },
-      {
-        id: "review-note",
-        label: "Note",
-        title: "Quote this passage in the decision's note",
-        run: (p) => {
-          setNote((n) => `${n ? `${n}\n` : ""}“${p.text}”${p.page >= 0 ? ` (p. ${p.page + 1})` : ""}`);
-          setTimeout(() => noteRef.current?.focus(), 0);
-        },
-      },
-    ],
-    [],
-  );
-  const markPassage = (criterion: Criterion) => {
-    if (!passage) return;
-    const { passage: p, kind } = passage;
-    setEvidence((ev) => [...ev, { kind, criterion: criterion.id, quote: p.text, text: p.text, page: p.page, rects: p.rects }]);
-    if (kind === "notMet") {
-      const asked = asks(rule, "exclude");
-      setReasons((r) => (r.includes(criterion.id) ? r : asked === "first" ? [criterion.id] : [...r, criterion.id]));
-      setOther("");
-      setOfferExclude(true);
+  // Full-text screening in the reader: a selected passage is marked against a criterion right
+  // from the selection menu (numbers: not met; Shift: met), stored as evidence on the pending
+  // decision with its place, drawn in the page, and then excluding is one key away.
+  const decideRef = useRef(decide);
+  decideRef.current = decide;
+  const rulesRef = useRef({ rule, reasons, other, reasonsFor });
+  rulesRef.current = { rule, reasons, other, reasonsFor };
+  /** Marks a passage; a "not met" names the criterion as the decision's reason (by the rule). */
+  const markPassage = useCallback((kind: PassageKind, p: Passage, criterion?: Criterion, text = "", replacing?: Evidence): ReaderFollowUp | void => {
+    const { rule: r, reasons: chosen, other: otherNow, reasonsFor: list } = rulesRef.current;
+    const added: Evidence = { kind, ...(criterion ? { criterion: criterion.id } : {}), quote: p.text, text: p.text, page: p.page, rects: p.rects, ...(text ? { note: text } : {}) };
+    markUndo.current.push({ added, removed: replacing, reasons: chosen, other: otherNow });
+    setEvidence((ev) => [...ev.filter((e) => !replacing || evidenceKey(e) !== evidenceKey(replacing)), added]);
+    if (kind !== "notMet") return;
+    const asked = asks(r, "exclude");
+    let nextReasons = chosen;
+    let nextOther = otherNow;
+    if (criterion) {
+      nextReasons = chosen.includes(criterion.id) ? chosen : asked === "first" ? [criterion.id] : [...chosen, criterion.id];
+      if (asked === "first") nextOther = "";
+    } else if (text) {
+      nextOther = text;
+      if (asked === "first") nextReasons = [];
     }
-    setPassage(undefined);
+    setReasons(nextReasons);
+    setOther(nextOther);
+    setOfferExclude(true);
+    const ready = !missing(asked === "none" ? "all" : asked, list.length, nextReasons, nextOther);
+    flashRow(criterion ? `[data-criterion="${criterion.id}"]` : ".kx-rv-other");
+    return {
+      message: criterion ? `Not met: ${criterion.label}` : `Not met: ${text}`,
+      tone: "notMet",
+      actions: [
+        ...(ready ? [{ id: "exclude-next", label: "Exclude and go to next", primary: true, run: () => void decideRef.current("exclude", nextReasons, nextOther) }] : []),
+        { id: "keep-reading", label: "Keep reading", key: "escape", run: () => {} },
+      ],
+    };
+  }, []);
+  const removeMark = useCallback(
+    (e: Evidence) => {
+      markUndo.current.push({ added: { ...e, quote: "", text: "" }, removed: e, reasons, other });
+      setEvidence((ev) => ev.filter((x) => evidenceKey(x) !== evidenceKey(e)));
+      // A reason that only this passage gave goes with it.
+      if (e.kind === "notMet" && e.criterion && !evidence.some((x) => x !== e && x.kind === "notMet" && x.criterion === e.criterion)) setReasons((r) => r.filter((id) => id !== e.criterion));
+    },
+    [reasons, other, evidence],
+  );
+  /** The rows of the menu: each criterion with its two targets, then the other kinds. */
+  const criteriaRows = useCallback(
+    (onPick: (kind: PassageKind, c: Criterion | undefined, p: Passage, text?: string) => ReaderFollowUp | void, current?: Evidence): ReaderSelectionAction[] => {
+      const many = reasonsFor.length > 9;
+      const rows: ReaderSelectionAction[] = reasonsFor.map((c, i) => {
+        const n = critKeys[i];
+        return {
+          id: `criterion-${c.id}`,
+          label: c.label,
+          title: c.guidance || c.label,
+          detail: current?.criterion === c.id ? (current.kind === "met" ? "Marked met now" : "Marked not met now") : undefined,
+          group: many ? (ELEMENT_LABEL[c.element] ?? c.element) : undefined,
+          keywords: `${ELEMENT_LABEL[c.element] ?? ""} ${c.reason}`,
+          tone: "notMet",
+          runLabel: "Not met",
+          key: n,
+          run: (p) => onPick("notMet", c, p),
+          quick: [{ id: `criterion-${c.id}-met`, label: "Met", key: n ? `shift+${n}` : undefined, tone: "met", run: (p) => onPick("met", c, p) }],
+        };
+      });
+      rows.push(
+        { id: "review-include", label: "Evidence for include", icon: "check", tone: "evidence", secondary: true, run: (p) => onPick("include", undefined, p) },
+        { id: "review-note", label: "Note", icon: "note", secondary: true, input: { placeholder: "A note on this passage" }, run: (p, text) => onPick("note", undefined, p, text) },
+        { id: "review-other", label: "Other reason…", icon: "close", tone: "notMet", secondary: true, key: "0", input: { placeholder: "Not met: the reason in your words" }, run: (p, text) => onPick("notMet", undefined, p, text) },
+      );
+      return rows;
+    },
+    [reasonsFor, critKeys],
+  );
+  const readerActions = useMemo(() => criteriaRows((kind, c, p, text) => markPassage(kind, p, c, text)), [criteriaRows, markPassage]);
+  const screenMode = useMemo<ReaderSelectionMode>(
+    () => ({ id: "screen", label: "Mark this passage", filter: reasonsFor.length > 4 ? "Filter criteria" : undefined, hint: reasonsFor.length ? `${reasonsFor.length > 9 ? "1–9, A…" : `1–${reasonsFor.length}`} not met · ⇧ and the key: met` : undefined, empty: "No criteria for this stage yet (Setup › Criteria)" }),
+    [reasonsFor.length],
+  );
+  const marks = useMemo<ReaderMark[]>(() => (marksShown ? evidenceMarks(evidence, reasonsFor) : []), [marksShown, evidence, reasonsFor]);
+  /** A mark clicked in the page: change its verdict or criterion, or remove it. */
+  const markActions = useCallback(
+    (mark: ReaderMark): ReaderMarkMenu | null => {
+      const e = evidence.find((x) => evidenceKey(x) === mark.id);
+      if (!e) return null;
+      if (e.criterion) flashRow(`[data-criterion="${e.criterion}"]`);
+      const passageOf = { text: e.quote || e.text || "", page: e.page ?? -1, rects: e.rects ?? [] };
+      const rows = criteriaRows((kind, c, _p, text) => markPassage(kind, passageOf, c, text, e), e).filter((r) => r.id !== "review-note" || e.kind !== "note");
+      rows.push({ id: "review-remove-mark", label: "Remove this mark", icon: "trash", tone: "danger", secondary: true, key: "backspace", run: () => removeMark(e) });
+      return { title: evidenceLabel(e, reasonsFor), mode: { id: "screen-mark", label: evidenceLabel(e, reasonsFor), hint: "Change it, or remove it" }, actions: rows };
+    },
+    [evidence, criteriaRows, markPassage, removeMark, reasonsFor],
+  );
+  const showEvidence = (e: Evidence) => {
+    if (!reader.current?.showMark(evidenceKey(e))) reader.current?.show(e.page ?? 0, e.quote);
   };
 
   if (!session) return <div className="kx-rv-loading" aria-busy="true" />;
@@ -479,6 +567,9 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         other={other}
         otherOpen={otherOpen}
         onToggle={pick}
+        keys={critKeys}
+        evidence={stage === "ft" ? evidence : undefined}
+        onShowEvidence={showEvidence}
         onOther={() => setOtherOpen(true)}
         onOtherSave={saveOther}
         onOtherCancel={() => setOtherOpen(false)}
@@ -486,7 +577,8 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         onConfirm={() => picking && void decide(picking)}
         onBack={() => setPicking(undefined)}
       />
-      {stage === "ft" && <EvidenceList evidence={evidence} criteria={reasonsFor} onShow={(e) => reader.current?.show(e.page ?? 0, e.quote)} onRemove={(i) => setEvidence(evidence.filter((_, j) => j !== i))} />}
+      {stage === "ft" && <EvidenceList evidence={evidence} criteria={reasonsFor} onShow={showEvidence} onRemove={(i) => removeMark(evidence[i])} />}
+      {stage === "ft" && view.hasFullText && <MarksLegend kinds={["notMet", "met", "evidence"]} shown={marksShown} onShown={setMarksShown} count={evidence.length} />}
       <label className="kx-rv-note">
         <span>
           Note <kbd>N</kbd>
@@ -520,7 +612,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         <section className="kx-rv-reader-main" aria-label="Full text">
           <CompactHeader {...props} view={view} reload={() => load(current)} />
           {view.hasFullText ? (
-            <ReaderFor {...props} view={view} readerRef={reader} actions={readerActions} />
+            <ReaderFor {...props} view={view} readerRef={reader} actions={readerActions} mode={screenMode} marks={marks} markActions={markActions} />
           ) : (
             <NoFullText {...props} view={view} reload={() => load(current)} />
           )}
@@ -533,8 +625,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
       <aside className="kx-rv-decide" aria-label="Decision">
         {decision}
       </aside>
-      {passage && <PassageCriterion kind={passage.kind} passage={passage.passage} criteria={reasonsFor} onPick={markPassage} onClose={() => setPassage(undefined)} />}
-      {cheats && <CheatSheet onClose={() => setCheats(false)} shortcuts={protocol.shortcuts} labelKeys={labelKeys} rule={rule} autoAdvance={autoAdvance} />}
+      {cheats && <CheatSheet keys={critKeys} onClose={() => setCheats(false)} shortcuts={protocol.shortcuts} labelKeys={labelKeys} rule={rule} autoAdvance={autoAdvance} />}
     </div>
   );
 }
@@ -550,6 +641,11 @@ function CriteriaPicker(props: {
   other: string;
   otherOpen: boolean;
   onToggle: (id: string) => void;
+  /** Each criterion's key (criterionKeys): undefined when it has none. */
+  keys?: (string | undefined)[];
+  /** Full-text evidence: each criterion shows its passages as chips (a click shows the place). */
+  evidence?: Evidence[];
+  onShowEvidence?: (e: Evidence) => void;
   onOther: () => void;
   onOtherSave: (text: string) => void;
   onOtherCancel: () => void;
@@ -570,7 +666,7 @@ function CriteriaPicker(props: {
     ? rule === "first"
       ? "Choose the first criterion it does not meet"
       : "Choose every criterion it does not meet, then Enter"
-    : "Numbers mark a criterion not met; then E or M";
+    : "A criterion's key marks it not met; then E or M";
   let lastElement = "";
   return (
     <fieldset ref={list} className="kx-rv-criteria-pick" data-picking={picking || undefined}>
@@ -589,20 +685,34 @@ function CriteriaPicker(props: {
         const check = checks.find((x) => x.criterionId === c.id);
         const state = !check ? undefined : check.met == null ? "unknown" : check.met ? "ok" : "fails";
         const on = selected.includes(c.id);
-        const heading = grouped && c.element !== lastElement ? (ELEMENT_LABEL[c.element] ?? c.element) : null;
-        lastElement = c.element;
+        const element = c.element || "other";
+        const heading = grouped && element !== lastElement ? ELEMENT_LABEL[element] || element : null;
+        lastElement = element;
         return (
-          <div key={c.id} className="kx-rv-criteria-item">
+          <div key={c.id} className="kx-rv-criteria-item" data-criterion={c.id}>
             {heading && <h4>{heading}</h4>}
             <label title={c.guidance || undefined} data-state={state} data-on={on || undefined}>
               <input type={rule === "first" ? "radio" : "checkbox"} name="criterion" checked={on} onChange={() => props.onToggle(c.id)} />
-              {i < 9 ? <kbd>{i + 1}</kbd> : <span className="kx-rv-kbd-space" />}
+              {props.keys?.[i] ? <kbd>{props.keys[i]!.toUpperCase()}</kbd> : <span className="kx-rv-kbd-space" aria-hidden="true" />}
               <span>
                 {c.label}
                 {on ? <small>Not met: {reasonText(c)}</small> : check && <small>{check.met == null ? `${check.rule}: not known` : check.met ? check.rule : `Not met: ${check.rule}`}</small>}
               </span>
               {state && <Icon name={state === "ok" ? "check" : state === "fails" ? "close" : "info"} size={11} />}
             </label>
+            {props.evidence?.some((e) => e.criterion === c.id) && (
+              <span className="kx-rv-evidence-chips">
+                {props.evidence
+                  .filter((e) => e.criterion === c.id)
+                  .map((e, n) => (
+                    <button key={n} type="button" className="kx-rv-evidence-chip" data-kind={e.kind} title={`“${(e.quote || e.text || "").slice(0, 200)}”`} onClick={() => props.onShowEvidence?.(e)}>
+                      <i aria-hidden="true" />
+                      {e.kind === "notMet" ? "Not met" : "Met"}
+                      {e.page != null && e.page >= 0 ? ` · p. ${e.page + 1}` : ""}
+                    </button>
+                  ))}
+              </span>
+            )}
           </div>
         );
       })}
@@ -797,13 +907,7 @@ function Labels({ summary, view, keys, onToggle }: StageProps & { view: RecordVi
 /** Passages behind the decision, with where they are; a click shows the place. */
 function EvidenceList({ evidence, criteria, onShow, onRemove }: { evidence: Evidence[]; criteria: Criterion[]; onShow: (e: Evidence) => void; onRemove: (i: number) => void }) {
   if (!evidence.length) return null;
-  const label = (e: Evidence) => {
-    const c = criteria.find((x) => x.id === e.criterion);
-    if (e.kind === "notMet") return `Does not meet: ${c?.label ?? "a criterion"}`;
-    if (e.kind === "met") return `Meets: ${c?.label ?? "a criterion"}`;
-    if (e.kind === "include") return "For include";
-    return "Highlight";
-  };
+  const label = (e: Evidence) => evidenceLabel(e, criteria);
   return (
     <section className="kx-rv-evidence-list" aria-label="Evidence">
       <h4>Evidence</h4>
@@ -822,47 +926,6 @@ function EvidenceList({ evidence, criteria, onShow, onRemove }: { evidence: Evid
         ))}
       </ul>
     </section>
-  );
-}
-
-/** A passage selected in the reader: which criterion it shows is (not) met. Numbers pick. */
-function PassageCriterion({ kind, passage, criteria, onPick, onClose }: { kind: PassageKind; passage: Passage; criteria: Criterion[]; onPick: (c: Criterion) => void; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const n = Number(e.key);
-      if (n >= 1 && n <= 9 && criteria[n - 1]) {
-        e.preventDefault();
-        e.stopPropagation();
-        onPick(criteria[n - 1]);
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [criteria, onPick]);
-  return (
-    <GlobalDialog label={kind === "notMet" ? "Does not meet" : "Meets"} onClose={onClose}>
-      <div className="kx-rv-dialog kx-rv-passage-pick">
-        <h2>{kind === "notMet" ? "This passage shows it does not meet…" : "This passage shows it meets…"}</h2>
-        <blockquote>“{passage.text.slice(0, 400)}”{passage.page >= 0 && <small> p. {passage.page + 1}</small>}</blockquote>
-        {criteria.length === 0 ? (
-          <p className="kx-rv-muted">This stage has no criteria yet (Setup › Criteria).</p>
-        ) : (
-          <ul className="kx-rv-radio-list">
-            {criteria.map((c, i) => (
-              <li key={c.id}>
-                <button type="button" className="kx-rv-pick-row" onClick={() => onPick(c)}>
-                  {i < 9 && <kbd>{i + 1}</kbd>}
-                  <span>{c.label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="kx-rv-dialog-actions">
-          <Btn onClick={onClose}>Cancel</Btn>
-        </div>
-      </div>
-    </GlobalDialog>
   );
 }
 
@@ -933,7 +996,7 @@ function FullTextMenu({ api, view, viewer, notify, reload, onChanged, invoke, wo
   );
 }
 
-function ReaderFor({ api, view, notify, readerRef, actions }: StageProps & { view: RecordView; readerRef: React.RefObject<ReviewReaderHandle | null>; actions: ReaderSelectionAction[] }) {
+function ReaderFor({ api, view, notify, readerRef, actions, mode, marks, markActions, invoke, workspaceId }: StageProps & { view: RecordView; readerRef: React.RefObject<ReviewReaderHandle | null>; actions: ReaderSelectionAction[]; mode?: ReaderSelectionMode; marks?: ReaderMark[]; markActions?: (mark: ReaderMark) => ReaderMarkMenu | null }) {
   const [mime, setMime] = useState<string>();
   const version = view.fulltext.file?.hash ?? view.sourceId ?? "";
   useEffect(() => {
@@ -950,7 +1013,21 @@ function ReaderFor({ api, view, notify, readerRef, actions }: StageProps & { vie
   if (!mime) return <div className="kx-rv-reader-empty"><p className="kx-inline-error">The full text's file is missing on this Mac.</p></div>;
   return (
     <Suspense fallback={<div className="kx-rv-reader" aria-busy="true" />}>
-      <ReviewReader ref={readerRef} api={api} recordId={view.meta.id} version={version} title={view.meta.title} mime={mime} actions={actions} onError={(t) => notify(t, "error")} />
+      <ReviewReader
+        ref={readerRef}
+        api={api}
+        recordId={view.meta.id}
+        version={version}
+        title={view.meta.title}
+        mime={mime}
+        sourceId={view.fulltext.file ? null : view.sourceId}
+        invoke={(command, args) => invoke(command, args as Record<string, unknown>, workspaceId)}
+        actions={actions}
+        mode={mode}
+        marks={marks}
+        markActions={markActions}
+        onError={(t) => notify(t, "error")}
+      />
     </Suspense>
   );
 }
@@ -1169,12 +1246,13 @@ function QueueDone({ summary, stage, filter, go, onUndo, canGoBack, onBack }: St
 
 const RULE_WORDS: Record<ReasonRule, string> = { none: "nothing more", first: "the first criterion it does not meet", all: "every criterion it does not meet" };
 
-function CheatSheet({ onClose, shortcuts, labelKeys, rule, autoAdvance }: { onClose: () => void; shortcuts: Record<string, string>; labelKeys: Record<string, string>; rule: StageProps["summary"]["protocol"]["rules"]["ta"]; autoAdvance: boolean }) {
+function CheatSheet({ onClose, shortcuts, labelKeys, rule, autoAdvance, keys = [] }: { onClose: () => void; shortcuts: Record<string, string>; labelKeys: Record<string, string>; rule: StageProps["summary"]["protocol"]["rules"]["ta"]; autoAdvance: boolean; keys?: (string | undefined)[] }) {
+  const letters = keys.slice(9).filter(Boolean).map((k) => k!.toUpperCase());
   const rows: [string, string][] = [
     [(shortcuts.include || "I").toUpperCase(), "Include"],
     [(shortcuts.exclude || "E").toUpperCase(), `Exclude (asks for ${RULE_WORDS[asks(rule, "exclude")]})`],
     ...(rule.maybe ? ([[(shortcuts.maybe || "M").toUpperCase(), `Maybe (asks for ${RULE_WORDS[asks(rule, "maybe")]})`]] as [string, string][]) : []),
-    ["1 – 9", autoAdvance && asks(rule, "exclude") === "first" ? "A criterion not met (while excluding: records it and goes on)" : "Mark a criterion not met"],
+    [letters.length ? `1 – 9, ${letters.join(" ")}` : "1 – 9", autoAdvance && asks(rule, "exclude") === "first" ? "A criterion not met (while excluding: records it and goes on)" : "Mark a criterion not met"],
     ["0", "Other… (the reason in your words)"],
     ["Enter", "Record the choice; with auto-advance off, the next record"],
     ["Esc", "Back out of the criteria step, the note or Other"],

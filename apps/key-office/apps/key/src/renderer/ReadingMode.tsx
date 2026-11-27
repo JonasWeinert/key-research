@@ -11,9 +11,11 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { PdfReaderHandle } from "@key-reader/pdfjs/PdfJsBenchmarkApp";
-import { HIGHLIGHT_COLORS, type HighlightColor } from "@key-reader/pdfjs/reader-model";
+import { HIGHLIGHT_COLORS, HIGHLIGHT_COLOR_RGB, type HighlightColor } from "@key-reader/pdfjs/reader-model";
 import { useDismiss } from "@key-reader/ui/dismiss";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
+import { SelectionMenu, type ReaderMark, type ReaderMarkMenu, type ReaderPassage, type ReaderSelectionActions, type ReaderSelectionMode } from "@key-reader/ui/SelectionMenu";
+import { markAt, paintTextMarks } from "@key-reader/ui/text-marks";
 import { Icon } from "./icons";
 import "./reading-mode.css";
 
@@ -122,14 +124,9 @@ export interface WebReadingBackend {
   openLink(href: string): void;
 }
 
-/** An action a reader's host adds to the selection menu (a review's "Evidence", say): run with
- *  the passage (for a web page `page` is -1 and `rects` empty). */
-export interface ReaderSelectionAction {
-  id: string;
-  label: string;
-  title?: string;
-  run(passage: { text: string; page: number; rects: number[][] }): void;
-}
+// An action a reader's host adds to the selection menu (a review's "Evidence", say), its mode and
+// marks: @key-reader/ui/SelectionMenu.tsx (for a web page `page` is -1 and `rects` empty).
+export type { ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionActions, ReaderSelectionMode } from "@key-reader/ui/SelectionMenu";
 
 export interface Typography {
   size: number;
@@ -287,6 +284,8 @@ export interface ReadingModeHandle {
   scrollToItem(item: number): void;
   /** Brings stretches of the text into view and lights them (a search hit, a highlight). */
   showPassage(stretches: Stretch[], keep?: boolean): boolean;
+  /** Brings a host mark into view and lights it up; false when the text does not have it. */
+  showMark(id: string): boolean;
 }
 
 export interface ReadingModeState {
@@ -320,7 +319,14 @@ interface Props {
   onCite?(passage: { text: string; page: number; rects: number[][]; color?: string }): void;
   onAddToNote?(passage: { text: string; page: number; color?: string }): void;
   /** Actions the reader's host adds to the selection menu, after Cite. */
-  selectionActions?: ReaderSelectionAction[];
+  selectionActions?: ReaderSelectionActions;
+  /** With it, the host's actions are the selection menu (SelectionMenu.tsx). */
+  selectionMode?: ReaderSelectionMode;
+  /** The host's marks, found in the text by their quotes; a click opens `markActions`. */
+  marks?: ReaderMark[];
+  markActions?: (mark: ReaderMark) => ReaderMarkMenu | null;
+  /** While set, the next selection goes straight here (no menu). */
+  pickSelection?: ((passage: ReaderPassage) => void) | null;
 }
 
 /** Case and no-break spaces aside, as Find compares. */
@@ -544,7 +550,7 @@ function rich(text: string, spans: Span[] | undefined, web: WebReadingBackend | 
 }
 
 const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
-  { hash, reader, web, start, typography, invoke, analyse, onExit, onState, onNotice, onUnreadable, onCite, onAddToNote, selectionActions },
+  { hash, reader, web, start, typography, invoke, analyse, onExit, onState, onNotice, onUnreadable, onCite, onAddToNote, selectionActions, selectionMode, marks: hostMarks, markActions, pickSelection },
   ref,
 ) {
   const [reply, setReply] = useState<ReadingReply>();
@@ -823,6 +829,26 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       step: (direction) => setActive((a) => (matches.length ? (a + direction + matches.length) % matches.length : 0)),
       scrollToItem,
       showPassage,
+      showMark: (id) => {
+        const range = markRanges.current.get(id);
+        const el = range?.startContainer.parentElement;
+        if (!range || !el) return false;
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        if (article.current) {
+          const flash = document.createElement("div");
+          flash.className = "kx-reading-mark-flash";
+          article.current.append(flash);
+          const place = () => {
+            const b = range.getBoundingClientRect();
+            const h = article.current!.getBoundingClientRect();
+            Object.assign(flash.style, { left: `${b.left - h.left - 3}px`, top: `${b.top - h.top - 2}px`, width: `${b.width + 6}px`, height: `${b.height + 4}px` });
+          };
+          place();
+          setTimeout(place, 400);
+          setTimeout(() => flash.remove(), 1800);
+        }
+        return true;
+      },
     }),
     [place, matches.length, scrollToItem, showPassage],
   );
@@ -856,7 +882,7 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       host.removeEventListener("keyup", up);
     };
   }, [items, usable, isWeb]);
-  useDismiss(!!selection, { refs: [toolbar], onDismiss: () => setSelection(null), kind: "passive", scroll: false });
+  useDismiss(!!selection, { refs: [toolbar], inside: (t) => t instanceof Element && !!t.closest(".ksm"), onDismiss: () => setSelection(null), kind: "passive", scroll: false });
 
   const located = async (chosen = selection) => {
     if (!chosen) return null;
@@ -915,17 +941,52 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     const found = await located().catch(() => null);
     if (found) onExit({ page: found.page, quote: found.quote });
   };
-  /** An action the caller added to the selection menu (selection-actions in the reader). */
-  const runAction = async (action: ReaderSelectionAction) => {
-    const chosen = selection;
-    if (!chosen) return;
-    if (web) action.run({ text: chosen.text, page: -1, rects: [] });
-    else {
-      const found = await located(chosen).catch(() => null);
-      action.run({ text: found?.certain ? found.text : chosen.text, page: found?.page ?? 0, rects: found?.rects ?? [] });
-    }
-    setSelection(null);
+  /** The passage for the host: placed in the PDF when Key can (else its words, no boxes), a
+   *  web page's as text. */
+  const passageOf = async (chosen = selection): Promise<ReaderPassage | null> => {
+    if (!chosen) return null;
+    if (web) return { text: chosen.text, page: -1, rects: [] };
+    const found = await located(chosen).catch(() => null);
+    return { text: found?.certain ? found.text : chosen.text, page: found?.page ?? 0, rects: found?.certain ? (found.rects ?? []) : [] };
   };
+  // A field's "pick": the next selection goes to the host with no menu.
+  const pickRef = useRef(pickSelection);
+  pickRef.current = pickSelection;
+  useEffect(() => {
+    const take = pickRef.current;
+    if (!selection || !take) return;
+    const chosen = selection;
+    setSelection(null);
+    document.getSelection()?.removeAllRanges();
+    void passageOf(chosen).then((p) => p && take(p));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection]);
+
+  // The host's marks in the text: found by their words, painted without touching the markup;
+  // a click on one opens the host's menu for it.
+  const markRanges = useRef(new Map<string, Range>());
+  const [markMenu, setMarkMenu] = useState<{ mark: ReaderMark; rect: DOMRect; menu: ReaderMarkMenu } | null>(null);
+  useEffect(() => {
+    const host = article.current;
+    if (!host) return;
+    markRanges.current = paintTextMarks(host, hostMarks ?? []);
+  }, [hostMarks, reply, usable, typography]);
+  useEffect(() => () => void paintTextMarks(document.body, []), []);
+  useEffect(() => {
+    const host = article.current;
+    if (!host || !markActions) return;
+    const click = (event: MouseEvent) => {
+      if (document.getSelection()?.isCollapsed === false) return;
+      const hit = markAt(markRanges.current, event.clientX, event.clientY);
+      const mark = hit && hostMarks?.find((m) => m.id === hit.id);
+      const menu = mark && markActions(mark);
+      if (!hit || !mark || !menu) return;
+      event.stopPropagation();
+      setMarkMenu({ mark, rect: hit.rect, menu });
+    };
+    host.addEventListener("click", click, true);
+    return () => host.removeEventListener("click", click, true);
+  }, [hostMarks, markActions, usable]);
 
   // Comments: a new one on the selection (a highlight with its comment), or a highlight's own,
   // opened by clicking its words or the comment mark beside them.
@@ -1238,64 +1299,55 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
             : `Finding figures and tables… ${regions.analysed ?? 0} of ${regions.pageCount ?? "?"} pages`}
         </div>
       )}
-      {selection &&
-        createPortal(
-          <div
-            ref={toolbar}
-            className="kx-reading-selection"
-            role="toolbar"
-            aria-label="Selection"
-            style={{ left: Math.max(8, Math.min(selection.rect.left + selection.rect.width / 2 - 150, innerWidth - 308)), top: Math.max(56, selection.rect.top - 46) }}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            {HIGHLIGHT_COLORS.map((color) => (
-              <button key={color} type="button" className="kx-reading-swatch" data-color={color} aria-label={`Highlight ${color}`} title={`Highlight ${color}`} onClick={() => void highlight(color)} />
-            ))}
-            <span className="kx-reading-selection-divider" aria-hidden="true" />
-            {web && (
-              <button type="button" className="kx-reading-selection-action" aria-label="Copy" title="Copy" onClick={() => void web.copy(selection).then(() => setSelection(null))}>
-                <Icon name="copy" size={14} />
-              </button>
-            )}
-            <button
-              type="button"
-              className="kx-reading-selection-action"
-              aria-label="Add comment"
-              title="Highlight with a comment"
-              onClick={() => {
-                setDraft({ chosen: selection, comment: "" });
-                setSelection(null);
-              }}
-            >
-              <Icon name="comment" size={14} />
-            </button>
-            {(onCite || web) && (
-              <button type="button" className="kx-reading-selection-action" aria-label="Cite" title={web ? "Copy as a quote with its source" : "Copy as a quote that links back here"} onClick={() => void cite()}>
-                <Icon name="quote" size={14} />
-              </button>
-            )}
-            {onAddToNote && (
-              <button type="button" className="kx-reading-selection-action" aria-label="Add to note" title="Add to this source’s note" onClick={() => void addToNote()}>
-                <Icon name="note" size={14} />
-              </button>
-            )}
-            {selectionActions?.map((action) => (
-              <button key={action.id} type="button" className="kx-reading-selection-text" title={action.title} onClick={() => void runAction(action)}>
-                {action.label}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="kx-reading-selection-action"
-              aria-label={web ? "Show in original view" : "Show in page view"}
-              title={web ? "Show this passage on the saved page" : "Show this passage in the page view"}
-              onClick={() => void showInOriginal()}
-            >
-              <Icon name={web ? "globe" : "filePdf"} size={14} />
-            </button>
-          </div>,
-          portalRoot(),
-        )}
+      <SelectionMenu
+        open={!!selection && !pickSelection}
+        anchor={selection?.rect ?? null}
+        area={() => scroller.current?.getBoundingClientRect()}
+        className="kx-reading-selection"
+        label="Selection"
+        passage={() => passageOf()}
+        actions={selectionActions}
+        mode={selectionActions ? selectionMode : undefined}
+        colors={HIGHLIGHT_COLORS.map((color) => ({ id: color, label: `Highlight ${color}`, rgb: HIGHLIGHT_COLOR_RGB[color], run: () => void highlight(color) }))}
+        tools={[
+          ...(web && selection ? [{ id: "copy", label: "Copy", icon: "copy" as const, run: () => void web.copy(selection).then(() => setSelection(null)) }] : []),
+          {
+            id: "comment",
+            label: "Add comment",
+            title: "Highlight with a comment",
+            icon: "comment" as const,
+            run: () => {
+              if (!selection) return;
+              setDraft({ chosen: selection, comment: "" });
+              setSelection(null);
+            },
+          },
+          ...(onCite || web ? [{ id: "cite", label: "Cite", title: web ? "Copy as a quote with its source" : "Copy as a quote that links back here", icon: "quote" as const, run: () => void cite() }] : []),
+          ...(onAddToNote ? [{ id: "to-note", label: "Add to note", title: "Add to this source’s note", icon: "note" as const, run: () => void addToNote() }] : []),
+          { id: "original", label: web ? "Show in original view" : "Show in page view", title: web ? "Show this passage on the saved page" : "Show this passage in the page view", icon: (web ? "globe" : "filePdf") as "globe" | "filePdf", run: () => void showInOriginal() },
+        ]}
+        portal={portalRoot()}
+        onDone={() => {
+          document.getSelection()?.removeAllRanges();
+          setSelection(null);
+        }}
+        onClose={() => {
+          document.getSelection()?.removeAllRanges();
+          setSelection(null);
+        }}
+      />
+      <SelectionMenu
+        open={!!markMenu}
+        anchor={markMenu?.rect ?? null}
+        area={() => scroller.current?.getBoundingClientRect()}
+        title={markMenu?.menu.title}
+        passage={() => (markMenu ? { text: markMenu.mark.text, page: markMenu.mark.page, rects: markMenu.mark.rects } : null)}
+        actions={markMenu?.menu.actions}
+        mode={markMenu?.menu.mode}
+        portal={portalRoot()}
+        onDone={() => setMarkMenu(null)}
+        onClose={() => setMarkMenu(null)}
+      />
       {draft && (
         <CommentPopover
           rect={draft.chosen.rect}
