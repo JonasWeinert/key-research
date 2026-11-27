@@ -17,6 +17,10 @@ pub mod stats;
 pub mod store;
 pub mod templates;
 pub mod views;
+// std-D: advanced synthesis and interop.
+pub mod linalg;
+pub mod multilevel;
+// std-D end.
 
 pub use ops::{Library, NoLibrary};
 pub use store::Reviews;
