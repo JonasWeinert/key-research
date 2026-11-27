@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Explain, Hint } from "../explain";
 import { downloadText } from "../db-ui";
 import { Icon } from "../icons";
-import { ELEMENT_LABEL, ELEMENT_PART, plural, reasonText, type Condition, type Criterion, type Member, type Protocol, type Stage } from "./review-api";
+import { ELEMENT_LABEL, ELEMENT_PART, plural, reasonText, type Condition, type Criterion, type Member, type Protocol, type ReasonRule, type Stage } from "./review-api";
 import { Btn, MenuButton, Row, Segmented, Toggle, errorText, formatTime, useLoad } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
 import { FormsEditor } from "./review-forms";
@@ -256,21 +256,22 @@ function TeamSection({ summary, api, viewer, notify, onChanged, draft, change }:
       <Row label="Reviewers per record" hint="Two independent reviewers is the Cochrane standard.">
         <Segmented label={`${label} reviewers`} value={r[stage].reviewers} options={[[1, "1"], [2, "2"], [3, "3"]]} onChange={(v) => change((p) => void (p.rules[stage].reviewers = v))} />
       </Row>
-      <Row label="Exclusion reason" hint="Asked for when excluding.">
+      <Row label="When excluding, require the criterion not met?" hint="“The first one”: the first in the list that it does not meet, which PRISMA reports. Other… is always offered.">
         <Segmented
-          label={`${label} reasons`}
-          value={r[stage].reasons}
-          options={[
-            ["none", "Optional"],
-            ["one", "One"],
-            ["all", "All that apply"],
-          ]}
+          label={`${label}: criterion when excluding`}
+          value={(r[stage].reasons as string) === "one" ? "first" : r[stage].reasons}
+          options={REASON_RULES}
           onChange={(v) => change((p) => void (p.rules[stage].reasons = v))}
         />
       </Row>
       <Row label="Offer “Maybe”" hint={stage === "ta" ? "Maybe moves a record on to full text." : "Usually off: full text should settle it."}>
         <Toggle label={`${label} maybe`} checked={r[stage].maybe} onChange={(v) => change((p) => void (p.rules[stage].maybe = v))} />
       </Row>
+      {r[stage].maybe && (
+        <Row label="When choosing Maybe, require the criterion in doubt?" hint="Asked the same way as when excluding.">
+          <Segmented label={`${label}: criterion for maybe`} value={r[stage].maybeReasons || "none"} options={REASON_RULES} onChange={(v) => change((p) => void (p.rules[stage].maybeReasons = v))} />
+        </Row>
+      )}
     </div>
   );
   return (
@@ -341,6 +342,9 @@ function TeamSection({ summary, api, viewer, notify, onChanged, draft, change }:
         </Row>
         <Row label="AI assistance" hint="Off by default. A suggestion with its rationale from the AI provider in Key Settings; never a decision, never a reviewer. Titles and abstracts are sent to that provider.">
           <Toggle label="AI assistance" checked={r.aiAssist} onChange={(v) => change((p) => void (p.rules.aiAssist = v))} />
+        </Row>
+        <Row label="Go to the next record after a decision" hint="Off: the record stays until Enter or J, to check what was recorded.">
+          <Toggle label="Auto-advance" checked={r.autoAdvance !== false} onChange={(v) => change((p) => void (p.rules.autoAdvance = v))} />
         </Row>
         <Row label="Decision keys" hint="Single letters for include, exclude and maybe.">
           <span className="kx-rv-keys">
@@ -645,6 +649,12 @@ function CriteriaSection({ draft, change, api }: DraftProps) {
   );
 }
 
+const REASON_RULES: [ReasonRule, string][] = [
+  ["none", "No"],
+  ["first", "The first one"],
+  ["all", "All that apply"],
+];
+
 // ── Keywords and labels ──────────────────────────────────────────────────────────
 
 function ListInput({ value, onChange, placeholder, label }: { value: string[]; onChange: (v: string[]) => void; placeholder: string; label: string }) {
@@ -680,6 +690,31 @@ function KeywordsSection({ draft, change }: DraftProps) {
         <Row label="Labels" hint="Tags for records, offered in screening." wide>
           <ListInput label="Labels" value={draft.labels} placeholder="Background, Check later" onChange={(v) => change((p) => void (p.labels = v))} />
         </Row>
+        {draft.labels.length > 0 && (
+          <Row label="Label keys" hint="A letter toggles the label while screening (it does not move on). Not I, E, M, J, K, U or N." wide>
+            <span className="kx-rv-keys">
+              {draft.labels.map((l) => (
+                <label key={l}>
+                  <small>{l}</small>
+                  <input
+                    className="kx-rv-input kx-rv-key"
+                    maxLength={1}
+                    aria-label={`Key for ${l}`}
+                    value={draft.labelKeys?.[l] ?? ""}
+                    onChange={(e) =>
+                      change((p) => {
+                        const k = e.target.value.toLowerCase().replace(/[^a-z]/, "");
+                        p.labelKeys = { ...(p.labelKeys ?? {}) };
+                        if (k) p.labelKeys[l] = k;
+                        else delete p.labelKeys[l];
+                      })
+                    }
+                  />
+                </label>
+              ))}
+            </span>
+          </Row>
+        )}
       </section>
     </>
   );
