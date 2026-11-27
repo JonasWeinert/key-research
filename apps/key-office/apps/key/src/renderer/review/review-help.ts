@@ -19,18 +19,19 @@ export const REVIEW_HELP = {
     title: "Screening titles and abstracts",
     body: [
       "Decide from the title and abstract whether a record could meet your criteria. When unsure, keep it with Maybe: the full text settles it.",
-      "Press I to include, E to exclude, M for maybe; the next record follows. ⌘Z takes back your last decision. With two reviewers, each decides on their own; disagreements become conflicts to resolve.",
+      "Press I to include, E to exclude, M for maybe. When the rules ask for the criterion not met, E opens the criteria: press its number, or 0 for Other. Or press the number first, then E.",
+      "Label keys such as B and L mark a record without moving on. ⌘Z takes back your last decision. With two reviewers, disagreements become conflicts to resolve.",
     ],
   },
   "review.fulltext": {
     kind: "explain",
     title: "Full-text screening",
     body: [
-      "Read each report that passed title and abstract screening and check it against every criterion. Excluding names the criterion it fails, which PRISMA reports.",
-      "Find full text adds the record to your library and looks for an open-access PDF, or opens the publisher's page through your library's access. Reports you cannot get are marked not retrieved.",
+      "Read each report that passed title and abstract screening and check it against every criterion. Excluding names the criterion it does not meet, which PRISMA reports.",
+      "The full text opens inside the review. Select a passage to mark a criterion as not met, with its place. Files you attach stay with the review unless you add them to the library.",
     ],
   },
-  "review.evidence": { kind: "hint", text: "Highlight passages in the reader beside this tab; they appear here to attach to your decision as evidence." },
+  "review.evidence": { kind: "hint", text: "Select a passage in the full text and choose Does not meet or Meets: it is kept with its page as evidence." },
   "review.question": {
     kind: "explain",
     title: "The review question",
@@ -62,7 +63,7 @@ export const REVIEW_HELP = {
     title: "Eligibility criteria",
     body: [
       "A criterion is a rule a study must meet. When you exclude a study you pick the criterion it fails; that is the reason PRISMA reports.",
-      "Criteria are grouped by the parts of your question. Start from the suggestions, rewrite them in your own words, and give guidance for borderline cases. Each has a short reason for reports, such as Wrong population.",
+      "Criteria are grouped by the parts of your question. Start from the suggestions, rewrite them in your own words, and give guidance for borderline cases. Each has short wording for reports when it is not met, such as Wrong population.",
       "The order matters: when a study fails several criteria, PRISMA reports the first. Changing criteria after screening started makes a new version and can flag earlier decisions for another look.",
     ],
   },
@@ -136,10 +137,12 @@ export const REVIEW_HELP = {
     title: "Data extraction",
     body: [
       "For each included study, fill in forms: study characteristics, outcome data for meta-analysis, and risk of bias. Build your own or start from a template, and change any field.",
-      "With two extractors, each fills the forms on their own; values that differ show side by side until one is agreed. A quote from the paper backs each value.",
+      "Select a passage in the full text and choose Use for a field: the value keeps its page and place. Questions can be shown only for some answers.",
+      "With two extractors, each fills the forms on their own; values that differ show side by side until one is agreed.",
     ],
   },
-  "review.extraction.quotes": { kind: "hint", text: "Highlight in the reader, then use the quote button beside a field to take the passage and its page." },
+  "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text and choose Use for a field, or press ⌥S with the field focused." },
+  "review.outcomes.table": { kind: "hint", text: "Not a RevMan import file: one row per study and outcome, laid out for typing into RevMan or another tool." },
   "review.forms": { kind: "hint", text: "The risk-of-bias templates summarise each tool's domains in Key's words; use the official guidance documents when judging." },
   "review.meta": {
     kind: "explain",

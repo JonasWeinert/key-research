@@ -469,7 +469,7 @@ function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, aut
   return (
     <li className="kx-rv-criterion">
       <div className="kx-rv-criterion-head">
-        <span className="kx-rv-criterion-number" title="Its place in the order: the first criterion a study fails is the reason PRISMA reports">
+        <span className="kx-rv-criterion-number" title="Its place in the order: PRISMA reports the first criterion a study does not meet">
           {number}
         </span>
         <span className="kx-rv-criterion-prefix">Include if</span>
@@ -494,8 +494,8 @@ function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, aut
         </button>
       </div>
       <div className="kx-rv-criterion-reason">
-        <span>Reason when not met</span>
-        <input className="kx-rv-input" value={c.reason} placeholder={reasonText({ ...c, reason: "" })} onChange={(e) => onChange({ ...c, reason: e.target.value })} aria-label="Reason when not met" />
+        <span>Reported, when not met, as</span>
+        <input className="kx-rv-input" value={c.reason} placeholder={reasonText({ ...c, reason: "" })} onChange={(e) => onChange({ ...c, reason: e.target.value })} aria-label="Reported when not met as" />
       </div>
       {open && (
         <div className="kx-rv-criterion-body">
@@ -549,7 +549,7 @@ function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, aut
                     onChange={(effect) => onChange({ ...c, link: { ...link, effect } })}
                   />
                 </div>
-                {link.effect === "auto" && <p className="kx-rv-warning">Undecided records that fail it are excluded by “Rules” with this criterion as the reason, counted by PRISMA as “marked ineligible by automation tools”, and can be taken back.</p>}
+                {link.effect === "auto" && <p className="kx-rv-warning">Undecided records that do not meet it are excluded by “Rules” under this criterion, counted by PRISMA as “marked ineligible by automation tools”, and can be taken back.</p>}
               </>
             )}
           </div>
@@ -560,7 +560,7 @@ function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, aut
 }
 
 /** Criteria grouped by the question's parts; order within the list is the reason hierarchy. */
-function CriteriaSection({ draft, change, api }: DraftProps) {
+function CriteriaSection({ draft, change, api, summary }: DraftProps) {
   const framework = draft.question.framework || "pico";
   const suggestions = useLoad(() => api.criteriaSuggestions(draft.question), [api, framework, JSON.stringify(draft.question.parts)]);
   const [fresh, setFresh] = useState<string>();
@@ -637,6 +637,15 @@ function CriteriaSection({ draft, change, api }: DraftProps) {
                   {reasonText(s)}
                 </button>
               ))}
+              {element === "other" &&
+                (summary.otherReasons ?? [])
+                  .filter((o) => !draft.criteria.some((c) => reasonText(c).toLowerCase() === o.text.toLowerCase()))
+                  .map((o) => (
+                    <button key={o.text} type="button" className="kx-rv-chip" data-from-other title={`Written under Other ${o.count} times while screening: make it a criterion`} onClick={() => add({ id: "", element, label: `Not: ${o.text}`, reason: o.text, guidance: "", stages: ["ta", "ft"], link: null })}>
+                      <Icon name="plus" size={10} />
+                      {o.text} <small>· Other ×{o.count}</small>
+                    </button>
+                  ))}
               <button type="button" className="kx-rv-chip" data-blank onClick={() => add({ id: "", element, label: "", reason: "", guidance: "", stages: ["ta", "ft"], link: null })}>
                 <Icon name="plus" size={10} />
                 Own criterion

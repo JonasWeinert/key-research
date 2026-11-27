@@ -9,7 +9,7 @@
 // fields shown. Keys: Tab moves through fields, ⌥S takes the reader's selection for the focused
 // field, ⌥↓ / ⌥↑ go to the next and previous study.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EmptyState } from "../explain";
+import { EmptyState, Hint } from "../explain";
 import { downloadText } from "../db-ui";
 import { GlobalDialog } from "../GlobalDrawer";
 import { Icon } from "../icons";
@@ -98,7 +98,7 @@ export function Extraction(props: StageProps) {
             { label: "Long format (CSV, one row per value)", run: () => void exportFile("extraction-long") },
             { label: "Data dictionary (CSV: fields, types, options, show-when)", run: () => void exportFile("dictionary") },
             { label: "Outcome data for R (meta, metafor)", run: () => void exportFile("outcomes") },
-            { label: "Outcome data for RevMan (CSV)", run: () => void exportFile("revman") },
+            { label: "Outcome data (CSV for RevMan-style entry)", run: () => void exportFile("outcome-table") },
           ]}
         />
       </div>
@@ -194,6 +194,8 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
       {v.forms.map((form) => (
         <FormView key={form.id} {...props} form={form} view={v} recordId={recordId} save={save} onFocus={(field) => setFocused({ form, field })} onShow={show} reload={view.reload} />
       ))}
+      <Hint help="review.extraction.quotes" />
+      {v.forms.some((f) => f.kind === "outcomes") && <Hint help="review.outcomes.table" />}
     </div>
   );
   return (

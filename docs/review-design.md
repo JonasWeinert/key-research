@@ -150,7 +150,7 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   yes/no, table / repeating group; guidance, required, quote required), templates (study
   characteristics, dichotomous / continuous / generic outcomes, RoB 2-style, ROBINS-I-style,
   Newcastle–Ottawa-style — Key's own wording), dual extraction with comparison and consensus,
-  AI pre-fill as suggestions with source passages. Export: wide CSV, RevMan-compatible CSV, tidy
+  AI pre-fill as suggestions with source passages. Export: wide CSV, an outcome table for RevMan-style entry (not a RevMan import file), tidy
   long CSV for R.
 - **Analysis**: pick an outcome; effect measure (RR, OR, RD, MD, SMD/Hedges' g, generic inverse
   variance); fixed and random effects (DerSimonian–Laird, REML; Hartung–Knapp); heterogeneity (Q,

@@ -994,6 +994,25 @@ function NoFullText(props: StageProps & { view: RecordView; reload: () => void }
             Open the record's page
           </Btn>
         )}
+        {(view.meta.doi || view.meta.url) && (
+          <Btn
+            icon="globe"
+            disabled={busy}
+            title="Saves the record's web page (as Key's browser shows it, with your library access) as its full text, kept with the review"
+            onClick={() =>
+              run(async () => {
+                const url = view.meta.doi ? `https://doi.org/${view.meta.doi}` : view.meta.url!;
+                const page = await invoke<{ path: string; title: string; abstractOnly?: boolean }>("saved_page_capture", { url }, workspaceId);
+                await api.attach(view.meta.id, page.path, `${(page.title || view.meta.title).slice(0, 80)}.html`, "snapshot", viewer, true);
+                notify(page.abstractOnly ? "Saved the page; it may show only the abstract" : "Saved the page as the full text", page.abstractOnly ? "error" : "ok", { label: "Undo", run: () => void api.detach(view.meta.id, viewer).then(() => (reload(), onChanged())) });
+                reload();
+                onChanged();
+              })
+            }
+          >
+            Save the page as full text
+          </Btn>
+        )}
         {view.fulltext.status === "notRetrieved" ? (
           <Btn onClick={() => run(() => api.fulltext(view.meta.id, { status: "sought" }, viewer).then(() => (reload(), onChanged())))}>Found it after all</Btn>
         ) : (
