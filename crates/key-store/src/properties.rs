@@ -222,6 +222,7 @@ impl Store {
             }
         }
         tx.execute("UPDATE property_provenance SET name = ?2 WHERE name = ?1", params![name, new_name]).map_err(e)?;
+        crate::fill_cells::rename_property(&tx, name, new_name)?;
         tx.commit().map_err(e)?;
         drop(db);
         let definition = self.property_definitions()?.into_iter().find(|d| d["name"] == new_name).unwrap_or(json!({"name": new_name}));

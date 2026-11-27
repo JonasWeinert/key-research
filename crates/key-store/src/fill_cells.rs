@@ -255,6 +255,33 @@ pub(crate) fn recipe_changed(db: &Connection, recipe: &Recipe) -> Result<()> {
     Ok(())
 }
 
+/// A property was renamed: its cells, the recipes that fill it (keeping their version, so
+/// nothing goes out of date) and runs still open follow the new name.
+pub(crate) fn rename_property(db: &Connection, name: &str, new_name: &str) -> Result<()> {
+    db.execute("UPDATE fill_cells SET property = ?2 WHERE property = ?1", params![name, new_name]).map_err(e)?;
+    let recipes: Vec<(String, String)> = {
+        let mut statement = db.prepare("SELECT id, config FROM fill_recipes").map_err(e)?;
+        let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?;
+        rows.collect::<std::result::Result<_, _>>().map_err(e)?
+    };
+    for (id, config) in recipes {
+        let Ok(mut recipe) = serde_json::from_str::<Recipe>(&config) else { continue };
+        if recipe.property != name {
+            continue;
+        }
+        let before = recipe_hash(&recipe);
+        recipe.property = new_name.to_string();
+        db.execute("UPDATE fill_recipes SET config = ?2 WHERE id = ?1", params![id, serde_json::to_string(&recipe).map_err(e)?]).map_err(e)?;
+        db.execute("UPDATE fill_cells SET recipe_hash = ?3 WHERE recipe_id = ?1 AND recipe_hash = ?2", params![id, before, recipe_hash(&recipe)]).map_err(e)?;
+    }
+    db.execute(
+        "UPDATE fill_runs SET recipe = json_set(recipe, '$.property', ?2) WHERE json_extract(recipe, '$.property') = ?1 AND status IN ('running', 'paused', 'done')",
+        params![name, new_name],
+    )
+    .map_err(e)?;
+    Ok(())
+}
+
 /// Tokens a recipe's automatic runs used in the last 24 hours.
 pub(crate) fn tokens_today(db: &Connection, recipe_id: &str) -> Result<u64> {
     db.query_row(
@@ -552,6 +579,29 @@ mod tests {
         assert_eq!(cell["history"].as_array().unwrap().len(), super::HISTORY);
         assert_eq!(cell["history"][0]["value"], json!(55));
         assert_eq!(store.source(&a).unwrap().unwrap().properties["Sample size"], json!(42));
+    }
+
+    #[test]
+    fn renaming_the_property_keeps_marks_history_and_the_recipe_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let a = add(&store, "Alpha", "n = 40");
+        let recipe = ai_recipe(&store, "mark");
+        fill(&store, &recipe, std::slice::from_ref(&a), &["{\"value\": 40}"], false, false);
+        store.update_source(&a, &patch(json!({"abstract": "n = 41"}))).unwrap();
+        fill(&store, &recipe, &store.fill_again_ids(&recipe.id, &[], true).unwrap(), &["{\"value\": 41}"], true, false);
+        store.update_source(&a, &patch(json!({"properties": {"Sample size": 45}}))).unwrap();
+        store.rename_property("Sample size", "Participants").unwrap();
+        // Nothing goes out of date by the rename; the edit and the history follow the new name.
+        assert_eq!(store.fill_marks().unwrap()["cells"][&a], json!({"Participants": {"stale": false, "edited": true, "recipe": recipe.id}}));
+        let cell = store.fill_cell(&a, "Participants").unwrap();
+        assert_eq!((cell["value"].clone(), cell["userValue"].clone(), cell["history"][0]["value"].clone()), (json!(41), json!(45), json!(40)));
+        assert_eq!(store.fill_cell(&a, "Sample size").unwrap(), Json::Null);
+        let renamed = store.fill_recipes().unwrap().into_iter().find(|r| r.id == recipe.id).unwrap();
+        assert_eq!(renamed.property, "Participants");
+        // The inputs still count under the new name.
+        store.update_source(&a, &patch(json!({"abstract": "n = 50"}))).unwrap();
+        assert_eq!(store.fill_cell(&a, "Participants").unwrap()["stale"], json!("inputs"));
     }
 
     #[test]
