@@ -17,6 +17,9 @@ use serde_json::{Map, Value as Json, json};
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
+#[path = "review_commands/library_links.rs"]
+mod library_links;
+
 static REVIEWS: OnceLock<Result<Reviews, String>> = OnceLock::new();
 
 fn reviews(root: &Path) -> Result<&'static Reviews, String> {
@@ -83,8 +86,22 @@ fn attach_full_text(root: &Path, library: &Library, reviews: &Reviews, review: &
         return Err(format!("{} is not a file", path.display()));
     }
     let hash = key_index::file_hash(path)?;
+    // The same file again: nothing to add.
+    let same = reviews.read(review, |s, _| Ok(s.record(record).and_then(|r| r.fulltext.file.as_ref()).is_some_and(|f| f.hash == hash)))?;
+    if same {
+        if owned_temp {
+            if let Some(parent) = path.parent().filter(|p| p.starts_with(std::env::temp_dir()) && *p != std::env::temp_dir()) {
+                let _ = std::fs::remove_dir_all(parent);
+            }
+        }
+        return Ok(json!({ "same": true, "hash": hash }));
+    }
     let name = if name.trim().is_empty() { path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() } else { name.to_string() };
-    let result = if let Some(source) = library.store.source_by_hash(&hash)?.filter(|s| s.trashed_at.is_none()) {
+    // A record linked to a library source shares its full text with it (library_links.rs).
+    let (shared, conflict) = library_links::share_on_attach(library, root, reviews, review, record, path, &hash, actor)?;
+    let result = if let Some(shared) = shared {
+        shared
+    } else if let Some(source) = library.store.source_by_hash(&hash)?.filter(|s| s.trashed_at.is_none()) {
         reviews.fulltext(review, record, Some("retrieved"), None, Some(Some(&source.id)), actor)?;
         json!({ "linked": source.id, "hash": hash })
     } else {
@@ -98,7 +115,7 @@ fn attach_full_text(root: &Path, library: &Library, reviews: &Reviews, review: &
         let size = std::fs::metadata(&stored).map(|m| m.len()).unwrap_or(0);
         let file = key_review::derive::FileRef { hash: hash.clone(), name, mime: mime_of(&ext).into(), size, origin: origin.into() };
         reviews.attach_file(review, record, file.clone(), actor)?;
-        json!({ "file": file, "hash": hash })
+        json!({ "file": file, "hash": hash, "conflict": conflict })
     };
     if owned_temp {
         if let Some(parent) = path.parent().filter(|p| p.starts_with(std::env::temp_dir()) && *p != std::env::temp_dir()) {
@@ -738,6 +755,12 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             // Full texts.
             "review_fulltexts" => reviews.fulltext_status(&review()?)?,
             "review_fulltext_match" => json!(reviews.match_dropped(&review()?, &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
+            // Links with the library (library_links.rs): refreshed, a conflict decided, a source's reviews.
+            "review_links_refresh" => library_links::refresh_links(library, root, reviews, &review()?, &actor()?)?,
+            "review_fulltext_reconcile" => library_links::reconcile(library, root, reviews, &review()?, text(args, "recordId"), text(args, "choice"), &actor()?)?,
+            "review_links_for_source" => library_links::links_for_source(library, reviews, text(args, "sourceId"))?,
+            // A PDF caught in the review's browser for one record: is it that record's work?
+            "review_fulltext_check" => reviews.check_dropped(&review()?, text(args, "recordId"), &arg::<key_review::records::DroppedFile>(args, "file")?)?,
             "review_fulltext_csv_read" => json!(reviews.read_csv(&review()?, text(args, "text"), &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
             "review_fulltext_attach" => {
                 let path = std::path::PathBuf::from(arg::<String>(args, "path")?);

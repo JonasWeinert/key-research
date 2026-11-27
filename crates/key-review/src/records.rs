@@ -194,6 +194,46 @@ pub fn match_files(records: &[RecordMeta], files: &[DroppedFile]) -> Vec<Proposa
     proposals
 }
 
+/// Whether a PDF caught for one record (in the review's browser) is that record's work: "match"
+/// (its DOI, or its title and authors, say so), "other" (its DOI is another, or it is clearly
+/// another record of the review), or "unknown" (it says too little to tell), with what it says.
+pub fn check_file(own: &RecordMeta, others: &[RecordMeta], file: &DroppedFile) -> serde_json::Value {
+    let (score, why) = file_score(own, file);
+    let found_doi = bare_doi(&file.doi);
+    let own_doi = bare_doi(&own.doi);
+    let other = others.iter().filter(|o| o.id != own.id).map(|o| (file_score(o, file).0, o)).filter(|(s, _)| *s >= 0.85).max_by(|a, b| a.0.total_cmp(&b.0));
+    let verdict = if score >= 0.5 {
+        "match"
+    } else if (!found_doi.is_empty() && !own_doi.is_empty() && found_doi != own_doi) || other.is_some() {
+        "other"
+    } else if !file.title.trim().is_empty() && normalize(&own.title).len() >= 12 && score < 0.2 && file.text.split_whitespace().count() > 200 {
+        // A full text whose title and opening share almost nothing with the record's title.
+        "other"
+    } else {
+        "unknown"
+    };
+    serde_json::json!({
+        "verdict": verdict,
+        "score": score,
+        "why": if score > 0.0 { format!("Matched on {why}") } else { String::new() },
+        "foundTitle": file.title.trim(),
+        "foundDoi": found_doi,
+        "otherRecord": other.map(|(_, o)| serde_json::json!({ "id": o.id, "title": o.title })),
+    })
+}
+
+impl Reviews {
+    pub fn check_dropped(&self, review: &str, record: &str, file: &DroppedFile) -> Result<serde_json::Value> {
+        self.read(review, |state, conn| {
+            let ids: Vec<String> = state.records.iter().map(|r| r.id.clone()).collect();
+            let m = metas(conn, review, &ids)?;
+            let own = m.get(record).cloned().ok_or("This record no longer exists")?;
+            let others: Vec<RecordMeta> = m.into_values().filter(|o| o.id != record).collect();
+            Ok(check_file(&own, &others, file))
+        })
+    }
+}
+
 fn csv_cell(s: &str) -> String {
     crate::export::csv_cell(s)
 }
@@ -530,3 +570,24 @@ pub fn other_reasons(state: &State) -> Vec<(String, usize)> {
 
 #[allow(dead_code)]
 fn _event_type_check(_: &Event) {}
+
+#[cfg(test)]
+mod check_tests {
+    use super::*;
+
+    fn meta(id: &str, title: &str, doi: &str) -> RecordMeta {
+        RecordMeta { id: id.into(), title: title.into(), doi: doi.into(), authors: vec!["Example, Ada".into()], ..Default::default() }
+    }
+
+    #[test]
+    fn tells_the_records_pdf_from_another_works() {
+        let own = meta("r1", "Rivers and the growth of market towns", "10.5555/rivers");
+        let others = [meta("r2", "Glaciers and alpine farming in the north", "10.5555/glaciers")];
+        let file = |title: &str, doi: &str, text: &str| DroppedFile { name: "x.pdf".into(), title: title.into(), doi: doi.into(), text: text.into(), ..Default::default() };
+        assert_eq!(check_file(&own, &others, &file("", "", "Rivers and the growth of market towns. Ada Example"))["verdict"], "match");
+        assert_eq!(check_file(&own, &others, &file("", "10.5555/other", "Something"))["verdict"], "other");
+        let glaciers = check_file(&own, &others, &file("Glaciers and alpine farming in the north", "", "Glaciers and alpine farming in the north"));
+        assert_eq!((glaciers["verdict"].as_str(), glaciers["otherRecord"]["id"].as_str()), (Some("other"), Some("r2")));
+        assert_eq!(check_file(&own, &others, &file("", "", "scan"))["verdict"], "unknown");
+    }
+}

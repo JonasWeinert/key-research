@@ -13,7 +13,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { EmptyState, Hint } from "../explain";
 import { Icon } from "../icons";
 import { bridge, type Source } from "../library-api";
-import { findPdf } from "../find-pdf";
 import { highlightPage, type Highlight } from "../item-actions";
 import { GlobalDialog } from "../GlobalDrawer";
 import { CHOICE_LABEL, ELEMENT_LABEL, STAGE_LABEL, asks, plural, reasonText, type Choice, type Criterion, type DecisionInfo, type Evidence, type ListRow, type ReasonRule, type RecordView, type Stage } from "./review-api";
@@ -24,6 +23,8 @@ import { FullTexts, attachFiles } from "./review-fulltexts";
 import type { StageProps } from "./ReviewPage";
 
 const ReviewReader = lazy(() => import("./review-reader").then((m) => ({ default: m.ReviewReader })));
+const ReviewBrowser = lazy(() => import("./review-browser").then((m) => ({ default: m.ReviewBrowser })));
+const LibraryLink = lazy(() => import("./review-library-link").then((m) => ({ default: m.LibraryLink })));
 
 type Mode = "screen" | "list" | "conflicts" | "fulltexts";
 
@@ -885,6 +886,9 @@ function CompactHeader(props: StageProps & { stage: Stage; view: RecordView; rel
         <Ids view={view} stage={stage} />
       </div>
       <div className="kx-rv-compact-tools">
+        <Suspense fallback={null}>
+          <LibraryLink {...props} view={view} reload={props.reload} />
+        </Suspense>
         {m.abstractText && (
           <Btn small quiet aria-expanded={abstract} onClick={() => setAbstract(!abstract)}>
             Abstract
@@ -957,6 +961,15 @@ function NoFullText(props: StageProps & { view: RecordView; reload: () => void }
   const [busy, setBusy] = useState(false);
   const [notRetrieved, setNotRetrieved] = useState(false);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  // Key's browser in this pane, looking for the record's full text (review-browser.tsx).
+  const [browse, setBrowse] = useState<{ url: string; fromList?: boolean }>();
+  useEffect(() => {
+    void import("./review-browser").then(({ takeBrowse }) => {
+      const asked = takeBrowse(view.meta.id);
+      setBrowse(asked ? { url: asked.url, fromList: asked.fromList } : undefined);
+    });
+  }, [view.meta.id]);
+  const page = view.meta.doi ? `https://doi.org/${view.meta.doi}` : view.meta.url || "";
   const fileInput = useRef<HTMLInputElement>(null);
   const run = (task: () => Promise<unknown>) => {
     setBusy(true);
@@ -969,21 +982,40 @@ function NoFullText(props: StageProps & { view: RecordView; reload: () => void }
     if (!sourceId) return;
     void invoke<Highlight[]>("library_annotations", { hash: sourceId }, workspaceId).then((h) => setHighlights((h ?? []).filter((x) => x.text))).catch(() => setHighlights([]));
   }, [invoke, workspaceId, sourceId]);
+  // An open copy is attached straight away (kept with the review); else the publisher's page
+  // opens in the browser here, which keeps watching until the PDF comes or it is closed.
   const find = () =>
     run(async () => {
-      let id = sourceId;
-      if (!id) {
-        // Finding goes through the library's Find PDF, which needs a source for the record.
-        const linked = await api.linkLibrary([view.meta.id], viewer);
-        id = linked[view.meta.id];
+      const result = await invoke<{ status: string; path?: string; url?: string }>("web_find_pdf_for", { doi: view.meta.doi || undefined, title: view.meta.title || undefined, url: view.meta.url || undefined }, workspaceId);
+      if (result.status === "downloaded" && result.path) {
+        const done = await api.attach(view.meta.id, result.path, `${(view.meta.title || "Full text").slice(0, 80)}.pdf`, "find", viewer, true);
+        void import("./review-library-link").then((m) => m.afterAttach(done, view.meta.id));
+        notify("Full text added", "ok");
+        reload();
+        onChanged();
+        return;
       }
-      if (!id) throw Error("Could not look for the full text");
-      const result = await findPdf(invoke, workspaceId, { id, title: view.meta.title });
-      await api.fulltext(view.meta.id, { status: result.status === "attached" ? "retrieved" : "sought" }, viewer);
-      if (result.status !== "attached") notify("No PDF found automatically. Open the record's page, or attach a file you have.", "error");
-      reload();
-      onChanged();
+      await api.fulltext(view.meta.id, { status: "sought" }, viewer);
+      const url = result.url || page;
+      if (url) setBrowse({ url });
+      else notify("No PDF found automatically, and the record has no web address. Attach a file you have.", "error");
     });
+  if (browse)
+    return (
+      <Suspense fallback={<div className="kx-rv-reader" aria-busy="true" />}>
+        <ReviewBrowser
+          {...props}
+          url={browse.url}
+          fromList={browse.fromList}
+          onClose={() => setBrowse(undefined)}
+          onAttached={() => {
+            setBrowse(undefined);
+            reload();
+            onChanged();
+          }}
+        />
+      </Suspense>
+    );
   return (
     <div className="kx-rv-reader-empty">
       <Icon name="filePdf" size={28} />
@@ -996,8 +1028,8 @@ function NoFullText(props: StageProps & { view: RecordView; reload: () => void }
         <Btn icon="link" disabled={busy} onClick={() => fileInput.current?.click()}>
           Attach file…
         </Btn>
-        {(view.meta.doi || view.meta.url) && (
-          <Btn icon="globe" onClick={() => void bridge().tabAction("open-url", { url: view.meta.doi ? `https://doi.org/${view.meta.doi}` : view.meta.url })} title="Opens the record's page in Key's browser; save the PDF or the page there">
+        {page && (
+          <Btn icon="globe" onClick={() => setBrowse({ url: page })} title="Opens the record's page in Key's browser here; the PDF you open there is attached to this record">
             Open the record's page
           </Btn>
         )}

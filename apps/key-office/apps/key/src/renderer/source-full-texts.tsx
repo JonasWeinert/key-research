@@ -83,6 +83,32 @@ export function FullTextList({ invoke, workspaceId, sourceId, fullTexts, onChang
   );
 }
 
+/** Where this source is in the workspace's reviews (linked records share its full text). */
+export function ReviewLinks({ invoke, workspaceId, sourceId }: { invoke: Invoke; workspaceId: string; sourceId: string }) {
+  const [links, setLinks] = useState<{ reviewId: string; reviewName: string; recordId: string; state: string }[]>([]);
+  const load = useCallback(() => void invoke<typeof links>("review_links_for_source", { sourceId }, workspaceId).then((l) => setLinks(l ?? []), () => setLinks([])), [invoke, workspaceId, sourceId]);
+  useEffect(load, [load]);
+  useEffect(() => onLibraryChanged(load), [load]);
+  useEffect(() => (window as unknown as { key: { on?(e: string, f: () => void): () => void } }).key.on?.("review-changed", load), [load]);
+  if (!links.length) return null;
+  return (
+    <p className="kx-review-links">
+      {links.map((l) => (
+        <button
+          key={`${l.reviewId}:${l.recordId}`}
+          type="button"
+          className="kx-review-link"
+          title="Open the review (this record shares the source's full text)"
+          onClick={() => void (window as unknown as { key: { tabAction(a: string, p: unknown): Promise<unknown> } }).key.tabAction("open-content", { section: "review", workspaceId, entityId: l.reviewId, title: l.reviewName })}
+        >
+          <Icon name="checklist" size={11} />
+          In review {l.reviewName} — {l.state}
+        </button>
+      ))}
+    </p>
+  );
+}
+
 /** No PDF yet, and Find PDF kept the publisher's page: save it as the full text. */
 export function KeptPageOffer({ invoke, workspaceId, sourceId, onSaved, onKept }: { invoke: Invoke; workspaceId: string; sourceId: string; onSaved(): void; onKept?(kept: boolean): void }) {
   const [page, setPage] = useState<KeptPage>();
