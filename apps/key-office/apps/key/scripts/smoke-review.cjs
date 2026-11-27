@@ -354,17 +354,15 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
         await page.mouse.down();
         await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
         await page.mouse.up();
-        await page.locator(".pdfjs-selection-host[data-action=review-not-met]").click();
-        const pick = page.getByRole("dialog", { name: "Does not meet" });
-        await pick.waitFor();
+        // The selection menu lists the criteria: 1 marks the first not met.
+        await page.locator(".ksm[data-mode=screen]").waitFor();
         await shot(page, "11-fulltext-not-met");
         await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
         await shot(page, "11-fulltext-not-met-dark");
         await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
         await page.keyboard.press("1");
-        await pick.waitFor({ state: "detached" });
         await page.locator(".kx-rv-evidence-list li[data-kind=notMet]").waitFor();
-        await page.getByRole("button", { name: "Exclude and go to next" }).click();
+        await page.locator(".ksm[data-mode=follow]").getByRole("button", { name: /Exclude and go to next/ }).click();
         await page.waitForFunction((b) => document.querySelector(".kx-rv-compact .kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), title);
       } else {
         await page.locator(".kx-rv-decide-head").click();
@@ -425,17 +423,15 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.mouse.down();
     await page.mouse.move(nb.x + nb.width - 2, nb.y + nb.height / 2, { steps: 8 });
     await page.mouse.up();
-    await page.locator(".pdfjs-selection-host[data-action=review-use]").click();
-    const use = page.getByRole("dialog", { name: "Use the passage" });
-    await use.getByRole("textbox").fill("Country");
-    await page.keyboard.press("Enter");
-    await use.getByRole("heading", { name: "Use for Country or countries" }).waitFor();
+    // The selection menu offers the fields; the country takes the passage with its place.
+    const country = page.locator('.ksm[data-mode=extract] .ksm-row[data-row="use-f-characteristics/country"] .ksm-row-main');
+    await country.waitFor();
     await shot(page, "12b-extraction-use");
-    await use.getByRole("button", { name: "The passage" }).click();
-    await use.waitFor({ state: "detached" });
+    await country.click();
+    await page.locator(".kx-rv-xfield[data-field=country] .kx-rv-source-chip[data-placed]").waitFor();
     const xv = await call("review_extraction", { reviewId, recordId: yogaId, viewer: s.team[0].id });
-    const country = xv.values["f-characteristics/country"].mine;
-    assert(/Norway/.test(country.value) && country.sourcePos?.page === 0 && country.sourcePos.rects.length > 0, "the value keeps its place");
+    const countryValue = xv.values["f-characteristics/country"].mine;
+    assert(/Norway/.test(countryValue.value) && countryValue.sourcePos?.page === 0 && countryValue.sourcePos.rects.length > 0, "the value keeps its place");
     const after = await call("review_complete_form", { reviewId, recordId: yogaId, formId: "f-characteristics", actor: s.team[0].id }).then(() => "", (e) => String(e));
     assert(!/Country or countries/.test(after), after);
     await page.locator(".kx-rv-xfield[data-field=country] .kx-rv-source-chip[data-placed]").waitFor();

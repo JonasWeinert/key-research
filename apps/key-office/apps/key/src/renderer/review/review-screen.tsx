@@ -657,7 +657,7 @@ function CriteriaPicker(props: {
     ? rule === "first"
       ? "Choose the first criterion it does not meet"
       : "Choose every criterion it does not meet, then Enter"
-    : "Numbers mark a criterion not met; then E or M";
+    : "A criterion's key marks it not met; then E or M";
   let lastElement = "";
   return (
     <fieldset ref={list} className="kx-rv-criteria-pick" data-picking={picking || undefined}>
