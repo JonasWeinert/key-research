@@ -4,7 +4,7 @@
 // by hand on the source page is never overridden by reading; "To read" and "Recently read"
 // list them; the batch editor sets status for several; status:/read: search tokens are read
 // by the host; two sources linked as related show on each other's page, and undo unlinks.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

@@ -1,3 +1,4 @@
+import { testMode, testWindowOptions } from "./test-mode";
 import { startupMark } from "./startup-marks";
 import { placeSearchResultBeside, placeSearchResultTab } from "../shared/search-preview-model";
 import {
@@ -1516,6 +1517,7 @@ function createShell(
   const frame = options.saved?.bounds && visibleBounds(options.saved.bounds);
   const window = new BrowserWindow({
     ...WINDOW_OPTIONS,
+    ...testWindowOptions,
     ...(frame
       ? frame
       : // New windows cascade from the one they came from.
@@ -1527,6 +1529,8 @@ function createShell(
           })()
         : {}),
   });
+  // Test mode: created hidden, shown (virtually) as a person's window would be.
+  if (testMode) window.show();
   if (options.saved?.maximized) window.maximize();
   if (options.saved?.fullScreen) window.setFullScreen(true);
   const w: ShellWindow = {

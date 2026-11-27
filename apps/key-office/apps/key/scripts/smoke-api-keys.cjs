@@ -6,7 +6,7 @@
 // Scholar being down makes Google Scholar (via SerpApi) answer in its place; Settings then
 // shows the usage. Neither key appears in anything the renderer is given, in the library
 // host's environment, in the app's output or anywhere in its data folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile, readdir, stat, writeFile } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
 const { createServer } = require("node:http");

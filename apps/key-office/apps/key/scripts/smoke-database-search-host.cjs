@@ -5,7 +5,7 @@
 // come from the engine; a search on PubMed and the Crossref series runs and its results are
 // listed; works go to the library (tagged) and the Inbox; the run report comes from the host as
 // Markdown. Needs a host built with the db_* commands (KEY_HOST_EXECUTABLE).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, readdir } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

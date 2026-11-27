@@ -2,7 +2,7 @@
 // browser tabs, back/forward, PDFs (inline and as attachments) open in the reader as
 // temporary PDFs analysed in the hidden scratch library, Add to library, clean-up of
 // unopened ones, the headless API, and a cookie that survives a relaunch.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile, readdir } = require("node:fs/promises");
 const { existsSync } = require("node:fs");
 const http = require("node:http");

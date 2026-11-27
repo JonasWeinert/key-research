@@ -4,7 +4,7 @@
 // reference added from a source asks which collections (the source's by default), "Don't ask
 // again" makes it silent, Settings asks again; a native view asks through the bridge; topic
 // pages list sources with the shared row; Zotero marks on the Library row, rows and details.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

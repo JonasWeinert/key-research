@@ -3,7 +3,7 @@
 // junk): suggestions appear; merge, nest and convert apply in the store and show in the
 // library; undo puts things back; inline rename, drag to nest and a manual checkbox
 // conversion work. Screenshots light and dark go to the printed temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

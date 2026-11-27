@@ -1,7 +1,7 @@
 // Errors never stop the app with a modal box. Uncaught exceptions, unhandled rejections,
 // crashed renderers and child processes, and `dialog.showErrorBox` all become quiet notices
 // in the shell's status bar, and lines in userData/logs/key.log (and the console).
-// Under smoke and test runs (KEY_SKIP_ONBOARDING=1 or KEY_TEST=1) no native modal dialog can
+// Under smoke and test runs (KEY_SKIP_ONBOARDING=1, KEY_TEST_MODE=1 or KEY_TEST=1) no native modal dialog can
 // block either: message boxes resolve to their cancel (or default) button, open/save panels
 // to "canceled", and each is logged. Smokes that stub `dialog.*` themselves still win.
 import { app, dialog, ipcMain, type WebContents } from "electron";
@@ -16,7 +16,7 @@ export interface AppNotice {
   at: number;
 }
 
-export const isTestRun = () => process.env.KEY_SKIP_ONBOARDING === "1" || Boolean(process.env.KEY_TEST);
+export const isTestRun = () => process.env.KEY_SKIP_ONBOARDING === "1" || process.env.KEY_TEST_MODE === "1" || Boolean(process.env.KEY_TEST);
 
 let logDir: string | undefined;
 function logFile() {

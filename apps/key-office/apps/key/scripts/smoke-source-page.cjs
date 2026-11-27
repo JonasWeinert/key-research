@@ -3,7 +3,7 @@
 // that quote into it in their colour, "Add to note" from a PDF selection, live updates
 // from elsewhere, the reader's "Details & notes" button to hide and show the page, and a
 // header and properties laid out like a note's.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

@@ -3,7 +3,7 @@
 // kept through a re-sync that brings in a new highlight, the automatic export on change,
 // a hand edit inside Key's section giving a .conflict.md copy, the one-shot Export
 // highlights sheet, the status bar item and a key:// link opened from another app.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile, writeFile, copyFile, readdir, rename, rm } = require("node:fs/promises");
 const { existsSync } = require("node:fs");
 const { tmpdir } = require("node:os");
