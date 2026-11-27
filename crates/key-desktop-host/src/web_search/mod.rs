@@ -298,6 +298,8 @@ impl WebSearch {
                         "baseUrl": options.base_urls.get(p.id()),
                         "maxResults": engine.max_results,
                         "pricingUrl": engine.pricing_url,
+                        // What it applies in its own request (`filters` adds those checked on any result).
+                        "ownFilters": caps.filters,
                     });
                 }
                 info

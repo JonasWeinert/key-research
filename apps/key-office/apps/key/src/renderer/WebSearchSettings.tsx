@@ -6,7 +6,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import type { WebProviderInfo } from "../shared/web-search";
 import type { WebFilterKey } from "../shared/web-filters";
 import { Icon } from "./icons";
-import type { AppSettings, Invoke } from "./library-api";
+import { bridge, type AppSettings, type Invoke } from "./library-api";
 import { Group, Row } from "./Settings";
 import { FILTER_NAME } from "./WebResults";
 import "./web-engines.css";
@@ -24,17 +24,11 @@ export default function WebSearchSettings({ invoke, settings, onSettings, onOpen
       .then(setProviders)
       .catch(() => setProviders([]));
   }, [invoke]);
-  // Read again when the settings change (the host has been told by then) and every few
-  // seconds, so a key added under Services & API keys shows here.
-  const settingsKey = JSON.stringify([settings.webProviders, settings.webEngines]);
+  // Read again once the hosts have new settings or keys (a key added under Services & API keys).
   useEffect(() => {
-    const first = setTimeout(reload, 150);
-    const timer = setInterval(reload, 5000);
-    return () => {
-      clearTimeout(first);
-      clearInterval(timer);
-    };
-  }, [reload, settingsKey]);
+    reload();
+    return bridge().on("web-providers-changed", reload);
+  }, [reload]);
   const change = (id: string, patch: { enabled?: boolean; apiKey?: string; baseUrl?: string }) => onSettings({ webProviders: { ...entries, [id]: { ...entries[id], ...patch } } });
   if (!providers.length) return null;
   const catalogues = providers.filter((p) => (p.kind ?? "catalogue") === "catalogue");
@@ -119,7 +113,7 @@ function EngineSettings({
             "Runs on a server you choose: give its address below"
           ) : (
             <>
-              Needs a {p.label} key ·{" "}
+              Needs an API key ·{" "}
               <button type="button" className="kx-engine-link" onClick={onOpenServices}>
                 Add it in Services &amp; API keys
               </button>
@@ -186,7 +180,7 @@ function EngineSettings({
                 <small>{detail}</small>
                 <span className="kx-engine-filters" aria-label={`What ${p.label} can do`}>
                   {ENGINE_FILTERS.map((k) => (
-                    <span key={k} className="kx-engine-filter" data-on={(p.filters ?? []).includes(k)} title={(p.filters ?? []).includes(k) ? `Filters by ${FILTER_NAME[k]}` : `Cannot filter by ${FILTER_NAME[k]}: passed over when you do`}>
+                    <span key={k} className="kx-engine-filter" data-on={(p.filters ?? []).includes(k)} title={(p.engine?.ownFilters ?? []).includes(k) ? `Filters by ${FILTER_NAME[k]}` : (p.filters ?? []).includes(k) ? `Checked on its results (it cannot ask for a ${FILTER_NAME[k]})` : `Cannot filter by ${FILTER_NAME[k]}: passed over when you do`}>
                       {FILTER_NAME[k]}
                     </span>
                   ))}

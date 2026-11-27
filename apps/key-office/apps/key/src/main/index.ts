@@ -27,7 +27,7 @@ import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
 import { LinkedFolders } from "./linked-folders";
 import { WebSearch } from "./web-search";
 import { publicSettings, type KeyedServices } from "./services";
-import { hostKeyRequests, pushHostKeys, startKeyedServices } from "./services/setup";
+import { hostKeyRequests, onWebProvidersChanged, pushHostKeys, startKeyedServices } from "./services/setup";
 import { startZoteroPluginSync } from "./zotero-sync";
 import { registerAddFromSource } from "./add-from-source";
 import { Registry, type WorkspaceInfo } from "./workspaces";
@@ -2435,6 +2435,7 @@ else
       await appSettings.load();
       startupMark("settings-loaded");
       keyedServices = await startKeyedServices({ registry: () => registry, appSettings });
+      onWebProvidersChanged(() => emit("web-providers-changed"));
       startupMark("keys-loaded");
       windowStore = new WindowStateStore(join(app.getPath("userData"), "window-state.json"));
       windowState = await windowStore.load();
@@ -2641,7 +2642,7 @@ else
         if (before.modelsAutoDownload !== next.modelsAutoDownload)
           for (const workspace of await registry.list())
             void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});
-        if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders) || JSON.stringify(before.webEngines) !== JSON.stringify(next.webEngines)) pushHostKeys();
+        if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders) || JSON.stringify(before.webEngines) !== JSON.stringify(next.webEngines)) void pushHostKeys();
         if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
             void registry

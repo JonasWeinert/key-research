@@ -109,12 +109,14 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
 
   // Which providers are on, read again whenever the pill is turned on (Settings may have changed).
   const [infos, setInfos] = useState<WebProviderInfo[]>();
+  const [providersTick, setProvidersTick] = useState(0);
+  useEffect(() => bridge().on("web-providers-changed", () => setProvidersTick((n) => n + 1)), []);
   useEffect(() => {
     if (!active) return;
     void invoke<WebProviderInfo[]>("web_providers", {})
       .then(setInfos)
       .catch(() => setInfos([]));
-  }, [active, invoke]);
+  }, [active, invoke, providersTick]);
   // Engines are asked only through the "web" chain (one at a time, in the user's order).
   const enabled = useMemo(() => (infos ?? []).filter((p) => p.enabled && p.kind !== "engine"), [infos]);
   const enabledKey = enabled.map((p) => p.id).join();

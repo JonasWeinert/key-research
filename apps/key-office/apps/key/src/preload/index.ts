@@ -117,6 +117,7 @@ contextBridge.exposeInMainWorld("key", {
         "launcher-changed",
         "workspaces-changed",
         "launcher-command",
+        "web-providers-changed",
       ].includes(event)
     )
       throw Error("Unknown event");

@@ -41,6 +41,8 @@ export interface WebEngineInfo {
   baseUrl?: string;
   maxResults: number;
   pricingUrl: string;
+  /** The filters it applies in its own request. */
+  ownFilters?: WebFilterKey[];
 }
 
 /** One work as any provider describes it. */
