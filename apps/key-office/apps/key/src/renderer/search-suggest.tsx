@@ -99,6 +99,8 @@ const FIELD: Record<string, { label: string; icon: IconName }> = {
   starred: { label: "Starred", icon: "star" },
   hasPdf: { label: "PDF", icon: "filePdf" },
   hasFile: { label: "File", icon: "doc" },
+  hasFullText: { label: "Full text", icon: "readingMode" },
+  hasWebPage: { label: "Saved web page", icon: "fileHtml" },
   zotero: { label: "Zotero", icon: "zotero" },
   duplicate: { label: "Duplicate", icon: "copy" },
   openAccess: { label: "Open access", icon: "globe" },

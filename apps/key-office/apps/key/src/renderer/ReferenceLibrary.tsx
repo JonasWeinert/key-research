@@ -854,6 +854,22 @@ export default function ReferenceLibrary({
                   <span>{k.count.toLocaleString()}</span>
                 </button>
               ))}
+            {/* Full text to read, whatever its kind: a PDF or a saved web page (or both). */}
+            {facets.kinds.length > 1 && (
+              <button
+                className="kx-facet"
+                aria-pressed={filters.some((f) => f.field === "hasFullText" && !f.negate)}
+                title="Sources with a PDF or a saved web page to read"
+                onClick={() =>
+                  setFilters((current) =>
+                    current.some((f) => f.field === "hasFullText") ? current.filter((f) => f.field !== "hasFullText") : [...current, { field: "hasFullText", value: "true", label: "Full text", scope: "" }],
+                  )
+                }
+              >
+                <Icon name="readingMode" size={12} />
+                Full text
+              </button>
+            )}
             {facets.tags.length > 0 && <TagPicker tags={facets.tags} value={tag} onChange={setTag} onManage={() => setTagManager(true)} />}
           </div>
         )}

@@ -13,6 +13,8 @@ import "./find-pdf.css";
 
 export interface FindPdfResult {
   status: "attached" | "hasFile" | "browser" | "notFound";
+  /** The source keeps a saved web page as its full text (and still has no PDF). */
+  savedPage?: boolean;
   via?: "openalex" | "unpaywall" | "arxiv" | "pmc" | "source";
   url?: string;
   source?: Source;
@@ -63,47 +65,87 @@ export interface FindPdfRun {
   found: number;
   running: boolean;
 }
+/** A source of the last bulk run that ended on its publisher's page (no tab is opened for it). */
+export interface FindPdfPageRow {
+  id: string;
+  title: string;
+  url: string;
+  /** The source keeps a saved web page as its full text already. */
+  savedPage?: boolean;
+}
+export interface FindPdfResults {
+  workspaceId: string;
+  found: number;
+  total: number;
+  pages: FindPdfPageRow[];
+  /** Sources with no PDF that keep their saved page as the full text. */
+  savedPages: number;
+  notFound: number;
+}
 let run: FindPdfRun | undefined;
+let results: FindPdfResults | undefined;
 const listeners = new Set<() => void>();
-const set = (next: FindPdfRun | undefined) => {
-  run = next;
+const emitAll = () => {
   for (const l of listeners) l();
 };
+const set = (next: FindPdfRun | undefined) => {
+  run = next;
+  emitAll();
+};
 let cancelled = false;
+const subscribe = (l: () => void) => (listeners.add(l), () => void listeners.delete(l));
 
 export function useFindPdfRun() {
-  return useSyncExternalStore(
-    (l) => (listeners.add(l), () => void listeners.delete(l)),
-    () => run,
-  );
+  return useSyncExternalStore(subscribe, () => run);
+}
+/** What the last bulk run left to do: the sources whose publisher's page it landed on. */
+export function useFindPdfResults() {
+  return useSyncExternalStore(subscribe, () => results);
+}
+export const clearFindPdfResults = () => void ((results = undefined), emitAll());
+/** One row is done with (its page opened and its PDF found there, or its page saved). */
+export function settleFindPdfRow(id: string) {
+  if (!results) return;
+  results = { ...results, pages: results.pages.filter((p) => p.id !== id) };
+  emitAll();
 }
 export const cancelFindPdfs = () => void (cancelled = true);
 
-/** Find PDF for each source without a file, one after another; never opens the browser. */
-export async function findPdfs(invoke: Invoke, workspaceId: string, sources: Pick<Source, "id" | "title" | "filePath">[]) {
+/** A source still without a PDF: no file, or a saved web page as its file. */
+export const wantsPdf = (s: Pick<Source, "filePath"> & { kind?: string }) => !s.filePath || s.kind === "web";
+
+/** Find PDF for each source without a PDF, one after another; never opens the browser. Those
+ * that end on their publisher's page are listed (useFindPdfResults) to open one by one. */
+export async function findPdfs(invoke: Invoke, workspaceId: string, sources: (Pick<Source, "id" | "title" | "filePath"> & { kind?: string })[]) {
   if (run?.running) return toast("Finding PDFs already");
-  const wanted = sources.filter((s) => !s.filePath);
-  if (!wanted.length) return toast("Every selected source has its file already");
+  const wanted = sources.filter(wantsPdf);
+  if (!wanted.length) return toast("Every selected source has its PDF already");
   cancelled = false;
   let found = 0;
-  let pages = 0;
+  let savedPages = 0;
+  let notFound = 0;
+  const pages: FindPdfPageRow[] = [];
   set({ done: 0, total: wanted.length, found, running: true });
   for (const [i, source] of wanted.entries()) {
     if (cancelled) break;
     const result = await findPdfRequest(invoke, workspaceId, source.id).catch(() => undefined);
     if (result?.status === "attached") found++;
-    if (result?.status === "browser") pages++;
+    else if (result?.savedPage) savedPages++;
+    if (result?.status === "browser" && result.url) pages.push({ id: source.id, title: source.title || "Untitled", url: result.url, savedPage: result.savedPage });
+    if (result?.status === "notFound" && !result.savedPage) notFound++;
     set({ done: i + 1, total: wanted.length, found, running: true });
   }
   set(undefined);
+  results = { workspaceId, found, total: wanted.length, pages, savedPages, notFound };
+  emitAll();
   if (found) libraryChanged();
-  const rest = wanted.length - found;
-  toast(
-    found === wanted.length
-      ? `Found ${found === 1 ? "a PDF" : `all ${found} PDFs`}`
-      : `Found ${found} of ${wanted.length} PDFs${rest && pages ? `; ${pages === 1 ? "one needs" : `${pages} need`} the publisher’s page (Find PDF on each)` : ""}`,
-  );
-  return { found, total: wanted.length };
+  const parts = [
+    found === wanted.length ? `Found ${found === 1 ? "a PDF" : `all ${found} PDFs`}` : `Found ${found} of ${wanted.length} PDFs`,
+    pages.length ? `${pages.length} on the publisher’s page` : "",
+    savedPages ? `${savedPages} keep${savedPages === 1 ? "s" : ""} a saved page` : "",
+  ].filter(Boolean);
+  toast(parts.join("; "));
+  return { found, total: wanted.length, pages: pages.length, savedPages };
 }
 
 /** After an add: Find PDF when the workspace's settings say to (off by default). Silent. */
