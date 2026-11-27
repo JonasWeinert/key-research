@@ -92,7 +92,8 @@ async function launch(options = {}) {
   const close = app.close.bind(app);
   app.close = async () => {
     try {
-      await Promise.race([close(), new Promise((resolve) => setTimeout(resolve, 15_000))]);
+      // A grace period for a clean quit; the timer must not keep the smoke's process alive.
+      await Promise.race([close(), new Promise((resolve) => setTimeout(resolve, 15_000).unref())]);
     } finally {
       killTree(pid, { marker });
       launched.delete(app);
