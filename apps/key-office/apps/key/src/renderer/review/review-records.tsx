@@ -373,16 +373,29 @@ const shown = (m: RecordMeta, k: keyof RecordMeta) => (k === "authors" ? m.autho
 /** A lookup's answer as the record's fields. */
 type Found = { source: string; fields: Record<string, unknown> };
 async function lookUp(invoke: StageProps["invoke"], workspaceId: string, m: Pick<RecordMeta, "doi" | "pmid" | "title" | "url">): Promise<Found | null> {
-  const resource = m.doi?.trim() || (m.pmid?.trim() ? `https://pubmed.ncbi.nlm.nih.gov/${m.pmid.trim()}/` : "") || m.url?.trim() || m.title?.trim();
+  const fields: Record<string, unknown> = {};
+  const take = (r: { title?: string | null; abstractText?: string | null; authors?: string[] | null; year?: number | null; journal?: string | null; doi?: string | null; pmid?: string | null }) => {
+    if (r.title) fields.title = r.title;
+    if (r.abstractText) fields.abstractText = r.abstractText;
+    if (r.authors?.length) fields.authors = r.authors;
+    if (r.year) fields.year = r.year;
+    if (r.journal) fields.journal = r.journal;
+    if (r.doi) fields.doi = r.doi;
+    if (r.pmid) fields.pmid = r.pmid;
+  };
+  // By DOI or PMID: web search's lookups (OpenAlex, then Crossref or PubMed), in the host.
+  if (m.doi?.trim() || m.pmid?.trim()) {
+    const r = await invoke<({ source: string } & Parameters<typeof take>[0]) | null>("review_lookup", { doi: m.doi ?? "", pmid: m.pmid ?? "" }, workspaceId);
+    if (r) {
+      take(r);
+      return { source: r.source, fields };
+    }
+  }
+  // By title (or link): the reader's scholarly lookup.
+  const resource = m.url?.trim() || m.title?.trim();
   if (!resource) return null;
   const r = await invoke<{ source: string; title?: string; abstractText?: string | null; authors?: string[]; year?: number | null; journal?: string | null; doi?: string | null; certainty?: string | null }>("scholarly_lookup_resource", { resource }, workspaceId);
-  const fields: Record<string, unknown> = {};
-  if (r.title) fields.title = r.title;
-  if (r.abstractText) fields.abstractText = r.abstractText;
-  if (r.authors?.length) fields.authors = r.authors;
-  if (r.year) fields.year = r.year;
-  if (r.journal) fields.journal = r.journal;
-  if (r.doi) fields.doi = r.doi;
+  take(r);
   return { source: r.source || "online lookup", fields };
 }
 const same = (a: unknown, b: unknown) => String(Array.isArray(a) ? a.join("; ") : (a ?? "")).trim().toLowerCase() === String(Array.isArray(b) ? b.join("; ") : (b ?? "")).trim().toLowerCase();

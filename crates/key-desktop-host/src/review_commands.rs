@@ -538,6 +538,27 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 }
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }
+            // A record's metadata looked up by DOI or PMID (OpenAlex, then Crossref or PubMed),
+            // through web search's own lookups; null when not found. Title-only records use the
+            // reader's scholarly lookup in the renderer.
+            "review_lookup" => {
+                let doi = key_store::normalize::doi(text(args, "doi")).unwrap_or_default();
+                let pmid = text(args, "pmid").trim().to_string();
+                let id = if !doi.is_empty() {
+                    Some(key_store::smart_query::Identifier { kind: "doi", value: doi })
+                } else if !pmid.is_empty() {
+                    Some(key_store::smart_query::Identifier { kind: "pmid", value: pmid })
+                } else {
+                    None
+                };
+                match id.map(|id| web_search::identifiers::resolve(web, &id)).transpose()?.flatten() {
+                    Some((w, _)) => json!({
+                        "source": if w.provider.is_empty() { "Crossref".to_string() } else { w.provider.clone() },
+                        "title": w.title, "abstractText": w.abstract_, "authors": w.authors, "year": w.year, "journal": w.venue, "doi": w.doi, "pmid": w.ids.pmid,
+                    }),
+                    None => Json::Null,
+                }
+            }
             // Database searches that belong to the review (Sources › Search databases).
             "review_search_save" => {
                 reviews.save_search(&review()?, args.get("search").cloned().unwrap_or(Json::Null), &actor()?)?;
