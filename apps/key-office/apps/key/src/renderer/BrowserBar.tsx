@@ -33,7 +33,17 @@ export interface WebBarState {
    * waiting for one, a sign-in page (the sign-in window is at hand), a sign-in handed to
    * another browser, or one just brought back. */
   signin?: {
-    card?: { stage: "offer" | "open" | "failed"; site: string; way: "window" | "handoff"; browser: string; problem?: string };
+    card?: {
+      stage: "offer" | "open" | "failed" | "arrival" | "where" | "loop";
+      site: string;
+      way: "window" | "handoff";
+      browser: string;
+      problem?: string;
+      host?: string;
+      auto?: boolean;
+      entries?: Array<{ url: string; label: string }>;
+      failed?: string[];
+    };
     waiting?: { site: string; kind: "get" | "create"; browser?: string; way?: "window" | "handoff" };
     offer?: { browser: string };
     handoff?: { browser: string; site: string };
@@ -50,7 +60,11 @@ type SignInOp =
   | "signin-browser"
   | "signin-import"
   | "signin-cancel"
-  | "signin-dismiss";
+  | "signin-dismiss"
+  | "signin-here"
+  | "signin-key-instead"
+  | "signin-pick"
+  | "signin-keep";
 export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo" | "proxy-off" | "proxy-remember" | "proxy-not-now" | "proxy-dismiss" | "proxy-use" | SignInOp;
 
 /** A sign-in that needs a passkey Key's browser cannot offer: what is happening and the way on. */

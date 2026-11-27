@@ -11,9 +11,11 @@ interface SignInInfo {
   installed?: Array<{ id: string; name: string }>;
   /** What happens now: Key's sign-in window in a browser, or a hand-off to one. */
   way?: { kind: "window" | "handoff"; browser: string };
+  /** Sign-in services Key remembers a choice for. */
+  hosts?: Array<{ host: string; choice?: "window" | "here"; passkey: boolean; automatic: boolean }>;
 }
 const bridge = () =>
-  (window as unknown as { key: { clearBrowsingData?(): Promise<void>; signInInfo?(): Promise<SignInInfo | undefined>; signInForget?(): Promise<void> } }).key;
+  (window as unknown as { key: { clearBrowsingData?(): Promise<void>; signInInfo?(): Promise<SignInInfo | undefined>; signInForget?(): Promise<void>; signInHost?(host: string, choice: "window" | "here" | null): Promise<SignInInfo | undefined> } }).key;
 
 const HANDOFF_BROWSERS: Array<[NonNullable<AppSettings["signInBrowser"]>, string]> = [
   ["safari", "Safari"],
@@ -87,6 +89,22 @@ function SignInSettings({ settings, onSettings }: { settings: AppSettings; onSet
           ))}
         </select>
       </Row>
+      {(info?.hosts ?? []).map((h) => (
+        <Row key={h.host} label={h.host} detail={h.automatic ? (h.choice === "window" ? "Always uses the sign-in window." : "Uses the sign-in window: it asked for a passkey before.") : "Signs in in Key’s browser."}>
+          <select
+            className="kx-settings-select"
+            aria-label={`Sign in to ${h.host}`}
+            value={h.automatic ? "window" : "here"}
+            onChange={(e) => void bridge().signInHost?.(h.host, e.target.value as "window" | "here").then((next) => next && setInfo(next))}
+          >
+            <option value="window">Sign-in window</option>
+            <option value="here">Key’s browser</option>
+          </select>
+          <button className="kx-settings-button" title={`Forget the choice for ${h.host}`} onClick={() => void bridge().signInHost?.(h.host, null).then((next) => next && setInfo(next))}>
+            Forget
+          </button>
+        </Row>
+      ))}
       <Row label="Sign-in window" detail={hintText("settings.web.signin-forget")}>
         <button className="kx-settings-button" disabled={forget === "busy"} onClick={pressForget}>
           {forget === "confirm" ? "Forget sign-ins" : forget === "busy" ? "Forgetting…" : forget === "done" ? "Forgotten" : "Forget sign-ins…"}
