@@ -439,3 +439,18 @@
   line-height: 1.45;
   text-align: center;
 }
+
+/* A host's own selection actions (a review's "Evidence"), as text after the icons. */
+.kx-web-toolbar-text {
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--kx-text);
+  font: 500 12.5px var(--kx-font, inherit);
+  white-space: nowrap;
+}
+.kx-web-toolbar-text:hover {
+  background: var(--kx-fill);
+}

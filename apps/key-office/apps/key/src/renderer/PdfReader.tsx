@@ -457,7 +457,6 @@ export default function PdfReader() {
     );
   return (
     <main className="key-ui-root key-pdf-reader">
-      <FirstUseTip help="tip.cite" anchor='.pdfjs-selection-action[aria-label="Cite"]' side="above" delay={600} />
       {inLibrary && !reading && <FirstUseTip help="tip.reading-mode" anchor='.key-pdf-tool[aria-label="Reading mode"]' delay={4000} />}
       <section className="key-pdf-surface" ref={surface}>
         {/* One floating stack over the top of the page: the controls, Find, a search result. */}

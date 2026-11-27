@@ -462,6 +462,9 @@ pub struct WebDocument {
     pub document: Document,
     pub text: Vec<u16>,
     pub resources: Vec<String>,
+    /// Page text reading mode leaves out on purpose inside what it shows (a formula's TeX
+    /// source): a selection across it is still the page's text.
+    pub hidden: Vec<(usize, usize)>,
 }
 
 impl WebDocument {
@@ -1249,6 +1252,22 @@ fn snapshot_url(page: &Page, metas: &[(String, String)]) -> Option<String> {
         .or_else(|| page.attr(0, "data-url").map(str::to_string))
 }
 
+/// The page text of formulas' annotations (their TeX or content MathML), which reading mode
+/// does not show.
+fn annotation_text(page: &Page) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for (id, n) in page.nodes.iter().enumerate() {
+        if n.space == Space::Math && matches!(n.tag.as_str(), "annotation" | "annotation-xml") {
+            for d in page.descendants(id) {
+                if let Some(at) = page.nodes[d].at {
+                    out.push((at, at + page.nodes[d].text.encode_utf16().count()));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Reading mode for a saved web page's HTML.
 pub fn assemble(html: &str) -> WebDocument {
     let page = Page::parse(html);
@@ -1259,6 +1278,7 @@ pub fn assemble(html: &str) -> WebDocument {
         document: Document { page_count: 1, engine: "web".into(), quality: Quality { level: "empty", reason: Some(reason.into()) }, items: Vec::new(), outline: Vec::new(), meta: None },
         text: page.text.clone(),
         resources: Vec::new(),
+        hidden: Vec::new(),
     };
     let Some(article) = find_article(&page) else { return empty("Key found no text on this saved page.") };
     let mut emitter = Emitter {
@@ -1348,7 +1368,7 @@ pub fn assemble(html: &str) -> WebDocument {
     let outline = items.iter().filter(|i| i.kind == "heading").map(|i| OutlineEntry { item: i.id, level: i.level.unwrap_or(2), text: i.text.clone(), page: 0 }).collect();
     let quality = quality(&page, &items);
     let meta = Meta { title: title_text, byline: meta_byline.filter(|_| byline_node.is_none()), date, site, url };
-    WebDocument { document: Document { page_count: 1, engine: "web".into(), quality, items, outline, meta: Some(meta) }, text: page.text, resources }
+    WebDocument { document: Document { page_count: 1, engine: "web".into(), quality, items, outline, meta: Some(meta) }, hidden: annotation_text(&page), text: page.text, resources }
 }
 
 /// "Okafor, Adaeze" as "Adaeze Okafor".
@@ -1677,7 +1697,8 @@ pub fn locate(doc: &WebDocument, item: usize, part: &str, start: usize, end: usi
         return uncertain;
     }
     let squeeze = |u: &[u16]| u.iter().copied().filter(|&c| !is_js_space(c) && c != 0xfffc).collect::<Vec<u16>>();
-    if squeeze(&doc.text[s..e]) != squeeze(&units[start..end]) {
+    let shown: Vec<u16> = (s..e).filter(|i| !doc.hidden.iter().any(|(a, b)| a <= i && i < b)).map(|i| doc.text[i]).collect();
+    if squeeze(&shown) != squeeze(&units[start..end]) {
         return uncertain;
     }
     let slice = |a: usize, b: usize| String::from_utf16_lossy(&doc.text[a..b]);
@@ -1840,12 +1861,12 @@ mod tests {
             let units: Vec<u16> = item.text.encode_utf16().collect();
             let (start, end) = (units.len() / 4, units.len() * 3 / 4);
             let found = locate(&doc, item.id, "", start, end);
-            if item.spans.iter().any(|s| s.kind == "math" && s.start < end && s.end > start) {
-                continue;
-            }
             assert!(found.certain, "item {}: {:?}", item.id, item.text);
             let exact = found.exact.clone().unwrap();
-            assert_eq!(collapse(&exact), collapse(&String::from_utf16_lossy(&units[start..end])));
+            // Across inline maths the page text also holds the formula's TeX, which reading mode leaves out.
+            if !item.spans.iter().any(|s| s.kind == "math" && s.start < end && s.end > start) {
+                assert_eq!(collapse(&exact), collapse(&String::from_utf16_lossy(&units[start..end])));
+            }
             // Stored as the reader stores it, it shows on the same words.
             let annotation = serde_json::json!({ "id": "h", "text": exact, "color": "green", "anchor": { "version": 1, "kind": "web", "selectors": [
                 { "type": "TextQuoteSelector", "exact": exact, "prefix": found.prefix, "suffix": found.suffix },

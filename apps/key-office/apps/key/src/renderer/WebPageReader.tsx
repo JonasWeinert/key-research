@@ -9,7 +9,7 @@ import { bridge, type Invoke, type Source } from "./library-api";
 import { openItemAt, toast } from "./item-actions";
 import { describeRange, locate, offsetOf, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
 import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT, type WebFocus } from "./web-page-open";
-import ReadingMode, { ContentsPopover, TypographyPopover, useTypography, type ReadingModeHandle, type ReadingModeState, type ReadingReply, type ReadingSelection, type Stretch, type WebReadingBackend } from "./ReadingMode";
+import ReadingMode, { ContentsPopover, TypographyPopover, useTypography, type ReadingModeHandle, type ReadingModeState, type ReadingReply, type ReadingSelection, type ReaderSelectionAction, type Stretch, type WebReadingBackend } from "./ReadingMode";
 import { opensInReadingMode, rememberReadingMode } from "./reading-preference";
 import { writeQuoteClipboard } from "./quote-clipboard";
 import { quoteAttribution } from "./cite";
@@ -21,7 +21,6 @@ import { HighlightInfo } from "@key-reader/pdfjs/HighlightInfo";
 import { useStatusItems } from "./status-bar";
 import { useWebReferences } from "./web-reader-references";
 import "./web-page.css";
-import { FirstUseTip } from "./explain";
 import { couldNot } from "../shared/plain-error";
 
 export const HIGHLIGHT_COLORS = ["orange", "green", "blue", "pink", "purple"] as const;
@@ -145,6 +144,7 @@ export function WebPageReader({
   sourceId,
   viewId,
   panelTab,
+  selectionActions,
 }: {
   invoke: Invoke;
   workspaceId: string;
@@ -152,6 +152,8 @@ export function WebPageReader({
   viewId?: string;
   /** What the panel docked beside the reader in its tab shows (see WebReaderPanel). */
   panelTab?: PanelTab;
+  /** Actions the host adds to the selection menu, after Cite (ReadingMode.tsx ReaderSelectionAction). */
+  selectionActions?: ReaderSelectionAction[];
 }) {
   const [source, setSource] = useState<Source | null>(null);
   const [page, setPage] = useState<{ html: string; info: { url?: string; capturedAt?: string } } | null>(null);
@@ -563,7 +565,7 @@ export function WebPageReader({
         }
         return found;
       },
-      highlight: async (selection: ReadingSelection, color) => {
+      highlight: async (selection: ReadingSelection, color, comment) => {
         const d = docRef.current;
         if (!d?.body) return null;
         const index = textIndex(d.body);
@@ -585,10 +587,17 @@ export function WebPageReader({
             { type: "TextPositionSelector", start: found.start, end: found.end },
           ],
         };
-        const created: WebAnnotation = { id: crypto.randomUUID(), documentId: sourceId, text: found.exact, color: color as Color, anchor, createdAt: now, updatedAt: now };
+        const created: WebAnnotation = { id: crypto.randomUUID(), documentId: sourceId, text: selection.text, color: color as Color, anchor, createdAt: now, updatedAt: now, ...(comment?.trim() ? { comment: comment.trim() } : {}) };
         await saveRef.current([created]);
         return created.id;
       },
+      updateAnnotation: async (id, patch) => {
+        const a = latest.current.find((x) => x.id === id);
+        if (!a) return;
+        const comment = patch.comment === undefined ? a.comment : patch.comment.trim() || undefined;
+        await saveRef.current([{ ...a, ...(patch.color ? { color: patch.color as Color } : {}), comment, updatedAt: new Date().toISOString() }]);
+      },
+      removeAnnotation: (id) => saveRef.current([], [id]),
       cite: (selection) => citeRef.current(selection.text, undefined),
       copy: async (selection) => {
         await navigator.clipboard.writeText(selection.text);
@@ -837,6 +846,7 @@ export function WebPageReader({
           <ReadingMode
             ref={readingRef}
             web={backend}
+            selectionActions={selectionActions}
             start={{ page: 0, fraction: 0 }}
             typography={typography}
             invoke={(command, args) => invoke(command, args as Record<string, unknown>, workspaceId)}
@@ -932,10 +942,25 @@ export function WebPageReader({
             <button type="button" className="kx-web-toolbar-action" aria-label="Cite" title="Copy as a quote with its source" onClick={() => void cite()}>
               <Icon name="quote" size={15} />
             </button>
-            <FirstUseTip help="tip.cite" anchor='.kx-web-toolbar-action[aria-label="Cite"]' side="above" delay={600} />
             <button type="button" className="kx-web-toolbar-action" aria-label="Add comment" title="Add comment" onClick={openComment}>
               <Icon name="note" size={15} />
             </button>
+            {context.kind === "selection" &&
+              selectionActions?.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="kx-web-toolbar-text"
+                  title={action.title}
+                  onClick={() => {
+                    action.run({ text: context.text, page: -1, rects: [] });
+                    clearSelection();
+                    setContext(null);
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
           </div>
         )}
         {draft && (

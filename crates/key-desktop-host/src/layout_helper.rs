@@ -109,9 +109,121 @@ pub fn analyze_with_progress(path: &Path, model: bool, progress: &dyn Fn(&str, u
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 
+const REGIONS_FLAG: &str = "--key-layout-regions";
+
+/// One page's figures and tables as the layout model sees them (reading mode), zero-based page.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct PageRegions {
+    pub page: i64,
+    pub regions: Vec<key_index::reflow_regions::Region>,
+}
+
+/// Runs the layout model alone (no text extraction) on `pages` (zero-based, in this order) in a
+/// helper process at the caller's priority class, handing each page's regions over as it is done.
+pub fn regions(path: &Path, model: &Path, pages: &[i64], mut each: impl FnMut(PageRegions)) -> Result<(), String> {
+    let output = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let list = pages.iter().map(|p| (p + 1).to_string()).collect::<Vec<_>>().join(",");
+    let mut command = Command::new(env::current_exe().map_err(|e| e.to_string())?);
+    command.arg(REGIONS_FLAG).arg(path).arg(output.path()).arg(model).arg(list).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::piped());
+    // The same thread budget as analysis at this class.
+    let class = key_store::priority::current();
+    let threads = if class <= key_store::priority::Class::Foreground {
+        std::thread::available_parallelism().map(|n| (n.get() / 2).clamp(1, 4)).unwrap_or(2)
+    } else {
+        key_store::priority::background_threads()
+    };
+    command.env("KEY_LAYOUT_THREADS", threads.to_string());
+    command.env(CLASS_ENV, class.name());
+    let mut child = command.spawn().map_err(|e| format!("layout helper: {e}"))?;
+    let started = Instant::now();
+    let mut seen = 0;
+    let mut read = |seen: &mut usize| {
+        let text = std::fs::read_to_string(output.path()).unwrap_or_default();
+        // Whole lines only: the helper may be writing the next.
+        for line in text.split_inclusive('\n').filter(|l| l.ends_with('\n')).skip(*seen) {
+            *seen += 1;
+            if let Ok(page) = serde_json::from_str::<PageRegions>(line.trim()) {
+                each(page);
+            }
+        }
+    };
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
+        }
+        read(&mut seen);
+        if started.elapsed() > TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("layout analysis took too long".into());
+        }
+        std::thread::sleep(Duration::from_millis(120));
+    };
+    read(&mut seen);
+    if !status.success() {
+        let mut message = String::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            let _ = std::io::Read::read_to_string(&mut stderr, &mut message);
+        }
+        return Err(format!("layout helper failed: {}", message.trim().lines().last().unwrap_or("no output")));
+    }
+    Ok(())
+}
+
+fn run_regions(input: &Path, output: &Path, model: &Path, pages: &str) -> Result<(), String> {
+    use std::io::Write;
+    let pages: Vec<usize> = pages.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+    let mut file = std::fs::OpenOptions::new().append(true).create(true).open(output).map_err(|e| e.to_string())?;
+    let mut failure = None;
+    opendataloader_pdf::onnx_layout::detect_pages(input, None, &pages, model, |found| {
+        let page = found.number as i64 - 1;
+        let regions = found
+            .detections
+            .iter()
+            .filter_map(|d| {
+                let role = opendataloader_pdf::onnx_layout::accepted_role(d)?;
+                key_index::reflow_regions::region_of(page, role, [d.bbox.x, d.bbox.y, d.bbox.width, d.bbox.height], found.width, found.height)
+            })
+            .collect();
+        let line = serde_json::to_string(&PageRegions { page, regions }).unwrap_or_default();
+        if let Err(e) = writeln!(file, "{line}").and_then(|_| file.flush()) {
+            failure = Some(e.to_string());
+        }
+    })
+    .map_err(|e| format!("{e:#}"))?;
+    failure.map_or(Ok(()), Err)
+}
+
 pub fn maybe_run_layout_helper() -> Option<i32> {
     let mut arguments = env::args_os().skip(1);
-    if arguments.next().as_deref() != Some(OsStr::new(FLAG)) {
+    let first = arguments.next();
+    if first.as_deref() == Some(OsStr::new(REGIONS_FLAG)) {
+        let (Some(input), Some(output), Some(model), Some(pages)) = (arguments.next(), arguments.next(), arguments.next(), arguments.next()) else {
+            eprintln!("usage: {REGIONS_FLAG} INPUT OUTPUT MODEL PAGES");
+            return Some(2);
+        };
+        let class = env::var(CLASS_ENV).ok().as_deref().and_then(key_store::priority::Class::parse);
+        if let Some(class) = class {
+            key_store::priority::set_thread_class(class);
+            if class >= key_store::priority::Class::Background {
+                key_embed::set_process_nice(std::process::id(), 10);
+            }
+        }
+        let worker = std::thread::Builder::new().stack_size(64 << 20).spawn(move || {
+            if let Some(class) = class {
+                key_store::priority::set_thread_class(class);
+            }
+            run_regions(Path::new(&input), Path::new(&output), Path::new(&model), &pages.to_string_lossy())
+        });
+        return match worker.map_err(|e| e.to_string()).and_then(|w| w.join().map_err(|_| "layout helper panicked".to_string())) {
+            Ok(Ok(())) => Some(0),
+            Ok(Err(error)) | Err(error) => {
+                eprintln!("{error}");
+                Some(1)
+            }
+        };
+    }
+    if first.as_deref() != Some(OsStr::new(FLAG)) {
         return None;
     }
     let input = arguments.next().map(PathBuf::from);

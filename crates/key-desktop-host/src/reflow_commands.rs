@@ -15,6 +15,7 @@ pub fn dispatch(library: &Library, native: &NativePdfService, command: &str, arg
     match command {
         "store_reflow_document" => Some(document(library, args).and_then(json_output)),
         "store_reflow_locate" => Some(locate(library, native, args).and_then(json_output)),
+        "store_reflow_regions" => Some(arg::<String>(args, "hash").and_then(|hash| super::reflow_regions::poll(library, &hash, arg::<Option<i64>>(args, "page").ok().flatten())).and_then(json_output)),
         _ => None,
     }
 }
@@ -31,7 +32,12 @@ fn assembled(library: &Library, hash: &str) -> Result<Result<(key_store::Source,
         return Ok(Err(json!({ "status": if running { "running" } else { "missing" }, "indexStatus": source.index_status })));
     };
     let layout: key_index::Layout = serde_json::from_str(&stored.layout).map_err(|e| e.to_string())?;
-    Ok(Ok((source, reflow::assemble(&layout))))
+    let mut document = reflow::assemble(&layout);
+    // Figures and tables the layout model found while it was read (when the stored structure lacks them).
+    if let Some(regions) = super::reflow_regions::current(library, hash, &layout) {
+        key_index::reflow_regions::apply_regions(&mut document, &regions.regions);
+    }
+    Ok(Ok((source, document)))
 }
 
 fn document(library: &Library, args: &Json) -> Result<Json, String> {

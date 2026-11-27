@@ -18,6 +18,7 @@ mod layout;
 mod links;
 mod note;
 pub mod reflow;
+pub mod reflow_regions;
 pub mod web_reflow;
 pub use chunk::{PageText, TextChar, chunk_pages, page_lines};
 pub use layout::{Layout, LayoutBlock, LayoutPage, LayoutSentence, chunk_layout};

@@ -71,6 +71,64 @@ pub fn detect_document(
     Ok(result)
 }
 
+/// One page's detections with its size in points (bboxes are in points, y down).
+#[derive(Clone, Debug)]
+pub struct PageDetections {
+    pub number: usize,
+    pub width: f32,
+    pub height: f32,
+    pub detections: Vec<Detection>,
+}
+
+/// The model on `pages` (1-based) in the order given, one at a time, each handed to `each` as
+/// soon as it is done (reading mode inserts figures and tables as pages come in). Same
+/// rendering and thresholds as `detect_document`.
+pub fn detect_pages(path: &Path, password: Option<&str>, pages: &[usize], model: &Path, mut each: impl FnMut(PageDetections)) -> Result<()> {
+    let mut engine = Engine::open(model)?;
+    let pdfium = bind_pdfium()?;
+    let document = pdfium.load_pdf_from_file(path, password)?;
+    let count = document.pages().len() as usize;
+    for (done, &number) in pages.iter().enumerate() {
+        crate::report_progress("layout-model", done, pages.len());
+        if number == 0 || number > count {
+            continue;
+        }
+        let page = document.pages().get((number - 1) as _)?;
+        let width = page.width().value;
+        let height = page.height().value;
+        let bitmap = page.render_with_config(&PdfRenderConfig::new().scale_page_by_factor(200.0 / 72.0))?;
+        let rgba = bitmap.as_rgba_bytes();
+        let detections = engine.infer(&rgba, bitmap.width() as u32, bitmap.height() as u32)?;
+        let sx = width / bitmap.width() as f32;
+        let sy = height / bitmap.height() as f32;
+        let detections = detections
+            .into_iter()
+            .map(|mut d| {
+                d.bbox.x *= sx;
+                d.bbox.width *= sx;
+                d.bbox.y *= sy;
+                d.bbox.height *= sy;
+                d
+            })
+            .collect();
+        each(PageDetections { number, width, height, detections });
+    }
+    Ok(())
+}
+
+/// What a detection is, when it is confident enough to use: "Figure", "Table" or "Caption".
+pub fn accepted_role(detection: &Detection) -> Option<&'static str> {
+    if detection.score < threshold(detection.class_id) {
+        return None;
+    }
+    match detection.class_id {
+        3 | 14 => Some("Figure"),
+        21 => Some("Table"),
+        7 => Some("Caption"),
+        _ => None,
+    }
+}
+
 struct Engine {
     session: Session,
     image: String,
