@@ -168,7 +168,7 @@ Database search builds a query from concepts and their synonyms, with AND, OR, N
 <td width="50%"><img src="assets/readme/key-review-prisma.png" alt="A review's overview with the next step, progress and a PRISMA 2020 flow diagram from its real numbers"/></td>
 </tr>
 <tr>
-<td valign="top"><strong>Screening</strong><br/>One record at a time with the keyboard (I, E, M, a reason's number, ⌘Z), or a list with filters and batch decisions. Blind dual screening, conflicts, pilot rounds with Cohen's kappa.</td>
+<td valign="top"><strong>Screening</strong><br/>One record at a time with the keyboard (I, E, M, the failed criterion's number, ⌘Z), or a list with filters and batch decisions. Blind dual screening, conflicts, pilot rounds with Cohen's kappa.</td>
 <td valign="top"><strong>PRISMA 2020</strong><br/>The flow diagram is drawn from the review's own data and exports as SVG, PNG or CSV.</td>
 </tr>
 <tr>
@@ -176,7 +176,7 @@ Database search builds a query from concepts and their synonyms, with AND, OR, N
 <td width="50%"><img src="assets/readme/key-review-analysis.png" alt="A random-effects meta-analysis with its forest plot"/></td>
 </tr>
 <tr>
-<td valign="top"><strong>Protocol</strong><br/>Question, rules, criteria and exclusion reasons, versioned with notes. Criteria can be linked to metadata (year, type, language, a custom property or a formula) to suggest, or apply visibly, a decision.</td>
+<td valign="top"><strong>Protocol</strong><br/>Question, rules and criteria, versioned with notes. A criterion is a rule a study must meet; excluding names the one it fails, which is the reason PRISMA reports. Suggestions follow the question's parts. Criteria can be linked to metadata (year, type, language, a custom property or a formula) to suggest, or apply visibly, a decision.</td>
 <td valign="top"><strong>Extraction and meta-analysis</strong><br/>Forms with quotes from the reader, dual extraction, risk-of-bias templates; RR, OR, RD, MD and SMD pooled by fixed or random effects (DerSimonian–Laird, REML, Hartung–Knapp), checked against R's metafor.</td>
 </tr>
 </table>
