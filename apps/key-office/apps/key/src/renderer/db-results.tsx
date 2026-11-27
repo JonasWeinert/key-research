@@ -402,6 +402,8 @@ export function DbResults({ api, invoke, workspaceId, runId, connectors, label, 
                           itemRef={virtual.measureElement}
                           work={work}
                           badge={state.state !== "inbox"}
+                          // The row's own Add to Inbox (below) records the search as the origin.
+                          inbox={false}
                           invoke={invoke}
                           workspaceId={workspaceId}
                           selected={item.index === current}
