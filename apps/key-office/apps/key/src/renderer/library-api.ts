@@ -385,7 +385,9 @@ export interface AppSettings {
   openalexMailto: string;
   openalexApiKey: string;
   /** Web search providers by id: turned off, or given an API key. */
-  webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
+  webProviders: Record<string, { enabled?: boolean; apiKey?: string; baseUrl?: string }>;
+  /** Web search engines: their order, what happens when one fails, scholarly narrowing. */
+  webEngines?: { order: string[]; fallback: "next" | "stop"; scholarly: boolean };
   /** A work added from another source's context: ask, use the origin's collections, or the library only. */
   addFromSource: "ask" | "origin" | "library";
   /** Find PDF for references as they are added (off by default). */

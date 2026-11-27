@@ -234,7 +234,7 @@ export default function Settings({
       {section === "privacy" && <PrivacySettings settings={settings} onSettings={onSettings} />}
       {section === "web" && (
         <>
-          <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />
+          <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} onOpenServices={() => onSection("services")} />
           <BrowserSettings settings={settings} onSettings={onSettings} />
         </>
       )}

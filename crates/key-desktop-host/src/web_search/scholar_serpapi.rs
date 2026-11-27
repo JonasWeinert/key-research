@@ -57,7 +57,7 @@ pub fn parse_summary(summary: Option<&str>) -> (Vec<String>, Option<i64>, Option
 }
 
 /// The first DOI in a link (10.xxxx/…), lower-case.
-fn doi_in(link: &str) -> Option<String> {
+pub fn doi_in(link: &str) -> Option<String> {
     let mut from = 0;
     while let Some(found) = link[from..].find("10.") {
         let at = from + found;
@@ -105,7 +105,7 @@ pub fn parse_result(item: &Json) -> Option<WebResult> {
 pub fn parse_page(body: &Json, start: usize) -> WebPage {
     let results: Vec<WebResult> = body["organic_results"].as_array().into_iter().flatten().filter_map(parse_result).collect();
     let more = text(&body["serpapi_pagination"]["next"]).is_some() && !results.is_empty();
-    WebPage { cursor: more.then(|| (start + results.len()).to_string()), total: body["search_information"]["total_results"].as_i64(), results, skipped: None }
+    WebPage { cursor: more.then(|| (start + results.len()).to_string()), total: body["search_information"]["total_results"].as_i64(), results, skipped: None, ..Default::default() }
 }
 
 pub struct ScholarSerpApi;

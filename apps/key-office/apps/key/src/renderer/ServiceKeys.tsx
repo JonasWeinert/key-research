@@ -30,6 +30,9 @@ interface Service {
   usedFor: string;
   keyUrlLabel: string;
   keyRequired: boolean;
+  /** A general web search engine; testing its key may use one search. */
+  engine?: boolean;
+  checkUsesQuota?: boolean;
   key: { set: boolean; hint?: string; updatedAt?: number };
   mode: Mode;
   usage: Usage;
@@ -171,9 +174,9 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
           </span>
           <small>
             {key.set
-              ? `${storage.locked ? "Locked in the Keychain" : storage.backend === "keychain" ? "In the Keychain" : "On this Mac"}`
+              ? `${storage.locked ? "Locked in the Keychain" : storage.backend === "keychain" ? "In the Keychain" : "On this Mac"}${service.checkUsesQuota ? " · testing uses one search" : ""}`
               : service.keyRequired
-                ? `Needed to use ${service.name} · from ${service.keyUrlLabel}`
+                ? `Needed to use ${service.name} · from ${service.keyUrlLabel}${service.checkUsesQuota ? " · testing uses one search" : ""}`
                 : `Optional · works without one · from ${service.keyUrlLabel}`}
           </small>
         </div>
@@ -190,7 +193,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
         </span>
         {key.set && !editing && (
           <div className="kx-settings-control">
-            <button className="kx-settings-button" disabled={!!busy} onClick={() => void test()}>
+            <button className="kx-settings-button" disabled={!!busy} title={service.checkUsesQuota ? "Testing runs one small search, which uses a little of your allowance" : "Testing runs no search"} onClick={() => void test()}>
               {busy === "test" ? "Testing…" : "Test"}
             </button>
             <button className="kx-settings-button" onClick={() => setEditing(true)}>
@@ -227,7 +230,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
             }}
             onKeyDown={(e) => e.key === "Enter" && void save()}
           />
-          <button className="kx-settings-button" disabled={!draft.trim() || !!busy} onClick={() => void test()}>
+          <button className="kx-settings-button" disabled={!draft.trim() || !!busy} title={service.checkUsesQuota ? "Testing runs one small search, which uses a little of your allowance" : "Testing runs no search"} onClick={() => void test()}>
             {busy === "test" && draft ? "Testing…" : "Test"}
           </button>
           <button className="kx-settings-button kx-service-primary" disabled={!draft.trim() || !!busy} onClick={() => void save()}>
@@ -251,7 +254,7 @@ function ServiceGroup({ service, storage, invoke, onChange }: { service: Service
           </button>
         </div>
       ) : (
-        <Row label="Use the key" detail={service.keyRequired ? "When other catalogues find nothing, or always if on under Web search." : service.mode === "always" ? "Every request to the service carries it." : "Only when a request without it is limited or refused, so your own allowance lasts."}>
+        <Row label="Use the key" detail={service.engine ? "When you search the web and this engine is on under Web search engines." : service.keyRequired ? "When other catalogues find nothing, or always if on under Web search." : service.mode === "always" ? "Every request to the service carries it." : "Only when a request without it is limited or refused, so your own allowance lasts."}>
           {!service.keyRequired && (
             <select
               className="kx-settings-select"

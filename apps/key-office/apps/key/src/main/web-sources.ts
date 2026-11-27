@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WebContents } from "electron";
-import { capturePage } from "./browser/snapshot";
+import { SNAPSHOT_CSP, capturePage } from "./browser/snapshot";
 import { safeFileName } from "./browser/urls";
 import { ACCESS_DENIED, judgeLoadedPage, withLibraryAccess } from "./browser/proxy-service";
 
@@ -15,6 +15,20 @@ import { ACCESS_DENIED, judgeLoadedPage, withLibraryAccess } from "./browser/pro
 const LIVE_PAGE_SCRIPT = `({ html: document.documentElement.outerHTML, url: location.href })`;
 
 type Invoke = <T = unknown>(command: string, args: Record<string, unknown>, workspaceId: string) => Promise<T>;
+
+const escapeHtml = (text: string) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+/** A page a reader service read, as an offline document like a snapshot: the same CSP (no
+ *  scripts, no requests) and the same `key-snapshot` record of where and when. */
+export function readPageDocument(html: string, meta: { title: string; url: string; language?: string }, capturedAt: string, provider: string) {
+  const body = html.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "").replace(/<(iframe|object|embed|base|meta|link)\b[^>]*>/gi, "");
+  return (
+    `<!doctype html><html${meta.language ? ` lang="${escapeHtml(meta.language)}"` : ""}><head><meta charset="utf-8">` +
+    `<meta http-equiv="Content-Security-Policy" content="${SNAPSHOT_CSP}">` +
+    `<meta name="key-snapshot" content="${escapeHtml(JSON.stringify({ url: meta.url, capturedAt, readBy: provider }))}">` +
+    `<title>${escapeHtml(meta.title)}</title></head><body>${body}</body></html>`
+  );
+}
 type Source = {
   id: string;
   kind: string;
@@ -58,7 +72,7 @@ export class WebSources {
         s ? { id: s.id, saved: !!s.filePath && s.kind === "web", ...(s.kind !== "web" ? { into: s.title || "this source" } : {}) } : null,
       );
     if (command === "saved_page_html") return this.html(String(args?.id ?? ""), workspaceId);
-    if (command === "saved_page_fetch") return this.fetchInto(String(args?.id ?? ""), workspaceId);
+    if (command === "saved_page_fetch") return this.fetchInto(String(args?.id ?? ""), workspaceId, args?.reader ? String(args.reader) : undefined);
     throw Error(`Unknown command ${command}`);
   }
 
@@ -116,22 +130,57 @@ export class WebSources {
   /** Saves the web page of a source that has no file: its address (or its DOI's landing
    * page), loaded with the browser's profile; directly first, and through the site's library
    * proxy when this network needs it (known, or the direct page wanted a sign-in). */
-  async fetchInto(id: string, workspaceId: string) {
+  async fetchInto(id: string, workspaceId: string, reader?: string) {
     const source = await this.invoke<Source | null>("store_source", { id }, workspaceId);
     if (!source) throw Error("The source is no longer in the library");
     if (source.filePath) throw Error("This source has a file already");
     const url = source.url && /^https?:/i.test(source.url) ? source.url : source.doi ? `https://doi.org/${source.doi}` : "";
     if (!url) throw Error("This source has no web address to save");
+    // The user picked a page reader (Firecrawl, Jina): it reads the page, not Key's browser.
+    if (reader) {
+      await this.saveRead(url, workspaceId, id, reader);
+      return this.invoke<Source>("store_source", { id }, workspaceId);
+    }
     if (!this.load) throw Error("The browser is not ready yet");
     const load = this.load;
-    await withLibraryAccess(url, (target) =>
-      load(target, async (contents) => {
-        const access = await judgeLoadedPage(contents, target);
-        if (access?.access === "denied") return ACCESS_DENIED;
-        return { value: await this.save(contents, workspaceId, id), access: access ?? { access: "unknown" as const, reason: "", telling: false } };
-      }),
-    );
+    try {
+      await withLibraryAccess(url, (target) =>
+        load(target, async (contents) => {
+          const access = await judgeLoadedPage(contents, target);
+          if (access?.access === "denied") return ACCESS_DENIED;
+          return { value: await this.save(contents, workspaceId, id), access: access ?? { access: "unknown" as const, reason: "", telling: false } };
+        }),
+      );
+    } catch (error) {
+      // Key's own capture failed: a page reader the user turned on may still read it.
+      const read = await this.saveRead(url, workspaceId, id).then(
+        () => true,
+        () => false,
+      );
+      if (!read) throw error;
+    }
     return this.invoke<Source>("store_source", { id }, workspaceId);
+  }
+
+  /** Saves the page as a reader service read it (the host's web_read_page): its main
+   *  content as one offline HTML file, with no scripts and no requests. */
+  async saveRead(url: string, workspaceId: string, into: string, reader?: string) {
+    const page = await this.invoke<{ provider: string; url: string; title?: string; description?: string; language?: string; html: string }>("web_read_page", { url, provider: reader ?? null }, workspaceId);
+    const capturedAt = new Date().toISOString();
+    const meta = { title: page.title || page.url, url: page.url || url, authors: [] as string[], description: page.description, language: page.language };
+    const directory = await mkdtemp(join(tmpdir(), "key-web-page-"));
+    try {
+      const path = join(directory, `${safeFileName(meta.title).slice(0, 80) || "Web page"}.html`);
+      await writeFile(path, readPageDocument(page.html, meta, capturedAt, page.provider), "utf8");
+      const existing = await this.invoke<Source | null>("store_source", { id: into }, workspaceId);
+      if (!existing || existing.filePath) throw Error(existing ? "This source has a file already" : "The source is no longer in the library");
+      const id = (await this.invoke<Source>("store_attach_file", { id: into, path }, workspaceId)).id;
+      await this.invoke("store_web_page_apply", { id, meta, capturedAt, existingId: into, existingKind: existing?.kind ?? null, existingHadFile: false }, workspaceId);
+      this.changed();
+      return { id, title: meta.title, existing: true };
+    } finally {
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 
   /** A saved page's HTML, for the reader. */

@@ -60,6 +60,7 @@ pub fn parse_page(body: &Json) -> WebPage {
         cursor: body["next"].as_i64().map(|n| n.to_string()),
         total: body["total"].as_i64(),
         skipped: None,
+        ..Default::default()
     }
 }
 

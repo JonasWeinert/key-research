@@ -49,6 +49,14 @@ export interface AppSettings {
   /** First-use tips: which were seen, and whether they show at all (kept here, not in a
    *  view's storage, so every view agrees and clearing a profile's storage keeps them). */
   tips: TipsSetting
+  /** General web search engines (Tavily, Firecrawl …): the order they are asked in, what
+   *  happens when one fails or runs out, and whether to narrow to scholarly sources. */
+  webEngines: WebEnginesSetting
+}
+export interface WebEnginesSetting {
+  order: string[]
+  fallback: 'next' | 'stop'
+  scholarly: boolean
 }
 export interface TipsSetting {
   seen: string[]
@@ -60,8 +68,10 @@ export type OpenAtLaunch = 'workspaces' | 'restore' | 'last'
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
+  /** A self-hosted engine's address (SearXNG). */
+  baseUrl?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, modelsOwnSourcesOnly: false, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default', tips: { seen: [], off: false } }
+const DEFAULTS: AppSettings = { webEngines: { order: [], fallback: 'next', scholarly: false }, theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, modelsOwnSourcesOnly: false, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default', tips: { seen: [], off: false } }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -111,6 +121,7 @@ function sanitize(input: AppSettings): AppSettings {
     signInBrowser: SIGN_IN_BROWSERS.includes(input.signInBrowser) ? input.signInBrowser : 'default',
     citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
     tips: tips(input.tips),
+    webEngines: webEngines(input.webEngines),
   }
 }
 
@@ -128,9 +139,16 @@ function webProviders(input: unknown): Record<string, WebProviderSetting> {
     const entry: WebProviderSetting = {}
     if (typeof value.enabled === 'boolean') entry.enabled = value.enabled
     if (typeof value.apiKey === 'string' && value.apiKey.trim()) entry.apiKey = value.apiKey.trim().slice(0, 200)
+    if (typeof value.baseUrl === 'string' && /^https?:\/\/[^\s]+$/i.test(value.baseUrl.trim())) entry.baseUrl = value.baseUrl.trim().replace(/\/+$/, '').slice(0, 300)
     out[id] = entry
   }
   return out
+}
+
+function webEngines(input: unknown): WebEnginesSetting {
+  const value = (input && typeof input === 'object' ? input : {}) as Partial<WebEnginesSetting>
+  const order = Array.isArray(value.order) ? [...new Set(value.order.filter((id): id is string => typeof id === 'string' && /^[a-z0-9-]{1,32}$/.test(id)))].slice(0, 30) : []
+  return { order, fallback: value.fallback === 'stop' ? 'stop' : 'next', scholarly: value.scholarly === true }
 }
 
 // Every view (shell, readers, browser pages) follows prefers-color-scheme, which this sets.

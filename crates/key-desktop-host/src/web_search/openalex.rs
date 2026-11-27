@@ -120,6 +120,7 @@ pub fn parse_page(body: &Json) -> WebPage {
         cursor: text(&body["meta"]["next_cursor"]),
         total: body["meta"]["count"].as_i64(),
         skipped: None,
+        ..Default::default()
     }
 }
 

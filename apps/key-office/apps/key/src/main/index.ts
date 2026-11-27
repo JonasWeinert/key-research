@@ -2641,7 +2641,7 @@ else
         if (before.modelsAutoDownload !== next.modelsAutoDownload)
           for (const workspace of await registry.list())
             void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});
-        if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders)) pushHostKeys();
+        if (before.openalexMailto !== next.openalexMailto || JSON.stringify(before.webProviders) !== JSON.stringify(next.webProviders) || JSON.stringify(before.webEngines) !== JSON.stringify(next.webEngines)) pushHostKeys();
         if (before.openalex !== next.openalex || before.openalexMailto !== next.openalexMailto)
           for (const workspace of await registry.list())
             void registry

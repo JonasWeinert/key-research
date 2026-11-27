@@ -26,6 +26,9 @@ export interface ProviderState {
   error?: string;
   /** Filters it cannot apply, so it was not asked. */
   skipped?: WebFilterKey[];
+  /** The "web" chain: the engine that answered, and those that failed before it. */
+  answeredBy?: string;
+  failed?: { provider: string; message: string }[];
 }
 
 /** IPC errors arrive as "Error invoking remote method 'key:invoke': Error: …". */
@@ -43,6 +46,10 @@ export function webTokenNote(token: FilterToken, web: { applicable: Set<WebFilte
 
 export function useWebSearch(invoke: Invoke, workspaceId: string, query: string, active: boolean, tokens: FilterToken[] = []) {
   const [providers, setProviders] = useState<ProviderState[]>([]);
+  /** The web search engine the user picked for this query (else the first in Settings' order). */
+  const [engine, setEngine] = useState<string>();
+  const engineRef = useRef(engine);
+  engineRef.current = engine;
   const [online, setOnline] = useState(() => navigator.onLine);
   const [inLibrary, setInLibrary] = useState<Record<string, string>>({});
   /** Works whose title (only) matches a library source: "Possibly in library". */
@@ -76,8 +83,19 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
         setProviders((list) => list.map((p) => (p.info.id === info.id ? change(p) : p)));
       };
       try {
-        const page = await invoke<WebPage>("web_search", { provider: info.id, query: text, limit: PAGE, cursor, requestId, filters });
-        apply((p) => ({ ...p, status: "done", more: false, error: undefined, skipped: page.skipped, results: cursor ? [...p.results, ...page.results] : page.results, cursor: page.cursor }));
+        const picked = info.kind === "chain" ? engineRef.current : undefined;
+        const page = await invoke<WebPage>("web_search", { provider: info.id, query: text, limit: PAGE, cursor, requestId, filters, ...(picked ? { engine: picked } : {}) });
+        apply((p) => ({
+          ...p,
+          status: "done",
+          more: false,
+          error: undefined,
+          skipped: page.skipped,
+          results: cursor ? [...p.results, ...page.results] : page.results,
+          cursor: page.cursor,
+          answeredBy: cursor ? p.answeredBy : page.answeredBy,
+          failed: cursor ? p.failed : page.failed,
+        }));
       } catch (error) {
         const message = errorText(error);
         if (message === "Cancelled") return;
@@ -97,7 +115,8 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
       .then(setInfos)
       .catch(() => setInfos([]));
   }, [active, invoke]);
-  const enabled = useMemo(() => (infos ?? []).filter((p) => p.enabled), [infos]);
+  // Engines are asked only through the "web" chain (one at a time, in the user's order).
+  const enabled = useMemo(() => (infos ?? []).filter((p) => p.enabled && p.kind !== "engine"), [infos]);
   const enabledKey = enabled.map((p) => p.id).join();
   // The tokens some provider that is on can apply, as the library host reads them (web_filters);
   // the others are left to the library.
@@ -155,6 +174,14 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, q, online, enabledKey, !!infos, filtersKey]);
+
+  // Another engine picked: only the "web" chain is asked again.
+  const pickedOnce = useRef(false);
+  useEffect(() => {
+    if (!pickedOnce.current) return void (pickedOnce.current = true);
+    if (active && enabled.some((p) => p.kind === "chain") && (q.length >= 2 || filtered)) run(CHAIN_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine]);
 
   // Leaving the pill cancels whatever is still running.
   useEffect(() => {
@@ -257,7 +284,20 @@ export function useWebSearch(invoke: Invoke, workspaceId: string, query: string,
     none: !!infos && !enabled.length,
     canLoadMore: providers.some((p) => p.status === "done" && p.cursor),
     loadingMore: providers.some((p) => p.more),
+    /** The web search engines that are on, in the user's order (the "web" chain). */
+    engines: chainEngines(infos ?? []),
+    /** The engine picked for this query (undefined: Settings' order). */
+    engine,
+    pickEngine: setEngine,
   };
+}
+
+export const CHAIN_ID = "web";
+
+/** The engines the "web" chain asks, in order. */
+export function chainEngines(infos: WebProviderInfo[]) {
+  const chain = infos.find((p) => p.kind === "chain");
+  return (chain?.chain?.on ?? []).map((id) => infos.find((p) => p.id === id)).filter((p): p is WebProviderInfo => !!p);
 }
 
 export type WebSearchState = ReturnType<typeof useWebSearch>;

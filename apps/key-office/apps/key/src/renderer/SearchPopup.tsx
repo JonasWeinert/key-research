@@ -23,6 +23,7 @@ import { quickLook, useItemInfo, ItemHeader, ItemBody } from "./item-ui";
 import { useWebSearch, openWebLink, errorText, type WebHit, type WebSearchState } from "./web-search";
 import { useWebAdd, WebAddButton, type WebAdd } from "./WebAddButton";
 import { WebPill, copyCitation, webLink } from "./WebResults";
+import { EnginePicker } from "./web-engines";
 import { shortAuthors, snippetOf } from "../shared/web-search";
 import { Snippet } from "./search-highlight";
 import "./palette.css";
@@ -178,7 +179,7 @@ export default function SearchPopup({ invoke, workspaceId, label, placeholder, s
         label: "On the web",
         icon: "globe",
         rows: web.hits.slice(0, 12).map((hit) => ({ type: "web", key: `web:${hit.key}`, hit })),
-        note: loading ? "Searching…" : web.none ? "No web catalogue is on (Settings › Search)" : !web.hits.length ? "Nothing found on the web" : web.providers.map((p) => p.info.label).join(", "),
+        note: loading ? "Searching…" : web.none ? "No web catalogue is on (Settings › Search)" : !web.hits.length ? "Nothing found on the web" : web.providers.map((p) => (p.info.kind === "chain" ? (web.infos.find((i) => i.id === p.answeredBy)?.label ?? "Web") : p.info.label)).join(", "),
       });
     } else if (q) {
       out.push({ id: "web", label: "On the web", icon: "globe", rows: [{ type: "ask-web", key: "ask-web" }] });
@@ -274,6 +275,7 @@ export default function SearchPopup({ invoke, workspaceId, label, placeholder, s
         <div className="kx-spot-chips">
           <KindChips result={result} kinds={state.kinds} onKinds={(kinds) => setState((s) => ({ ...s, kinds }))} />
           <WebPill pressed={webOn} onClick={() => setWebOn(!webOn)} />
+          {webActive && <EnginePicker web={web} />}
           <DatabasesPill onClick={() => (onClose(), openDatabaseSearch(workspaceId, state.text))} />
           <span className="kx-spacer" />
           {expand && (

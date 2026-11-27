@@ -19,6 +19,28 @@ export interface WebProviderInfo {
   lookup: boolean;
   /** The search filters it can apply (shared/web-filters.ts). */
   filters?: WebFilterKey[];
+  /** A scholarly catalogue (asked side by side), a general web search engine (asked only
+   *  through the "web" chain, in the user's order) or that chain. */
+  kind?: "catalogue" | "engine" | "chain";
+  engine?: WebEngineInfo;
+  chain?: { order: string[]; on: string[]; fallback: "next" | "stop"; scholarly: boolean };
+}
+
+export interface WebEngineInfo {
+  /** Its key's service under Services & API keys. */
+  service?: string;
+  hasKey: boolean;
+  /** The user's own switch (a key alone never turns an engine on). */
+  turnedOn: boolean;
+  /** Can narrow to scholarly sources. */
+  scholarly: boolean;
+  /** Can read one page as clean HTML, for saving web pages. */
+  reader: boolean;
+  /** Runs at the user's own address (SearXNG). */
+  needsBaseUrl: boolean;
+  baseUrl?: string;
+  maxResults: number;
+  pricingUrl: string;
 }
 
 /** One work as any provider describes it. */
@@ -54,6 +76,10 @@ export interface WebPage {
   /** Pass back to get the next page; absent at the end. */
   cursor?: string;
   total?: number;
+  /** The web search engine that answered (the "web" chain). */
+  answeredBy?: string;
+  /** Engines asked before it that failed, and why. */
+  failed?: { provider: string; message: string }[];
 }
 
 /** A merged result: one work, found by one or more providers. */
