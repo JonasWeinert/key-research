@@ -2622,6 +2622,9 @@ else
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
+        if (before.modelsOwnSourcesOnly !== next.modelsOwnSourcesOnly)
+          for (const workspace of await registry.list())
+            void registry.invoke("store_models_options", { ownSourcesOnly: next.modelsOwnSourcesOnly }, workspace.id).catch(() => {});
         if (before.modelsAutoDownload !== next.modelsAutoDownload)
           for (const workspace of await registry.list())
             void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});

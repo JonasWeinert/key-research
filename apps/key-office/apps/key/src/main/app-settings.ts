@@ -20,6 +20,8 @@ export interface AppSettings {
   layoutModel: boolean
   /** Download on-device models from Hugging Face by themselves when first needed. */
   modelsAutoDownload: boolean
+  /** Download models only from Key's own repositories, never from a file's original source. */
+  modelsOwnSourcesOnly: boolean
   /** Keep the imported Zotero library in step with Zotero (off: import once). */
   zoteroSync: boolean
   /** Look sources up in OpenAlex when they arrive with a DOI, and refresh counts when viewed. */
@@ -53,7 +55,7 @@ export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', tips: { seen: [], off: false } }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, modelsOwnSourcesOnly: false, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', tips: { seen: [], off: false } }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -89,6 +91,7 @@ function sanitize(input: AppSettings): AppSettings {
     onboarded: input.onboarded === true,
     layoutModel: input.layoutModel !== false,
     modelsAutoDownload: input.modelsAutoDownload !== false,
+    modelsOwnSourcesOnly: input.modelsOwnSourcesOnly === true,
     zoteroSync: input.zoteroSync === true,
     openalex: input.openalex !== false,
     openalexMailto: typeof input.openalexMailto === 'string' && /^[^\s@]+@[^\s@]+$/.test(input.openalexMailto.trim()) ? input.openalexMailto.trim() : '',
@@ -130,6 +133,8 @@ function apply(settings: AppSettings) {
   process.env.KEY_MODEL_DIR = modelDir()
   // Test runs never download unless the launcher opted in (the hosts' default under tests).
   if (launchedAutoDownload === undefined && !isTestRun()) process.env.KEY_MODELS_AUTO_DOWNLOAD = settings.modelsAutoDownload ? '1' : '0'
+  // Hosts started from now on read it; running ones are told (index.ts).
+  process.env.KEY_MODELS_OWN_ONLY = settings.modelsOwnSourcesOnly ? '1' : '0'
   process.env.KEY_OPENALEX_ENABLED = settings.openalex ? '1' : '0'
   process.env.KEY_OPENALEX_MAILTO = settings.openalexMailto
   // API keys never go through the environment (children would inherit them): hosts get the

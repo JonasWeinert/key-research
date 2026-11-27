@@ -136,6 +136,9 @@ fn downloads_in_ranges_verifies_and_is_reused() {
     assert_eq!(std::fs::read(dir.join("onnx/model.onnx")).unwrap(), model);
     let status = models.status("m1").unwrap();
     assert_eq!((status.state.as_str(), status.received, status.total), ("ready", 4800, 4800));
+    // Which source it came from is kept and shown.
+    assert!(status.source.as_deref().is_some_and(|s| s.starts_with("Key’s repository (")), "{:?}", status.source);
+    assert!(!status.from_upstream);
     let ranges: Vec<String> = server.requests.lock().unwrap().iter().filter(|(p, _)| p.ends_with("model.onnx")).map(|(_, r)| r.clone()).collect();
     assert_eq!(ranges, ["0-999", "1000-1999", "2000-2999", "3000-3999", "4000-4499"]);
     // Ready models are not fetched again, by this or a fresh handle.

@@ -279,6 +279,14 @@ export const HELP = {
       "Either way, Key only reads from Zotero. Where both apps changed the same item, Key keeps its own version and lists the conflict.",
     ],
   ),
+  "model.sources": explain(
+    "Where models come from",
+    [
+      "Key keeps a copy of every model in its own repositories on Hugging Face, pinned to one version, and checks each file against its published checksum.",
+      "If Key’s copy cannot be reached, Key can fetch the same file from the publisher of the original model instead. It must match the same checksum, so it is the same file.",
+      "Turn this on to use Key’s repositories only, for example where your institution allows only known sources. Each model shows where it came from.",
+    ],
+  ),
   "markdown.removed": explain(
     "Files you deleted",
     [

@@ -376,6 +376,8 @@ export interface AppSettings {
   layoutModel: boolean;
   /** Download on-device models by themselves when first needed (default on). */
   modelsAutoDownload?: boolean;
+  /** Only from Key's own repositories, never a file's original source (default off). */
+  modelsOwnSourcesOnly?: boolean;
   zoteroSync: boolean;
   /** Look sources up in OpenAlex when they are imported with a DOI (and refresh counts when viewed). */
   openalex: boolean;

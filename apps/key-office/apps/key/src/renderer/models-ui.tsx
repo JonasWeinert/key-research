@@ -27,10 +27,14 @@ export interface ModelInfo {
   retryAt?: number | null;
   path?: string | null;
   diskBytes: number;
+  /** Where it was downloaded from, once it was. */
+  source?: string | null;
+  fromUpstream?: boolean;
 }
 export interface ModelsListing {
   root: string;
   autoDownload: boolean;
+  ownSourcesOnly?: boolean;
   diskBytes: number;
   models: ModelInfo[];
 }
@@ -99,6 +103,8 @@ export function ModelsGroup({
   listing,
   autoDownload,
   onAutoDownload,
+  ownSourcesOnly,
+  onOwnSourcesOnly,
   accelerator,
   onChanged,
 }: {
@@ -107,6 +113,9 @@ export function ModelsGroup({
   listing?: ModelsListing;
   autoDownload: boolean;
   onAutoDownload: (value: boolean) => void;
+  /** Never fall back to a file's original source (Key's Hugging Face repositories only). */
+  ownSourcesOnly?: boolean;
+  onOwnSourcesOnly?: (value: boolean) => void;
   /** Where the search model runs (Metal, CPU…), once it has started. */
   accelerator?: string;
   onChanged: () => void;
@@ -165,6 +174,11 @@ export function ModelsGroup({
                   {model.license}
                 </a>
               </small>
+              {model.source && (
+                <small className="kx-models-source" data-upstream={model.fromUpstream || undefined}>
+                  Downloaded from {model.source}
+                </small>
+              )}
               {failed && <small className="kx-models-error">{model.error}</small>}
             </div>
             <div className="kx-settings-control">
@@ -181,6 +195,11 @@ export function ModelsGroup({
       <Row label="Download automatically when needed" detail="Off: Key asks here first. Search by words and plain PDF text work without them.">
         <input type="checkbox" className="kx-switch" aria-label="Download models automatically when needed" checked={autoDownload} onChange={(e) => onAutoDownload(e.target.checked)} />
       </Row>
+      {onOwnSourcesOnly && (
+        <Row label="Download models only from Key’s own repositories" help="model.sources" detail="Off: when Key’s copy cannot be reached, a model’s file comes from its original publisher instead, checked against the same checksum.">
+          <input type="checkbox" className="kx-switch" aria-label="Download models only from Key’s own repositories" checked={!!ownSourcesOnly} onChange={(e) => onOwnSourcesOnly(e.target.checked)} />
+        </Row>
+      )}
       <Row label="Disk use" path detail={listing ? `${megabytes(listing.diskBytes)} in ${root.replace(/^\/Users\/[^/]+/, "~")}` : ""}>
         <button className="kx-settings-button" disabled={busy === "import"} onClick={addFromFile}>
           Add model from file…
