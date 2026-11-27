@@ -21,6 +21,7 @@ pub mod views;
 pub mod linalg;
 pub mod metareg;
 pub mod multilevel;
+pub mod pubbias;
 // std-D end.
 
 pub use ops::{Library, NoLibrary};

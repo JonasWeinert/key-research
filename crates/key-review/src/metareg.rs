@@ -196,19 +196,34 @@ pub fn reml_tau2(y: &[f64], v: &[f64], x: &Mat) -> Result<f64, String> {
     Err("The REML estimate of τ² did not converge".into())
 }
 
-struct Core {
-    beta: Vec<f64>,
-    vb: Mat,
-    stat: Vec<f64>,
-    qm: f64,
-    tau2: f64,
-    s2: f64,
-    w: Vec<f64>,
+pub(crate) struct Core {
+    pub beta: Vec<f64>,
+    pub vb: Mat,
+    pub stat: Vec<f64>,
+    pub qm: f64,
+    pub tau2: f64,
+    pub s2: f64,
+    pub w: Vec<f64>,
 }
 
-fn core(y: &[f64], v: &[f64], x: &Mat, random: bool, knha: bool) -> Result<Core, String> {
+/// τ² by "reml", "dl" (the moment estimator generalised to moderators, as metafor) or 0 ("fe").
+pub fn tau2_by(method: &str, y: &[f64], v: &[f64], x: &Mat) -> Result<f64, String> {
+    match method {
+        "fe" => Ok(0.0),
+        "dl" => {
+            let w: Vec<f64> = v.iter().map(|v| 1.0 / v).collect();
+            let f = wls(y, x, &w).ok_or("The moderators are collinear")?;
+            let p = p_matrix(x, &w, &f.vb);
+            let qe: f64 = f.resid.iter().zip(&w).map(|(e, w)| w * e * e).sum();
+            Ok(((qe - (y.len() - x.c) as f64) / p.trace()).max(0.0))
+        }
+        _ => reml_tau2(y, v, x),
+    }
+}
+
+pub(crate) fn core(y: &[f64], v: &[f64], x: &Mat, method: &str, knha: bool) -> Result<Core, String> {
     let (k, p) = (y.len(), x.c);
-    let tau2 = if random { reml_tau2(y, v, x)? } else { 0.0 };
+    let tau2 = tau2_by(method, y, v, x)?;
     let w: Vec<f64> = v.iter().map(|v| 1.0 / (v + tau2)).collect();
     let f = wls(y, x, &w).ok_or("The moderators are collinear")?;
     let s2 = if knha { f.resid.iter().zip(&f.w).map(|(e, w)| w * e * e).sum::<f64>() / (k - p) as f64 } else { 1.0 };
@@ -301,7 +316,8 @@ pub fn metareg(ids: &[String], labels: &[String], yi: &[f64], vi: &[f64], mods: 
     }
     let random = o.method != "fe";
     let knha = o.knapp_hartung && random;
-    let c = core(&y, &v, &x, random, knha)?;
+    let method = if random { if o.method == "dl" { "dl" } else { "reml" } } else { "fe" };
+    let c = core(&y, &v, &x, method, knha)?;
     let df = if knha { Some((k - p) as f64) } else { None };
     let coefficients = coefs(&names, &c.beta, &c.vb, &vec![df; p], o.level);
     // Residual heterogeneity from the fixed-effect fit.
@@ -313,7 +329,7 @@ pub fn metareg(ids: &[String], labels: &[String], yi: &[f64], vi: &[f64], mods: 
     let (i2, h2) = if random { (100.0 * c.tau2 / (c.tau2 + vt), (c.tau2 + vt) / vt) } else { (((qe - (k - p) as f64) / qe).max(0.0) * 100.0, qe / (k - p) as f64) };
     let r2 = if random {
         let ones = Mat { r: k, c: 1, v: vec![1.0; k] };
-        let t0 = reml_tau2(&y, &v, &ones)?;
+        let t0 = tau2_by(method, &y, &v, &ones)?;
         Some(if t0 > 0.0 { (100.0 * (t0 - c.tau2) / t0).max(0.0) } else { 0.0 })
     } else {
         None
@@ -342,7 +358,7 @@ pub fn metareg(ids: &[String], labels: &[String], yi: &[f64], vi: &[f64], mods: 
         let mut done = 0usize;
         for perm in &perms {
             let xp = x.rows(perm);
-            let Ok(r) = core(&y, &v, &xp, random, knha) else { continue };
+            let Ok(r) = core(&y, &v, &xp, method, knha) else { continue };
             done += 1;
             for j in 0..p {
                 if r.stat[j].abs() >= c.stat[j].abs() - tol {
@@ -386,7 +402,7 @@ pub fn metareg(ids: &[String], labels: &[String], yi: &[f64], vi: &[f64], mods: 
     let _ = c.s2;
     Ok(MetaReg {
         coefficients,
-        method: if random { "REML".into() } else { "Fixed effect".into() },
+        method: match method { "reml" => "REML".into(), "dl" => "DerSimonian–Laird".into(), _ => "Fixed effect".into() },
         test: if knha { "Knapp–Hartung t (and F)".into() } else { "z (and χ²)".into() },
         k,
         p,
