@@ -2,7 +2,7 @@
 // outside the host so a crash or a runaway document cannot take the library down.
 // The helper writes the document's blocks (reading order, kind, geometry, sentences)
 // and its Markdown as JSON; the indexer turns them into passages.
-use key_index::{Layout, LayoutBlock, LayoutSentence};
+use key_index::{Layout, LayoutBlock, LayoutPage, LayoutSentence};
 use opendataloader_pdf::{
     ConvertOptions,
     model::{BBox, Block, Page},
@@ -154,11 +154,13 @@ fn run(input: &Path, output: &Path, model: Option<PathBuf>) -> Result<(), String
     let document = opendataloader_pdf::convert(path, &options).map_err(|e| format!("{e:#}"))?;
     let markdown = opendataloader_pdf::to_markdown(&document);
     let mut blocks = Vec::new();
+    let mut pages = Vec::new();
     for page in &document.pages {
         let rotation = rotations.get(page.number.saturating_sub(1)).copied().unwrap_or(0);
         blocks.extend(page_blocks(page, rotation));
+        pages.push(page_geometry(page, rotation));
     }
-    let layout = Layout { engine: engine.into(), page_count: document.number_of_pages, markdown, blocks };
+    let layout = Layout { engine: engine.into(), page_count: document.number_of_pages, markdown, blocks, pages };
     std::fs::write(output, serde_json::to_vec(&layout).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }
 
@@ -170,7 +172,7 @@ fn page_blocks(page: &Page, rotation: u16) -> Vec<LayoutBlock> {
         .map(|(index, block)| LayoutBlock {
             page: page.number.saturating_sub(1) as i64,
             kind: kind(block).into(),
-            text: block.text(),
+            text: block_text(block),
             bounds: rect(block.bbox()),
             sentences: page
                 .sentences
@@ -178,8 +180,35 @@ fn page_blocks(page: &Page, rotation: u16) -> Vec<LayoutBlock> {
                 .filter(|s| s.block_index == index)
                 .map(|s| LayoutSentence { text: s.text.clone(), rects: s.rects.iter().map(|r| rect(*r)).collect() })
                 .collect(),
+            level: match block {
+                Block::Heading { level, .. } => Some(*level),
+                _ => None,
+            },
         })
         .collect()
+}
+
+/// The page's size and its pictures (raster images and figures the PDF's tags mark), for reading mode.
+fn page_geometry(page: &Page, rotation: u16) -> LayoutPage {
+    let rect = |b: BBox| rotate(quantize(b, page.width, page.height), rotation);
+    let figures = page.semantic_regions.iter().filter(|r| matches!(r.role.as_str(), "Figure" | "Chart" | "Diagram")).map(|r| r.bbox);
+    let (width, height) = if rotation % 180 == 90 { (page.height, page.width) } else { (page.width, page.height) };
+    LayoutPage {
+        page: page.number.saturating_sub(1) as i64,
+        width,
+        height,
+        images: page.images.iter().copied().chain(figures).map(rect).collect(),
+    }
+}
+
+/// A block's text; a reference or endnote list keeps one entry per line (reading mode lists them).
+fn block_text(block: &Block) -> String {
+    let lines = |items: Vec<(Option<&str>, &str)>| items.into_iter().map(|(label, text)| label.map_or(text.to_string(), |l| format!("{l} {text}"))).collect::<Vec<_>>().join("\n");
+    match block {
+        Block::ReferenceList { items, .. } => lines(items.iter().map(|i| (i.label.as_deref().filter(|l| !i.text.starts_with(*l)), i.text.as_str())).collect()),
+        Block::EndnoteList { items, .. } => lines(items.iter().map(|i| (None, i.text.as_str())).collect()),
+        _ => block.text(),
+    }
 }
 
 fn kind(block: &Block) -> &'static str {

@@ -28,6 +28,8 @@ const INTERACTIVE: &[&str] = &[
     "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete", "store_fill_recipe_export",
     "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status", "store_fill_runs", "store_fill_run",
     "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
+    // Reading mode: a highlight made in the text (store_reflow_document is a foreground read).
+    "store_reflow_locate",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but

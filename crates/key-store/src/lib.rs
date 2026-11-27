@@ -36,6 +36,7 @@ pub mod html_dom;
 pub mod feeds;
 pub mod reading;
 pub mod priority;
+pub mod structure;
 pub use analysis::{CarriedAnalysis, CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -526,6 +527,7 @@ impl Store {
         feeds::ensure_schema(&conn)?;
         reading::ensure_schema(&conn)?;
         fill::ensure_schema(&conn)?;
+        structure::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
         let formula_cache = formula::FormulaCache::new(root.clone());
         formula::register(&conn, &formula_cache)?;
