@@ -172,7 +172,7 @@ Database search builds a query from concepts and their synonyms, with AND, OR, N
 <td valign="top"><strong>PRISMA 2020</strong><br/>The flow diagram is drawn from the review's own data and exports as SVG, PNG or CSV.</td>
 </tr>
 <tr>
-<td width="50%"><img src="assets/readme/key-review-setup.png" alt="The criteria editor, one criterion linked to the publication year"/></td>
+<td width="50%"><img src="assets/readme/key-review-setup.png" alt="The criteria editor: criteria grouped by the parts of the question, each with the reason it gives when not met, and suggested criteria to add in one click"/></td>
 <td width="50%"><img src="assets/readme/key-review-analysis.png" alt="A random-effects meta-analysis with its forest plot"/></td>
 </tr>
 <tr>
