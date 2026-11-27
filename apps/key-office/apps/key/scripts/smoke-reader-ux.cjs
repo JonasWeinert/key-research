@@ -420,6 +420,58 @@ const want = (name) => !only.length || only.includes(name);
       }
       await shell.evaluate(() => window.key.setAppSettings({ theme: "system" }));
       await shell.emulateMedia({ colorScheme: "light" });
+      // The panel's top reads as one header: tabs as wide as their labels on the row with the
+      // panel's actions; the page's own bar right under it at the same insets; one divider; the
+      // page scrolling below both. Checked at the widths the panel takes.
+      const header = async (width) =>
+        shell.evaluate((width) => {
+          const pane = document.querySelector(".key-content-pane:has(> .key-reader-panel)");
+          pane.style.flex = `0 0 ${width}px`;
+          pane.style.width = `${width}px`;
+          const box = (s) => document.querySelector(`.key-reader-panel ${s}`)?.getBoundingClientRect();
+          const head = box(".key-side-panel-head");
+          const tabs = box(".key-side-panel-switch");
+          const actions = box(".key-side-panel-actions");
+          const bar = box(".kx-source-page-bar");
+          const badge = box(".kx-source-page-bar > :first-child");
+          const toprow = box(".kx-item-page-toprow");
+          const body = box(".kx-item-page-body");
+          const style = (s) => getComputedStyle(document.querySelector(`.key-reader-panel ${s}`));
+          return {
+            width,
+            panel: Math.round(box("").width ?? 0),
+            pageWidth: document.querySelector(".key-reader-panel .kx-source-page").clientWidth,
+            headHeight: Math.round(head.height),
+            tabsWidth: Math.round(tabs.width),
+            rowCentres: Math.abs(tabs.top + tabs.height / 2 - (actions.top + actions.height / 2)),
+            gapUnderHead: Math.round(bar.top - head.bottom),
+            insets: [Math.round(tabs.left - head.left), Math.round(badge.left - head.left)],
+            barHeight: Math.round(bar.height),
+            headDivider: style(".key-side-panel-head").borderBottomColor,
+            barDivider: style(".kx-item-page-toprow").borderBottomWidth,
+            scrollsBelow: body.top >= toprow.bottom - 1 && document.querySelector(".key-reader-panel .kx-item-page-body").scrollHeight >= 0,
+            clipped: tabs.left < head.left || actions.right > head.right + 1,
+          };
+        }, width);
+      result.panelHeader = [];
+      for (const width of [280, 340, 420]) {
+        await header(width);
+        await shell.waitForTimeout(400);
+        const h = await header(width);
+        result.panelHeader.push(h);
+        if (h.headHeight > 44) throw Error(`The panel header is more than one row: ${JSON.stringify(h)}`);
+        if (h.rowCentres > 2) throw Error(`The tabs and the panel's buttons are not on one line: ${JSON.stringify(h)}`);
+        if (h.tabsWidth > 0.75 * h.panel) throw Error(`The tabs are stretched across the panel: ${JSON.stringify(h)}`);
+        if (h.gapUnderHead < 0 || h.gapUnderHead > 4) throw Error(`The page's bar does not sit right under the header: ${JSON.stringify(h)}`);
+        if (Math.abs(h.insets[0] - h.insets[1]) > 2) throw Error(`The header rows do not share their inset: ${JSON.stringify(h)}`);
+        if (!/rgba\(0, 0, 0, 0\)|transparent/.test(h.headDivider) || h.barDivider !== "1px") throw Error(`Not exactly one divider under the header: ${JSON.stringify(h)}`);
+        if (!h.scrollsBelow || h.clipped) throw Error(`The header is overlapped or clipped: ${JSON.stringify(h)}`);
+      }
+      await shell.evaluate(() => {
+        const pane = document.querySelector(".key-content-pane:has(> .key-reader-panel)");
+        pane.style.flex = "";
+        pane.style.width = "";
+      });
       // The open reader follows an edit made elsewhere: the title changed in the library's
       // inspector shows in the docked Details and the tab once the reader is in front again.
       const readerTab = await shell.evaluate(async () => (await window.key.tabs()).tabs.find((t) => t.views[0]?.kind === "pdf")?.id);
@@ -669,6 +721,33 @@ const want = (name) => !only.length || only.includes(name);
       });
     }
 
+    // The reference: the library's details panel. Its bar has the height and the inset the
+    // reader panel's header rows use.
+    if (result.panelHeader) {
+      const [ws] = await shell.evaluate(() => window.key.workspaces());
+      await shell.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), ws.id);
+      await shell.locator(".kx-library:visible .kx-row").first().click();
+      const bar = shell.locator(".kx-inspector .kx-source-page-bar");
+      await bar.waitFor({ timeout: 15000 });
+      result.referenceBar = [];
+      for (const h of result.panelHeader) {
+        // The library's panel set so its page is as wide as the reader panel's.
+        const pageWidth = () => shell.locator(".kx-inspector .kx-source-page").evaluate((el) => el.clientWidth);
+        await shell.locator(".kx-inspector").evaluate((el, w) => el.style.setProperty("--kx-inspector-width", `${w}px`), h.width);
+        await shell.waitForTimeout(300);
+        const off = h.pageWidth - Math.round(await pageWidth());
+        await shell.locator(".kx-inspector").evaluate((el, w) => el.style.setProperty("--kx-inspector-width", `${w}px`), h.width + off);
+        await shell.waitForTimeout(300);
+        const reference = await bar.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const page = el.closest(".kx-source-page").getBoundingClientRect();
+          return { height: Math.round(r.height), inset: Math.round(r.left - page.left) };
+        });
+        result.referenceBar.push(reference);
+        if (h.barHeight !== reference.height) throw Error(`At ${h.width}px the reader panel's bar is ${h.barHeight}px, the library's ${reference.height}px`);
+        if (Math.abs(h.insets[1] - reference.inset) > 2) throw Error(`At ${h.width}px the reader panel's inset is ${h.insets[1]}px, the library's ${reference.inset}px`);
+      }
+    }
     console.log(JSON.stringify({ ok: true, result, temp, shots }, null, 1));
   } catch (error) {
     for (const page of app.windows()) {
