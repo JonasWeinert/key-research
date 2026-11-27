@@ -611,6 +611,49 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     if (at != null && at > 0) article.current?.querySelector(`[data-item="${at}"]`)?.scrollIntoView({ block: "start" });
   }, [usable, reply?.at]);
 
+  // A PDF analysed without the layout model: the model finds its figures and tables in the
+  // background (pages near this place first) and they come in as crops of the page. The text
+  // in view stays where it is while they do.
+  const [regions, setRegions] = useState<{ status: string; version: number; analysed?: number; pageCount?: number }>();
+  const anchor = useRef<{ key: string; offset: number } | null>(null);
+  const topPageRef = useRef(start.page);
+  const blockKey = (el: HTMLElement) => `${el.dataset.kind}|${(el.textContent ?? "").slice(0, 80)}`;
+  useEffect(() => {
+    if (isWeb || !hash || reply?.status !== "ready") return;
+    let alive = true;
+    let timer = 0;
+    let seen = -1;
+    const poll = async () => {
+      const r = await call.current<{ status: string; version: number; analysed?: number; pageCount?: number }>("store_reflow_regions", { hash, page: topPageRef.current }).catch(() => null);
+      if (!alive || !r) return;
+      setRegions(r);
+      if (seen >= 0 && r.version !== seen) {
+        // Keep the block at the top of the view where it is when the text changes under it.
+        const view = scroller.current?.getBoundingClientRect();
+        const top = view && [...(article.current?.querySelectorAll<HTMLElement>("[data-item]") ?? [])].find((el) => el.getBoundingClientRect().bottom > view.top + 12);
+        if (view && top) anchor.current = { key: blockKey(top), offset: top.getBoundingClientRect().top - view.top };
+        void load();
+      }
+      seen = r.version ?? 0;
+      if (r.status === "running" || r.status === "held") timer = window.setTimeout(() => void poll(), 1500);
+    };
+    void poll();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [reply?.status, hash, isWeb, load]);
+  useLayoutEffect(() => {
+    const keep = anchor.current;
+    const view = scroller.current?.getBoundingClientRect();
+    if (!keep || !view || !doc) return;
+    anchor.current = null;
+    const el = [...(article.current?.querySelectorAll<HTMLElement>("[data-item]") ?? [])].find((e) => blockKey(e) === keep.key);
+    if (el) scroller.current!.scrollTop += el.getBoundingClientRect().top - view.top - keep.offset;
+  }, [doc]);
+  // Tables shown as the analyser's text instead of their crop, on request.
+  const [asText, setAsText] = useState<Set<number>>(new Set());
+
   /** The element holding a part of an item's text. */
   const partElement = useCallback(
     (item: number, part = "") =>
@@ -747,7 +790,10 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       frame = requestAnimationFrame(() => {
         if (!isWeb) {
           const p = place();
-          if (p) setTopPage(p.page);
+          if (p) {
+            setTopPage(p.page);
+            topPageRef.current = p.page;
+          }
         }
         setSelection(null);
       });
@@ -1071,10 +1117,29 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
             return (
               <figure key={item.id} className="kx-reading-block kx-reading-figure" data-item={item.id} data-kind={item.kind}>
                 {marker}
-                {item.kind === "table" && caption && <figcaption data-caption={item.id}>{caption}</figcaption>}
-                {reader && <Crop item={item} reader={reader} width={article.current?.querySelector(".kx-reading-text")?.clientWidth ?? 680} />}
-                {item.kind !== "table" && caption && (
-                  <figcaption {...(item.kind === "figure" ? { "data-text": item.id } : { "data-caption": item.id })}>{caption}</figcaption>
+                {item.kind === "table" && asText.has(item.id) ? (
+                  <p className="kx-reading-text kx-reading-table-text" data-kind="table" data-text={item.id}>
+                    {item.text}
+                  </p>
+                ) : (
+                  reader && <Crop key={item.crop.rect.join(",")} item={item} reader={reader} width={article.current?.querySelector(".kx-reading-text")?.clientWidth ?? 680} />
+                )}
+                {caption && <figcaption {...(item.kind === "figure" ? { "data-text": item.id } : { "data-caption": item.id })}>{caption}</figcaption>}
+                {item.kind === "table" && item.text.trim() && (
+                  <button
+                    type="button"
+                    className="kx-reading-as-text"
+                    aria-pressed={asText.has(item.id)}
+                    onClick={() =>
+                      setAsText((s) => {
+                        const next = new Set(s);
+                        if (!next.delete(item.id)) next.add(item.id);
+                        return next;
+                      })
+                    }
+                  >
+                    {asText.has(item.id) ? "Show as on the page" : "Show as text"}
+                  </button>
                 )}
                 {comment}
               </figure>
@@ -1165,6 +1230,14 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       <div ref={scroller} className="kx-reading-scroll" data-reading-scroll>
         {content}
       </div>
+      {usable && (regions?.status === "running" || regions?.status === "held") && (
+        <div className="kx-reading-progress" role="status">
+          {regions.status === "held" ? <Icon name="readingMode" size={12} /> : <Icon name="sync" size={12} className="kx-reading-spin" />}
+          {regions.status === "held"
+            ? "Figures and tables wait for power (on battery)"
+            : `Finding figures and tables… ${regions.analysed ?? 0} of ${regions.pageCount ?? "?"} pages`}
+        </div>
+      )}
       {selection &&
         createPortal(
           <div

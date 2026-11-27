@@ -221,6 +221,75 @@ const FIXTURES = (process.env.KEY_READING_PDFS || "PUBMED_33599681.pdf,scientifi
       }
       await themes(pdf, `doc-${i}`);
     }
+
+    // 5. A PDF analysed without the layout model: its text shows at once; the model then finds
+    // its figures and tables in the background and they come in as crops of the page, with the
+    // place kept; a second opening has them at once, from the cache of PDFs read last.
+    const plainName = process.env.KEY_READING_UNMODELLED || "PUBMED_32285014.pdf";
+    const plainFile = path.join(temp, `plain-${plainName}`);
+    await copyFile(path.resolve(__dirname, "../../../../../tests/fixtures", plainName), plainFile);
+    await shell.evaluate(() => window.key.setAppSettings({ layoutModel: false }));
+    const plain = await call("library_import_file", { path: plainFile });
+    const before = await until(async () => {
+      const r = await call("store_reflow_document", { hash: plain.hash });
+      return r.status === "ready" ? r : null;
+    }, "the plain structure");
+    assert.notEqual(before.document.engine, "layout-onnx", "analysed without the model");
+    await shell.evaluate(() => window.key.setAppSettings({ layoutModel: true }));
+    const crops = (doc) => doc.items.filter((i) => (i.kind === "figure" || i.kind === "table") && i.crop).length;
+    pdf = await openReader(plain);
+    let started = Date.now();
+    await pdf.getByRole("button", { name: "Reading mode", exact: true }).click();
+    await pdf.locator(".kx-reading-article").waitFor();
+    const firstText = Date.now() - started;
+    const topKey = () =>
+      pdf.evaluate(() => {
+        const view = document.querySelector(".kx-reading-scroll").getBoundingClientRect();
+        const el = [...document.querySelectorAll(".kx-reading-article [data-item]")].find((e) => e.getBoundingClientRect().bottom > view.top + 12);
+        return { text: el?.textContent?.slice(0, 60), top: Math.round(el?.getBoundingClientRect().top - view.top) };
+      });
+    // Read a little way in, and stay there while the model works.
+    await pdf.evaluate(() => {
+      const p = [...document.querySelectorAll('.kx-reading-text[data-kind="paragraph"]')][6];
+      p?.scrollIntoView({ block: "start" });
+    });
+    await pdf.waitForTimeout(400);
+    const place = await topKey();
+    const done = await until(async () => {
+      const r = await call("store_reflow_regions", { hash: plain.hash });
+      return r.status === "ready" || r.status === "failed" ? r : null;
+    }, "the layout model's regions", 1200);
+    assert.equal(done.status, "ready", JSON.stringify(done));
+    await pdf.waitForTimeout(2500);
+    const after = await call("store_reflow_document", { hash: plain.hash });
+    console.log(`unmodelled PDF: text in ${firstText} ms; crops ${crops(before.document)} -> ${crops(after.document)}; regions ${JSON.stringify(done)}`);
+    assert.ok(crops(after.document) >= 1, "figures or tables found by the model");
+    const rects = (doc) => JSON.stringify(doc.items.filter((i) => i.crop).map((i) => [i.kind, i.crop.page, i.crop.rect]));
+    assert.notEqual(rects(after.document), rects(before.document), "the crops are the model's regions now");
+    const kept = await topKey();
+    assert.equal(kept.text, place.text, "the text in view stays in view");
+    assert.ok(Math.abs(kept.top - place.top) < 30, `and where it was (${place.top} -> ${kept.top})`);
+    for (const kind of ["table", "figure"]) {
+      const block = pdf.locator(`.kx-reading-figure[data-kind="${kind}"]`).first();
+      if (!(await block.count())) continue;
+      await block.evaluate((e) => e.scrollIntoView({ block: "center" }));
+      await until(() => block.locator("img").count(), `the ${kind} drawn from its page`);
+      await pdf.waitForTimeout(300);
+      await themes(pdf, `unmodelled-${kind}`);
+      if (kind === "table" && (await block.getByRole("button", { name: "Show as text" }).count())) {
+        await block.getByRole("button", { name: "Show as text" }).click();
+        await block.locator(".kx-reading-table-text").waitFor();
+        await themes(pdf, "unmodelled-table-text");
+        await block.getByRole("button", { name: "Show as on the page" }).click();
+      }
+    }
+    // A second opening: the regions are there at once.
+    started = Date.now();
+    const again = await call("store_reflow_document", { hash: plain.hash });
+    const regionsAgain = await call("store_reflow_regions", { hash: plain.hash });
+    console.log(`reopened: document with ${crops(again.document)} crops in ${Date.now() - started} ms, regions ${regionsAgain.status}`);
+    assert.equal(crops(again.document), crops(after.document));
+    assert.equal(regionsAgain.status, "ready");
     console.log(`reading mode smoke passed; screenshots:\n${shots.join("\n")}`);
   } finally {
     await app.close().catch(() => {});

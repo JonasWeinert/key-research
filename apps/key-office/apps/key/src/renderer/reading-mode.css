@@ -713,3 +713,49 @@ button.kx-reading-comment:hover {
 .kx-reading-button:disabled {
   opacity: 0.45;
 }
+
+/* PDFs analysed without the layout model: figures and tables arriving, and a table's own text. */
+.kx-reading-progress {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--key-ui-bg) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(1.5);
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--key-ui-text) 14%, transparent),
+    0 6px 20px -8px color-mix(in srgb, var(--key-ui-text) 30%, transparent);
+  color: var(--key-ui-muted);
+  font: 12px var(--kx-reading-sans);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.kx-reading-as-text {
+  display: block;
+  margin: 0.4em 0 0;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--key-ui-focus);
+  font: 500 0.72em var(--kx-reading-sans);
+}
+.kx-reading-as-text:hover {
+  background: var(--key-ui-hover);
+}
+.kx-reading-table-text {
+  margin: 0;
+  padding: 0.8em 1em;
+  border-radius: 8px;
+  background: var(--key-ui-surface);
+  box-shadow: 0 0 0 0.5px var(--key-ui-border);
+  font-family: var(--kx-reading-sans);
+  font-size: 0.8em;
+  white-space: pre-line;
+}
