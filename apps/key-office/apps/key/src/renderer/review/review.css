@@ -833,11 +833,8 @@ kbd,
 .kx-rv-criterion {
   border-radius: 10px;
   background: var(--kx-bg-sunken);
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--kx-green) 55%, transparent);
 }
-.kx-rv-criterion[data-kind="exclude"] {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--kx-red) 50%, transparent);
-}
+
 .kx-rv-criterion-head {
   display: flex;
   align-items: center;
@@ -859,11 +856,7 @@ kbd,
   gap: 10px;
   padding: 2px 12px 12px;
 }
-.kx-rv-criterion-grid {
-  display: grid;
-  grid-template-columns: auto 1fr minmax(160px, 220px);
-  gap: 12px;
-}
+
 .kx-rv-link {
   padding: 10px;
   border-radius: 8px;
@@ -897,20 +890,8 @@ kbd,
   gap: 8px;
   margin-top: 8px;
 }
-.kx-rv-reason-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 8px 0 10px;
-  padding: 0;
-  list-style: none;
-}
-.kx-rv-reason-list li {
-  display: grid;
-  grid-template-columns: 20px minmax(160px, 1fr) minmax(160px, 1.4fr) 140px auto auto auto;
-  align-items: center;
-  gap: 6px;
-}
+
+
 .kx-rv-pilot-form {
   display: flex;
   flex-wrap: wrap;
@@ -1284,7 +1265,7 @@ kbd,
   background: color-mix(in srgb, var(--kx-amber) 16%, var(--kx-bg-raised));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kx-amber) 55%, transparent);
 }
-.kx-rv-reasons {
+.kx-rv-criteria-pick {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1294,10 +1275,10 @@ kbd,
   border-radius: 10px;
   background: var(--kx-bg-raised);
 }
-.kx-rv-reasons[data-picking] {
+.kx-rv-criteria-pick[data-picking] {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kx-red) 45%, transparent);
 }
-.kx-rv-reasons legend {
+.kx-rv-criteria-pick legend {
   float: left;
   width: 100%;
   margin-bottom: 4px;
@@ -1305,7 +1286,7 @@ kbd,
   font-size: 11.5px;
   font-weight: 500;
 }
-.kx-rv-reasons label {
+.kx-rv-criteria-pick label {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1313,13 +1294,13 @@ kbd,
   border-radius: 6px;
   font-size: 12.5px;
 }
-.kx-rv-reasons label:hover {
+.kx-rv-criteria-pick label:hover {
   background: var(--kx-fill);
 }
-.kx-rv-reasons input {
+.kx-rv-criteria-pick input {
   margin: 0;
 }
-.kx-rv-reasons .kx-rv-btn {
+.kx-rv-criteria-pick .kx-rv-btn {
   align-self: flex-end;
   margin-top: 6px;
 }
@@ -1951,53 +1932,16 @@ kbd,
 .kx-rv-quote-add[data-needed] {
   color: var(--kx-accent-text);
 }
-.kx-rv-criteria-panel ul {
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 12px;
-}
-.kx-rv-criteria-panel li {
-  display: flex;
-  gap: 6px;
-  padding: 3px 0;
-}
-.kx-rv-criteria-panel li > svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-.kx-rv-criteria-panel li small {
-  display: block;
-  color: var(--kx-text-2);
-}
-.kx-rv-criteria-panel h4 {
-  margin: 8px 0 0;
-  color: var(--kx-text-3);
-  font: 500 11px var(--kx-font);
-}
-.kx-rv-bullet {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  margin: 6px 3px 0;
-  border-radius: 50%;
-  background: var(--kx-text-3);
-}
-.kx-rv-criteria-panel li[data-state="ok"] > svg {
-  color: var(--kx-green);
-}
-.kx-rv-criteria-panel li[data-state="fails"] > svg,
-.kx-rv-criteria-panel li[data-state="fails"] span {
-  color: color-mix(in srgb, var(--kx-red) 75%, var(--kx-text));
-}
-.kx-rv-criteria-panel li[data-state="unknown"] > svg {
-  color: var(--kx-text-3);
-}
-.kx-rv-criteria-panel summary {
-  color: var(--kx-text-2);
-  font-size: 11.5px;
-  font-weight: 500;
-}
+
+
+
+
+
+
+
+
+
+
 
 /* Beside a reader (a split window) the record and its decision stack, decision first. */
 .kx-rv-body {
@@ -2097,4 +2041,151 @@ td.kx-rv-roles {
   margin-top: 2px;
   padding: 0;
   font-size: 11.5px;
+}
+
+/* ── Criteria (one list: the rules a study must meet, and the reasons for excluding) ───── */
+
+.kx-rv-element {
+  margin-top: 14px;
+}
+.kx-rv-element-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.kx-rv-element-head h3 {
+  margin: 0;
+  font: 600 12.5px var(--kx-font);
+}
+.kx-rv-element-head .kx-rv-muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-rv-element .kx-rv-criteria {
+  margin: 0 0 6px;
+}
+.kx-rv-criterion-number {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text-2);
+  font: 600 10.5px var(--kx-font);
+  font-variant-numeric: tabular-nums;
+}
+.kx-rv-criterion-prefix {
+  flex: none;
+  color: var(--kx-text-3);
+  font-size: 12px;
+}
+.kx-rv-criterion-reason {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px 38px;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-rv-criterion-reason > span {
+  flex: none;
+}
+.kx-rv-criterion-reason .kx-rv-input {
+  min-height: 22px;
+  padding: 2px 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-rv-criterion-reason .kx-rv-input:hover {
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+.kx-rv-criterion-body {
+  padding-left: 38px;
+}
+.kx-rv-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kx-rv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--kx-bg-raised);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  color: var(--kx-text-2);
+  font: 500 11.5px var(--kx-font);
+}
+.kx-rv-chip:hover {
+  background: var(--kx-accent-soft);
+  box-shadow: none;
+  color: var(--kx-accent-text);
+}
+.kx-rv-chip[data-blank] {
+  background: transparent;
+  box-shadow: none;
+  color: var(--kx-text-3);
+}
+.kx-rv-criteria-item h4 {
+  margin: 6px 4px 2px;
+  color: var(--kx-text-3);
+  font: 500 11px var(--kx-font);
+}
+.kx-rv-criteria-pick label {
+  align-items: flex-start;
+}
+.kx-rv-criteria-pick label > input,
+.kx-rv-criteria-pick label > kbd {
+  margin-top: 1px;
+}
+.kx-rv-criteria-pick label > span {
+  flex: 1 1 auto;
+}
+.kx-rv-criteria-pick label small {
+  display: block;
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-rv-criteria-pick label > svg {
+  flex: none;
+  margin-top: 3px;
+}
+.kx-rv-criteria-pick label[data-state="ok"] > svg {
+  color: var(--kx-green);
+}
+.kx-rv-criteria-pick label[data-state="fails"] > svg,
+.kx-rv-criteria-pick label[data-state="fails"] small {
+  color: color-mix(in srgb, var(--kx-red) 75%, var(--kx-text));
+}
+.kx-rv-criteria-pick label[data-state="unknown"] > svg {
+  color: var(--kx-text-3);
+}
+.kx-rv-criteria-pick label[data-on] {
+  background: color-mix(in srgb, var(--kx-red) 9%, transparent);
+}
+.kx-rv-criteria-pick label[data-on] small {
+  color: color-mix(in srgb, var(--kx-red) 75%, var(--kx-text));
+}
+.kx-rv-kbd-space {
+  flex: none;
+  width: 16px;
+}
+.kx-rv-no-criteria {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+}
+.kx-rv-resolve-note[data-soft] {
+  background: var(--kx-fill);
 }

@@ -15,16 +15,18 @@ function nextStep(s: Summary, viewer: string): { title: string; body: string; ac
     ft = s.stages.ft;
   if (!s.records) return { title: "Add the records you found", body: "Import the files your database searches exported, run a Database search, or add records from your library.", action: "Add records", stage: "sources", icon: "upload" };
   if (s.openPairs) return { title: `Check ${plural(s.openPairs, "possible duplicate")}`, body: "Exact duplicates were removed. These look alike but differ slightly: keep one, or keep both.", action: "Check duplicates", stage: "sources", icon: "copy" };
+  if (!s.protocol.criteria.length && ta.done === 0)
+    return { title: "Choose the criteria", body: "Rules a study must meet, grouped by your question. Start from the suggestions in one click; failing one is the reason for excluding.", action: "Set the criteria", stage: "setup", icon: "checklist" };
   if (s.pilots.some((p) => p.pilot.open && p.pilot.reviewers.includes(viewer) && p.done < p.pilot.records.length))
     return { title: "Screen the pilot round", body: "Every reviewer screens the same sample first, so the team can compare decisions and sharpen the criteria.", action: "Start screening", stage: "ta", icon: "checklist" };
   if (ta.mine) return { title: `Screen ${plural(ta.mine, "title")}`, body: "Include, exclude or keep as maybe from the title and abstract. Press I, E or M; the next record follows.", action: "Screen titles and abstracts", stage: "ta", icon: "checklist" };
   if (ta.conflicts && s.canResolve) return { title: `Resolve ${plural(ta.conflicts, "conflict")}`, body: "Reviewers disagree on these records. Discuss them, then record the decision.", action: "Resolve conflicts", stage: "ta", icon: "warning" };
-  if (ft.mine) return { title: `Assess ${plural(ft.mine, "full text")}`, body: "Read each report beside its decision panel and exclude with a reason, or include it.", action: "Screen full texts", stage: "ft", icon: "filePdf" };
+  if (ft.mine) return { title: `Assess ${plural(ft.mine, "full text")}`, body: "Read each report beside its decision panel: include it, or exclude it with the criterion it fails.", action: "Screen full texts", stage: "ft", icon: "filePdf" };
   if (ft.conflicts && s.canResolve) return { title: `Resolve ${plural(ft.conflicts, "full-text conflict")}`, body: "Reviewers disagree on these reports.", action: "Resolve conflicts", stage: "ft", icon: "warning" };
   if (s.included && s.extraction.mine < s.included) return { title: `Extract data from ${plural(s.included - s.extraction.mine, "study", "studies")}`, body: "Fill in the forms for each included study, with a quote from the paper for each value.", action: "Extract data", stage: "extract", icon: "table" };
   if (s.included) return { title: "Analyse the outcomes", body: "Pool the extracted outcome data and look at the forest and funnel plots.", action: "Open analysis", stage: "analysis", icon: "activity" };
   if (ta.partial || ft.partial) return { title: "Waiting for other reviewers", body: `${plural(ta.partial + ft.partial, "record")} need another reviewer's decision.`, action: "See the list", stage: ta.partial ? "ta" : "ft", icon: "clock" };
-  return { title: "Set the criteria", body: "Write the inclusion and exclusion criteria, so everyone screens the same way.", action: "Open setup", stage: "setup", icon: "gear" };
+  return { title: "Set the criteria", body: "Write the rules a study must meet, so everyone screens the same way. Failing one is the reason for excluding.", action: "Open setup", stage: "setup", icon: "gear" };
 }
 
 function StageBar({ label, done, total, parts, onClick }: { label: string; done: number; total: number; parts: [number, string][]; onClick: () => void }) {

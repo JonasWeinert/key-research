@@ -306,10 +306,16 @@ export class SignInWindow {
     return signInCookies(cookies ?? [], hosts);
   }
 
-  /** Brings the window to the front. */
+  /** Brings the window to the front: restores it if it was minimised, makes it the browser's
+   * front window, then activates this browser process (by its pid, never the person's own
+   * instance of the same browser). */
   async focus() {
+    if (this.options.headless) return;
+    const { windowId } = await this.pipe.send<{ windowId?: number }>("Browser.getWindowForTarget", { targetId: this.mainTarget }).catch(() => ({ windowId: undefined }));
+    if (windowId !== undefined) await this.pipe.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } }).catch(() => undefined);
     await this.pipe.send("Target.activateTarget", { targetId: this.mainTarget }).catch(() => undefined);
     await this.pipe.send("Page.bringToFront", {}, this.mainSession).catch(() => undefined);
+    if (process.platform === "darwin" && this.child.pid) await activateProcess(this.child.pid);
   }
 
   /** The person says they are done: decide now. */
@@ -339,6 +345,26 @@ export class SignInWindow {
   get open() {
     return !this.done;
   }
+}
+
+/** Activates an app by process id (AppKit through JXA: no Apple events, so no permission
+ * prompt). macOS may decline an activation another app asks for; then, if this is the only
+ * running copy of that browser, `open -a` (Launch Services) brings it forward instead. */
+const ACTIVATE = `ObjC.import("AppKit");
+function run(argv) {
+  const app = $.NSRunningApplication.runningApplicationWithProcessIdentifier(Number(argv[0]));
+  if (!app || app.isNil()) return "gone";
+  app.unhide;
+  app.activateWithOptions($.NSApplicationActivateAllWindows | $.NSApplicationActivateIgnoringOtherApps);
+  delay(0.35);
+  if (app.active) return "active";
+  const copies = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(app.bundleIdentifier);
+  return copies.count === 1 ? "open:" + ObjC.unwrap(app.bundleURL.path) : "inactive";
+}`;
+export async function activateProcess(pid: number) {
+  const answer = (await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", ACTIVATE, String(pid)])).trim();
+  if (answer.startsWith("open:")) await run("/usr/bin/open", ["-a", answer.slice(5)]);
+  return answer;
 }
 
 /** Removes Key's sign-in profiles (every browser's). */

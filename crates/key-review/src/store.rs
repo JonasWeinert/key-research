@@ -300,7 +300,18 @@ impl Inner {
                 return Err("This review no longer exists".into());
             }
             let state = State::replay(id, events.iter());
+            let migrate = state.migrated && !state.alias_recorded;
+            let (aliases, protocol, version) = (state.aliases.clone(), state.protocol.clone(), state.version.clone());
             self.states.insert(id.to_string(), state);
+            // A review from before criteria and reasons were one list: record, once, which old
+            // reason became which criterion, and the protocol as it now reads (an amendment, not
+            // a new version: nothing changed in meaning). History is not rewritten.
+            if migrate {
+                let device = self.device.clone();
+                let alias = Event::new(id, "criteria.alias", "system", &device, &version, None, json!({ "aliases": aliases }));
+                let amend = Event::new(id, "protocol.set", "system", &device, &version, None, json!({ "protocol": protocol, "note": "Exclusion reasons merged into the criteria", "amend": true }));
+                self.append(id, vec![alias, amend])?;
+            }
         }
         Ok(&self.states[id])
     }

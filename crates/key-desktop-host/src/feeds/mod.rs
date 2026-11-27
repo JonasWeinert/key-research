@@ -500,6 +500,17 @@ pub fn dispatch(feeds: &Feeds, command: &str, args: &Json) -> Option<Result<Outp
             json_output(store.save_to_inbox(&work, origin.as_ref().unwrap_or(&json!({})))?)
         })(),
         "inbox_state" => arg::<Vec<Json>>(args, "works").and_then(|works| json_output(store.inbox_states(&works)?)),
+        // The Inbox's selection panel (key_store::inbox_selection): the overview of works not in
+        // the library yet, adding them in batches (skipping what the library has), taking an
+        // add back, and the works in a source's shape for citations and BibTeX.
+        "inbox_selection_overview" => arg::<Vec<String>>(args, "ids").and_then(|ids| json_output(store.inbox_selection_overview(&ids)?)),
+        "inbox_add" => (|| {
+            let ids: Vec<String> = arg(args, "ids")?;
+            let collections: Vec<String> = arg::<Option<Vec<String>>>(args, "collections")?.unwrap_or_default();
+            json_output(store.add_inbox_items(&ids, &collections)?)
+        })(),
+        "inbox_add_undo" => arg::<Vec<key_store::inbox_selection::AddedItem>>(args, "added").and_then(|added| json_output(store.undo_inbox_add(&added)?)),
+        "inbox_works" => arg::<Vec<String>>(args, "ids").and_then(|ids| json_output(store.inbox_works(&ids)?)),
         "feeds_find" => (|| {
             let kind: String = arg(args, "kind")?;
             let config: Map<String, Json> = arg::<Option<Map<String, Json>>>(args, "config")?.unwrap_or_default();

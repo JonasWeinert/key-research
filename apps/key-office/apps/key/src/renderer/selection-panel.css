@@ -342,3 +342,78 @@
 .kx-selection-overview[data-stale] {
   opacity: 0.55;
 }
+
+/* The Inbox's panel (selection-inbox.tsx): its primary Add, the option under it, a note, and
+   which feeds found the works. */
+.kx-selection-button[data-primary] {
+  background: var(--kx-accent);
+  box-shadow: none;
+  color: var(--kx-accent-ink);
+  font-weight: 500;
+}
+.kx-selection-button[data-primary] > svg {
+  color: inherit;
+}
+.kx-selection-button[data-primary]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--kx-accent) 88%, var(--kx-text));
+}
+.kx-selection-button[data-primary]:disabled {
+  background: var(--kx-fill);
+  color: var(--kx-text-3);
+}
+.kx-selection-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-selection-check > input {
+  margin: 0;
+  accent-color: var(--kx-accent);
+}
+.kx-selection-note {
+  margin: 8px 0 0;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.kx-selection-found {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-selection-found > li {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) minmax(0, 38%) auto;
+  align-items: center;
+  gap: 6px;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-selection-found > li > svg {
+  color: var(--kx-text-3);
+}
+.kx-selection-found > li > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kx-selection-found > li > i {
+  height: 8px;
+  border-radius: 3px;
+  background: var(--kx-accent);
+  opacity: 0.75;
+}
+.kx-selection-found > li > small {
+  min-width: 2ch;
+  color: var(--kx-text-3);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.kx-selection-found > li.kx-selection-more {
+  display: block;
+}

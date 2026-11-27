@@ -155,41 +155,106 @@ pub struct MetadataLink {
     pub all: bool,
     /// suggest (shown as a suggestion) | auto (applied as a decision, labelled, undoable)
     pub effect: String,
+    /// The conditions say when the criterion is *not* met (criteria that were exclusion
+    /// criteria before criteria and reasons became one list).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub fails_when: bool,
 }
 
 impl Default for MetadataLink {
     fn default() -> Self {
-        Self { conditions: Vec::new(), all: true, effect: "suggest".into() }
+        Self { conditions: Vec::new(), all: true, effect: "suggest".into(), fails_when: false }
     }
 }
 
+/// The parts of a review question criteria are grouped under.
+pub const ELEMENTS: &[(&str, &str)] = &[
+    ("population", "Population"),
+    ("intervention", "Intervention"),
+    ("exposure", "Exposure"),
+    ("comparator", "Comparator"),
+    ("outcome", "Outcome"),
+    ("sample", "Sample"),
+    ("phenomenon", "Phenomenon of interest"),
+    ("evaluation", "Evaluation"),
+    ("research", "Research type"),
+    ("design", "Study design"),
+    ("other", "Other"),
+];
+
+/// The elements a framework's criteria are grouped by, in order.
+pub fn elements_of(framework: &str) -> &'static [&'static str] {
+    match framework {
+        "peco" => &["population", "exposure", "comparator", "outcome", "design", "other"],
+        "spider" => &["sample", "phenomenon", "design", "evaluation", "research", "other"],
+        "free" => &["design", "other"],
+        _ => &["population", "intervention", "comparator", "outcome", "design", "other"],
+    }
+}
+
+/// One eligibility criterion: a rule a study must meet. Excluding a study means choosing the
+/// criterion (or criteria) it fails; the criterion is the reason PRISMA reports. The list's
+/// order is the reason hierarchy (the first failed criterion is the one reported).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Criterion {
     pub id: String,
-    /// include | exclude
-    pub kind: String,
+    /// The question's part it belongs to (`ELEMENTS`).
+    pub element: String,
+    /// What a study must meet, stated once ("Adults with type 2 diabetes").
     pub label: String,
+    /// How the reason reads in reports when a study fails it ("Wrong population"); empty:
+    /// derived from the label.
+    pub reason: String,
     pub guidance: String,
     pub stages: Vec<Stage>,
-    /// The exclusion reason a record gets when it fails this criterion.
-    pub reason_id: Option<String>,
     pub link: Option<MetadataLink>,
+    /// Before criteria and reasons were one list: include | exclude. Read, never written.
+    #[serde(skip_serializing)]
+    pub kind: String,
+    /// Before criteria and reasons were one list: the reason it gave. Read, never written.
+    #[serde(skip_serializing)]
+    pub reason_id: Option<String>,
 }
 
 impl Default for Criterion {
     fn default() -> Self {
-        Self { id: String::new(), kind: "include".into(), label: String::new(), guidance: String::new(), stages: vec![Stage::Ta, Stage::Ft], reason_id: None, link: None }
+        Self { id: String::new(), element: "other".into(), label: String::new(), reason: String::new(), guidance: String::new(), stages: vec![Stage::Ta, Stage::Ft], link: None, kind: String::new(), reason_id: None }
     }
 }
 
+fn lower_first(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        // Keep acronyms (RCT, HIV) as they are.
+        Some(c) if chars.clone().next().is_some_and(|n| n.is_uppercase()) => format!("{c}{}", chars.as_str()),
+        Some(c) => format!("{}{}", c.to_lowercase(), chars.as_str()),
+        None => String::new(),
+    }
+}
+
+impl Criterion {
+    /// The reason as reports show it.
+    pub fn reason_text(&self) -> String {
+        if !self.reason.trim().is_empty() {
+            self.reason.trim().to_string()
+        } else {
+            format!("Not met: {}", lower_first(self.label.trim()))
+        }
+    }
+    pub fn applies(&self, stage: Stage) -> bool {
+        self.stages.is_empty() || self.stages.contains(&stage)
+    }
+}
+
+/// An exclusion reason as reviews kept them before criteria and reasons were one list (read
+/// from old protocols and turned into criteria, see `Protocol::migrate`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
-pub struct Reason {
+pub struct LegacyReason {
     pub id: String,
     pub label: String,
     pub guidance: String,
-    /// The stages it is offered at (empty: both).
     pub stages: Vec<Stage>,
 }
 
@@ -255,10 +320,11 @@ pub struct Protocol {
     pub registration: String,
     pub notes: String,
     pub rules: Rules,
+    /// The eligibility criteria, in the order of the reason hierarchy.
     pub criteria: Vec<Criterion>,
-    /// Exclusion reasons, in the order of the hierarchy (the first that applies is the one
-    /// PRISMA reports).
-    pub reasons: Vec<Reason>,
+    /// Old protocols' separate exclusion reasons: read, migrated into criteria, never written.
+    #[serde(skip_serializing)]
+    pub reasons: Vec<LegacyReason>,
     pub keywords: Keywords,
     pub labels: Vec<String>,
     pub forms: Vec<Form>,
@@ -273,16 +339,95 @@ impl Default for Protocol {
 }
 
 impl Protocol {
-    pub fn reason(&self, id: &str) -> Option<&Reason> {
-        self.reasons.iter().find(|r| r.id == id)
-    }
     pub fn criterion(&self, id: &str) -> Option<&Criterion> {
         self.criteria.iter().find(|c| c.id == id)
     }
-    /// The reason PRISMA reports among `ids`: the first in the hierarchy.
-    pub fn top_reason<'a>(&self, ids: &'a [String]) -> Option<&'a String> {
-        ids.iter().min_by_key(|id| self.reasons.iter().position(|r| &r.id == *id).unwrap_or(usize::MAX))
+    /// A reason (criterion id) as reports show it.
+    pub fn reason_label(&self, id: &str) -> String {
+        self.criterion(id).map(Criterion::reason_text).unwrap_or_else(|| id.to_string())
     }
+    /// The criteria offered as reasons at a stage, in order.
+    pub fn criteria_at(&self, stage: Stage) -> impl Iterator<Item = &Criterion> {
+        self.criteria.iter().filter(move |c| c.applies(stage))
+    }
+    /// The reason PRISMA reports among `ids`: the first in the criteria's order.
+    pub fn top_reason<'a>(&self, ids: &'a [String]) -> Option<&'a String> {
+        ids.iter().min_by_key(|id| self.criteria.iter().position(|c| &c.id == *id).unwrap_or(usize::MAX))
+    }
+    /// Whether this protocol was written before criteria and reasons became one list.
+    pub fn is_legacy(&self) -> bool {
+        !self.reasons.is_empty() || self.criteria.iter().any(|c| !c.kind.is_empty() || c.reason_id.is_some())
+    }
+
+    /// Turns an old protocol (criteria plus a separate list of reasons) into criteria only, and
+    /// answers which old reason ids now mean which criterion. Reasons a criterion named collapse
+    /// into it; the others become criteria of their own (the defaults under their question
+    /// element, any others under Other); exclusion criteria are restated as what a study must
+    /// meet. The old reasons' order stays the hierarchy.
+    pub fn migrate(&mut self) -> BTreeMap<String, String> {
+        let mut aliases = BTreeMap::new();
+        if !self.is_legacy() {
+            return aliases;
+        }
+        let reasons = std::mem::take(&mut self.reasons);
+        let rank_of = |id: &str| reasons.iter().position(|r| r.id == id);
+        let mut ranked: Vec<(usize, Criterion)> = Vec::new();
+        let mut taken: std::collections::HashSet<String> = self.criteria.iter().map(|c| c.id.clone()).collect();
+        for (i, mut c) in std::mem::take(&mut self.criteria).into_iter().enumerate() {
+            let reason = c.reason_id.take().and_then(|id| reasons.iter().find(|r| r.id == id).cloned());
+            if c.kind == "exclude" {
+                // The reason it gave stays the wording reports use; else its own label.
+                c.reason = match &reason {
+                    Some(r) if c.reason.is_empty() => r.label.clone(),
+                    _ if c.reason.is_empty() => c.label.clone(),
+                    _ => c.reason.clone(),
+                };
+                if !c.label.to_lowercase().starts_with("not ") {
+                    c.label = format!("Not {}", lower_first(&c.label));
+                }
+                if let Some(link) = c.link.as_mut() {
+                    link.fails_when = !link.fails_when;
+                }
+            }
+            c.kind.clear();
+            let mut rank = reasons.len() + i;
+            if let Some(r) = reason {
+                if !aliases.contains_key(&r.id) {
+                    aliases.insert(r.id.clone(), c.id.clone());
+                    rank = rank_of(&r.id).unwrap_or(rank);
+                    if c.reason.is_empty() {
+                        c.reason = r.label.clone();
+                    }
+                    if c.element.is_empty() || c.element == "other" {
+                        c.element = crate::templates::legacy_element(&r.id).to_string();
+                    }
+                }
+            }
+            if c.element.is_empty() {
+                c.element = "other".into();
+            }
+            ranked.push((rank, c));
+        }
+        for (rank, r) in reasons.iter().enumerate() {
+            if aliases.contains_key(&r.id) {
+                continue;
+            }
+            let mut c = crate::templates::legacy_criterion(r);
+            let base = c.id.clone();
+            let mut n = 2;
+            while taken.contains(&c.id) {
+                c.id = format!("{base}-{n}");
+                n += 1;
+            }
+            taken.insert(c.id.clone());
+            aliases.insert(r.id.clone(), c.id.clone());
+            ranked.push((rank, c));
+        }
+        ranked.sort_by_key(|(rank, _)| *rank);
+        self.criteria = ranked.into_iter().map(|(_, c)| c).collect();
+        aliases
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         for stage in [Stage::Ta, Stage::Ft] {
             let rule = self.rules.stage(stage);
@@ -302,17 +447,15 @@ impl Protocol {
                 return Err(format!("Criterion \"{}\" needs a unique id", c.label));
             }
             if c.label.trim().is_empty() {
-                return Err("Every criterion needs a short label".into());
+                return Err("Every criterion needs a short statement".into());
+            }
+            if !ELEMENTS.iter().any(|(id, _)| *id == c.element) {
+                return Err(format!("Criterion \"{}\": unknown part of the question", c.label));
             }
             if let Some(link) = &c.link {
                 if !["suggest", "auto"].contains(&link.effect.as_str()) {
                     return Err(format!("Criterion \"{}\": unknown effect", c.label));
                 }
-            }
-        }
-        for r in &self.reasons {
-            if r.id.is_empty() || !ids.insert(r.id.clone()) {
-                return Err(format!("Reason \"{}\" needs a unique id", r.label));
             }
         }
         for f in &self.forms {

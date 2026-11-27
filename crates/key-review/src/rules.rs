@@ -214,25 +214,27 @@ pub fn met(link: &MetadataLink, ctx: &Map<String, Json>) -> Option<bool> {
     }
 }
 
+/// Whether a linked criterion is met (`None`: the record lacks the data to say).
+fn passes(link: &MetadataLink, ctx: &Map<String, Json>) -> Option<bool> {
+    met(link, ctx).map(|m| if link.fails_when { !m } else { m })
+}
+
 /// Every linked criterion of `stage` checked against a record.
 pub fn checks(protocol: &Protocol, stage: Stage, ctx: &Map<String, Json>) -> Vec<Check> {
     protocol
-        .criteria
-        .iter()
-        .filter(|c| c.stages.contains(&stage))
+        .criteria_at(stage)
         .filter_map(|c| c.link.as_ref().map(|l| (c, l)))
-        .map(|(c, l)| Check { criterion_id: c.id.clone(), label: c.label.clone(), met: met(l, ctx), rule: describe_link(l) })
+        .map(|(c, l)| Check { criterion_id: c.id.clone(), label: c.label.clone(), met: passes(l, ctx), rule: describe_link(l) })
         .collect()
 }
 
-/// What the linked criteria suggest for a record, in criterion order.
+/// What the linked criteria suggest for a record: exclude, for each criterion it does not meet
+/// (which is then the reason), in criterion order.
 pub fn suggestions(protocol: &Protocol, stage: Stage, ctx: &Map<String, Json>) -> Vec<Suggestion> {
     let mut out = Vec::new();
-    for c in protocol.criteria.iter().filter(|c| c.stages.contains(&stage)) {
+    for c in protocol.criteria_at(stage) {
         let Some(link) = &c.link else { continue };
-        let Some(is_met) = met(link, ctx) else { continue };
-        let fails = if c.kind == "exclude" { is_met } else { !is_met };
-        if !fails {
+        if passes(link, ctx) != Some(false) {
             continue;
         }
         let rule = describe_link(link);
@@ -240,8 +242,8 @@ pub fn suggestions(protocol: &Protocol, stage: Stage, ctx: &Map<String, Json>) -
             criterion_id: c.id.clone(),
             label: c.label.clone(),
             value: Choice::Exclude,
-            reason_id: c.reason_id.clone(),
-            rule: if c.kind == "exclude" { rule } else { format!("Not met: {rule}") },
+            reason_id: Some(c.id.clone()),
+            rule: if link.fails_when { rule } else { format!("Not met: {rule}") },
             auto: link.effect == "auto",
         });
     }
@@ -261,18 +263,15 @@ mod tests {
         let mut p = Protocol::default();
         p.criteria.push(Criterion {
             id: "c-year".into(),
-            kind: "include".into(),
             label: "Published 2000 or later".into(),
-            reason_id: Some("r-other".into()),
-            link: Some(MetadataLink { conditions: vec![Condition { field: "year".into(), op: "ge".into(), value: json!(2000) }], all: true, effect: "suggest".into() }),
+            link: Some(MetadataLink { conditions: vec![Condition { field: "year".into(), op: "ge".into(), value: json!(2000) }], all: true, effect: "suggest".into(), fails_when: false }),
             ..Default::default()
         });
         p.criteria.push(Criterion {
             id: "c-abstract".into(),
-            kind: "exclude".into(),
-            label: "No abstract".into(),
+            label: "Has an abstract".into(),
             stages: vec![Stage::Ta],
-            link: Some(MetadataLink { conditions: vec![Condition { field: "hasAbstract".into(), op: "false".into(), value: Json::Null }], all: true, effect: "auto".into() }),
+            link: Some(MetadataLink { conditions: vec![Condition { field: "hasAbstract".into(), op: "true".into(), value: Json::Null }], all: true, effect: "auto".into(), fails_when: false }),
             ..Default::default()
         });
         let ctx = context(&meta(), false, &Map::new());

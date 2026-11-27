@@ -288,6 +288,14 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             "review_protocol_save" => json!(reviews.save_protocol(&review()?, arg::<Protocol>(args, "protocol")?, text(args, "note"), &actor()?, args.get("rescreen").and_then(Json::as_bool).unwrap_or(false), &lookup)?),
             "review_template_read" => json!(key_review::export::read_template(text(args, "text"))?),
             "review_form_templates" => json!(key_review::templates::form_templates()),
+            // Criteria to start from for a question (one per part of its framework, and the usual others).
+            "review_criteria_suggestions" => {
+                let question: key_review::model::Question = arg(args, "question")?;
+                json!({
+                    "criteria": key_review::templates::suggested_criteria(&question),
+                    "elements": key_review::model::elements_of(&question.framework).iter().map(|id| json!({ "id": id, "label": key_review::model::ELEMENTS.iter().find(|(e, _)| e == id).map(|(_, l)| *l).unwrap_or("Other") })).collect::<Vec<_>>(),
+                })
+            }
             "review_import_file" => {
                 let parsed = import::parse_file(text(args, "text"), Some(text(args, "fileName")).filter(|f| !f.is_empty()))?;
                 let mut batch = batch_from(args, "file")?;
@@ -348,6 +356,22 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                     r
                 }).collect();
                 json!({ "report": reviews.import(&review()?, batch_from(args, "other")?, records, &actor()?, &lookup)? })
+            }
+            // The Inbox's "Send to review…": works not in the library, from their feed metadata.
+            "review_import_inbox" => {
+                let mut records = Vec::new();
+                for work in library.store.inbox_works(&strings(args, "ids"))? {
+                    let input: SourceInput = serde_json::from_value(work).map_err(|e| format!("Invalid work: {e}"))?;
+                    records.push(import::from_input(&input));
+                }
+                if records.is_empty() {
+                    return Err("These works are no longer in the Inbox".into());
+                }
+                let mut batch = batch_from(args, "other")?;
+                if batch.name.is_empty() {
+                    batch.name = "Inbox".into();
+                }
+                json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }
             "review_batch_remove" => {
                 reviews.remove_batch(&review()?, text(args, "batchId"), &actor()?)?;

@@ -1,16 +1,25 @@
-// Actions on a selection of library sources that other features add: the library's
-// "N sources selected" panel and the sources' context menu render every registered action
-// whose `when` accepts the selection. A feature registers once at module load (or in an
-// effect, using the returned function to take it away again):
+// Actions on a selection that other features add: the library's "N sources selected" panel,
+// the sources' context menu and the Inbox's "N works selected" panel render every registered
+// action whose `kinds` include the selection's kind and whose `when` accepts it. A feature
+// registers once at module load (or in an effect, using the returned function to take it
+// away again):
 //
 //   registerSelectionAction({ id: "review.send", label: "Send to review…", icon: "checklist",
-//     group: "organise", run: ({ workspaceId, sourceIds }) => openReview(workspaceId, sourceIds) });
+//     group: "organise", kinds: ["library", "inbox"], run: ({ workspaceId, sourceIds }) => … });
 import { useSyncExternalStore } from "react";
 import type { IconName } from "./icons";
 
+/** What is selected: library sources, or Inbox works that are not in the library yet. */
+export type SelectionKind = "library" | "inbox";
+
 export interface SelectionContext {
   workspaceId: string;
+  /** Library sources (default), or Inbox works. */
+  kind?: SelectionKind;
+  /** The selected sources; for Inbox works, the library sources some of them already are. */
   sourceIds: string[];
+  /** The selected Inbox items (kind "inbox"). */
+  itemIds?: string[];
 }
 
 /** Where an action shows among the panel's built-in ones. */
@@ -24,6 +33,8 @@ export interface SelectionAction {
   group?: SelectionGroup;
   /** Hover text. */
   title?: string;
+  /** The selections it is offered for (default: library sources only). */
+  kinds?: SelectionKind[];
   /** Shown only when this answers true (default: always). */
   when?: (ctx: SelectionContext) => boolean;
   run: (ctx: SelectionContext) => void | Promise<unknown>;
@@ -51,7 +62,8 @@ export function selectionActions(): readonly SelectionAction[] {
 
 /** The actions that apply to this selection, optionally of one group. */
 export function selectionActionsFor(ctx: SelectionContext, group?: SelectionGroup): SelectionAction[] {
-  return actions.filter((a) => (!group || (a.group ?? "other") === group) && (!a.when || safely(() => a.when!(ctx))));
+  const kind = ctx.kind ?? "library";
+  return actions.filter((a) => (a.kinds ?? ["library"]).includes(kind) && (!group || (a.group ?? "other") === group) && (!a.when || safely(() => a.when!(ctx))));
 }
 
 function safely(test: () => boolean) {

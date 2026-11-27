@@ -81,21 +81,31 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await shot(page, "04-sources");
     report.import = { records: s.records, active: s.active, duplicates: s.duplicates };
 
-    // Setup: keywords and a linked criterion through the host (the editor is checked by eye).
+    // Setup: the question, keywords and a criterion checked from the year (through the host),
+    // then criteria added from the suggestions in the editor (one click each).
     const protocol = s.protocol;
+    protocol.question.parts = { p: "adults of any age", i: "a supervised exercise programme", c: "usual care", o: "pain or blood pressure" };
     protocol.keywords = { include: ["randomi*", "trial"], exclude: ["rats", "editorial", "survey"] };
     protocol.criteria = [
-      { id: "c-rct", kind: "include", label: "Randomised controlled trial", guidance: "Individually or cluster randomised.", stages: ["ta", "ft"], reasonId: "r-design", link: null },
-      { id: "c-year", kind: "include", label: "Published 2000 or later", guidance: "", stages: ["ta"], reasonId: "r-publication", link: { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } },
-      { id: "c-animal", kind: "exclude", label: "Animal studies", guidance: "", stages: ["ta", "ft"], reasonId: "r-population", link: null },
+      { id: "c-year", element: "other", label: "Published 2000 or later", reason: "Published before 2000", guidance: "", stages: ["ta"], link: { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } },
     ];
     protocol.forms.push((await call("review_form_templates")).find((f) => f.id === "f-outcomes"));
     await call("review_protocol_save", { reviewId, protocol, note: "", actor: s.team[0].id, rescreen: false });
     await page.getByRole("tab", { name: /Setup/ }).click();
     await page.getByRole("button", { name: "Criteria", exact: false }).first().click();
-    await page.locator(".kx-rv-criterion").nth(2).waitFor();
-    assert.equal(await page.locator(".kx-rv-criterion-label").nth(1).inputValue(), "Published 2000 or later");
-    await page.locator(".kx-rv-criterion").nth(1).getByRole("button", { name: "Show details" }).click();
+    // The criterion saved through the host shows before any edit (the editor starts from it).
+    await page.locator('.kx-rv-criterion input[value="Published 2000 or later"]').waitFor();
+    for (const chip of ["Wrong population", "Wrong intervention", "Wrong study design", "Not in an included language"]) {
+      await page.locator(".kx-rv-chip", { hasText: chip }).click();
+      await page.locator(".kx-rv-chip", { hasText: chip }).waitFor({ state: "detached" });
+    }
+    // The question's words became the guidance of the population criterion.
+    // Saved as they are made (an amendment: nothing was decided yet).
+    for (let i = 0; i < 50 && (await summary()).protocol.criteria.length !== 5; i++) await page.waitForTimeout(200);
+    s = await summary();
+    assert.equal(s.protocol.criteria.find((c) => c.id === "c-population")?.guidance, "Include: adults of any age");
+    assert(!("reasons" in s.protocol), "no separate list of reasons");
+    await page.locator(".kx-rv-criterion", { has: page.locator('input[value="Published 2000 or later"]') }).getByRole("button", { name: "Show details" }).click();
     await shot(page, "05-setup-criteria");
 
     // Title and abstract: keyboard screening.
@@ -166,10 +176,14 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
       const title = await page.locator(".kx-rv-record-title").textContent();
       if (/Pilates/.test(title)) {
         await page.keyboard.press("e");
-        await page.locator(".kx-rv-reasons[data-picking]").waitFor();
+        await page.locator(".kx-rv-criteria-pick[data-picking]").waitFor();
         await shot(page, "11-fulltext-reasons");
+        await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+        await shot(page, "11-fulltext-reasons-dark");
+        await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
         const before = title;
-        await page.keyboard.press("2");
+        // The criteria are the choices: 1 is the population criterion (the first at full text).
+        await page.keyboard.press("1");
         await page.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), before);
       } else await decide("i");
       if (await page.locator(".kx-rv-done").count()) break;
@@ -180,6 +194,8 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     s = await summary();
     report.ft = s.stages.ft;
     assert.equal(s.included, 5);
+    // PRISMA counts the exclusion under the criterion's reason.
+    assert.deepEqual((await call("review_prisma", { reviewId })).main.excludedReasons, [{ name: "Wrong population", count: 1 }]);
 
     // Extraction: outcome data for each included study (through the host), then the form.
     const studies = (await call("review_studies", { reviewId, viewer: s.team[0].id })).studies;
@@ -272,6 +288,33 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     s = await summary();
     assert(s.batches.some((b) => b.batch.kind === "library"), "the library source arrived as an import");
 
+    // A review file from before criteria and reasons were one list: its reasons are criteria now.
+    const legacyId = "0190a000-0000-7000-8000-00000000aaaa";
+    const legacyEvent = (n, kind, payload, record) => ({ id: `0190a000-0000-7000-8000-${String(n).padStart(12, "0")}`, reviewId: legacyId, at: 1700000000000 + n, actor: "m1", device: "old", kind, version: "", recordId: record ?? null, payload });
+    const legacy = {
+      format: "key-review",
+      version: 1,
+      events: [
+        legacyEvent(1, "review.create", { name: "An older review" }),
+        legacyEvent(2, "team.set", { members: [{ id: "m1", name: "Ana Example", roles: ["owner", "reviewer"] }] }),
+        legacyEvent(3, "protocol.set", { note: "Created", protocol: { criteria: [{ id: "c-animal", kind: "exclude", label: "Animal studies", stages: ["ta", "ft"], reasonId: "r-population" }], reasons: [{ id: "r-design", label: "Wrong study design" }, { id: "r-population", label: "Wrong population" }, { id: "r-other", label: "Other" }] } }),
+      ],
+    };
+    await call("review_import_review", { text: JSON.stringify(legacy) });
+    const migrated = await call("review_get", { reviewId: legacyId, viewer: "m1" });
+    assert.deepEqual(migrated.protocol.criteria.map((c) => c.id), ["c-design", "c-animal", "c-other"]);
+    await page.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id, title: "An older review" }), { ws: ws.id, id: legacyId });
+    await page.getByRole("heading", { name: "An older review" }).waitFor();
+    await page.getByRole("tab", { name: /Setup/ }).click();
+    await page.getByRole("button", { name: "Criteria", exact: false }).first().click();
+    await page.locator(".kx-rv-criterion").nth(2).waitFor();
+    await shot(page, "23-setup-migrated");
+    await page.getByRole("button", { name: "Versions & audit" }).click();
+    await page.getByText("Merged the exclusion reasons into the criteria").waitFor();
+    // Back to the first review (its tab comes forward).
+    await page.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id }), { ws: ws.id, id: reviewId });
+    await page.getByRole("heading", { name: "Exercise and health (smoke)" }).waitFor();
+
     // Dark mode.
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
     await shot(page, "16-overview-dark");
@@ -281,6 +324,11 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.getByRole("tab", { name: /Analysis/ }).click();
     await page.locator(".kx-forest").waitFor();
     await shot(page, "18-analysis-dark");
+    await page.getByRole("tab", { name: /Setup/ }).click();
+    await page.getByRole("button", { name: "Criteria", exact: false }).first().click();
+    await page.locator(".kx-rv-criterion").first().waitFor();
+    await shot(page, "24-setup-criteria-dark");
+
     await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
 
     assert.deepEqual(errors, []);

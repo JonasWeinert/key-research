@@ -43,6 +43,8 @@ export function SourceListItem({
   lead,
   itemRef,
   index,
+  multiSelect,
+  onContextMenu,
 }: {
   /** A work known by its metadata (a reference, a related work). */
   work?: ListWork;
@@ -71,6 +73,9 @@ export function SourceListItem({
   /** For virtualised lists: the row's element and its index, to measure it. */
   itemRef?: Ref<HTMLLIElement>;
   index?: number;
+  /** The list selects many rows: ⌘-, ⇧-clicks on the head pick rows instead of opening. */
+  multiSelect?: boolean;
+  onContextMenu?: (e: MouseEvent<HTMLLIElement>) => void;
 }) {
   // A work the host did not match already (related works, cited-by): asked by its identifiers,
   // with its title only ever "possibly" the library's.
@@ -138,6 +143,7 @@ export function SourceListItem({
       data-selected={selected || undefined}
       data-picked={picked || undefined}
       onMouseDown={onSelect}
+      onContextMenu={onContextMenu}
       {...(id ? itemAttrs({ kind: "source", id, title }) : {})}
       draggable={!!id}
       onDragStart={id ? (e) => setItemDrag(e.dataTransfer, [{ kind: "source", id, title }]) : undefined}
@@ -147,6 +153,7 @@ export function SourceListItem({
         className="kx-work-head"
         aria-expanded={open}
         onClick={(e) => {
+          if (multiSelect && (e.metaKey || e.ctrlKey || e.shiftKey)) return;
           if (inLibrary && (e.altKey || e.metaKey)) return openAt(e.altKey ? "split" : "tab");
           toggle();
         }}

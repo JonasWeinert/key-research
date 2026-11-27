@@ -127,7 +127,7 @@ pub(super) fn csl_items(library: &Library, ids: &[String]) -> Result<Vec<Json>, 
 
 /// A source-shaped object from the UI (id, kind, creators and bibliographic fields), with
 /// the bookkeeping fields a stored source has filled in.
-fn loose_source(mut value: Json) -> Result<key_store::Source, String> {
+pub(super) fn loose_source(mut value: Json) -> Result<key_store::Source, String> {
     let map = value.as_object_mut().ok_or("A source must be an object")?;
     for (key, default) in [
         ("id", json!("work")),

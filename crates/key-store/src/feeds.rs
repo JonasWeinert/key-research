@@ -6,7 +6,7 @@
 // feeds/) fetches; this keeps the rows. A dismissed or purged item leaves its keys behind,
 // so a feed that still lists it does not bring it back.
 use crate::matching::{LinkKey, MatchQuery, bare_arxiv, bare_doi, bare_openalex, link_key, title_key};
-use crate::{Result, SourceInput, Store, e, new_id, now_ms};
+use crate::{Result, Store, e, new_id, now_ms};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
@@ -194,7 +194,7 @@ pub struct LibraryEntity {
 /// A work's fields worth keeping in an item (web hits carry ranking noise).
 fn clean_work(work: &Json) -> Json {
     let mut out = Map::new();
-    for key in ["title", "authors", "year", "venue", "abstract", "doi", "ids", "landingUrl", "pdfUrl", "type", "published", "openAccess", "citedBy", "url"] {
+    for key in ["title", "authors", "year", "venue", "abstract", "doi", "ids", "landingUrl", "pdfUrl", "type", "published", "openAccess", "oaStatus", "citedBy", "url", "isRetracted"] {
         if let Some(v) = work.get(key).filter(|v| !v.is_null()) {
             out.insert(key.into(), v.clone());
         }
@@ -264,7 +264,7 @@ const RETENTION_META: &str = "feeds.retention";
 /// Purged items' keys are forgotten after a year.
 const SEEN_DAYS: i64 = 365;
 
-fn text(work: &Json, key: &str) -> Option<String> {
+pub(crate) fn text(work: &Json, key: &str) -> Option<String> {
     work.get(key).and_then(Json::as_str).map(str::trim).filter(|s| !s.is_empty()).map(String::from)
 }
 
@@ -306,7 +306,7 @@ pub fn work_keys(work: &Json) -> Vec<String> {
     keys
 }
 
-fn match_query(key: &str, work: &Json) -> MatchQuery {
+pub(crate) fn match_query(key: &str, work: &Json) -> MatchQuery {
     let ids = work.get("ids").cloned().unwrap_or(Json::Null);
     MatchQuery {
         key: key.into(),
@@ -370,7 +370,7 @@ pub fn identity(kind: &str, config: &Map<String, Json>) -> String {
 }
 
 impl Store {
-    fn feeds_db(&self) -> Result<crate::priority::Guard<'_, Connection>> {
+    pub(crate) fn feeds_db(&self) -> Result<crate::priority::Guard<'_, Connection>> {
         let db = self.db()?;
         ensure_schema(&db)?;
         Ok(db)
@@ -787,7 +787,7 @@ fn known_item(db: &Connection, keys: &[String]) -> Result<Option<String>> {
     Ok(None)
 }
 
-fn creator_of(name: &str) -> crate::Creator {
+pub(crate) fn creator_of(name: &str) -> crate::Creator {
     let name = name.trim();
     if let Some((family, given)) = name.split_once(',') {
         return crate::Creator { family: Some(family.trim().into()), given: Some(given.trim().into()), literal: None, role: "author".into(), person_id: None };
@@ -926,25 +926,7 @@ impl Store {
             if library_hits(self, std::slice::from_ref(&work))?.first().is_some_and(Option::is_some) {
                 continue;
             }
-            let mut fields = Map::new();
-            for (from, to) in [("title", "title"), ("doi", "doi"), ("year", "year"), ("venue", "containerTitle"), ("abstract", "abstract"), ("landingUrl", "url")] {
-                if let Some(v) = work.get(from).filter(|v| !v.is_null()) {
-                    fields.insert(to.into(), v.clone());
-                }
-            }
-            if let Some(oa) = work.get("ids").and_then(|i| i.get("openalex")).and_then(Json::as_str).and_then(bare_openalex) {
-                fields.insert("openalexId".into(), json!(oa));
-            }
-            fields.insert("itemType".into(), json!("article"));
-            let creators = work.get("authors").and_then(Json::as_array).into_iter().flatten().filter_map(Json::as_str).take(100).map(creator_of).collect();
-            let source = self.insert_source(SourceInput {
-                kind: "reference".into(),
-                creators,
-                fields,
-                collections: vec![collection_id.to_string()],
-                index_status: Some("skipped".into()),
-                ..Default::default()
-            })?;
+            let source = self.insert_source(crate::inbox_selection::work_source_input(&work, vec![collection_id.to_string()]))?;
             self.feed_item_added(id, &source.id)?;
             added += 1;
         }
@@ -993,7 +975,7 @@ mod tests {
         let mut fields = Map::new();
         fields.insert("title".into(), json!("Graph neural networks for chemistry"));
         fields.insert("doi".into(), json!("10.1/abc"));
-        let source = store.insert_source(SourceInput { kind: "reference".into(), fields, ..Default::default() }).unwrap();
+        let source = store.insert_source(crate::SourceInput { kind: "reference".into(), fields, ..Default::default() }).unwrap();
         let page = store.feed_items(&ItemQuery::default()).unwrap();
         assert_eq!((page.items[0].in_library.as_deref(), page.items[0].source_id.as_deref()), (Some("doi"), Some(source.id.as_str())));
     }
@@ -1048,7 +1030,7 @@ mod tests {
         let mut fields = Map::new();
         fields.insert("title".into(), json!("Sparse attention for long documents"));
         fields.insert("doi".into(), json!("10.5/sparse"));
-        let source = store.insert_source(SourceInput { kind: "reference".into(), fields, ..Default::default() }).unwrap();
+        let source = store.insert_source(crate::SourceInput { kind: "reference".into(), fields, ..Default::default() }).unwrap();
         let out = store.save_to_inbox(&work, &origin).unwrap();
         assert_eq!((out.state, out.source_id.as_deref()), ("library", Some(source.id.as_str())));
         assert_eq!(store.inbox_states(&[work]).unwrap()[0].state, "library");

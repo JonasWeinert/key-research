@@ -251,28 +251,6 @@
 .kx-inbox-list > li[data-picked] > .kx-work-head {
   background: var(--kx-accent-soft);
 }
-.kx-inbox-bulk {
-  position: sticky;
-  top: -28px;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  padding: 6px 8px;
-  border: 0.5px solid var(--kx-line);
-  border-radius: 8px;
-  background: var(--kx-bg-raised);
-  box-shadow: var(--kx-shadow-sm);
-}
-.kx-inbox-bulk strong {
-  margin-right: 4px;
-  font-size: 12.5px;
-  font-weight: 600;
-}
-.kx-inbox-bulk .kx-spacer {
-  flex: 1;
-}
 .kx-inbox-why {
   display: flex;
   flex-basis: 100%;
@@ -287,4 +265,35 @@
 .kx-inbox-why svg {
   flex: none;
   margin-top: 2px;
+}
+
+/* Two or more picked: the selection panel beside the list, the library's details panel width;
+   too narrow for both, it floats over the list. */
+.kx-inbox-shell {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.kx-inbox-shell > .kx-inbox {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.kx-inbox-side {
+  display: flex;
+  flex: 0 0 var(--kx-inspector-width, 440px);
+  flex-direction: column;
+  width: var(--kx-inspector-width, 440px);
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--kx-line);
+  background: var(--kx-bg-sunken);
+}
+.kx-inbox-shell[data-overlay] > .kx-inbox-side {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 35;
+  width: min(var(--kx-inspector-width, 440px), 85%);
+  box-shadow: var(--kx-shadow-pop);
 }
