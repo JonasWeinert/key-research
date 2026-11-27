@@ -5,9 +5,60 @@
   height: 100%;
   background: var(--kx-bg);
 }
+/* The header rows start where the page's text does (as in the library's details panel). */
+.key-reader-panel {
+  --kx-panel-inset: 24px;
+}
+.key-reader-panel:has(.kx-source-page[data-tight="true"]) {
+  --kx-panel-inset: 14px;
+}
 .key-reader-panel .key-side-panel-head {
-  height: 38px;
+  padding-left: var(--kx-panel-inset);
   border-bottom-color: var(--kx-line);
+}
+/* Details: the page's own bar (kind, reading status, star, More) continues the header right
+   under the tabs, at the same insets, with the one divider below it; the page scrolls under
+   both, so its scrollbar starts below the header. */
+.key-reader-panel:has(> .key-side-panel-body[data-section="details"]:not([hidden]) .kx-source-page) > .key-side-panel-head {
+  border-bottom-color: transparent;
+}
+.key-reader-panel .kx-source-page[data-kind] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.key-reader-panel .kx-source-page[data-kind] > div.kx-item-page-toprow {
+  flex: none;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 10px 8px var(--kx-panel-inset);
+  border-bottom: 1px solid var(--kx-line);
+  background: var(--kx-bg);
+}
+.key-reader-panel .kx-source-page[data-kind] > div.kx-item-page-toprow > .kx-source-page-bar {
+  margin-bottom: 0;
+  /* One row, as in the library's details panel: the kind gives way first. */
+  flex-wrap: nowrap;
+}
+.key-reader-panel .kx-source-page-bar > .kx-kind-badge {
+  flex: 0 1 auto;
+  min-width: 28px;
+  overflow: hidden;
+}
+.key-reader-panel .kx-source-page-bar > :not(.kx-kind-badge, .kx-bar-title, .kx-spacer) {
+  flex: none;
+}
+.key-reader-panel .kx-source-page[data-kind] > div.kx-item-page-body {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding-top: 16px;
 }
 .key-reader-panel .key-side-panel-body[data-section="details"] {
   overflow: hidden;
