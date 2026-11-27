@@ -119,6 +119,9 @@ pub struct Landing {
     pub full_text: bool,
     /// Words of article text the page holds.
     pub words: usize,
+    /// The page's own sign-in link (a person signs in there themselves).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sign_in: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -306,6 +309,14 @@ pub fn read_landing(html: &str, url: &str) -> Landing {
     let password = elements.iter().any(|e| e.tag == "input" && e.attr("type").is_some_and(|t| t.eq_ignore_ascii_case("password")));
     let wall = password || WALL.iter().any(|w| page_text.contains(w));
 
+    let sign_in = elements
+        .iter()
+        .filter(|e| e.tag == "a" && e.text.chars().count() <= 60)
+        .find(|e| {
+            let t = e.text.to_lowercase();
+            ["sign in", "log in", "login", "institutional login", "access through your institution", "sign in via", "shibboleth", "openathens"].iter().any(|w| t.contains(w))
+        })
+        .and_then(|e| e.attr("href").and_then(|h| resolve(base.as_ref(), h)));
     let document = web_reflow::assemble(html).document;
     let body_words: usize = document.items.iter().filter(|i| matches!(i.kind.as_str(), "paragraph" | "list")).map(|i| i.text.split_whitespace().count()).sum();
     let headings: Vec<String> = document.items.iter().filter(|i| i.kind == "heading").map(|i| strip_numbering(&i.text).to_lowercase()).collect();
@@ -319,6 +330,7 @@ pub fn read_landing(html: &str, url: &str) -> Landing {
         abstract_only,
         full_text,
         words: body_words,
+        sign_in: wall.then_some(sign_in).flatten(),
         title: meta(&["citation_title", "dc.title", "og:title"]),
         doi: meta(&["citation_doi", "dc.identifier", "prism.doi"]).and_then(|d| d.find("10.").map(|i| d[i..].to_string())),
     }
@@ -339,7 +351,7 @@ mod tests {
       <a href="/doi/suppl/10.5555/rivers/appendix.pdf">Supplementary material (PDF)</a>
       <a href="/doi/10.5555/rivers/download?format=pdf" download>Download</a>
       <a href="/cite">Cite</a></div>
-      <p>Access through your institution</p></main></body></html>"#;
+      <p>Access through your institution</p><a href="/action/login">Sign in</a></main></body></html>"#;
 
     #[test]
     fn finds_the_pdf_links_by_structure() {
@@ -348,6 +360,7 @@ mod tests {
         assert_eq!(urls, ["https://journal.example/doi/epdf/10.5555/rivers", "https://journal.example/doi/10.5555/rivers/download?format=pdf"], "{landing:#?}");
         assert_eq!(landing.links[0].label, "View PDF");
         assert!(landing.wall);
+        assert_eq!(landing.sign_in.as_deref(), Some("https://journal.example/action/login"));
         assert!(landing.abstract_only && !landing.full_text);
         assert_eq!(landing.doi.as_deref(), Some("10.5555/rivers"));
     }

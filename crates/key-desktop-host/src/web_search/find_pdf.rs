@@ -152,31 +152,68 @@ impl WebSearch {
         if source.is_null() {
             return Err("Source not found".into());
         }
-        if field(&source, "filePath").is_some() {
+        // A saved web page is full text too, but its PDF is still worth finding (the page stays).
+        if field(&source, "filePath").is_some() && !saved_page(&source) {
             return Ok(json!({ "status": "hasFile", "source": source }));
         }
         let email = email.map(String::from).or_else(|| self.options().mailto);
-        let (candidates, landing) = self.pdf_candidates(&source, email.as_deref());
+        let (found, tried, landing) = self.download_first(&source, email.as_deref());
+        if let Some((bytes, candidate)) = found {
+            let path = temp_pdf(&bytes)?;
+            let attached = library.attach(id, &path);
+            if let Some(directory) = path.parent() {
+                let _ = std::fs::remove_dir_all(directory);
+            }
+            let source = attached?;
+            return Ok(json!({ "status": "attached", "via": candidate.via, "url": candidate.url, "source": source, "tried": tried }));
+        }
+        Ok(match landing {
+            Some(url) => json!({ "status": "browser", "url": url, "tried": tried, "savedPage": saved_page(&source) }),
+            None => json!({ "status": "notFound", "tried": tried, "savedPage": saved_page(&source) }),
+        })
+    }
+
+    /// The first candidate that is a PDF, what was tried before it, and the landing page.
+    fn download_first(&self, source: &Json, email: Option<&str>) -> (Option<(Vec<u8>, Candidate)>, Vec<Tried>, Option<String>) {
+        let (candidates, landing) = self.pdf_candidates(source, email);
         let mut tried = Vec::new();
         for candidate in candidates {
             match self.fetch_pdf(&candidate.url) {
-                Ok(bytes) => {
-                    let path = temp_pdf(&bytes)?;
-                    let attached = library.attach(id, &path);
-                    if let Some(directory) = path.parent() {
-                        let _ = std::fs::remove_dir_all(directory);
-                    }
-                    let source = attached?;
-                    return Ok(json!({ "status": "attached", "via": candidate.via, "url": candidate.url, "source": source, "tried": tried }));
-                }
+                Ok(bytes) => return (Some((bytes, candidate)), tried, landing),
                 Err(reason) => tried.push(Tried { url: candidate.url, via: candidate.via, reason }),
             }
         }
-        Ok(match landing {
-            Some(url) => json!({ "status": "browser", "url": url, "tried": tried }),
-            None => json!({ "status": "notFound", "tried": tried }),
+        (None, tried, landing)
+    }
+
+    /// Find PDF for bare metadata (a review record's): the PDF downloaded into a temporary folder
+    /// of its own (the caller keeps a copy and removes the folder), or the landing page.
+    pub fn find_pdf_for(&self, work: &Json, email: Option<&str>) -> Result<Json, String> {
+        let mut source = serde_json::Map::new();
+        for name in ["doi", "title", "url", "pmid", "pmcid", "arxivId", "oaUrl", "openalexId"] {
+            if let Some(value) = field(work, name) {
+                source.insert(name.into(), Json::from(value));
+            }
+        }
+        if source.is_empty() {
+            return Err("Nothing to look the PDF up by".into());
+        }
+        let email = email.map(String::from).or_else(|| self.options().mailto);
+        let (found, tried, landing) = self.download_first(&Json::Object(source), email.as_deref());
+        Ok(match (found, landing) {
+            (Some((bytes, candidate)), _) => {
+                let path = temp_pdf(&bytes)?;
+                json!({ "status": "downloaded", "path": path, "mime": "application/pdf", "via": candidate.via, "url": candidate.url, "tried": tried })
+            }
+            (None, Some(url)) => json!({ "status": "browser", "url": url, "tried": tried }),
+            (None, None) => json!({ "status": "notFound", "tried": tried }),
         })
     }
+}
+
+/// The source's file is a saved web page (a snapshot), not a PDF.
+fn saved_page(source: &Json) -> bool {
+    field(source, "filePath").is_some() && (field(source, "kind") == Some("web") || field(source, "mime").is_some_and(|m| m.contains("html")))
 }
 
 /// A downloaded PDF in the system's temporary folder (the library copies it into the workspace).
@@ -268,6 +305,23 @@ mod tests {
         assert!(!calls.lock().unwrap().urls.iter().any(|u| u.host_str() == Some("api.unpaywall.org")));
         let nothing = One(Mutex::new(json!({ "id": "s3", "title": "Notes" })), Mutex::default());
         assert_eq!(web.find_pdf(&nothing, "s3", None).unwrap()["status"], "notFound");
+    }
+
+    #[test]
+    fn a_saved_page_still_gets_its_pdf_and_bare_metadata_gets_a_file() {
+        let (_, web) = Recorded::routed(|url| match url.host_str().unwrap_or("") {
+            "repo.example" => (200, PDF.into()),
+            _ => (404, "{}".into()),
+        })
+        .search();
+        let library = One(Mutex::new(json!({ "id": "s4", "title": "Saved", "kind": "web", "mime": "text/html", "filePath": "/w/page.html", "oaUrl": "https://repo.example/s4.pdf" })), Mutex::default());
+        assert_eq!(web.find_pdf(&library, "s4", None).unwrap()["status"], "attached");
+        let found = web.find_pdf_for(&json!({ "title": "Bare", "oaUrl": "https://repo.example/bare.pdf" }), None).unwrap();
+        assert_eq!(found["status"], "downloaded");
+        let path = std::path::PathBuf::from(found["path"].as_str().unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), PDF.as_bytes());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+        assert!(web.find_pdf_for(&json!({}), None).is_err());
     }
 
     #[test]
