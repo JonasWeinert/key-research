@@ -233,6 +233,7 @@ export const HELP = {
   "settings.web.signin-forget": hint("Signs the sign-in window out of every site and deletes its profile. Key’s own browser keeps the sign-ins it already has."),
   "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or sign in in a small browser window where your phone works."),
   "browser.signin.offer": hint("Sign in in a small Chrome or Edge window, where your phone’s QR code and saved passkeys work. Key brings it back."),
+  "browser.signin.passkey": hint("Chrome’s passkey window answers this page’s passkey request: your phone (QR code), a security key or a saved passkey. You stay in Key."),
   "browser.signin.window": explain(
     "Signing in with a passkey",
     [
