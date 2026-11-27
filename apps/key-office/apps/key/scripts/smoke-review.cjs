@@ -264,6 +264,14 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-done").waitFor();
     assert.equal((await call("review_record", { reviewId, recordId: fresh, stage: "ta", viewer: ana.id })).status.name, "included");
 
+    // The library's "Send to review…" (its selection action opens this sheet).
+    await page.evaluate(({ ws, id }) => window.dispatchEvent(new CustomEvent("key:review-sheet", { detail: { kind: "send", workspaceId: ws, sourceIds: [id] } })), { ws: ws.id, id: source.id });
+    const send = page.getByRole("dialog", { name: "Send to review" });
+    await send.getByRole("button", { name: /Exercise and health \(smoke\)/ }).click();
+    await send.waitFor({ state: "detached" });
+    s = await summary();
+    assert(s.batches.some((b) => b.batch.kind === "library"), "the library source arrived as an import");
+
     // Dark mode.
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
     await shot(page, "16-overview-dark");
