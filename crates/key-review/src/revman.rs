@@ -16,7 +16,7 @@
 use crate::export::{csv_cell, outcome_rows, outcomes, resolved_value, study_data, study_label};
 use crate::interop::OutFile;
 use crate::meta::{Measure, effect};
-use crate::records::csv_fields;
+use crate::migrate::csv_rows;
 use crate::store::{Result, Reviews, metas};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -100,7 +100,7 @@ pub struct Problem {
 pub fn validate(info: &str, arms: &str, results: &str) -> Vec<Problem> {
     let mut out = Vec::new();
     let mut p = |file: &str, row: usize, study: &str, msg: String, sev: &str| out.push(Problem { file: file.into(), row, study: study.into(), message: msg, severity: sev.into() });
-    let parse = |t: &str| -> Vec<Vec<String>> { t.lines().filter(|l| !l.trim().is_empty()).map(csv_fields).collect() };
+    let parse = |t: &str| -> Vec<Vec<String>> { csv_rows(t) };
     let (i, a, r) = (parse(info), parse(arms), parse(results));
     for (name, rows, head) in [("Study information", &i, INFO_HEAD.to_vec()), ("Study arms", &a, ARMS_HEAD.to_vec()), ("Study results", &r, results_head())] {
         match rows.first() {

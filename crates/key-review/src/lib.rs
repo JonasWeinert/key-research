@@ -23,6 +23,7 @@ pub mod dependence;
 pub mod interop;
 pub mod linalg;
 pub mod metareg;
+pub mod migrate;
 pub mod multilevel;
 pub mod pubbias;
 pub mod revman;
