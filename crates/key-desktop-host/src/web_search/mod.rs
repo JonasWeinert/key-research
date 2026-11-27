@@ -8,20 +8,26 @@
 // made with a key are counted; the app reads and clears the counts with `web_key_usage` and
 // shows them in Settings. Nothing here goes to the network unless the user searches the web
 // or adds a work.
+pub mod brave;
 pub mod engines;
+pub mod exa;
 pub mod filters;
 pub mod firecrawl;
 pub mod find_pdf;
 pub mod http;
 pub mod identifiers;
+pub mod jina;
 pub mod library;
 pub mod merge;
 pub mod openalex;
+pub mod perplexity;
 pub mod provider;
 pub mod scholar_serpapi;
+pub mod searxng;
 pub mod semantic_scholar;
 pub mod tavily;
 pub mod types;
+pub mod you;
 
 use crate::ipc::{Output, arg, json_output};
 use filters::{FilterToken, LOCAL, WebFilters};
@@ -49,6 +55,12 @@ pub fn providers() -> Vec<Arc<dyn Provider>> {
         Arc::new(scholar_serpapi::ScholarSerpApi),
         Arc::new(tavily::Tavily),
         Arc::new(firecrawl::Firecrawl),
+        Arc::new(exa::Exa),
+        Arc::new(brave::Brave),
+        Arc::new(perplexity::Perplexity),
+        Arc::new(you::You),
+        Arc::new(jina::Jina),
+        Arc::new(searxng::SearXng),
     ]
 }
 
@@ -768,6 +780,13 @@ pub(crate) mod tests {
             "tavily-search.json" => include_str!("fixtures/tavily-search.json"),
             "firecrawl-search.json" => include_str!("fixtures/firecrawl-search.json"),
             "firecrawl-scrape.json" => include_str!("fixtures/firecrawl-scrape.json"),
+            "exa-search.json" => include_str!("fixtures/exa-search.json"),
+            "brave-search.json" => include_str!("fixtures/brave-search.json"),
+            "perplexity-search.json" => include_str!("fixtures/perplexity-search.json"),
+            "you-search.json" => include_str!("fixtures/you-search.json"),
+            "jina-search.json" => include_str!("fixtures/jina-search.json"),
+            "jina-read.json" => include_str!("fixtures/jina-read.json"),
+            "searxng-search.json" => include_str!("fixtures/searxng-search.json"),
             other => panic!("no fixture {other}"),
         };
         serde_json::from_str(text).unwrap()
@@ -1101,5 +1120,26 @@ pub(crate) mod tests {
         assert!(web.read_page("file:///etc/passwd", None).is_err());
         // Keys never show in what the host answers.
         assert!(!web.providers_info().to_string().contains("fc-test-1"));
+    }
+
+    #[test]
+    fn searxng_is_on_only_with_its_address_and_needs_no_key() {
+        let (calls, web) = Recorded::routed(|_| (200, fixture("searxng-search.json").to_string())).search();
+        web.set_options(&json!({ "providers": { "searxng": { "enabled": true } } }));
+        assert!(web.search(CHAIN, "klima", 10, None, &WebFilters::default(), None).unwrap_err().contains("No web search engine"));
+        web.set_options(&json!({ "providers": { "searxng": { "enabled": true, "baseUrl": "https://search.example.org/" } }, "engines": { "scholarly": true } }));
+        let page = web.search(CHAIN, "klima", 10, None, &WebFilters::default(), None).unwrap();
+        assert_eq!((page.answered_by.as_deref(), page.cursor.as_deref()), (Some("searxng"), Some("searxng|1")));
+        assert_eq!(Recorded::query(&calls.lock().unwrap().urls[0])["categories"], "science");
+        // The next page goes to the engine that answered.
+        web.search(CHAIN, "klima", 10, page.cursor.as_deref(), &WebFilters::default(), None).unwrap();
+        assert_eq!(Recorded::query(&calls.lock().unwrap().urls[1])["pageno"], "2");
+        let info = web.providers_info();
+        let searx = info.as_array().unwrap().iter().find(|p| p["id"] == "searxng").unwrap();
+        assert_eq!((searx["engine"]["needsBaseUrl"].as_bool(), searx["engine"]["baseUrl"].as_str()), (Some(true), Some("https://search.example.org")));
+        // Years are checked on its results (it cannot ask for them).
+        let years = WebFilters { year_from: Some(2022), year_to: Some(2022), ..Default::default() };
+        let page = web.search(CHAIN, "klima", 10, None, &years, None).unwrap();
+        assert_eq!(page.results.iter().map(|r| r.year).collect::<Vec<_>>(), [Some(2022)]);
     }
 }

@@ -1,0 +1,24 @@
+{
+  "_synthetic": "Invented for tests, shaped like SearXNG's format=json answer (docs.searxng.org/dev/search_api.html, checked 2026-11-27). Not a recorded answer.",
+  "query": "klimawandel",
+  "number_of_results": 0,
+  "results": [
+    {
+      "url": "https://www.umweltbundesamt.de/themen/klima-energie/klimawandel",
+      "title": "Klimawandel",
+      "content": "Ursachen und Folgen des Klimawandels.",
+      "engine": "duckduckgo",
+      "publishedDate": "2022-08-01T00:00:00",
+      "score": 1.5
+    },
+    {
+      "url": "https://de.wikipedia.org/wiki/Globale_Erw%C3%A4rmung",
+      "title": "Globale Erwärmung",
+      "content": "Die globale Erwärmung ist der Anstieg der Durchschnittstemperatur.",
+      "engine": "wikipedia",
+      "publishedDate": null
+    }
+  ],
+  "answers": [],
+  "suggestions": []
+}

@@ -1,0 +1,19 @@
+{
+  "_synthetic": "Invented for tests, shaped like the documented Brave Search API web search response (api-dashboard.search.brave.com, checked 2026-11-27). Not a recorded answer.",
+  "query": { "original": "vaccine", "more_results_available": true },
+  "web": {
+    "results": [
+      {
+        "title": "Vaccines and <strong>immunization</strong>",
+        "url": "https://www.who.int/health-topics/vaccines-and-immunization",
+        "description": "Immunization prevents illness, disability and death.",
+        "page_age": "2024-03-01T00:00:00"
+      },
+      {
+        "title": "Vaccine safety basics",
+        "url": "https://www.cdc.gov/vaccine-safety/",
+        "description": "How vaccines are tested and monitored."
+      }
+    ]
+  }
+}
