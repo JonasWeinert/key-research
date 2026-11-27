@@ -84,7 +84,7 @@ export function FullTextList({ invoke, workspaceId, sourceId, fullTexts, onChang
 }
 
 /** No PDF yet, and Find PDF kept the publisher's page: save it as the full text. */
-export function KeptPageOffer({ invoke, workspaceId, sourceId, onSaved }: { invoke: Invoke; workspaceId: string; sourceId: string; onSaved(): void }) {
+export function KeptPageOffer({ invoke, workspaceId, sourceId, onSaved, onKept }: { invoke: Invoke; workspaceId: string; sourceId: string; onSaved(): void; onKept?(kept: boolean): void }) {
   const [page, setPage] = useState<KeptPage>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -93,6 +93,7 @@ export function KeptPageOffer({ invoke, workspaceId, sourceId, onSaved }: { invo
   useEffect(() => onLibraryChanged(load), [load]);
   // Find PDF may be on the page in a tab now: its copy is kept a moment after it loads.
   const kept = !!page?.kept;
+  useEffect(() => onKept?.(kept), [kept, onKept]);
   useEffect(() => {
     if (kept) return;
     let left = 30;
@@ -117,7 +118,7 @@ export function KeptPageOffer({ invoke, workspaceId, sourceId, onSaved }: { invo
     <div className="kx-kept-page" role="group" aria-label="Saved copy of the publisher’s page">
       <Icon name="fileHtml" size={14} />
       <div className="kx-kept-page-text">
-        <span>{page.abstractOnly ? "This page seems to contain only the abstract." : "Key kept a copy of the publisher’s page."}</span>
+        <span>{page.abstractOnly ? "Key kept a copy of the publisher’s page. It seems to contain only the abstract." : "Key kept a copy of the publisher’s page from Find PDF."}</span>
         {error && <span className="kx-inline-error">{error}</span>}
       </div>
       <button type="button" className="kx-page-action" disabled={busy} title={hintText("source.no-pdf.page")} onClick={() => void save()}>

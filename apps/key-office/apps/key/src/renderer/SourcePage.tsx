@@ -338,6 +338,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   };
   // No PDF to be had: the reference's web page, saved offline as its file instead.
   const [pdfMissing, setPdfMissing] = useState(false);
+  // Find PDF kept the publisher's page: that copy is offered instead of saving the page again.
+  const [keptPage, setKeptPage] = useState(false);
   // A new full text (a page saved meanwhile) ends what the last Find PDF said.
   useEffect(() => setFinding(""), [source?.fileHash]);
   const fullTexts = useFullTexts(invoke, workspaceId, sourceId, typeof source?.fileHash === "string" ? source.fileHash : undefined);
@@ -815,8 +817,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             <FirstUseTip help="tip.find-pdf" anchor=".kx-find-pdf-button" />
           </div>
         )}
-        {!source.filePath && <KeptPageOffer invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} onSaved={() => void loadSource()} />}
-        {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (
+        {!source.filePath && <KeptPageOffer invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} onSaved={() => void loadSource()} onKept={setKeptPage} />}
+        {(savingPage || (pdfMissing && !keptPage && !source.filePath && (source.doi || source.url))) && (
           <SavePageOffer busy={savingPage} invoke={invoke} onSave={(reader) => void saveWebPage(reader)} />
         )}
 
