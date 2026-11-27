@@ -155,6 +155,18 @@ const FIXTURES = (process.env.KEY_READING_PDFS || "PUBMED_33599681.pdf,scientifi
     // It shows in the text (the reader keeps it), and on the page.
     await until(() => pdf.evaluate(() => CSS.highlights.get("kx-reading-green")?.size > 0), "the highlight in reading mode");
     await themes(pdf, "highlighted");
+    // Clicking the highlighted words opens its card: the comment is written there and kept.
+    const mid = await pdf.evaluate(() => {
+      const r = [...CSS.highlights.get("kx-reading-green")][0].getClientRects()[0];
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await pdf.mouse.click(mid.x, mid.y);
+    await pdf.locator(".kx-reading-comment-card").waitFor();
+    await pdf.locator(".kx-reading-comment-card textarea").fill("Check this against the second study.");
+    await themes(pdf, "comment-card");
+    await pdf.locator(".kx-reading-comment-card").getByRole("button", { name: "Save" }).click();
+    await until(async () => (await call("library_annotations", { hash: sources[0].hash })).find((a) => a.id === saved.id && a.comment === "Check this against the second study."), "the comment saved on the PDF's highlight");
+    await pdf.locator("button.kx-reading-comment").first().waitFor();
     await pdf.getByRole("button", { name: "Reading mode", exact: true }).click();
     await pdf.locator(".kx-reading").waitFor({ state: "detached" });
     await until(() => pdf.evaluate(() => document.querySelectorAll("[data-annotation-id], .pdfjs-annotation, .pdfjs-highlight").length > 0), "the highlight on the page");

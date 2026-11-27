@@ -587,7 +587,7 @@ export function WebPageReader({
             { type: "TextPositionSelector", start: found.start, end: found.end },
           ],
         };
-        const created: WebAnnotation = { id: crypto.randomUUID(), documentId: sourceId, text: found.exact, color: color as Color, anchor, createdAt: now, updatedAt: now, ...(comment?.trim() ? { comment: comment.trim() } : {}) };
+        const created: WebAnnotation = { id: crypto.randomUUID(), documentId: sourceId, text: selection.text, color: color as Color, anchor, createdAt: now, updatedAt: now, ...(comment?.trim() ? { comment: comment.trim() } : {}) };
         await saveRef.current([created]);
         return created.id;
       },
