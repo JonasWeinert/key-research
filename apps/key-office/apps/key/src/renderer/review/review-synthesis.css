@@ -1,0 +1,224 @@
+/* More analyses (review-synthesis.tsx), the conversion helper (review-convert.tsx) and moving
+   a review in (review-migrate.tsx). Tokens only. */
+
+.kx-rv-more .kx-rv-section-head {
+  gap: 12px;
+}
+.kx-rv-more-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.kx-rv-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.kx-rv-more-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+.kx-rv-more-num {
+  width: 88px;
+}
+.kx-rv-more-warn {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-amber) 12%, transparent);
+  color: var(--kx-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.kx-rv-more-ok {
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-green) 12%, transparent);
+  font-size: 12px;
+}
+.kx-rv-more-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--kx-accent-text);
+  font: 600 12px var(--kx-font);
+  cursor: pointer;
+}
+.kx-rv-more-model {
+  margin: 0;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-rv-more-mods {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+.kx-rv-more-mod {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+  cursor: pointer;
+}
+.kx-rv-more-mod[data-on] {
+  background: var(--kx-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--kx-accent);
+}
+.kx-rv-more-mod small {
+  grid-column: 2;
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-rv-more-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 0;
+}
+.kx-rv-more-stats dt {
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-rv-more-stats dd {
+  margin: 2px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.kx-rv-more-table td small {
+  display: block;
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-rv-more-table tr[data-chosen] td {
+  background: var(--kx-fill);
+}
+.kx-rv-more-table tr[data-flag] td:first-child small {
+  color: var(--kx-red);
+}
+.kx-rv-more-h3 {
+  margin: 0;
+  font: 600 12.5px var(--kx-font-display);
+}
+.kx-rv-more-figure {
+  margin: 0;
+}
+.kx-rv-more-figure figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.kx-rv-more-figure > svg {
+  max-width: 640px;
+}
+.kx-rv-more-caption {
+  margin: 4px 0 0;
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-rv-more-grid {
+  align-items: start;
+}
+.kx-rv-more-headline {
+  margin: 0;
+}
+.kx-rv-more-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.kx-rv-more-problems {
+  max-height: 260px;
+  margin: 0;
+  padding-left: 18px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.kx-rv-more-problems li[data-severity="warning"] {
+  color: var(--kx-text-2);
+}
+
+/* Conversion helper */
+.kx-rv-convert {
+  width: min(560px, 92vw);
+}
+.kx-rv-convert-kinds {
+  width: 100%;
+}
+.kx-rv-convert-inputs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 10px 0;
+}
+.kx-rv-convert-result {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--kx-fill);
+  font-size: 12.5px;
+}
+.kx-rv-convert-result dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 0 0 6px;
+}
+.kx-rv-convert-result dt {
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-rv-convert-result dd {
+  margin: 0;
+  font: 600 15px var(--kx-font-display);
+  font-variant-numeric: tabular-nums;
+}
+.kx-rv-convert-result p {
+  margin: 4px 0 0;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+}
+.kx-rv-converted {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  color: var(--kx-accent-text);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+/* Moving a review in */
+.kx-rv-migrate {
+  width: min(760px, 94vw);
+}
+.kx-rv-migrate-map {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 10px 0;
+}
+.kx-rv-migrate-sample {
+  max-height: 180px;
+  overflow: auto;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+.kx-rv-migrate-sample table {
+  font-size: 11.5px;
+}
+.kx-rv-migrate-sample td {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

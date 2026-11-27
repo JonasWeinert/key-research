@@ -808,6 +808,40 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 reviews.ai_suggest(&review()?, text(args, "recordId"), stage(args)?, suggestion.clone(), "ai")?;
                 suggestion
             }
+            // std-D: advanced synthesis, conversions and exports others can import.
+            "review_moderators" => json!(reviews.moderators(&review()?)?),
+            "review_synthesis" => reviews.synthesis(&review()?, &arg::<key_review::synthesis::SynthesisRequest>(args, "request")?)?,
+            "review_convert" => json!(key_review::conversions::convert(&arg::<key_review::conversions::ConvertRequest>(args, "request")?)?),
+            "review_conversion_kinds" => json!(key_review::conversions::catalogue().into_iter().map(|(kind, title, inputs)| json!({ "kind": kind, "title": title, "inputs": inputs })).collect::<Vec<_>>()),
+            "review_export_r" => {
+                let id = review()?;
+                let spec = arg::<key_review::interop::AnalysisSpec>(args, "spec")?;
+                let files = reviews.export_r_zip(&id, &spec)?;
+                json!({ "filename": files.0, "content": key_review::interop::base64(&files.1), "encoding": "base64", "mime": "application/zip" })
+            }
+            "review_revman_export" => {
+                let id = review()?;
+                let files = reviews.revman_files(&id)?;
+                let problems = reviews.revman_check(&id)?;
+                let name = reviews.read(&id, |s, _| Ok(key_review::interop::slug(&s.info.name)))?;
+                let zip = key_review::interop::zip_files(&format!("{name}-revman"), &files)?;
+                json!({ "filename": format!("{name}-revman.zip"), "content": key_review::interop::base64(&zip), "encoding": "base64", "mime": "application/zip", "problems": problems })
+            }
+            "review_revman_check" => json!(reviews.revman_check(&review()?)?),
+            "review_studies_export" => {
+                let f = reviews.studies_export(&review()?, text(args, "format"), text(args, "which"))?;
+                let mime = if f.path.ends_with(".csv") { "text/csv" } else { "text/plain" };
+                json!({ "filename": f.path, "content": String::from_utf8_lossy(&f.bytes), "mime": mime })
+            }
+            "review_bundle" => {
+                let plots = args.get("plots").cloned().map(serde_json::from_value::<std::collections::BTreeMap<String, String>>).transpose().map_err(|e| e.to_string())?.unwrap_or_default();
+                let current = args.get("current").filter(|c| !c.is_null()).cloned().map(serde_json::from_value::<key_review::interop::AnalysisSpec>).transpose().map_err(|e| e.to_string())?;
+                let (name, bytes) = reviews.bundle(&review()?, text(args, "viewer"), &plots, current.as_ref(), args.get("anonymise").and_then(Json::as_bool).unwrap_or(false))?;
+                json!({ "filename": name, "content": key_review::interop::base64(&bytes), "encoding": "base64", "mime": "application/zip" })
+            }
+            "review_migrate_preview" => json!(key_review::migrate::preview(text(args, "text"))?),
+            "review_migrate" => json!(reviews.migrate(&review()?, text(args, "text"), &arg::<key_review::migrate::Mapping>(args, "mapping")?, &actor()?, &lookup)?),
+            // std-D end.
             _ => return Err(format!("Unknown Key command: {command}")),
         })
     })();

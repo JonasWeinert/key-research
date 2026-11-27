@@ -17,6 +17,8 @@ import { plural, type ExtractionView, type Field, type Form, type SourcePos, typ
 import { Btn, MenuButton, errorText, useLoad } from "./review-ui";
 import type { ReaderSelectionAction, ReviewReaderHandle } from "./review-reader";
 import type { StageProps } from "./ReviewPage";
+// std-D: the conversion helper on outcome rows.
+import { ConvertHost, ConvertedMark, openConvert } from "./review-convert";
 
 const ReviewReader = lazy(() => import("./review-reader").then((m) => ({ default: m.ReviewReader })));
 
@@ -68,6 +70,7 @@ export function Extraction(props: StageProps) {
   const at = list.findIndex((s) => s.id === current);
   return (
     <div className="kx-rv-extract">
+      <ConvertHost invoke={props.invoke} workspaceId={props.workspaceId} reviewId={props.reviewId} />
       <div className="kx-rv-toolbar kx-rv-extract-bar">
         <span className="kx-rv-nav">
           <button type="button" className="kx-rv-icon" aria-label="Previous study" title="Previous study (⌥↑)" onClick={() => move(-1)}>
@@ -542,9 +545,15 @@ function TableInput({ field, value, onChange, onCommit, onFocus }: { field: Fiel
                       aria-label={c.label}
                     />
                   )}
+                  <ConvertedMark row={row} column={c.id} />
                 </td>
               ))}
               <td>
+                {field.role === "outcomes" && (
+                  <button type="button" className="kx-rv-icon" aria-label="Convert reported statistics" title="Convert reported statistics (median and IQR, CI, p-value…)" onClick={() => openConvert({ row, apply: (next) => onCommit(value.map((r, j) => (j === i ? next : r))) })}>
+                    <Icon name="function" size={11} />
+                  </button>
+                )}
                 <button type="button" className="kx-rv-icon" aria-label="Remove row" onClick={() => onCommit(value.filter((_, j) => j !== i))}>
                   <Icon name="minus" size={11} />
                 </button>

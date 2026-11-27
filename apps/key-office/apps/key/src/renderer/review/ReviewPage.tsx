@@ -17,6 +17,8 @@ import { Screening } from "./review-screen";
 import { Extraction } from "./review-extract";
 import { AnalysisView } from "./review-analysis";
 import "./review.css";
+// std-D: moving a review in from Covidence or Rayyan.
+import { MigrateHost, openMigrate } from "./review-migrate";
 
 export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis";
 const stageKey = (id: string) => `key.review.stage:${id}`;
@@ -165,6 +167,8 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
               { label: "Export screening decisions (CSV)", icon: "table", run: () => void exportFile("screening") },
               { label: "Export audit trail (CSV)", icon: "clock", run: () => void exportFile("audit") },
               { label: "Save protocol as template…", icon: "copy", run: () => void exportFile("template") },
+              // std-D: moving a review in.
+              { label: "Import from Covidence or Rayyan…", icon: "upload", run: openMigrate },
               null,
               { label: summary.review.archived ? "Restore review" : "Archive review", icon: "disk", run: () => void api.archive(!summary.review.archived, viewer).then(reload) },
               { label: "Delete review…", icon: "trash", danger: true, run: () => setDeleting(true) },
@@ -182,6 +186,8 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
         {stage === "analysis" && <AnalysisView {...props} />}
       </main>
       {notice}
+      {/* std-D: moving a review in. */}
+      <MigrateHost invoke={invoke} workspaceId={workspaceId} reviewId={reviewId} viewer={viewer} team={summary.team} onDone={(t) => show(t, "ok")} />
       {deleting && (
         <Confirm
           title={`Delete “${summary.review.name}”?`}

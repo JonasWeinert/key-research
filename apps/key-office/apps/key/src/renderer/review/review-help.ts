@@ -1,6 +1,8 @@
 // The systematic review's explanations (spread into help-content.ts's HELP), for people who have
 // never done a systematic review as much as for experienced teams. Same voice and budgets.
 import type { HelpEntry } from "../help-content";
+// std-D: advanced synthesis and exports.
+import { SYNTHESIS_HELP } from "./review-synthesis-help";
 
 export const REVIEW_HELP = {
   "review.what": {
@@ -160,4 +162,6 @@ export const REVIEW_HELP = {
   "empty.review.extraction": { kind: "empty", title: "No included studies yet", what: "Studies included at full text are listed here for data extraction.", todo: "Include studies at full-text screening." },
   "empty.review.analysis": { kind: "empty", title: "Nothing to analyse yet", what: "Outcome data extracted from included studies is pooled here.", todo: "Include studies, then extract their outcome data." },
   "empty.review.outcomes": { kind: "empty", title: "No outcome data yet", what: "Add the Outcome data form in Setup › Extraction forms, then fill it in for each study.", todo: "Rows need an outcome name and events, means or an estimate." },
+  // std-D: advanced synthesis and exports.
+  ...SYNTHESIS_HELP,
 } satisfies Record<string, HelpEntry>;

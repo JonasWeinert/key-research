@@ -403,6 +403,14 @@ impl Reviews {
         Ok(files)
     }
 
+    /// One analysis's R files as a zip: (file name, bytes).
+    pub fn export_r_zip(&self, review: &str, spec: &AnalysisSpec) -> Result<(String, Vec<u8>)> {
+        let files = self.r_export(review, spec)?;
+        let outcome = spec.request.get("outcome").and_then(Json::as_str).unwrap_or("analysis");
+        let root = format!("{}-r", slug(if spec.name.is_empty() { outcome } else { &spec.name }));
+        Ok((format!("{root}.zip"), zip_files(&root, &files)?))
+    }
+
     /// The replication bundle as zip bytes. `plots` are SVGs the Analysis stage drew
     /// (path → markup), placed under analyses/; `anonymise` replaces reviewer names.
     pub fn bundle(&self, review: &str, viewer: &str, plots: &BTreeMap<String, String>, current: Option<&AnalysisSpec>, anonymise: bool) -> Result<(String, Vec<u8>)> {
@@ -556,6 +564,17 @@ fn readme(name: &str, files: &[(OutFile, &str)], anonymise: bool) -> String {
     s.push_str("| `manifest.json` | Every file with its size, SHA-256 checksum and description. |\n| `SHA256SUMS` | The checksums in `shasum` format. |\n");
     s.push_str("\nFiles from parts of the review that were not used (for example risk of bias or certainty) are absent.\n");
     s
+}
+
+/// Files as one zip under `root/`.
+pub fn zip_files(root: &str, files: &[OutFile]) -> Result<Vec<u8>> {
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    for f in files {
+        zip.start_file(format!("{root}/{}", f.path), opts).map_err(|e| e.to_string())?;
+        zip.write_all(&f.bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(zip.finish().map_err(|e| e.to_string())?.into_inner())
 }
 
 pub fn method_name(m: Method) -> &'static str {

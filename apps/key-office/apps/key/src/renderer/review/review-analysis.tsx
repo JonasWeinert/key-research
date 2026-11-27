@@ -8,6 +8,8 @@ import { pngBlob, saveFile, svgMarkup } from "../charts/export";
 import { formatNumber } from "../charts/scale";
 import type { Analysis, Pooled } from "./review-api";
 import { MenuButton, Segmented, Toggle, errorText, useLoad } from "./review-ui";
+import { AdvancedSynthesis } from "./review-synthesis";
+import { backTransform } from "./review-synthesis-api";
 import type { StageProps } from "./ReviewPage";
 
 const MEASURES: Record<string, [string, string][]> = {
@@ -22,6 +24,12 @@ const MEASURES: Record<string, [string, string][]> = {
   ],
   generic: [["GEN", "Generic inverse variance"]],
 };
+// std-D: more effect sizes for each data type.
+MEASURES.continuous.push(["ROM", "Response ratio (ratio of means)"], ["SMCR", "Standardised mean change (pre–post)"]);
+MEASURES.generic.push(["HR", "Hazard ratio (from HR and CI)"], ["PCOR", "Partial correlation (from t and df)"], ["PCORSD", "Partial correlation, economics SE"]);
+MEASURES.correlation = [["ZCOR", "Correlation (Fisher's z)"], ["COR", "Correlation (r)"], ["PCOR", "Partial correlation (from t and df)"]];
+MEASURES.proportion = [["PLO", "Proportion (logit)"], ["PFT", "Proportion (double arcsine)"]];
+MEASURES.rate = [["IRR", "Incidence rate ratio"]];
 
 const p = (v: number) => (v < 0.001 ? "< 0.001" : v.toFixed(3));
 
@@ -38,7 +46,8 @@ interface Input {
   sd2?: number | null;
 }
 
-export function AnalysisView({ api, summary, notify, go }: StageProps) {
+export function AnalysisView(props: StageProps) {
+  const { api, summary, notify, go } = props;
   const outcomes = useLoad(() => api.outcomes(), [api, summary.events]);
   const [choice, setChoice] = useState(0);
   const chosen = outcomes.value?.[choice];
@@ -165,13 +174,24 @@ export function AnalysisView({ api, summary, notify, go }: StageProps) {
               </section>
             )}
           </div>
+          {chosen && (
+            <AdvancedSynthesis
+              props={props}
+              base={{ outcome: chosen.outcome, timepoint: chosen.timepoint, options: { measure, method, hartungKnapp: hk, level: 0.95 }, subgroups }}
+              plots={() => ({ ...(forest.current ? { [`${base}-forest.svg`]: svgMarkup(forest.current) } : {}), ...(funnel.current ? { [`${base}-funnel.svg`]: svgMarkup(funnel.current) } : {}) })}
+            />
+          )}
         </>
       )}
     </div>
   );
 }
 
-const tr = (a: Analysis, v: number) => (a.ratio ? Math.exp(v) : v);
+// std-D: back-transformed for proportions and Fisher's z as well as ratios.
+const tr = (a: Analysis, v: number) => {
+  const t = (a as Analysis & { transform?: string; harmonicN?: number | null }).transform;
+  return t ? backTransform(v, t, (a as Analysis & { harmonicN?: number | null }).harmonicN) : a.ratio ? Math.exp(v) : v;
+};
 const ci = (a: Analysis, e: number, l: number, u: number) => `${formatNumber(tr(a, e))} [${formatNumber(tr(a, l))}, ${formatNumber(tr(a, u))}]`;
 
 function het(pooled: Pooled) {
