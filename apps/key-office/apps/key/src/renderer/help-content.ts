@@ -247,13 +247,13 @@ export const HELP = {
     "Getting the PDF from the publisher’s page",
     [
       "Key looked for a free copy of the PDF and couldn’t download one, so it opened the article’s page instead.",
-      "If you can open the PDF here (perhaps after signing in, or through your library), Key saves it to this source by itself. Key never signs in or clicks through for you.",
+      "Click the page’s own PDF or Download link: many publishers only hand out the PDF that way. Key highlights the link when it finds one, and saves the PDF you open to this source. Key never signs in or clicks for you.",
       "Key keeps a copy of this page for a few days. When the PDF comes from it, Key uses the page’s headings, captions and references to lay out the PDF’s contents, then deletes the copy.",
     ],
     { privacy: "The page is saved on this Mac only." },
   ),
   "browser.find-pdf.save": hint("Keep this page as the source’s full text: you can read, search, quote and highlight it like a PDF."),
-  "browser.find-pdf.unavailable": hint("Stop looking here. Key deletes its copy of the page; the source stays without full text."),
+  "browser.find-pdf.unavailable": hint("say the PDF isn’t available, and Key deletes its copy of the page."),
   "source.full-text": explain(
     "Full text",
     [

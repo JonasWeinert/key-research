@@ -122,6 +122,10 @@ pub struct Landing {
     /// The page's own sign-in link (a person signs in there themselves).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sign_in: Option<String>,
+    /// Download controls without an address of their own (a PDF viewer's or an interstitial's
+    /// "Download PDF" button), by what they say, for the page to point at.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub controls: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -305,6 +309,34 @@ pub fn read_landing(html: &str, url: &str) -> Landing {
     links.sort_by(|a, b| b.score.cmp(&a.score));
     links.truncate(4);
 
+    // Buttons that download the PDF by script (viewers, interstitials): no address to offer,
+    // only something to point at. "Download" alone counts on a page that is a PDF viewer.
+    let viewer = url_score(url) > 0
+        || base.as_ref().is_some_and(|b| b.path().split('/').any(|s| matches!(s.to_ascii_lowercase().as_str(), "reader" | "viewer" | "doi-reader" | "pdfviewer")))
+        || elements.iter().any(|e| matches!(e.tag.as_str(), "embed" | "object" | "iframe") && [e.attr("type"), e.attr("src"), e.attr("data")].iter().flatten().any(|v| v.to_ascii_lowercase().contains("pdf")));
+    let mut controls: Vec<String> = Vec::new();
+    for element in &elements {
+        let role_button = element.attr("role").is_some_and(|r| r.eq_ignore_ascii_case("button"));
+        let input_button = element.tag == "input" && element.attr("type").is_some_and(|t| matches!(t.to_ascii_lowercase().as_str(), "button" | "submit"));
+        let addressless = element.tag == "button" || role_button || input_button || (element.tag == "a" && element.attr("href").is_none_or(|h| h.trim().is_empty() || h.starts_with('#') || h.starts_with("javascript:")));
+        if !addressless || element.attr("data-href").or(element.attr("data-url")).or(element.attr("data-pdf-url")).is_some() {
+            continue;
+        }
+        let label = [element.text.as_str(), element.attr("aria-label").unwrap_or(""), element.attr("title").unwrap_or(""), element.attr("value").unwrap_or("")].into_iter().map(str::trim).find(|l| l.chars().any(char::is_alphanumeric)).unwrap_or("");
+        let said = words(&[element.text.as_str(), element.attr("aria-label").unwrap_or(""), element.attr("title").unwrap_or(""), element.attr("value").unwrap_or("")].join(" "));
+        let pdf = said.iter().any(|w| w == "pdf" || w == "epdf");
+        let download = said.iter().any(|w| w == "download");
+        if label.is_empty() || label.chars().count() > 60 || element.furniture || said.iter().any(|w| NOT_THE_ARTICLE.contains(&w.as_str())) {
+            continue;
+        }
+        if (pdf && (download || said.len() <= 3)) || (download && viewer) {
+            if !controls.iter().any(|c| c == label) {
+                controls.push(label.to_string());
+            }
+        }
+    }
+    controls.truncate(3);
+
     let page_text = elements.iter().filter(|e| matches!(e.tag.as_str(), "a" | "button" | "label" | "p" | "h1" | "h2" | "h3" | "form" | "section" | "div" | "span")).map(|e| e.text.to_lowercase()).collect::<Vec<_>>().join(" ");
     let password = elements.iter().any(|e| e.tag == "input" && e.attr("type").is_some_and(|t| t.eq_ignore_ascii_case("password")));
     let wall = password || WALL.iter().any(|w| page_text.contains(w));
@@ -331,6 +363,7 @@ pub fn read_landing(html: &str, url: &str) -> Landing {
         full_text,
         words: body_words,
         sign_in: wall.then_some(sign_in).flatten(),
+        controls,
         title: meta(&["citation_title", "dc.title", "og:title"]),
         doi: meta(&["citation_doi", "dc.identifier", "prism.doi"]).and_then(|d| d.find("10.").map(|i| d[i..].to_string())),
     }
@@ -379,6 +412,18 @@ mod tests {
         assert_eq!(landing.links.len(), 1);
         assert_eq!((landing.links[0].url.as_str(), landing.links[0].why, landing.links[0].label.as_str()), ("https://repo.example/files/rivers.pdf", "meta", "Download PDF"));
         assert!(landing.full_text && !landing.abstract_only && !landing.wall);
+    }
+
+    #[test]
+    fn points_at_a_viewers_download_button() {
+        let page = r#"<html><body><header><button aria-label="Download PDF">&#8595;</button><button>Print</button></header>
+            <div id="viewer"></div><nav><button>Download PDF guide</button></nav></body></html>"#;
+        let landing = read_landing(page, "https://journal.example/doi/epdf/10.5555/rivers");
+        assert_eq!(landing.controls, ["Download PDF"]);
+        let plain = read_landing("<html><body><button>Download</button></body></html>", "https://x.example/article");
+        assert!(plain.controls.is_empty(), "\"Download\" alone is a PDF control only in a viewer");
+        let viewer = read_landing("<html><body><button>Download</button></body></html>", "https://x.example/reader/123");
+        assert_eq!(viewer.controls, ["Download"]);
     }
 
     #[test]

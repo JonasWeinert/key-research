@@ -13,6 +13,7 @@ import {
   clipboard,
   nativeImage,
   globalShortcut,
+  nativeTheme,
   type MenuItemConstructorOptions,
 } from "electron";
 import { existsSync } from "node:fs";
@@ -51,6 +52,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browse
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
 import { FIND_PDF_BANNER_HEIGHT, webPageRect } from "../shared/browser-layout";
 import { FindPdfPages, shortTitle, type FindPdfBanner } from "./find-pdf-pages";
+import { pointAtPdf, showPdfPointer } from "./browser/pdf-pointer";
 import { feedsEnvironmentRequest, watchFeedsEnvironment } from "./feeds-environment";
 import { powerStateRequest, watchPowerState } from "./power-state";
 import { forgetReading, reportReading } from "./reading-events";
@@ -717,7 +719,7 @@ function findPdfStage(pdfFor: { workspaceId: string; sourceId: string }, stage: 
 async function findPdfLanded(record: OwnedView, challenge?: boolean) {
   const contents = record.view?.webContents;
   if (!record.pdfFor || !record.findPdf || !contents || !findPdfPages || challenge) return;
-  if (record.findPdf.stage === "attached" || record.findPdf.stage === "saved") return;
+  if (record.findPdf.stage === "attached" || record.findPdf.stage === "saved" || record.findPdf.stage === "saving") return;
   const pdfFor = record.pdfFor;
   // The page did not open (the tab shows its error page): say so, nothing to read there.
   if (contents.getURL().startsWith("data:")) {
@@ -735,6 +737,10 @@ async function findPdfLanded(record: OwnedView, challenge?: boolean) {
     signIn: landing.signIn,
     abstractOnly: landing.abstractOnly && !landing.fullText,
   };
+  // The page's own PDF link (or a viewer's Download button), pointed at for the person to click.
+  const pointer = await pointAtPdf(contents, { urls: landing.links.map((l) => l.url), labels: landing.controls ?? [] }, { scroll: true, accent: pointerAccent() });
+  if (!record.findPdf || record.findPdf.stage !== "landed") return;
+  record.findPdf = { ...record.findPdf, pointer: pointer.found ? { label: pointer.label } : undefined };
   findPdfChanged(record);
   // The snapshot is taken in the background; the banner says so once it is there.
   void findPdfLandedSnapshot(record);
@@ -747,11 +753,52 @@ async function findPdfLandedSnapshot(v: OwnedView) {
     findPdfChanged(v);
   }
 }
+/** The pointer's colour: Key's accent in the app's theme (white halo around it on the page). */
+const pointerAccent = () => (nativeTheme.shouldUseDarkColors ? "#3d8bff" : "#0a6cff");
+/** A PDF download started in a Find PDF tab: the banner says it is being saved. */
+function findPdfSaving(contents: Electron.WebContents | undefined) {
+  const record = contents && [...views.values()].find((v) => v.kind === "web" && v.view?.webContents === contents);
+  if (!record?.pdfFor || !record.findPdf || record.findPdf.stage === "attached" || record.findPdf.stage === "saved") return;
+  for (const v of findPdfTabs(record.pdfFor)) {
+    v.findPdf = { ...v.findPdf!, stage: "saving", error: undefined };
+    findPdfChanged(v);
+  }
+}
+/** The PDF did not come after all: back to looking, with why. */
+function findPdfFailed(pdfFor: { workspaceId: string; sourceId: string }, error: string) {
+  for (const v of findPdfTabs(pdfFor))
+    if (v.findPdf?.stage === "saving") {
+      v.findPdf = { ...v.findPdf, stage: "landed", error };
+      findPdfChanged(v);
+    }
+}
 /** The banner's buttons. */
-async function findPdfOp(w: ShellWindow, record: OwnedView, op: string, url?: string) {
+async function findPdfOp(w: ShellWindow, record: OwnedView, op: string, url?: string, at?: { x: number; y: number }) {
   const contents = record.view?.webContents;
   const pdfFor = record.pdfFor;
   if (!pdfFor || !record.findPdf || !contents) throw Error("This tab is not looking for a PDF");
+  // "Show me": the pointed-at link, scrolled to and pulsing again (pointed at anew if it went).
+  if (op === "show") {
+    if (!(await showPdfPointer(contents))) {
+      const links = record.findPdf.links.map((l) => l.url);
+      const again = await pointAtPdf(contents, { urls: links, labels: [] }, { scroll: true, accent: pointerAccent() });
+      if (again.found) await showPdfPointer(contents);
+    }
+    return;
+  }
+  // The quieter ways on, in a menu of their own.
+  if (op === "more") {
+    const banner = record.findPdf;
+    const run = (next: string, link?: string) => () => void findPdfOp(w, record, next, link).catch((error) => emit("operation-error", couldNot("do that", error)));
+    const items: Electron.MenuItemConstructorOptions[] = [];
+    if (banner.links[0]) items.push({ label: "Open the PDF link directly", click: run("open", banner.links[0].url) });
+    if (banner.proxy) items.push({ label: `Try through ${banner.proxy}`, click: run("proxy") });
+    if (banner.wall) items.push({ label: "Sign in on this site", click: run("sign-in") });
+    if (items.length) items.push({ type: "separator" });
+    items.push({ label: "Save this page instead", click: run("save") }, { label: "The PDF isn’t available", click: run("unavailable") }, { type: "separator" }, { label: "Hide this banner", click: run("dismiss") });
+    Menu.buildFromTemplate(items).popup({ window: w.window, x: Math.round(at?.x ?? 0), y: Math.round(at?.y ?? 0) });
+    return;
+  }
   if (op === "open" && url && webUrl(url)) await contents.loadURL(String(webUrl(url))).catch(() => undefined);
   else if (op === "proxy") await proxyService?.op(contents, record.web?.url ?? "", "proxy-use");
   else if (op === "sign-in") {
@@ -908,7 +955,10 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
       setTimeout(() => {
         void addTempToLibrary(record).then(
           () => findPdfStage(pdfFor, "attached"),
-          (error) => emit("browser-notice", { message: couldNot("attach the PDF to the source", error) }),
+          (error) => {
+            findPdfFailed(pdfFor, couldNot("attach the PDF to the source", error));
+            emit("browser-notice", { message: couldNot("attach the PDF to the source", error) });
+          },
         );
       }, 0);
     }
@@ -932,6 +982,7 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
     focusShown(w);
   } catch (error) {
     await rm(file.path, { force: true }).catch(() => undefined);
+    if (from?.pdfFor) findPdfFailed(from.pdfFor, "What came was not a PDF. Try the link again.");
     emit("browser-notice", { message: couldNot("open the PDF", error) });
   }
 }
@@ -2573,6 +2624,7 @@ else
       void tempPdfs.list().catch(() => undefined);
       browserService = new BrowserService((id) => tempPdfs.incomingPath(id), {
         pdf: (contents, file) => void openDownloadedPdf(contents, file),
+        started: (contents) => findPdfSaving(contents),
         file: (_contents, path, ok) => emit("browser-notice", { message: ok ? `Downloaded “${basename(path)}” to Downloads` : `The download of “${basename(path)}” did not finish`, path: ok ? path : undefined }),
       });
       proxyService = await new ProxyService(join(app.getPath("userData"), "library-proxies.json")).load();
@@ -3449,7 +3501,7 @@ else
           case "find-pdf-banner": {
             const view = views.get(String(p.viewId ?? activeViewId(w) ?? ""));
             if (view?.kind !== "web") throw Error("Not a browser tab");
-            await findPdfOp(w, view, String(p.op), typeof p.url === "string" ? p.url : undefined);
+            await findPdfOp(w, view, String(p.op), typeof p.url === "string" ? p.url : undefined, Number.isFinite(Number(p.x)) ? { x: Number(p.x), y: Number(p.y) } : undefined);
             return snapshot(w);
           }
           case "web-page": {
