@@ -8,7 +8,7 @@
 // just the sites of this sign-in, copies them into its browser, closes the window and reloads
 // the page. Nothing here reads, types or keeps a password, and nothing leaves the Mac.
 import { spawn, execFile, type ChildProcess } from "node:child_process";
-import { chmod, mkdir, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, readlink, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { CdpPipe } from "./cdp-pipe";
@@ -40,7 +40,8 @@ let found: { at: number; apps: ChromiumApp[] } | undefined;
 /** The Chromium browsers installed on this Mac (by bundle id, wherever they are). */
 export async function chromiumApps(env: NodeJS.ProcessEnv = process.env): Promise<ChromiumApp[]> {
   // Smokes point Key at a browser program, or at none.
-  const forced = env.KEY_SIGNIN_CHROMIUM;
+  // (A smoke may swap the program mid-run: globalThis.keySignInChromium.)
+  const forced = (env.KEY_BROWSER_SMOKE && (globalThis as { keySignInChromium?: string }).keySignInChromium) || env.KEY_SIGNIN_CHROMIUM;
   if (forced) return forced === "none" ? [] : [{ id: "chrome", name: env.KEY_SIGNIN_CHROMIUM_NAME || "Google Chrome", executable: forced }];
   if (process.platform !== "darwin") return [];
   if (found && Date.now() - found.at < 60_000) return found.apps;
@@ -115,7 +116,8 @@ export function electronCookie(cookie: CdpCookie): Electron.CookiesSetDetails {
   };
 }
 
-export type WindowEnd = { kind: "signed-in" | "closed"; url?: string } | { kind: "failed"; problem: string };
+/** How the window ended. `byPerson`: the person closed it (Key then tries with what it has). */
+export type WindowEnd = { kind: "signed-in"; url?: string; reason?: string } | { kind: "closed"; byPerson?: boolean } | { kind: "failed"; problem: string };
 export interface SignInWindowOptions {
   app: ChromiumApp;
   /** Key's own profile folder for this browser. */
@@ -128,33 +130,84 @@ export interface SignInWindowOptions {
   /** Test mode: no window on screen, and a virtual authenticator answers passkey requests. */
   headless?: boolean;
   virtualAuthenticator?: boolean;
+  /** How long a site's page must stay before the sign-in counts as finished. */
   settleMs?: number;
   /** A window kept open to use a site in (it never ends by itself on a site's page). */
   keep?: boolean;
-  /** Every page and frame address the window loads (for a debug trace). */
-  onHop?(url: string): void;
+  /** What the window does, for a debug trace (addresses redacted by the listener). */
+  onTrace?(event: string, detail: Record<string, unknown>): void;
 }
 
-/** One open sign-in window. `ended` resolves once it is signed in, closed or failed. */
+/** After the sign-in pages, a site's page that has been shown this long ends the sign-in even
+ * if it still loads or shows a sign-in frame. */
+const FALLBACK_MS = 5000;
+/** The bar Key puts at the top of a site's page in the window once the sign-in looks finished
+ * (an isolated world: the page cannot see or change it; never on a sign-in page). */
+const BAR = `(() => {
+  if (document.getElementById("key-signin-bar")) return "there";
+  const host = document.createElement("div");
+  host.id = "key-signin-bar";
+  host.style.cssText = "all:initial;position:fixed;inset:0 0 auto 0;z-index:2147483647;";
+  const root = host.attachShadow({ mode: "closed" });
+  root.innerHTML = \`<style>
+    .bar{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0a5cd5;color:#fff;font:13px/1.3 -apple-system,BlinkMacSystemFont,system-ui,sans-serif;box-shadow:0 1px 8px rgba(0,0,0,.25)}
+    .mark{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:rgba(255,255,255,.18);font-weight:700}
+    .text{flex:1}
+    button{border:0;border-radius:7px;padding:6px 12px;background:#fff;color:#0a5cd5;font:600 13px -apple-system,BlinkMacSystemFont,system-ui,sans-serif;cursor:pointer}
+  </style><div class="bar" role="region" aria-label="Key"><span class="mark">K</span><span class="text"><b>Key</b> · Signed in? Key brings this sign-in back to its own browser.</span><button type="button">Return to Key</button></div>\`;
+  root.querySelector("button").addEventListener("click", () => keySignInDone("done"));
+  (document.body || document.documentElement).appendChild(host);
+  window.__keySignInBar = root;
+  return "shown";
+})()`;
+
+interface PageState {
+  url: string;
+  /** When the page got this address. */
+  since: number;
+  sessionId?: string;
+  /** The address the bar was put on. */
+  barUrl?: string;
+}
+
+/** One open sign-in window. `ended` resolves once it is signed in, closed or failed. It
+ * follows every page of this browser instance (popups and new tabs too): the sign-in is done
+ * once the newest page has been on a site, not a sign-in service, for a moment after the
+ * sign-in pages, has loaded and shows no sign-in frame (or for FALLBACK_MS in any case). */
 export class SignInWindow {
   /** Hosts of every page and frame the window loaded (redirects included). */
   readonly hosts = new Set<string>();
   visitedSignIn = false;
   lastUrl = "";
-  readonly ended: Promise<WindowEnd>;
+  ended: Promise<WindowEnd>;
+  /** Which attempt this is (a window is reused for the next sign-in). */
+  attempt = 1;
   private end!: (end: WindowEnd) => void;
   private done = false;
+  private started = false;
   private pipe!: CdpPipe;
   private child!: ChildProcess;
   private mainTarget = "";
   private mainSession = "";
-  private settle?: ReturnType<typeof setTimeout>;
-  private readonly identity: (url: string) => boolean;
+  private pages = new Map<string, PageState>();
+  /** Page sessions → their target. */
+  private sessions = new Map<string, string>();
+  private poll?: ReturnType<typeof setInterval>;
+  private checking = false;
+  private reason = "";
+  /** Hosts that served a sign-in page in this attempt. */
+  private readonly learned = new Set<string>();
+  private entry = "";
+  private firstRequest?: string;
+  private identity: (url: string) => boolean;
+  /** A window kept to use a site in: it never ends by itself. */
+  private keep = false;
 
   private constructor(private readonly options: SignInWindowOptions) {
     this.ended = new Promise((resolve) => (this.end = resolve));
     const extra = new Set([...(options.identityHosts ?? [])].map((h) => h.toLowerCase()));
-    this.identity = (url) => isIdentityUrl(url, extra);
+    this.identity = (url) => isIdentityUrl(url, [...extra, ...this.learned]);
+    this.keep = !!options.keep;
   }
 
   static async open(options: SignInWindowOptions) {
@@ -163,10 +216,14 @@ export class SignInWindow {
     return window;
   }
 
+  private trace(event: string, detail: Record<string, unknown> = {}) {
+    this.options.onTrace?.(event, detail);
+  }
+
   private finish(end: WindowEnd) {
     if (this.done) return;
     this.done = true;
-    clearTimeout(this.settle);
+    clearInterval(this.poll);
     this.end(end);
   }
 
@@ -180,60 +237,139 @@ export class SignInWindow {
       height = 700;
     const x = near ? Math.round(near.x + (near.width - width) / 2) : undefined;
     const y = near ? Math.round(near.y + Math.max(40, (near.height - height) / 2)) : undefined;
+    // Never a second browser process on Key's profile (it would hand its window to the first,
+    // which Key may no longer control): a leftover one using this profile is ended first.
+    await endStaleInstance(profileDir, (detail) => this.trace("window-stale", detail));
     const args = [
       `--user-data-dir=${profileDir}`,
       "--remote-debugging-pipe",
+      // No welcome, default-browser, search-engine-choice or restore-pages screens.
       "--no-first-run",
       "--no-default-browser-check",
+      "--disable-search-engine-choice-screen",
+      "--hide-crash-restore-bubble",
       "--disable-default-apps",
       `--window-size=${width},${height}`,
       ...(x !== undefined && y !== undefined ? [`--window-position=${x},${y}`] : []),
-      // Test mode never draws a window and never asks the login keychain.
-      ...(headless ? ["--headless=new", "--use-mock-keychain", "about:blank"] : ["--app=about:blank"]),
+      // Test mode never draws a window and never asks the login keychain; its mock sites open
+      // their sign-in popups without a click.
+      ...(headless ? ["--headless=new", "--use-mock-keychain", ...(this.options.virtualAuthenticator ? ["--disable-popup-blocking"] : []), "about:blank"] : ["--app=about:blank"]),
     ];
     this.child = spawn(app.executable, args, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
+    this.trace("window-start", { pid: this.child.pid, kind: headless ? "headless" : "app window" });
     this.pipe = new CdpPipe(this.child.stdio[3] as Writable, this.child.stdio[4] as Readable);
     const exited = new Promise<void>((resolve) => this.child.once("exit", () => resolve()));
     this.child.once("error", () => undefined);
     void exited.then(() => {
       this.pipe.close();
-      this.finish(this.verdict());
+      this.finish({ kind: "closed" });
     });
     try {
-      await this.pipe.send("Browser.getVersion", {}, undefined, 20_000);
+      await this.pipe.send("Browser.getVersion", {}, undefined, Number(process.env.KEY_SIGNIN_LAUNCH_MS) || 20_000);
     } catch {
       this.kill();
       // Most often: this profile is already open in another window of the browser.
       throw Error(`${app.name} could not open the sign-in window. If one is still open, close it and try again.`);
     }
     this.pipe.on((method, params, sessionId) => void this.event(method, params, sessionId));
+    await this.pipe.send("Target.setDiscoverTargets", { discover: true });
+    // New pages (popups, tabs) are held until Key watches them, so no step of theirs is missed.
+    await this.pipe.send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }).catch(() => undefined);
     const page = await this.waitForPage();
     this.mainTarget = page;
-    this.mainSession = await this.attach(page);
-    await this.pipe.send("Page.navigate", { url: this.options.url }, this.mainSession);
+    this.mainSession = await this.attachPage(page);
+    this.started = true;
+    await this.go(this.options.url);
   }
 
+  /** Shows `url` (the entry) in the window's page: the only address it ever opens on. */
+  private async go(url: string) {
+    this.entry = url;
+    this.firstRequest = undefined;
+    try {
+      await this.pipe.send("Page.navigate", { url }, this.mainSession);
+    } catch (error) {
+      await this.close();
+      throw Error(`The sign-in window could not open ${siteOf(url)}: ${(error as Error).message}`);
+    }
+    clearInterval(this.poll);
+    this.poll = setInterval(() => void this.check(), 400);
+  }
+
+  /** A new sign-in in the same window (one window per profile): on its own entry page. */
+  async restart(url: string, identityHosts: Iterable<string> = []) {
+    this.finish({ kind: "closed" });
+    this.attempt++;
+    this.done = false;
+    this.keep = false;
+    this.ended = new Promise((resolve) => (this.end = resolve));
+    this.visitedSignIn = false;
+    this.hosts.clear();
+    this.reason = "";
+    this.lastUrl = "";
+    const extra = new Set([...identityHosts].map((h) => h.toLowerCase()));
+    this.learned.clear();
+    this.identity = (u) => isIdentityUrl(u, [...extra, ...this.learned]);
+    // The person may have closed the window while the browser kept running: a new one.
+    if (!this.pages.has(this.mainTarget)) {
+      const { targetId } = await this.pipe.send<{ targetId: string }>("Target.createTarget", { url: "about:blank", newWindow: true });
+      this.mainTarget = targetId;
+      this.mainSession = await this.attachPage(targetId);
+    }
+    for (const page of this.pages.values()) page.since = 0;
+    await this.go(url);
+  }
+
+  /** The browser process is alive and Key still controls it. */
+  get running() {
+    return !this.pipe.closed && this.child.exitCode === null && this.child.signalCode === null;
+  }
+  get pid() {
+    return this.child.pid;
+  }
+
+  /** The window Key asked for (`--app=about:blank`); any other page a profile restored or a
+   * start page is closed, so nothing but the entry ever shows. */
   private async waitForPage() {
     const end = Date.now() + 15_000;
     while (Date.now() < end) {
-      const { targetInfos } = await this.pipe.send<{ targetInfos: Array<{ targetId: string; type: string }> }>("Target.getTargets");
-      const page = targetInfos.find((t) => t.type === "page");
-      if (page) return page.targetId;
+      const { targetInfos } = await this.pipe.send<{ targetInfos: Array<{ targetId: string; type: string; url: string }> }>("Target.getTargets");
+      const pages = targetInfos.filter((t) => t.type === "page");
+      const blank = pages.find((t) => t.url === "about:blank" || t.url === "");
+      if (blank) {
+        for (const other of pages) if (other !== blank) await this.pipe.send("Target.closeTarget", { targetId: other.targetId }).catch(() => undefined);
+        return blank.targetId;
+      }
       await new Promise((r) => setTimeout(r, 150));
     }
     throw Error("The sign-in window did not open");
   }
 
-  /** Watches a page or frame: its document requests (redirects too) and navigations. */
-  private async attach(targetId: string) {
+  private page(targetId: string) {
+    let page = this.pages.get(targetId);
+    if (!page) this.pages.set(targetId, (page = { url: "", since: Date.now() }));
+    return page;
+  }
+
+  /** Follows a page of the window (the first one, popups, new tabs). */
+  private async attachPage(targetId: string) {
+    const page = this.page(targetId);
+    if (page.sessionId) return page.sessionId;
     const { sessionId } = await this.pipe.send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
-    await this.watch(sessionId);
+    page.sessionId = sessionId;
+    this.sessions.set(sessionId, targetId);
+    await this.watch(sessionId, true);
     return sessionId;
   }
-  private async watch(sessionId: string) {
+  /** Watches a page or frame: its document requests (redirects too) and navigations. */
+  private async watch(sessionId: string, isPage = false) {
     const send = (method: string, params: Record<string, unknown> = {}) => this.pipe.send(method, params, sessionId).catch(() => undefined);
     await send("Network.enable");
     await send("Page.enable");
+    if (isPage) {
+      await send("Runtime.enable");
+      await send("Runtime.addBinding", { name: "keySignInDone", executionContextName: "key-signin" });
+    }
     await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
     if (this.options.virtualAuthenticator) {
       await send("WebAuthn.enable", { enableUI: false });
@@ -243,7 +379,8 @@ export class SignInWindow {
     }
   }
 
-  private note(url: string) {
+  /** Notes an address the window loaded: its host, and whether it is a sign-in page. */
+  private note(url: string, kind: string) {
     let host: string;
     try {
       const u = new URL(url);
@@ -253,49 +390,147 @@ export class SignInWindow {
       return undefined;
     }
     this.hosts.add(host);
-    if (this.identity(url)) this.visitedSignIn = true;
-    this.options.onHop?.(url);
+    const signIn = this.identity(url);
+    if (signIn) {
+      this.visitedSignIn = true;
+      // The rest of that host is the sign-in service too ("Stay signed in?", consent pages),
+      // unless it is the site the sign-in started on.
+      if (host !== siteOf(this.entry)) this.learned.add(host);
+    }
+    this.trace("window-hop", { kind, url, host, signIn });
     return host;
   }
 
-  /** Signed in: it went through the sign-in pages and is now on a site that is not one. */
-  private verdict(): WindowEnd {
-    const page = /^https?:/i.test(this.lastUrl);
-    return this.visitedSignIn && page && !this.identity(this.lastUrl) ? { kind: "signed-in", url: this.lastUrl } : { kind: "closed" };
+  /** A page of the window has a new address. */
+  private moved(targetId: string, url: string, kind: string) {
+    const page = this.page(targetId);
+    if (page.url === url) return;
+    page.url = url;
+    page.since = Date.now();
+    page.barUrl = undefined;
+    this.note(url, kind);
+    void this.check();
+  }
+
+  /** Says (once per change) why the sign-in is or is not finished yet. */
+  private decide(reason: string) {
+    if (reason === this.reason) return;
+    this.reason = reason;
+    this.trace("window-check", { reason });
+  }
+
+  /** Whether the sign-in is finished: see the class comment. */
+  private async check() {
+    if (this.done || !this.started || this.keep || this.checking) return;
+    const pages = [...this.pages.entries()].filter(([, p]) => /^https?:/i.test(p.url)).sort((a, b) => b[1].since - a[1].since);
+    if (!pages.length) return this.decide("no page yet");
+    const [targetId, latest] = pages[0];
+    this.lastUrl = latest.url;
+    if (this.identity(latest.url)) return this.decide("on a sign-in page");
+    if (!this.visitedSignIn) return this.decide("no sign-in page yet");
+    void this.showBar(targetId, latest);
+    const stable = Date.now() - latest.since;
+    if (stable < (this.options.settleMs ?? (Number(process.env.KEY_SIGNIN_SETTLE_MS) || 1500))) return this.decide("on a site's page, settling");
+    this.checking = true;
+    let state: { ready?: string; frames?: Array<{ src: string; visible: boolean }> } = {};
+    try {
+      const answer = await this.pipe.send<{ result?: { value?: typeof state } }>(
+        "Runtime.evaluate",
+        {
+          expression: `({ ready: document.readyState, frames: [...document.querySelectorAll("iframe")].map((f) => { const r = f.getBoundingClientRect(), s = getComputedStyle(f); return { src: f.src, visible: r.width >= 60 && r.height >= 60 && s.visibility !== "hidden" && s.display !== "none" && Number(s.opacity) > 0.1 }; }) })`,
+          returnByValue: true,
+        },
+        latest.sessionId,
+        3000,
+      );
+      state = answer.result?.value ?? {};
+    } catch {
+      /* the page is navigating */
+    } finally {
+      this.checking = false;
+    }
+    if (this.done || this.pages.get(targetId) !== latest || latest.url !== this.lastUrl) return;
+    const signInFrame = (state.frames ?? []).some((f) => f.visible && this.identity(f.src));
+    if (state.ready === "complete" && !signInFrame) return this.complete("on a site's page, loaded, no sign-in frame", latest.url);
+    if (stable >= FALLBACK_MS) return this.complete(`on a site's page for ${Math.round(stable / 1000)} s`, latest.url);
+    this.decide(signInFrame ? "a sign-in frame shows on the site's page" : "the site's page is still loading");
+  }
+
+  private complete(reason: string, url?: string) {
+    this.trace("window-complete", { reason });
+    this.finish({ kind: "signed-in", url, reason });
+  }
+
+  /** The "Return to Key" bar on the site's page (isolated world; never on a sign-in page). */
+  private async showBar(targetId: string, page: PageState) {
+    if (!page.sessionId || page.barUrl === page.url) return;
+    page.barUrl = page.url;
+    const sessionId = page.sessionId;
+    try {
+      const { executionContextId } = await this.pipe.send<{ executionContextId: number }>("Page.createIsolatedWorld", { frameId: targetId, worldName: "key-signin", grantUniveralAccess: false }, sessionId);
+      await this.pipe.send("Runtime.evaluate", { expression: BAR, contextId: executionContextId }, sessionId);
+      this.trace("window-bar", {});
+      // Smokes press the bar's button as a person would.
+      const store = globalThis as unknown as { keySignInClickBar?: boolean };
+      if (process.env.KEY_BROWSER_SMOKE && store.keySignInClickBar) {
+        store.keySignInClickBar = false;
+        setTimeout(() => void this.pipe.send("Runtime.evaluate", { expression: `window.__keySignInBar.querySelector("button").click()`, contextId: executionContextId }, sessionId).catch(() => undefined), 300);
+      }
+    } catch {
+      page.barUrl = undefined;
+    }
   }
 
   private async event(method: string, params: Record<string, any>, sessionId?: string) {
-    if (method === "Target.attachedToTarget" && params.sessionId) {
-      // Frames from other sites, and pages the window opens.
-      await this.watch(params.sessionId);
+    const info = params.targetInfo as { targetId: string; type: string; url: string } | undefined;
+    if ((method === "Target.targetCreated" || method === "Target.targetInfoChanged") && info?.type === "page") {
+      // Every page of this browser instance: the window, and popups or tabs it opens.
+      if (!this.pages.get(info.targetId)?.sessionId && info.targetId !== this.mainTarget && this.started) void this.attachPage(info.targetId).catch(() => undefined);
+      if (info.url && /^https?:/i.test(info.url)) this.moved(info.targetId, info.url, "page");
       return;
     }
-    if (method === "Target.detachedFromTarget" && params.sessionId === this.mainSession) {
+    if (method === "Target.targetDestroyed" && this.pages.has(params.targetId)) {
+      this.pages.delete(params.targetId);
       // The person closed the window (the browser itself keeps running on macOS).
-      this.finish(this.verdict());
+      if (this.started && !this.pages.size) {
+        this.trace("window-closed", {});
+        this.finish({ kind: "closed", byPerson: true });
+      } else void this.check();
       return;
+    }
+    if (method === "Target.attachedToTarget" && params.sessionId) {
+      // Frames from other sites (and pages, when the browser attaches them itself).
+      if (params.targetInfo?.type === "page") {
+        const page = this.page(params.targetInfo.targetId);
+        page.sessionId ??= params.sessionId;
+        this.sessions.set(params.sessionId, params.targetInfo.targetId);
+        await this.watch(params.sessionId, true);
+      } else await this.watch(params.sessionId);
+      if (params.waitingForDebugger) await this.pipe.send("Runtime.runIfWaitingForDebugger", {}, params.sessionId).catch(() => undefined);
+      return;
+    }
+    if (method === "Target.detachedFromTarget" && this.sessions.has(params.sessionId)) {
+      const page = this.pages.get(this.sessions.get(params.sessionId)!);
+      if (page && page.sessionId === params.sessionId) page.sessionId = undefined;
+      this.sessions.delete(params.sessionId);
+      return;
+    }
+    if (method === "Runtime.bindingCalled" && params.name === "keySignInDone") {
+      this.trace("window-bar-clicked", {});
+      return this.signedInNow("the person chose Return to Key");
     }
     if (method === "Network.requestWillBeSent" && params.type === "Document") {
-      this.note(String(params.request?.url ?? ""));
-      if (sessionId === this.mainSession && params.frameId === this.mainTarget) clearTimeout(this.settle);
+      const url = String(params.request?.url ?? "");
+      // The window's first page must be the entry Key chose (checked in the trace).
+      if (this.firstRequest === undefined && sessionId === this.mainSession && params.frameId === this.mainTarget && !params.redirectResponse) {
+        this.firstRequest = url;
+        this.trace("window-first", { url, entry: url === this.entry });
+      }
+      this.note(url, params.redirectResponse ? "redirect" : "request");
       return;
     }
-    if (method === "Page.frameStartedLoading" && sessionId === this.mainSession && params.frameId === this.mainTarget) {
-      clearTimeout(this.settle);
-      return;
-    }
-    if (method === "Page.frameNavigated" && sessionId === this.mainSession && !params.frame?.parentId) {
-      const url = String(params.frame?.url ?? "");
-      const host = this.note(url);
-      if (!host) return;
-      this.lastUrl = url;
-      clearTimeout(this.settle);
-      if (this.options.keep) return;
-      // Settled on a site after the sign-in pages (no further redirect for a moment): done.
-      this.settle = setTimeout(() => {
-        const verdict = this.verdict();
-        if (verdict.kind === "signed-in") this.finish(verdict);
-      }, this.options.settleMs ?? (Number(process.env.KEY_SIGNIN_SETTLE_MS) || 1500));
+    if (method === "Page.frameNavigated" && sessionId && this.sessions.has(sessionId) && !params.frame?.parentId) {
+      this.moved(this.sessions.get(sessionId)!, String(params.frame?.url ?? ""), "shown");
     }
   }
 
@@ -313,16 +548,17 @@ export class SignInWindow {
    * instance of the same browser). */
   async focus() {
     if (this.options.headless) return;
-    const { windowId } = await this.pipe.send<{ windowId?: number }>("Browser.getWindowForTarget", { targetId: this.mainTarget }).catch(() => ({ windowId: undefined }));
+    const target = [...this.pages.entries()].sort((a, b) => b[1].since - a[1].since)[0]?.[0] ?? this.mainTarget;
+    const { windowId } = await this.pipe.send<{ windowId?: number }>("Browser.getWindowForTarget", { targetId: target }).catch(() => ({ windowId: undefined }));
     if (windowId !== undefined) await this.pipe.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } }).catch(() => undefined);
-    await this.pipe.send("Target.activateTarget", { targetId: this.mainTarget }).catch(() => undefined);
-    await this.pipe.send("Page.bringToFront", {}, this.mainSession).catch(() => undefined);
+    await this.pipe.send("Target.activateTarget", { targetId: target }).catch(() => undefined);
     if (process.platform === "darwin" && this.child.pid) await activateProcess(this.child.pid);
   }
 
-  /** The person says they are done: decide now. */
-  signedInNow() {
-    this.finish({ kind: "signed-in", url: this.verdict().kind === "signed-in" ? this.lastUrl : undefined });
+  /** The person says they are done: decide now, with the newest site page if there is one. */
+  signedInNow(reason = "the person chose I’m signed in") {
+    const site = [...this.pages.values()].filter((p) => /^https?:/i.test(p.url) && !this.identity(p.url)).sort((a, b) => b.since - a.since)[0];
+    this.complete(reason, site?.url);
   }
 
   /** Quits this browser instance (only the one Key started). */
@@ -367,6 +603,56 @@ export async function activateProcess(pid: number) {
   const answer = (await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", ACTIVATE, String(pid)])).trim();
   if (answer.startsWith("open:")) await run("/usr/bin/open", ["-a", answer.slice(5)]);
   return answer;
+}
+
+const siteOf = (url: string) => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "the site";
+  }
+};
+
+/** The process a Chromium profile's lock names (`SingletonLock` → "host-pid"), if any. */
+export function lockPid(target: string) {
+  const pid = Number(/-(\d+)$/.exec(target)?.[1]);
+  return Number.isInteger(pid) && pid > 1 ? pid : undefined;
+}
+
+/** Ends a browser left running on Key's profile (Key lost its pipe: Key restarted or crashed),
+ * and clears the profile's stale lock. Only a process whose command line names this very
+ * profile folder is ended: never the person's own browser. */
+export async function endStaleInstance(profileDir: string, note: (detail: Record<string, unknown>) => void = () => undefined) {
+  const lock = join(profileDir, "SingletonLock");
+  const target = await readlink(lock).catch(() => "");
+  if (!target) return;
+  const pid = lockPid(target);
+  const command = pid ? (await run("/bin/ps", ["-o", "command=", "-p", String(pid)])).trim() : "";
+  if (pid && command.includes(`--user-data-dir=${profileDir}`)) {
+    note({ reason: "a browser is still running on Key's sign-in profile: ending it" });
+    const alive = () => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* gone */
+    }
+    for (let i = 0; i < 30 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
+    if (alive())
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        /* gone */
+      }
+    for (let i = 0; i < 20 && alive(); i++) await new Promise((r) => setTimeout(r, 100));
+  } else note({ reason: "the sign-in profile's lock was stale" });
+  for (const name of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) await rm(join(profileDir, name), { force: true }).catch(() => undefined);
 }
 
 /** Removes Key's sign-in profiles (every browser's). */

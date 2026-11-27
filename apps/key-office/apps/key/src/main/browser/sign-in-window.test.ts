@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { PassThrough } from "node:stream";
 import { CdpPipe } from "./cdp-pipe";
-import { cookieMatches, cookieSites, electronCookie, isIdentityHost, signInCookies, type CdpCookie } from "./sign-in-window";
+import { cookieMatches, cookieSites, electronCookie, isIdentityHost, lockPid, signInCookies, type CdpCookie } from "./sign-in-window";
+
+describe("a sign-in profile's lock", () => {
+  it("names the process holding it", () => {
+    expect(lockPid("MacBook-Pro.local-48213")).toBe(48213);
+    expect(lockPid("host-with-dashes-7")).toBe(7);
+    expect(lockPid("nonsense")).toBeUndefined();
+    expect(lockPid("host-1")).toBeUndefined();
+  });
+});
 
 vi.mock("electron", () => ({ app: {}, dialog: {}, ipcMain: {}, session: {}, shell: {}, webContents: {} }));
 const { chooseWay } = await import("./sign-in");
