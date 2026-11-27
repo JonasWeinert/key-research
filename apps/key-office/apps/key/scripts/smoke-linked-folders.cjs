@@ -111,7 +111,8 @@ async function until(what, check, timeout = 15000) {
     // A note links the file with [[ ; the file shows the backlink.
     const plan = (await call("store_linked_entries", { folderId: folder.id, dir: "" })).files.find((f) => f.name === "plan.md");
     await sidebar.getByRole("button", { name: "Create item" }).click();
-    await sidebar.getByRole("button", { name: "New note", exact: true }).click();
+    // The menu's item: an empty notes list has a New note button of its own.
+    await sidebar.locator(".key-create-menu").getByRole("button", { name: "New note", exact: true }).click();
     await page.locator(".kx-note-title:visible").fill("Trip");
     await page.locator(".kx-note-page .ProseMirror:visible").click();
     await page.waitForFunction(() => document.activeElement?.closest(".kx-note-page"));
