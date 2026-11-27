@@ -31,6 +31,9 @@ export interface SwitcherHost<W> {
   cover(w: W, covered: boolean): void;
 }
 
+/** How long the overlay waits for the native views' pictures once it is due. */
+const FRAMES_WAIT = 600;
+
 interface Running {
   session: SwitcherSession;
   shown: boolean;
@@ -142,7 +145,8 @@ export class TabSwitcher<W extends object> {
   private async show(w: W) {
     const run = this.running.get(w);
     if (!run || run.shown) return;
-    const frames = await run.frames;
+    // A capture can stall (a busy or occluded view); the list shows anyway, without pictures.
+    const frames = await Promise.race([run.frames, new Promise<unknown[]>((r) => setTimeout(() => r([]), FRAMES_WAIT))]);
     if (this.running.get(w) !== run || run.shown) return;
     run.shown = true;
     this.host.send(w, { phase: "show", order: run.session.order, selected: run.session.selected, sticky: run.session.sticky, frames });
