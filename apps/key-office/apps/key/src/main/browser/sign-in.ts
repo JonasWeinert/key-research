@@ -4,10 +4,12 @@
 // and "use a phone or tablet" (the QR code) and iCloud Keychain passkeys not at all: Chromium
 // draws those in Chrome's own UI, which Electron does not have, and Apple gives the system
 // passkey sheet for any site only to web browsers it has approved. So a page that asks for a
-// passkey would wait in silence; instead the bar says so (web-signin preload), lets the person
-// stop waiting (the site then offers its other ways to sign in), or finish the sign-in in their
-// usual browser and bring that sign-in back: only the cookies of the sites this sign-in went
-// through, read from that browser's profile after asking (cookie-import.ts).
+// passkey would wait in silence. Instead (web-signin preload, every frame) a card covers the
+// page within a moment and offers the sign-in window (sign-in-window.ts): a small window of
+// Chrome, Edge or Brave with a profile of Key's own, where the phone's QR code and saved
+// passkeys work; Key brings the sign-in's cookies back from it by itself. Without such a
+// browser the sign-in can be finished in Safari or Firefox and brought over from there
+// (cookie-import.ts, after asking).
 import { app, dialog, ipcMain, shell, webContents, type BaseWindow, type WebContents, type WebFrameMain } from "electron";
 import { execFile } from "node:child_process";
 import { join, resolve } from "node:path";
@@ -27,24 +29,51 @@ import {
   type BrowserId,
   type BrowserInfo,
 } from "./cookie-import";
+import { chromiumApps, cookieSites, electronCookie as windowCookie, forgetSignInProfiles, isIdentityHost, SignInWindow, type ChromiumApp } from "./sign-in-window";
 
 export type SignInBrowser = "default" | BrowserId;
 export interface SignInSettings {
-  /** Say in the bar when a page waits for a passkey. */
+  /** Offer help when a page waits for a passkey. */
   notice: boolean;
-  /** The browser sign-ins are finished in ("default": the system's default browser). */
+  /** The browser sign-ins are finished in ("default": the best one on this Mac). */
   browser: SignInBrowser;
 }
-/** What the bar shows about a sign-in (see BrowserBar's SignInNotice). */
+/** The card over a page whose sign-in needs a passkey (renderer's SignInCard). */
+export interface SignInCard {
+  /** offer: what is happening and the way on; open: the sign-in window is open; failed: it
+   * ended without a sign-in. */
+  stage: "offer" | "open" | "failed";
+  site: string;
+  /** window: Key's sign-in window in `browser`; handoff: finish in `browser`, bring it over. */
+  way: "window" | "handoff";
+  browser: string;
+  problem?: string;
+}
+/** What the bar and the card show about a sign-in. */
 export interface SignInBar {
-  /** A page has waited for a passkey or security key for a moment. */
-  waiting?: { site: string; kind: "get" | "create"; browser?: string };
+  card?: SignInCard;
+  /** A page waits for a passkey (the card was put aside). */
+  waiting?: { site: string; kind: "get" | "create"; browser?: string; way?: "window" | "handoff" };
+  /** A sign-in page: the sign-in window can be opened on it at any time. */
+  offer?: { browser: string };
   /** The sign-in went to another browser: bring it back once it is done there. */
   handoff?: { browser: string; site: string };
   /** Sites whose sign-in was just brought over. */
-  imported?: { browser: string; sites: number };
+  imported?: { browser: string; sites: number; names?: string[] };
 }
-export type SignInOp = "signin-stop" | "signin-browser" | "signin-import" | "signin-cancel" | "signin-dismiss";
+export type SignInOp =
+  | "signin-stop"
+  | "signin-window"
+  | "signin-done"
+  | "signin-focus"
+  | "signin-not-now"
+  | "signin-get-browser"
+  | "signin-browser"
+  | "signin-import"
+  | "signin-cancel"
+  | "signin-dismiss";
+
+type Way = { kind: "window"; app: ChromiumApp } | { kind: "handoff"; browser?: BrowserInfo; appName: string };
 
 const BUNDLE: Record<BrowserId, string> = {
   chrome: "com.google.Chrome",
@@ -56,15 +85,15 @@ const BUNDLE: Record<BrowserId, string> = {
   firefox: "org.mozilla.firefox",
   safari: "com.apple.Safari",
 };
-/** Sign-in services and the usual names of a university's own sign-in pages. */
-const IDENTITY_HOST =
-  /(^|\.)(login\.microsoftonline\.com|login\.microsoft\.com|login\.live\.com|account\.live\.com|accounts\.google\.com|okta\.com|oktapreview\.com|okta-emea\.com|auth0\.com|onelogin\.com|duosecurity\.com|pingone\.com|pingidentity\.com|myopenathens\.net|openathens\.net)$|(^|\.)(idp|sso|login|signin|auth|shibboleth|adfs|cas|wayf|weblogin)[0-9-]*\./i;
 const TRAIL_MS = 20 * 60_000;
+/** Where "Get Google Chrome" goes: the browser's official site, nothing is downloaded by Key. */
+const GET_BROWSER_URL = "https://www.google.com/chrome/";
 
 interface Pending {
   kind: "get" | "create";
   rpId: string;
   frame: WebFrameMain | null;
+  host?: string;
 }
 interface Tab {
   contents: WebContents;
@@ -75,15 +104,19 @@ interface Tab {
   timer?: ReturnType<typeof setTimeout>;
   /** Main-frame addresses the tab went through (navigations and redirects), oldest first. */
   trail: Array<{ url: string; host: string; at: number }>;
+  card?: SignInCard;
+  /** The card was put aside (Not now) for the request that waits now. */
+  aside?: boolean;
+  signInWindow?: SignInWindow;
   handoff?: { browser?: BrowserInfo; appName: string; url: string; hosts: string[] };
-  imported?: { browser: string; sites: number };
+  imported?: { browser: string; sites: number; names?: string[] };
 }
 
 /** The part of the tab's recent trail this sign-in is: where it started (the page before the
  * sign-in pages) and every site it went through since. */
 export function signInChain(trail: Array<{ url: string; host: string }>, current: string, rpId?: string) {
   const entries = trail.length ? trail : [{ url: current, host: siteHost(current) ?? "" }];
-  const identity = (i: number) => IDENTITY_HOST.test(entries[i].host);
+  const identity = (i: number) => isIdentityHost(entries[i].host);
   let end = entries.length - 1;
   while (end >= 0 && !identity(end)) end--;
   let first = entries.length - 1;
@@ -101,10 +134,32 @@ export function signInChain(trail: Array<{ url: string; host: string }>, current
   return { url: entries[first].url || current, hosts: [...hosts] };
 }
 
+/** How a passkey sign-in goes on from Key's browser: in Key's sign-in window when a Chromium
+ * browser is installed (the chosen one, else the default browser if it is one, else the first),
+ * otherwise handed to the chosen or default browser. */
+export function chooseWay(choice: SignInBrowser, installed: ChromiumApp[], defaultBrowser: { id?: BrowserId; appName: string }, browsers: BrowserInfo[]): Way {
+  const pick = (id?: BrowserId) => installed.find((a) => a.id === id);
+  if (choice === "firefox" || choice === "safari") {
+    const browser = browsers.find((b) => b.id === choice)!;
+    return { kind: "handoff", browser, appName: browser.name };
+  }
+  const app = pick(choice === "default" ? defaultBrowser.id : choice) ?? pick(defaultBrowser.id) ?? installed[0];
+  if (app) return { kind: "window", app };
+  const id = defaultBrowser.id;
+  const browser = browsers.find((b) => b.id === id);
+  return { kind: "handoff", browser, appName: browser?.name ?? defaultBrowser.appName };
+}
+
 export class SignInService {
   private tabs = new Map<number, Tab>();
   private touchId: "on" | "unsigned" | "unsupported" = process.platform === "darwin" ? "unsigned" : "unsupported";
+  private installed: ChromiumApp[] = [];
   constructor(private readonly settings: () => SignInSettings) {}
+
+  /** Key's own profiles for sign-in windows, one per browser (never the person's own). */
+  static profileRoot() {
+    return join(app.getPath("userData"), "Sign-in window");
+  }
 
   /** Watches every page of the browser profile; once, at startup. */
   install(preloadDir: string) {
@@ -120,11 +175,13 @@ export class SignInService {
       } catch {
         return;
       }
-      const key = `${event.senderFrame?.routingId ?? 0}:${Number(message.id) || 0}`;
+      const key = `${event.senderFrame?.processId ?? 0}:${event.senderFrame?.routingId ?? 0}:${Number(message.id) || 0}`;
       if (message.state === "start") {
-        tab.pending.set(key, { kind: message.kind === "create" ? "create" : "get", rpId: String(message.rpId ?? "").slice(0, 253), frame: event.senderFrame });
+        const host = siteHost(event.senderFrame?.url ?? "");
+        tab.pending.set(key, { kind: message.kind === "create" ? "create" : "get", rpId: String(message.rpId ?? "").slice(0, 253), frame: event.senderFrame, host });
         clearTimeout(tab.timer);
-        tab.timer = setTimeout(() => this.showWaiting(tab), Number(process.env.KEY_SIGNIN_NOTICE_MS) || 2500);
+        // Within a second: a page never just sits there waiting.
+        tab.timer = setTimeout(() => void this.showWaiting(tab), Number(process.env.KEY_SIGNIN_NOTICE_MS) || 700);
       } else if (message.state === "end") {
         tab.pending.delete(key);
         if (!tab.pending.size) this.clearWaiting(tab);
@@ -142,7 +199,17 @@ export class SignInService {
         .then(({ response }) => callback(accounts[response]?.credentialId))
         .catch(() => callback());
     });
+    // Sign-in windows Key opened close with it.
+    app.on("will-quit", () => {
+      for (const tab of this.tabs.values()) void tab.signInWindow?.close();
+    });
+    void this.refreshBrowsers();
     void this.configureTouchId();
+  }
+
+  private async refreshBrowsers() {
+    this.installed = await chromiumApps().catch(() => []);
+    return this.installed;
   }
 
   /** Touch ID passkeys need Key signed with a keychain group for them (see PACKAGING.md). */
@@ -158,8 +225,8 @@ export class SignInService {
     }
   }
 
-  attach(contents: WebContents, hooks: { changed(): void; window(): BaseWindow | undefined }) {
-    const tab: Tab = { contents, ...hooks, pending: new Map(), trail: [] };
+  attach(contents: WebContents, hooks: { changed(): void; window(): BaseWindow | undefined; initialUrl?: string }) {
+    const tab: Tab = { contents, changed: hooks.changed, window: hooks.window, pending: new Map(), trail: [] };
     this.tabs.set(contents.id, tab);
     const note = (url: string) => {
       const host = siteHost(url);
@@ -167,32 +234,48 @@ export class SignInService {
       const now = Date.now();
       tab.trail = [...tab.trail.filter((e) => now - e.at < TRAIL_MS && e.url !== url), { url, host, at: now }].slice(-40);
     };
+    // The tab's first page started loading before Key watched it: where the sign-in starts.
+    if (hooks.initialUrl) note(hooks.initialUrl);
     contents.on("did-start-navigation", (event) => {
       if (!event.isMainFrame || event.isSameDocument) return;
       note(event.url);
-      // A new page: whatever the old one waited for is gone.
+      // A new page: whatever the old one waited for is gone (an open sign-in window stays).
       tab.pending.clear();
+      tab.aside = false;
+      const shown = (tab.card && tab.card.stage !== "open") || tab.imported;
+      if (tab.card && tab.card.stage !== "open") tab.card = undefined;
+      tab.imported = undefined;
       this.clearWaiting(tab);
-      if (tab.imported) {
-        tab.imported = undefined;
-        tab.changed();
-      }
+      if (shown) tab.changed();
     });
     contents.on("did-redirect-navigation", (event) => event.isMainFrame && note(event.url));
     contents.once("destroyed", () => {
       clearTimeout(tab.timer);
+      void tab.signInWindow?.close();
       this.tabs.delete(contents.id);
     });
   }
 
-  private showWaiting(tab: Tab) {
+  /** Whether the tab's page is covered by the sign-in card (its view is hidden meanwhile). */
+  covers(contents: WebContents | undefined) {
+    const tab = contents && this.tabs.get(contents.id);
+    return !!tab?.card;
+  }
+
+  private async showWaiting(tab: Tab) {
     const first = [...tab.pending.values()][0];
     if (!first || tab.contents.isDestroyed()) return;
     tab.waiting = first;
-    if (this.settings().notice) tab.changed();
+    if (this.settings().notice && !tab.aside && !tab.signInWindow && !tab.handoff) {
+      const way = this.way(await this.refreshBrowsers());
+      if (tab.waiting !== first) return;
+      tab.card = { stage: "offer", site: first.rpId || first.host || siteHost(tab.contents.getURL()) || "", way: way.kind, browser: way.kind === "window" ? way.app.name : way.appName };
+    }
+    tab.changed();
   }
   private clearWaiting(tab: Tab) {
     clearTimeout(tab.timer);
+    if (tab.card?.stage === "offer") tab.card = undefined;
     if (!tab.waiting) return;
     tab.waiting = undefined;
     tab.changed();
@@ -206,30 +289,44 @@ export class SignInService {
       }
   }
 
-  /** The browser sign-ins go to: the setting, else the system's default browser. */
-  private target(choice = this.settings().browser): { browser?: BrowserInfo; appName: string } {
-    const browsers = knownBrowsers();
-    if (choice !== "default") {
-      const browser = browsers.find((b) => b.id === choice)!;
-      return { browser, appName: browser.name };
-    }
+  private way(installed = this.installed): Way {
     const appName = app.getApplicationNameForProtocol("https://") || "your browser";
     const id = browserOfAppName(appName);
-    return { browser: browsers.find((b) => b.id === id), appName: id ? browsers.find((b) => b.id === id)!.name : appName.replace(/\.app$/, "") };
+    return chooseWay(this.settings().browser, installed, { id, appName: appName.replace(/\.app$/, "") }, knownBrowsers());
   }
 
   barState(contents: WebContents | undefined): SignInBar | undefined {
     const tab = contents && this.tabs.get(contents.id);
     if (!tab) return undefined;
+    if (tab.card) return { card: tab.card };
     if (tab.handoff) return { handoff: { browser: tab.handoff.appName, site: siteHost(tab.handoff.url) ?? "" } };
     if (tab.imported) return { imported: tab.imported };
-    if (tab.waiting && this.settings().notice) return { waiting: { site: tab.waiting.rpId, kind: tab.waiting.kind, browser: this.target().appName } };
+    const way = this.way();
+    const browser = way.kind === "window" ? way.app.name : way.appName;
+    if (tab.waiting && this.settings().notice) return { waiting: { site: tab.waiting.rpId, kind: tab.waiting.kind, browser, way: way.kind } };
+    // On a sign-in page, the sign-in window is always at hand.
+    const host = siteHost(contents.getURL());
+    if (way.kind === "window" && host && isIdentityHost(host)) return { offer: { browser } };
     return undefined;
   }
 
   /** What Settings › Web & browser › Sign-in shows. */
-  info() {
-    return { defaultBrowser: this.target("default").appName, touchId: this.touchId };
+  async info() {
+    const installed = await this.refreshBrowsers();
+    const way = this.way(installed);
+    const appName = app.getApplicationNameForProtocol("https://") || "your browser";
+    return {
+      defaultBrowser: appName.replace(/\.app$/, ""),
+      touchId: this.touchId,
+      installed: installed.map((a) => ({ id: a.id, name: a.name })),
+      way: way.kind === "window" ? { kind: "window" as const, browser: way.app.name } : { kind: "handoff" as const, browser: way.appName },
+    };
+  }
+
+  /** Settings › Forget sign-ins: closes any sign-in window and removes Key's sign-in profiles. */
+  async forget() {
+    await Promise.all([...this.tabs.values()].map((t) => t.signInWindow?.close()));
+    await forgetSignInProfiles(SignInService.profileRoot());
   }
 
   async op(contents: WebContents, op: SignInOp) {
@@ -238,19 +335,118 @@ export class SignInService {
     if (op === "signin-stop") {
       this.stopRequests(tab);
       this.clearWaiting(tab);
+    } else if (op === "signin-not-now") {
+      tab.aside = true;
+      tab.card = undefined;
     } else if (op === "signin-dismiss") {
       tab.imported = undefined;
+      tab.card = undefined;
       this.clearWaiting(tab);
     } else if (op === "signin-cancel") {
       tab.handoff = undefined;
+      tab.card = undefined;
+      const window = tab.signInWindow;
+      tab.signInWindow = undefined;
+      await window?.close();
+    } else if (op === "signin-window") void this.openWindow(tab);
+    else if (op === "signin-done") tab.signInWindow?.signedInNow();
+    else if (op === "signin-focus") await tab.signInWindow?.focus();
+    else if (op === "signin-get-browser") {
+      if (!process.env.KEY_BROWSER_SMOKE) void shell.openExternal(GET_BROWSER_URL);
     } else if (op === "signin-browser") {
       const chain = signInChain(tab.trail, contents.getURL(), tab.waiting?.rpId);
-      const target = this.target();
+      const way = this.way();
+      const target = way.kind === "handoff" ? way : { browser: knownBrowsers().find((b) => b.id === way.app.id), appName: way.app.name };
       this.stopRequests(tab);
       this.clearWaiting(tab);
-      tab.handoff = { ...target, url: chain.url, hosts: chain.hosts };
+      tab.card = undefined;
+      tab.handoff = { browser: target.browser, appName: target.appName, url: chain.url, hosts: chain.hosts };
       await openIn(target.browser, chain.url);
     } else if (op === "signin-import") await this.importSignIn(tab);
+    tab.changed();
+  }
+
+  /** Opens the sign-in window on the page that started this sign-in, waits for it to finish
+   * there, then brings the sign-in's cookies over and reloads the page. */
+  private async openWindow(tab: Tab) {
+    const way = this.way(await this.refreshBrowsers());
+    if (way.kind !== "window") {
+      tab.card = { stage: "offer", site: siteHost(tab.contents.getURL()) ?? "", way: "handoff", browser: way.appName };
+      return tab.changed();
+    }
+    const old = tab.signInWindow;
+    if (old?.open) return void old.focus();
+    // One window per profile: a sign-in still open in another tab gives way.
+    for (const other of this.tabs.values())
+      if (other.signInWindow) {
+        const window = other.signInWindow;
+        other.signInWindow = undefined;
+        other.card = undefined;
+        other.changed();
+        await window.close();
+      }
+    const waiting = tab.waiting ?? [...tab.pending.values()][0];
+    const chain = signInChain(tab.trail, tab.contents.getURL(), waiting?.rpId);
+    // Where the page asked for the passkey is a sign-in page, whatever it is called.
+    const identityHosts = [waiting?.host, waiting?.rpId].filter((h): h is string => !!h);
+    const site = siteHost(chain.url) ?? "";
+    this.stopRequests(tab);
+    this.clearWaiting(tab);
+    tab.handoff = undefined;
+    tab.card = { stage: "open", site, way: "window", browser: way.app.name };
+    tab.changed();
+    const bounds = (() => {
+      try {
+        return (tab.window() as Electron.BaseWindow | undefined)?.getBounds();
+      } catch {
+        return undefined;
+      }
+    })();
+    let window: SignInWindow;
+    try {
+      window = await SignInWindow.open({
+        app: way.app,
+        profileDir: join(SignInService.profileRoot(), way.app.id),
+        url: chain.url,
+        identityHosts,
+        near: bounds,
+        headless: !!process.env.KEY_SIGNIN_HEADLESS,
+        virtualAuthenticator: !!(process.env.KEY_BROWSER_SMOKE && process.env.KEY_SIGNIN_VIRTUAL_AUTHENTICATOR),
+      });
+    } catch (error) {
+      if (tab.card?.stage === "open") tab.card = { stage: "failed", site, way: "window", browser: way.app.name, problem: (error as Error).message };
+      return tab.changed();
+    }
+    if (tab.card?.stage !== "open" || tab.contents.isDestroyed()) return void window.close();
+    tab.signInWindow = window;
+    const end = await window.ended;
+    if (tab.signInWindow !== window) return; // cancelled, or the tab is gone
+    tab.signInWindow = undefined;
+    const fail = async (problem: string) => {
+      await window.close();
+      tab.card = { stage: "failed", site, way: "window", browser: way.app.name, problem };
+      tab.changed();
+    };
+    if (end.kind !== "signed-in") return fail(end.kind === "failed" ? end.problem : "The sign-in window was closed before the sign-in was finished.");
+    // The cookies of the sites this sign-in went through, in Key's tab and in the window.
+    const hosts = new Set([...chain.hosts, ...window.hosts]);
+    const cookies = await window.cookies(hosts).catch(() => []);
+    await window.close();
+    if (!cookies.length) return fail(`No sign-in came back from ${way.app.name}. Try again, and finish signing in there before you choose Done.`);
+    const ses = browserSession();
+    let set = 0;
+    for (const cookie of cookies) await ses.cookies.set(windowCookie(cookie)).then(() => set++, () => undefined);
+    await ses.cookies.flushStore().catch(() => undefined);
+    if (!set) return fail("The sign-in came back, but Key’s browser did not accept it.");
+    tab.card = undefined;
+    const back = end.url && /^https?:/i.test(end.url) && !isIdentityHost(siteHost(end.url) ?? "") ? end.url : chain.url;
+    void tab.contents.loadURL(back).catch(() => undefined);
+    // After the load starts (which clears notices), say what happened.
+    const names = cookieSites(cookies);
+    setTimeout(() => {
+      tab.imported = { browser: way.app.name, sites: names.length, names };
+      tab.changed();
+    }, 300);
     tab.changed();
   }
 
@@ -331,9 +527,8 @@ export class SignInService {
       return;
     }
     void tab.contents.loadURL(handoff.url).catch(() => undefined);
-    // After the load starts (which clears notices), say what happened.
     setTimeout(() => {
-      tab.imported = { browser: browser.name, sites: sites.length };
+      tab.imported = { browser: browser.name, sites: sites.length, names: sites.map((s) => s.site) };
       tab.changed();
     }, 300);
   }
