@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { Invoke } from "./library-api";
 import type { StatusItem } from "../shared/status-items";
 import type { RunSummary } from "./FillSheet";
+import { onLibraryChanged } from "./library-nav";
 
 interface Bridge {
   on(event: string, callback: (value: unknown) => void): () => void;
@@ -36,7 +37,7 @@ export function useFillStatus(invoke: Invoke, workspaceId?: string): { item?: St
     });
     // Proposals reviewed elsewhere (the sheet, a cell's popover): the counts follow.
     let pending: ReturnType<typeof setTimeout> | undefined;
-    const offChanged = bridge()?.on("library-changed", () => {
+    const refresh = () => {
       clearTimeout(pending);
       pending = setTimeout(() => {
         setRuns((all) => {
@@ -47,10 +48,14 @@ export function useFillStatus(invoke: Invoke, workspaceId?: string): { item?: St
           return all;
         });
       }, 300);
-    });
+    };
+    // The main process announces some changes; reviews in this window announce their own.
+    const offChanged = bridge()?.on("library-changed", refresh);
+    const offLocal = onLibraryChanged(refresh);
     return () => {
       offProgress?.();
       offChanged?.();
+      offLocal();
       clearTimeout(pending);
     };
   }, [invoke, workspaceId]);

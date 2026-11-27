@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon } from "./icons";
+import { libraryChanged } from "./library-nav";
 import { bridge, type Collection, type Invoke } from "./library-api";
 import { Explain, Hint } from "./explain";
 import { FormulaValue } from "./formula-display";
@@ -320,6 +321,8 @@ export function FillReview({ invoke, workspaceId, runId, onSaved }: { invoke: In
       const r = await invoke<any>(command, { runId, ...args }, workspaceId);
       setMessage(done?.(r) ?? "");
       onSaved();
+      // The status bar's "N proposals to review" follows.
+      libraryChanged();
       reload();
     } catch (e) {
       setMessage(errorText(e));
