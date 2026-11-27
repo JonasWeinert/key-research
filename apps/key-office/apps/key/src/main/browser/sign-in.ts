@@ -38,6 +38,7 @@ import {
   type BrowserId,
   type BrowserInfo,
 } from "./cookie-import";
+import { checkRequest, PasskeyError, PasskeyProxy, type PasskeyOp } from "./passkey-proxy";
 import { chromiumApps, cookieSites, electronCookie as windowCookie, forgetSignInProfiles, SignInWindow, type ChromiumApp } from "./sign-in-window";
 
 export type SignInBrowser = "default" | BrowserId;
@@ -54,7 +55,7 @@ export interface SignInCard {
   /** arrival: the tab just reached a sign-in service (first time there): window or here?;
    * where: Key cannot tell which site the sign-in is for, the person picks; loop: the sign-in
    * came back but the site sent Key's browser to the sign-in page again. */
-  stage: "offer" | "open" | "failed" | "arrival" | "where" | "loop";
+  stage: "offer" | "open" | "failed" | "arrival" | "where" | "loop" | "passkey" | "passkey-busy";
   site: string;
   /** window: Key's sign-in window in `browser`; handoff: finish in `browser`, bring it over. */
   way: "window" | "handoff";
@@ -95,7 +96,10 @@ export type SignInOp =
   | "signin-here"
   | "signin-key-instead"
   | "signin-pick"
-  | "signin-keep";
+  | "signin-keep"
+  | "signin-passkey-continue"
+  | "signin-passkey-cancel"
+  | "signin-passkey-show";
 
 type Way = { kind: "window"; app: ChromiumApp } | { kind: "handoff"; browser?: BrowserInfo; appName: string };
 
@@ -137,6 +141,8 @@ interface Tab {
   returning?: { entry: string; site: string; until: number; failed: string[]; browser: string; timer?: ReturnType<typeof setTimeout>; shown?: boolean };
   /** Where the site was entered, for "Use the window for this site" after a loop. */
   loopEntry?: string;
+  /** A passkey request answered through the passkey proxy (one at a time per tab). */
+  passkey?: { id: string; abort: AbortController; decide?(go: boolean): void };
   /** The last sign-in window started for this tab: a retry starts there again. */
   attempt?: { entry: string; at: number };
   card?: SignInCard;
@@ -187,7 +193,9 @@ export class SignInHosts {
   /** The window opens by itself here: chosen, or a passkey was asked for and "here" was not. */
   automatic(host: string) {
     const choice = this.choice(host);
-    return choice === "window" || (choice !== "here" && this.askedForPasskey(host));
+    // The page's own passkey requests go through the passkey proxy; the window opens by itself
+    // only where the person chose it.
+    return choice === "window";
   }
   passkeyHosts() {
     return this.data.passkey;
@@ -281,6 +289,7 @@ export class SignInService {
   install(preloadDir: string) {
     const ses = browserSession();
     ses.registerPreloadScript({ type: "frame", id: "key-web-signin", filePath: join(preloadDir, "web-signin.js") });
+    ipcMain.handle("key-browser:passkey", (event, op: unknown, payload: unknown) => this.passkey(event, String(op), payload));
     ipcMain.on("key-browser:webauthn", (event, raw: unknown) => {
       if (event.sender.session !== ses) return;
       const tab = this.tabs.get(event.sender.id);
@@ -327,6 +336,7 @@ export class SignInService {
     // Sign-in windows Key opened close with it.
     app.on("will-quit", () => {
       void this.current?.window.close();
+      void this.passkeyProxy?.close();
     });
     void this.refreshBrowsers();
     void this.configureTouchId();
@@ -368,6 +378,10 @@ export class SignInService {
       if (last?.committed && last.dwell === undefined && tab.shownAt) last.dwell = Date.now() - tab.shownAt;
       if (!(last && !last.committed && last.url === event.url)) push(event.url);
       // A new page: whatever the old one waited for is gone (an open sign-in window stays).
+      if (tab.passkey) {
+        if (tab.passkey.decide) tab.passkey.decide(false);
+        else tab.passkey.abort.abort("cancel");
+      }
       tab.pending.clear();
       tab.aside = false;
       const card = tab.card?.stage;
@@ -434,9 +448,6 @@ export class SignInService {
       trace("auto-window", { host });
       return void this.openWindow(tab, { auto: true });
     }
-    if (this.hosts.choice(host) === "here") return;
-    tab.card = { stage: "arrival", site: host, host, way: "window", browser: way.app.name };
-    tab.changed();
   }
 
   /** Back on the site after bringing a sign-in over: a sign-in page that stays (or asks for a
@@ -483,7 +494,9 @@ export class SignInService {
   /** Whether the tab's page is covered by the sign-in card (its view is hidden meanwhile). */
   covers(contents: WebContents | undefined) {
     const tab = contents && this.tabs.get(contents.id);
-    return !!tab?.card;
+    // Not for a passkey request: the page stays shown (a hidden page loses focus, and sign-in
+    // pages then give up on the request); the bar says what goes on.
+    return !!tab?.card && !tab.card.stage.startsWith("passkey");
   }
 
   private async showWaiting(tab: Tab) {
@@ -557,6 +570,8 @@ export class SignInService {
   async forget() {
     for (const tab of this.tabs.values()) tab.signInWindow = undefined;
     await this.closeCurrent();
+    await this.passkeyProxy?.close();
+    await forgetSignInProfiles(join(app.getPath("userData"), "Passkey window"));
     await forgetSignInProfiles(SignInService.profileRoot());
   }
 
@@ -591,6 +606,10 @@ export class SignInService {
       tab.card = undefined;
       await this.closeTabWindow(tab);
     } else if (op === "signin-window") {
+      if (tab.passkey) {
+        if (tab.passkey.decide) tab.passkey.decide(false);
+        else tab.passkey.abort.abort("cancel");
+      }
       // Chosen here (arrival or a page waiting for a passkey): remembered for the service.
       const host = card?.host ?? this.signInHost(tab);
       if (host && card?.stage !== "failed" && card?.stage !== "where") this.hosts.set(host, "window");
@@ -599,6 +618,11 @@ export class SignInService {
       const picked = card?.stage === "where" ? card.entries?.find((e) => e.url === url) : undefined;
       if (picked) void this.openWindow(tab, { entry: picked.url });
     } else if (op === "signin-keep") void this.keepWindow(tab);
+    else if (op === "signin-passkey-continue") tab.passkey?.decide?.(true);
+    else if (op === "signin-passkey-cancel") {
+      if (tab.passkey?.decide) tab.passkey.decide(false);
+      else tab.passkey?.abort.abort("cancel");
+    } else if (op === "signin-passkey-show") await this.passkeyProxy?.focus();
     else if (op === "signin-done") tab.signInWindow?.signedInNow();
     else if (op === "signin-focus") await tab.signInWindow?.focus();
     else if (op === "signin-get-browser") {
@@ -615,6 +639,92 @@ export class SignInService {
       await openIn(target.browser, entry);
     } else if (op === "signin-import") await this.importSignIn(tab);
     tab.changed();
+  }
+
+  private passkeyProxy?: PasskeyProxy;
+
+  /** A passkey request of a page in Key's browser (web-signin preload), answered by the passkey
+   * dialog of a Chromium browser on this Mac (passkey-proxy.ts). The origin is the requesting
+   * frame's, from Electron; the page cannot name another. Without such a browser the page uses
+   * Electron's own WebAuthn ({ fallback }). */
+  private async passkey(event: Electron.IpcMainInvokeEvent, op: string, payload: unknown) {
+    const ses = browserSession();
+    const tab = this.tabs.get(event.sender.id);
+    const frame = event.senderFrame;
+    if (event.sender.session !== ses || !tab || !frame) return { ok: false, name: "NotAllowedError", message: "Not a page of Key's browser." };
+    const body = (payload ?? {}) as { id?: string; activation?: boolean; options?: Record<string, unknown>; request?: string };
+    const installed = await this.refreshBrowsers();
+    const way = this.way(installed);
+    // KEY_PASSKEY_PROXY=0: Electron's own WebAuthn (the sign-in window smokes use it).
+    const proxy = way.kind === "window" && this.settings().notice && process.env.KEY_PASSKEY_PROXY !== "0";
+    if (op === "available") return { value: proxy };
+    if (op === "abort") {
+      trace("passkey-page-abort", { matches: tab.passkey?.id === body.request });
+      if (tab.passkey && tab.passkey.id === body.request) {
+        if (tab.passkey.decide) tab.passkey.decide(false);
+        else tab.passkey.abort.abort("page");
+      }
+      return { ok: true };
+    }
+    if (op !== "get" && op !== "create") return { ok: false, name: "NotSupportedError", message: "Unknown request." };
+    if (!proxy || way.kind !== "window") return { fallback: true };
+    const options = body.options;
+    if (!options || typeof options !== "object") return { ok: false, name: "TypeError", message: "No passkey options." };
+    const origin = frame.origin;
+    const topOrigin = event.sender.mainFrame.origin;
+    const site = (() => {
+      try {
+        return new URL(origin).hostname;
+      } catch {
+        return origin;
+      }
+    })();
+    let request: { id: string; abort: AbortController; decide?(go: boolean): void } | undefined;
+    try {
+      checkRequest(origin, String((op === "get" ? options.rpId : (options.rp as { id?: string } | undefined)?.id) ?? "") || undefined);
+      trace("passkey-request", { op, host: site, activation: !!body.activation, crossOrigin: origin !== topOrigin, kind: `${Object.keys(options).sort().join(",")} timeout=${options.timeout ?? "-"} allow=${Array.isArray(options.allowCredentials) ? options.allowCredentials.length : "-"} frame=${frame.routingId}` });
+      // A page that asks again before the person answered Key's question: the newer request
+      // replaces it (the older one ends as cancelled). One already in the passkey window stays.
+      if (tab.passkey?.decide) tab.passkey.decide(false);
+      else if (tab.passkey) throw new PasskeyError("NotAllowedError", "Another passkey request of this page is still open.");
+      request = { id: String(body.id ?? ""), abort: new AbortController() };
+      tab.passkey = request;
+      // The page may only open the passkey window with the person's say-so: a click on the page
+      // just now, or Use passkey in Key's card.
+      if (!body.activation) {
+        const go = await new Promise<boolean>((resolve) => {
+          request!.decide = resolve;
+          tab.card = { stage: "passkey", site, way: "window", browser: way.app.name, host: site };
+          tab.changed();
+        });
+        request.decide = undefined;
+        if (!go) throw new PasskeyError("NotAllowedError", "The passkey request was cancelled.");
+      }
+      tab.card = { stage: "passkey-busy", site, way: "window", browser: way.app.name, host: site };
+      tab.changed();
+      if (!this.passkeyProxy || this.passkeyProxy.app.id !== way.app.id) {
+        await this.passkeyProxy?.close();
+        this.passkeyProxy = new PasskeyProxy({
+          app: way.app,
+          profileDir: join(app.getPath("userData"), "Passkey window", way.app.id),
+          headless: !!process.env.KEY_SIGNIN_HEADLESS || process.env.KEY_TEST_MODE === "1",
+          virtualAuthenticator: !!(process.env.KEY_BROWSER_SMOKE && process.env.KEY_SIGNIN_VIRTUAL_AUTHENTICATOR),
+          onTrace: (e, detail) => trace(e, detail),
+        });
+      }
+      const credential = await this.passkeyProxy.request({ op: op as PasskeyOp, options, origin, topOrigin, site, near: this.bounds(tab) }, request.abort.signal);
+      return { ok: true, credential };
+    } catch (error) {
+      const e = error instanceof PasskeyError ? error : new PasskeyError("NotAllowedError", (error as Error).message);
+      trace("passkey-refused", { host: site, reason: `${e.kind}: ${e.message}` });
+      return { ok: false, name: e.kind, message: e.message };
+    } finally {
+      if (request && tab.passkey === request) tab.passkey = undefined;
+      if (!tab.passkey && (tab.card?.stage === "passkey" || tab.card?.stage === "passkey-busy")) {
+        tab.card = undefined;
+        tab.changed();
+      }
+    }
   }
 
   /** Hosts where this tab's pages asked for a passkey: sign-in pages, whatever they are called. */

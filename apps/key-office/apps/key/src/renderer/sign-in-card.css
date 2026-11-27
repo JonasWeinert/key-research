@@ -224,6 +224,22 @@
   }
 }
 
+/* A passkey request answered through the passkey window: stands out in the bar. */
+.key-web-signin[data-passkey] {
+  background: var(--kx-accent-soft);
+}
+.key-web-signin[data-passkey] > svg {
+  color: var(--kx-accent);
+}
+.key-web-signin[data-passkey] > button[data-primary] {
+  background: var(--kx-accent);
+  color: var(--kx-accent-ink);
+}
+.key-web-signin[data-passkey] > button[data-primary]:hover {
+  background: var(--kx-accent);
+  filter: brightness(1.06);
+}
+
 /* "Sign in with passkey…" in the browser bar on a sign-in page. */
 .key-web-signin[data-offer-window] > button {
   display: inline-flex;
