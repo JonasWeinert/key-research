@@ -240,9 +240,8 @@ export const glyphs = {
   // Reading mode: the PDF as reflowed text, and its typography ("Aa").
   readingMode: { s: rr(2.25, 2.25, 11.5, 11.5, 2) + "M5 5.5H11M5 8H11M5 10.5H8.75" },
   typography: { s: "M1.75 12.75 5 3.75 8.25 12.75M2.9 9.6H7.1M10 12.75 11.85 7.75 13.75 12.75M10.55 11.25H13.2" },
-  // Systematic reviews: a clipboard with ticked rows; PRISMA's flow of boxes.
+  // Systematic reviews: a clipboard with ticked rows.
   checklist: { s: rr(3.25, 3, 9.5, 10.75, 1.75) + "M6 3V2.25H10V3M5.25 6.75 6.25 7.75 7.75 6.25M9 7H11M5.25 10.25 6.25 11.25 7.75 9.75M9 10.5H11" },
-  flow: { s: rr(2.25, 2.25, 5, 3, 1) + rr(8.75, 2.25, 5, 3, 1) + rr(5.5, 10.75, 5, 3, 1) + "M4.75 5.25V7.75H11.25V5.25M8 7.75V10.75" },
 } satisfies Record<string, Glyph>;
 
 export type GlyphName = keyof typeof glyphs;

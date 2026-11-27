@@ -160,7 +160,9 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await shot(page, "10-fulltext");
     // Back to the review (the reader took the focus).
     await page.locator(".kx-rv-decide-head").click();
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12 && !(await page.locator(".kx-rv-done").count()); i++) {
+      // The reader beside may hold the keyboard: give it back to the review.
+      await page.locator(".kx-rv-decide-head").click();
       const title = await page.locator(".kx-rv-record-title").textContent();
       if (/Pilates/.test(title)) {
         await page.keyboard.press("e");
