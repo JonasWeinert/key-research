@@ -266,6 +266,7 @@ pub struct Confusion {
     /// AI include, human exclude.
     pub fp: usize,
     /// AI exclude, human include: the records an AI-only screen would have lost.
+    #[serde(rename = "fn")]
     pub fn_: usize,
     pub tn: usize,
     pub n: usize,
@@ -584,13 +585,18 @@ pub fn statement(state: &State) -> Option<(String, Option<String>)> {
     }
     for a in state.std_b.audits.iter().filter(|a| !a.open) {
         if a.task == "extraction" {
+            let fields = extraction_agreement(state, Some(&a.records));
+            let (n, agree) = fields.iter().fold((0, 0), |acc, f| (acc.0 + f.n, acc.1 + f.agree));
+            if n > 0 {
+                results.push(format!("In a blind coding audit of {} randomly drawn studies (the larger of {:.0} % or {} studies), reviewers' values matched the AI's for {agree} of {n} fields ({:.0} %)", a.records.len(), a.percent, a.minimum, agree as f64 / n as f64 * 100.0));
+            }
             continue;
         }
         let c = screening_agreement(state, a.stage.unwrap_or(Stage::Ta), Some(&a.records));
+        let short = if a.records.len() < a.target { format!("; only {} were still undecided", a.records.len()) } else { String::new() };
         results.push(format!(
-            "In a blind human audit of {} randomly drawn records ({} of the {} the AI assessed; the larger of {:.0} % or {}), the AI's false-negative rate was {}",
+            "In a blind human audit of {} records drawn at random from the {} the AI assessed (sample size: the larger of {:.0} % or {} records, at most all of them{short}), the AI's false-negative rate was {}",
             a.records.len(),
-            if a.records.len() < a.target { format!("fewer than the {} planned", a.target) } else { "as planned".into() },
             a.population,
             a.percent,
             a.minimum,

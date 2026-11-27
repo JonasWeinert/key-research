@@ -259,7 +259,7 @@ fn ai_suggestions_are_logged_compared_audited_blind_and_disclosed() {
     let state = reviews.read(&id, |s, _| Ok(s.clone())).unwrap();
     let (text, results) = ai_audit::statement(&state).unwrap();
     assert!(text.contains("mock-small (reported as mock-small-2026-10-01)") && text.contains("never made a decision"), "{text}");
-    assert!(results.unwrap().contains("blind human audit of 4"));
+    assert!(results.unwrap().contains("blind human audit of 4 records drawn at random from the 4"));
     let md = ai_audit::statement_markdown(&state);
     assert!(md.contains("## Appendix: prompts") && md.contains("SHA-256") && md.contains("You help a systematic reviewer screen records"));
     let facts = conduct::reporting_facts(&state);
