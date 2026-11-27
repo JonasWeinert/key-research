@@ -69,6 +69,18 @@ export async function addFromSource(invoke: Invoke, origin: AddOrigin, work: Add
     const viaMain = (window as unknown as { key?: ViewBridge }).key?.addFromSource;
     if (viaMain) return viaMain({ origin, work });
   }
+  const where = await chooseCollections(invoke, origin, work, anchor, remote);
+  if (!where) return null;
+  const source = await insertWork(invoke, origin.workspaceId, work, where.collections);
+  libraryChanged();
+  toast(where.names.length ? `Added to ${where.names.length === 1 ? where.names[0] : `${where.names.length} collections`}` : "Added to the library");
+  return source;
+}
+
+/** The collections an add goes into, asking with the chooser when the setting says so (also
+ * for many works at once, the Inbox's "Add to library": `work` then describes them all).
+ * Null when the user cancelled. */
+export async function chooseCollections(invoke: Invoke, origin: AddOrigin, work: AddWork, anchor?: Element | null, remote = false): Promise<{ collections: string[]; names: string[] } | null> {
   const { workspaceId } = origin;
   const [settings, collections, from] = await Promise.all([
     workspaceSettings(invoke, workspaceId)
@@ -89,11 +101,8 @@ export async function addFromSource(invoke: Invoke, origin: AddOrigin, work: Add
     chosen = choice.collections;
     if (choice.dontAsk) void workspaceSettings(invoke, workspaceId, { addFromSource: "origin" }).catch(() => {});
   }
-  const source = await insertWork(invoke, workspaceId, work, chosen);
-  libraryChanged();
-  const names = chosen.map((id) => collections.find((c) => c.id === id)?.name).filter(Boolean);
-  toast(names.length ? `Added to ${names.length === 1 ? names[0] : `${names.length} collections`}` : "Added to the library");
-  return source;
+  const names = chosen.map((id) => collections.find((c) => c.id === id)?.name).filter((name): name is string => !!name);
+  return { collections: chosen, names };
 }
 
 /** "Ada Lovelace" → given Ada, family Lovelace; "Lovelace, Ada" too; one word stays literal. */

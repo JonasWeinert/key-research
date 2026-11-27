@@ -6,8 +6,12 @@
 // export, open, Inbox, Trash and merge, plus what other features register
 // (selection-actions.ts). Every edit is one journaled host command, so ⌘Z takes it back;
 // progress and results show in the panel.
+//
+// `mode="inbox"` is the same panel for works in the Inbox that are not in the library yet
+// (selection-inbox.tsx): their overview and the Inbox's bulk actions, in the same frame
+// (selection-frame.tsx).
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Icon, type IconName } from "./icons";
+import { Icon } from "./icons";
 import { ITEM_TYPES, type Collection, type Facet, type Invoke, type Source } from "./library-api";
 import type { PropertyDefinition } from "./PropertySheets";
 import { stepJournal, type BatchEdit, type Operation } from "./library-hygiene";
@@ -16,15 +20,10 @@ import { libraryChanged, onLibraryChanged } from "./library-nav";
 import { findPdfs, useFindPdfRun, cancelFindPdfs } from "./find-pdf";
 import { copyCitation, copyInTextCitation } from "./item-actions";
 import { openBibExport } from "./BiblioSheets";
-import { BarChart, Histogram } from "./charts/charts";
 import { selectionActionsFor, useSelectionActions, type SelectionGroup } from "./selection-actions";
-import "./hygiene.css";
-import "./selection-panel.css";
+import { ActionButton, SelectionCharts, SelectionFacts, SelectionFrame, errorText, plural, useNotice, useOverview, type Count, type Fact, type OverviewYears } from "./selection-frame";
+import { InboxSelection, type InboxSelectionProps } from "./selection-inbox";
 
-interface Count {
-  value: string;
-  count: number;
-}
 interface Shared {
   mixed: boolean;
   value: unknown;
@@ -35,7 +34,7 @@ export interface SelectionOverview {
   trashed: number;
   kinds: Count[];
   itemTypes: Count[];
-  years: { min: number | null; max: number | null; histogram: { from: number; to: number; count: number }[]; without: number };
+  years: OverviewYears;
   authors: Count[];
   authorCount: number;
   journals: Count[];
@@ -70,38 +69,24 @@ const FIELDS: [string, string, "number"?][] = [
   ["rights", "Rights"],
   ["extra", "Extra"],
 ];
-const TYPE_LABEL = new Map(ITEM_TYPES);
-const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-const errorText = (e: unknown) => String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, "");
+export const TYPE_LABEL = new Map(ITEM_TYPES);
 const asText = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
 /** The overview of `ids`, read again when the selection or the library changes. */
 export function useSelectionOverview(invoke: Invoke, workspaceId: string, ids: string[]) {
-  const [answer, setAnswer] = useState<{ key: string; overview: SelectionOverview }>();
   const [version, setVersion] = useState(0);
-  const key = useRef(`selection:${Math.random().toString(36).slice(2)}`);
-  const idsKey = ids.join("\n");
   useEffect(() => onLibraryChanged(() => setVersion((v) => v + 1)), []);
-  useEffect(() => {
-    let live = true;
-    // A short wait while the selection is still being extended (⇧-arrows, ⌘-clicks).
-    const t = setTimeout(() => {
-      void invoke<SelectionOverview>("store_selection_overview", { ids: idsKey ? idsKey.split("\n") : [], $supersede: key.current }, workspaceId)
-        .then((overview) => live && setAnswer({ key: idsKey, overview }))
-        .catch(() => {});
-    }, 90);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [invoke, workspaceId, idsKey, version]);
-  // An answer for an earlier selection stays shown (dimmed) until this one's arrives.
-  return { overview: answer?.overview, stale: !!answer && answer.key !== idsKey, reload: () => setVersion((v) => v + 1) };
+  return { ...useOverview<SelectionOverview>(invoke, workspaceId, "store_selection_overview", ids, version), reload: () => setVersion((v) => v + 1) };
 }
 
-type Notice = { text: string; tone: "busy" | "done" | "error"; undo?: boolean };
+type LibraryProps = Parameters<typeof LibrarySelection>[0] & { mode?: "library" };
 
-export default function SelectionPanel({
+/** Library sources (default), or Inbox works with `mode="inbox"`. */
+export default function SelectionPanel(props: LibraryProps | InboxSelectionProps) {
+  return props.mode === "inbox" ? <InboxSelection {...props} /> : <LibrarySelection {...props} />;
+}
+
+function LibrarySelection({
   invoke,
   workspaceId,
   ids,
@@ -146,38 +131,26 @@ export default function SelectionPanel({
   onNewProperty: () => void;
 }) {
   const { overview, stale } = useSelectionOverview(invoke, workspaceId, ids);
-  const [notice, setNotice] = useState<Notice>();
+  const { notice, setNotice, say, attempt } = useNotice();
   const [newTag, setNewTag] = useState("");
-  const scroller = useRef<HTMLDivElement>(null);
-  const [pinned, setPinned] = useState(false);
   const pdfRun = useFindPdfRun();
   useSelectionActions();
   const n = ids.length;
   const total = overview?.total ?? n;
-  const ctx = { workspaceId, sourceIds: ids };
+  const ctx = { workspaceId, kind: "library" as const, sourceIds: ids };
 
-  const say = (text: string, tone: Notice["tone"] = "done", undo = false) => setNotice({ text, tone, undo });
-  const attempt = async (busy: string, work: () => Promise<string | void>) => {
-    setNotice({ text: busy, tone: "busy" });
-    try {
-      const text = await work();
-      setNotice(text ? { text, tone: "done" } : undefined);
-    } catch (e) {
-      say(errorText(e), "error");
-    }
-  };
   const edit = async (batch: BatchEdit, label?: string) => {
     setNotice({ text: "Saving…", tone: "busy" });
     try {
       const op = await invoke<Operation>("store_edit", { ids, edit: batch, ...(label ? { label } : {}) }, workspaceId);
-      say(op.entry ? op.entry.label : "Nothing changed", "done", !!op.entry);
+      say(op.entry ? op.entry.label : "Nothing changed", "done", op.entry ? undo : undefined);
       libraryChanged();
       onEdited();
     } catch (e) {
       say(errorText(e), "error");
     }
   };
-  const undo = () =>
+  function undo() {
     void stepJournal(invoke, workspaceId, true)
       .then((text) => {
         say(text ?? "Undone");
@@ -185,11 +158,12 @@ export default function SelectionPanel({
         onEdited();
       })
       .catch((e) => say(errorText(e), "error"));
+  }
 
   // Find PDFs reports its progress here while it runs for this panel.
   const findingHere = useRef(false);
   useEffect(() => {
-    if (findingHere.current && pdfRun?.running) setNotice({ text: `Finding PDFs ${pdfRun.done} of ${pdfRun.total} · ${pdfRun.found} found`, tone: "busy" });
+    if (findingHere.current && pdfRun?.running) setNotice({ text: `Finding PDFs ${pdfRun.done} of ${pdfRun.total} · ${pdfRun.found} found`, tone: "busy", stop: cancelFindPdfs });
   }, [pdfRun]);
   const findPdfsHere = async () => {
     findingHere.current = true;
@@ -224,14 +198,14 @@ export default function SelectionPanel({
       const op = await invoke<Operation>("store_edit", { ids, edit: { collectionsAdd: [inbox] }, label: `Send ${plural(n, "source")} to Inbox` }, workspaceId);
       libraryChanged();
       onEdited();
-      setNotice({ text: op.entry?.label ?? "Already in the Inbox", tone: "done", undo: !!op.entry });
+      setNotice({ text: op.entry?.label ?? "Already in the Inbox", tone: "done", undo: op.entry ? undo : undefined });
     });
 
   const types = overview?.itemTypes ?? [];
   const tagsAll = overview?.tags.filter((t) => t.count === total) ?? [];
   const tagsSome = overview?.tags.filter((t) => t.count < total) ?? [];
   const filed = overview?.collections ?? [];
-  const facts: [string, number, IconName, ("warn" | "muted")?][] = overview
+  const facts: Fact[] = overview
     ? [
         ["With a PDF", overview.withPdf, "filePdf"],
         ["Unread", overview.unread, "book"],
@@ -244,19 +218,21 @@ export default function SelectionPanel({
   const duplicates = overview?.duplicates ?? [];
 
   return (
-    <div
-      className="kx-selection"
-      aria-label={`${n} sources selected`}
-      ref={scroller}
-      onScroll={(e) => setPinned(e.currentTarget.scrollTop > 8)}
-    >
-      <header className="kx-selection-bar" data-pinned={pinned}>
-        <span className="kx-selection-badge">
-          <Icon name="layers" size={12} />
-          {n.toLocaleString()}
-        </span>
-        <span className="kx-selection-bar-title">{pinned ? `${plural(n, "source")} selected` : ""}</span>
-        {!trashed && overview && (
+    <SelectionFrame
+      count={n}
+      noun="source"
+      label={`${n} sources selected`}
+      summary={
+        types.length
+          ? types
+              .slice(0, 3)
+              .map((t) => plural(t.count, (TYPE_LABEL.get(t.value) ?? t.value ?? "Document").toLowerCase()))
+              .join(", ") + (types.length > 3 ? `, ${types.length - 3} more types` : "")
+          : ""
+      }
+      controls={
+        !trashed &&
+        overview && (
           <>
             <ReadingStatusControl invoke={invoke} workspaceId={workspaceId} ids={ids} status={status} mixed={!status} />
             <button
@@ -270,106 +246,54 @@ export default function SelectionPanel({
               <Icon name="star" size={14} filled={allStarred} />
             </button>
           </>
-        )}
-        <button className="kx-icon-button" aria-label="Clear selection" title="Clear selection (Esc)" onClick={onClear}>
-          <Icon name="close" size={13} />
-        </button>
-      </header>
-
-      <div className="kx-selection-body">
-        <div className="kx-selection-head">
-          <h2>{plural(n, "source")} selected</h2>
-          <p>
-            {types.length
-              ? types
-                  .slice(0, 3)
-                  .map((t) => plural(t.count, (TYPE_LABEL.get(t.value) ?? t.value ?? "Document").toLowerCase()))
-                  .join(", ") + (types.length > 3 ? `, ${types.length - 3} more types` : "")
-              : " "}
-          </p>
-        </div>
-
-        {notice && (
-          <div className="kx-selection-notice" data-tone={notice.tone} role="status" aria-live="polite">
-            {notice.tone === "busy" ? <span className="kx-search-spinner" /> : <Icon name={notice.tone === "error" ? "warning" : "check"} size={13} />}
-            <span>{notice.text}</span>
-            {notice.undo && <button onClick={undo}>Undo</button>}
-            {notice.tone === "busy" && findingHere.current && <button onClick={cancelFindPdfs}>Stop</button>}
-            {notice.tone !== "busy" && (
-              <button className="kx-selection-notice-close" aria-label="Dismiss" onClick={() => setNotice(undefined)}>
-                <Icon name="close" size={9} />
-              </button>
-            )}
-          </div>
-        )}
-
-        <section className="kx-selection-section kx-selection-overview" aria-label="Overview" data-stale={stale || undefined}>
-          {!overview ? (
-            <div className="kx-selection-loading">
-              <div className="kx-skeleton-line" />
-              <div className="kx-skeleton-line" />
-            </div>
-          ) : (
-            <>
-              <div className="kx-selection-facts">
-                {facts.map(([label, value, icon, tone]) => (
-                  <div key={label} className="kx-selection-fact" data-tone={tone}>
-                    <Icon name={icon} size={12} />
-                    <strong>{value.toLocaleString()}</strong>
-                    <span>{label}</span>
-                  </div>
-                ))}
+        )
+      }
+      notice={notice}
+      onNotice={setNotice}
+      onClear={onClear}
+      stale={stale}
+      overview={
+        overview && (
+          <>
+            <SelectionFacts facts={facts} />
+            {duplicates.length > 0 && (
+              <div className="kx-selection-dupes">
+                <Icon name="layers" size={13} />
+                <span>
+                  {duplicates.length === 1
+                    ? `${duplicates[0].length} of these look like the same work`
+                    : `${duplicates.length} groups look like the same work (${duplicates.reduce((a, g) => a + g.length, 0)} sources)`}
+                </span>
+                <button onClick={() => onMerge(duplicates[0])}>{duplicates.length === 1 ? "Merge…" : "Merge first…"}</button>
               </div>
-              {duplicates.length > 0 && (
-                <div className="kx-selection-dupes">
-                  <Icon name="layers" size={13} />
-                  <span>
-                    {duplicates.length === 1
-                      ? `${duplicates[0].length} of these look like the same work`
-                      : `${duplicates.length} groups look like the same work (${duplicates.reduce((a, g) => a + g.length, 0)} sources)`}
-                  </span>
-                  <button onClick={() => onMerge(duplicates[0])}>{duplicates.length === 1 ? "Merge…" : "Merge first…"}</button>
-                </div>
-              )}
-              {overview.years.histogram.length > 0 && (
-                <div className="kx-selection-chart">
-                  <h3>
-                    Years
-                    <span>
-                      {overview.years.min === overview.years.max ? overview.years.min : `${overview.years.min}–${overview.years.max}`}
-                      {overview.years.without > 0 ? ` · ${overview.years.without.toLocaleString()} without a year` : ""}
-                    </span>
-                  </h3>
-                  {overview.years.histogram.length > 1 && (
-                    <Histogram bins={overview.years.histogram} height={70} width={360} label="Sources by year" binFormat={(v) => String(Math.round(v))} />
-                  )}
-                </div>
-              )}
-              {types.length > 1 && (
-                <div className="kx-selection-chart">
-                  <h3>Types</h3>
-                  <BarChart width={360} barHeight={12} label="Sources by type" items={types.slice(0, 6).map((t) => ({ label: TYPE_LABEL.get(t.value) ?? t.value ?? "Document", value: t.count }))} />
-                </div>
-              )}
-              {overview.authors.length > 0 && (
-                <div className="kx-selection-chart">
-                  <h3>
-                    Top authors<span>{plural(overview.authorCount, "author")}</span>
-                  </h3>
-                  <BarChart width={360} barHeight={12} max={total} label="Top authors" items={overview.authors.slice(0, 5).map((a) => ({ label: a.value, value: a.count }))} />
-                </div>
-              )}
-              {overview.journals.length > 0 && (
-                <div className="kx-selection-chart">
-                  <h3>
-                    Published in<span>{plural(overview.journalCount, "venue")}</span>
-                  </h3>
-                  <BarChart width={360} barHeight={12} max={total} label="Top journals" items={overview.journals.slice(0, 5).map((j) => ({ label: j.value, value: j.count, tone: "indigo" as const }))} />
-                </div>
-              )}
+            )}
+            <SelectionCharts
+              years={overview.years}
+              types={types.map((t) => ({ label: TYPE_LABEL.get(t.value) ?? t.value ?? "Document", value: t.count }))}
+              authors={overview.authors}
+              authorCount={overview.authorCount}
+              journals={overview.journals}
+              journalCount={overview.journalCount}
+              total={total}
+              noun="sources"
+            />
+          </>
+        )
+      }
+      footer={
+        <>
+          {trashed ? (
+            <>
+              <ActionButton icon="retry" label="Restore" onClick={() => onTrash(ids, false)} />
+              <ActionButton icon="trash" label="Delete permanently…" danger onClick={() => onDelete(ids)} />
             </>
+          ) : (
+            <ActionButton icon="trash" label="Move to Trash" danger onClick={() => onTrash(ids, true)} />
           )}
-        </section>
+          <span className="kx-selection-hint">⌘Z undoes</span>
+        </>
+      }
+    >
 
         {!trashed && (
           <>
@@ -574,30 +498,10 @@ export default function SelectionPanel({
           </>
         )}
 
-        <footer className="kx-selection-foot">
-          {trashed ? (
-            <>
-              <ActionButton icon="retry" label="Restore" onClick={() => onTrash(ids, false)} />
-              <ActionButton icon="trash" label="Delete permanently…" danger onClick={() => onDelete(ids)} />
-            </>
-          ) : (
-            <ActionButton icon="trash" label="Move to Trash" danger onClick={() => onTrash(ids, true)} />
-          )}
-          <span className="kx-selection-hint">⌘Z undoes</span>
-        </footer>
-      </div>
-    </div>
+    </SelectionFrame>
   );
 }
 
-function ActionButton({ icon, label, title, disabled, danger, onClick }: { icon: IconName; label: string; title?: string; disabled?: boolean; danger?: boolean; onClick: () => void }) {
-  return (
-    <button className="kx-selection-button" data-danger={danger || undefined} title={title} disabled={disabled} onClick={onClick}>
-      <Icon name={icon} size={13} />
-      <span>{label}</span>
-    </button>
-  );
-}
 
 function BatchField({ label, state, number, onCommit }: { label: string; state: Shared; number?: boolean; onCommit: (value: string) => void }) {
   const value = state.mixed ? "" : asText(state.value);
