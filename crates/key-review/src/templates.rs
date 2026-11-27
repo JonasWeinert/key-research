@@ -193,7 +193,7 @@ pub fn outcome_columns() -> Vec<Field> {
         field("outcome", "Outcome", "text"),
         field("timepoint", "Time point", "text"),
         field("unit", "Unit", "text"),
-        choice("type", "Data type", &["Dichotomous", "Continuous", "Generic"]),
+        choice("type", "Data type", &["Dichotomous", "Continuous", "Generic", "Correlation", "Proportion", "Rate"]),
         field("group1", "Intervention group", "text"),
         field("group2", "Comparison group", "text"),
         field("e1", "Events (intervention)", "number"),
@@ -204,11 +204,17 @@ pub fn outcome_columns() -> Vec<Field> {
         field("sd1", "SD (intervention)", "number"),
         field("m2", "Mean (comparison)", "number"),
         field("sd2", "SD (comparison)", "number"),
-        choice("measure", "Reported effect measure", &["RR", "OR", "RD", "HR", "MD", "SMD", "Other"]),
+        choice("measure", "Reported effect measure", &["RR", "OR", "RD", "HR", "MD", "SMD", "IRR", "Partial correlation", "Elasticity", "Other"]),
         field("estimate", "Reported estimate", "number"),
         field("lower", "Lower 95% CI", "number"),
         field("upper", "Upper 95% CI", "number"),
         field("se", "Standard error", "number"),
+        // std-D: correlations, regression t statistics, person-time.
+        field("r", "Correlation (r)", "number"),
+        field("t", "t statistic", "number"),
+        field("df", "Degrees of freedom", "number"),
+        field("time1", "Person-time (intervention)", "number"),
+        field("time2", "Person-time (comparison)", "number"),
     ]
 }
 

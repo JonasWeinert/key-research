@@ -576,7 +576,8 @@ impl Reviews {
         let suggestions = grade::suggest(&ctx);
         let a = &all.analysis;
         let m = &a.main;
-        let nat = |v: f64| if a.ratio { v.exp() } else { v };
+        // std-D: proportions and Fisher's z back-transform too.
+        let nat = |v: f64| crate::meta::back_transform(v, &a.transform, a.harmonic_n);
         let used: Vec<String> = a.studies.iter().map(|s| s.id.clone()).collect();
         let control = r.assumed_risk.or_else(|| grade::control_risk(&all.input));
         let abs = control.and_then(|acr| grade::absolute(a.measure, acr, nat(m.estimate), nat(m.lower), nat(m.upper)));
@@ -586,8 +587,8 @@ impl Reviews {
         let intervention = parts.get("i").or_else(|| parts.get("e")).map(|s| s.trim().to_string()).filter(|s| !s.is_empty() && s.len() < 60).unwrap_or_else(|| "the intervention".into());
         let label = if r.label.is_empty() { rob::result_label(key) } else { r.label.clone() };
         let suggested_statement = grade::statement(&level, &intervention, if r.label.is_empty() { &o } else { &r.label }, direction, small);
-        let relative = if matches!(a.measure, Measure::RR | Measure::OR) || (a.measure == Measure::GEN && a.ratio) {
-            Some(format!("{} {:.2} ({:.2} to {:.2})", match a.measure { Measure::RR => "RR", Measure::OR => "OR", _ => "Ratio" }, nat(m.estimate), nat(m.lower), nat(m.upper)))
+        let relative = if a.ratio {
+            Some(format!("{} {:.2} ({:.2} to {:.2})", match a.measure { Measure::RR => "RR", Measure::OR => "OR", Measure::HR => "HR", Measure::IRR => "IRR", Measure::ROM => "Ratio of means", _ => "Ratio" }, nat(m.estimate), nat(m.lower), nat(m.upper)))
         } else {
             None
         };
@@ -595,7 +596,7 @@ impl Reviews {
             Measure::RR | Measure::OR | Measure::RD => abs.as_ref().map(|x| grade::difference_text(x.difference)),
             Measure::MD => Some(grade::mean_text(m.estimate, m.lower, m.upper, "")),
             Measure::SMD => Some(grade::mean_text(m.estimate, m.lower, m.upper, " SD")),
-            Measure::GEN => None,
+            _ => None,
         };
         Ok(json!({
             "key": key, "label": label, "rating": r, "stored": rating.is_some(), "kind": kind,

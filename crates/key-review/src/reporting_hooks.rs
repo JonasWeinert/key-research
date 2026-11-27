@@ -28,8 +28,8 @@ pub fn facts(state: &State) -> Json {
     merge(&mut out, crate::conduct::reporting_facts(state));
     // std-C: risk of bias ("rob") and certainty ("grade").
     merge(&mut out, crate::rob::reporting_facts(state));
-    // std-D: replace Json::Null with crate::interop::reporting_facts(state)
-    merge(&mut out, Json::Null);
+    // std-D: synthesis methods and sharing.
+    merge(&mut out, crate::interop::reporting_facts(state));
     Json::Object(out)
 }
 

@@ -23,6 +23,8 @@ import { Certainty } from "./review-grade";
 import "./review.css";
 // std-A
 import { setFocus } from "./review-reporting-api";
+// std-D: moving a review in from Covidence or Rayyan.
+import { MigrateHost, openMigrate } from "./review-migrate";
 
 export type StageId = "overview" | "setup" | "sources" | "ta" | "ft" | "extract" | "analysis" | /* std-C */ "rob" | "certainty";
 const stageKey = (id: string) => `key.review.stage:${id}`;
@@ -184,6 +186,8 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
               { label: "Export methods draft (Markdown)", icon: "doc", run: () => void exportFile("methods-draft") },
               { label: "Export protocol (PRISMA-P)", icon: "fileMarkdown", run: () => void exportFile("protocol") },
               { label: "Export search report (PRISMA-S)", icon: "fileMarkdown", run: () => void exportFile("search-report") },
+              // std-D: moving a review in.
+              { label: "Import from Covidence or Rayyan…", icon: "upload", run: openMigrate },
               null,
               { label: summary.review.archived ? "Restore review" : "Archive review", icon: "disk", run: () => void api.archive(!summary.review.archived, viewer).then(reload) },
               { label: "Delete review…", icon: "trash", danger: true, run: () => setDeleting(true) },
@@ -204,6 +208,8 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
         {stage === "certainty" && <Certainty {...props} />}
       </main>
       {notice}
+      {/* std-D: moving a review in. */}
+      <MigrateHost invoke={invoke} workspaceId={workspaceId} reviewId={reviewId} viewer={viewer} team={summary.team} onDone={(t) => show(t, "ok")} />
       {deleting && (
         <Confirm
           title={`Delete “${summary.review.name}”?`}

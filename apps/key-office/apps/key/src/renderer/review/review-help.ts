@@ -1,6 +1,8 @@
 // The systematic review's explanations (spread into help-content.ts's HELP), for people who have
 // never done a systematic review as much as for experienced teams. Same voice and budgets.
 import type { HelpEntry } from "../help-content";
+// std-D: advanced synthesis and exports.
+import { SYNTHESIS_HELP } from "./review-synthesis-help";
 
 export const REVIEW_HELP = {
   "review.what": {
@@ -274,4 +276,6 @@ export const REVIEW_HELP = {
   "review.grade.gradepro": { kind: "hint", text: "GRADEpro has no public import format for this table; it imports RevMan data packages. Export for Word, Markdown or CSV." },
   "empty.review.sof": { kind: "empty", title: "No outcomes rated yet", what: "Each outcome you rate in Rate outcomes becomes a row of the Summary of findings table.", todo: "Rate the certainty of an outcome first." },
   // end std-C
+  // std-D: advanced synthesis and exports.
+  ...SYNTHESIS_HELP,
 } satisfies Record<string, HelpEntry>;

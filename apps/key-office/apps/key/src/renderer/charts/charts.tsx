@@ -544,3 +544,170 @@ export const RobSummary = forwardRef<SVGSVGElement, { bars: SummaryBar[]; levels
   );
 });
 // ── end std-C ───────────────────────────────────────────────────────────────────────────
+
+// ── std-D: scatter, bubble and contour-enhanced funnel plots ───────────────────────────
+
+export interface ScatterPoint {
+  x: number;
+  y: number;
+  label?: string;
+  /** Relative size (bubble plots: percent weight). */
+  size?: number;
+  tone?: Tone;
+  /** Drawn hollow (imputed studies). */
+  hollow?: boolean;
+}
+
+interface XYProps {
+  points: ScatterPoint[];
+  width?: number;
+  height?: number;
+  xLabel?: string;
+  yLabel?: string;
+  label: string;
+  /** Label points whose `label` is set and that lie beyond this share of the ranges (Baujat). */
+  labelOutliers?: boolean;
+  /** A fitted line with its band (bubble plots). */
+  line?: { x: number; fit: number; lower: number; upper: number }[];
+  /** A horizontal reference line. */
+  yRef?: number;
+  yFormat?: (v: number) => string;
+}
+
+/** Points on two axes, optionally sized by weight, with a fitted line and band. */
+export const ScatterPlot = forwardRef<SVGSVGElement, XYProps>(function ScatterPlot({ points, width = 420, height = 280, xLabel, yLabel, label, labelOutliers, line, yRef, yFormat = formatTick }, ref) {
+  const pad = { left: 48, right: 14, top: 12, bottom: xLabel ? 40 : 26 };
+  const xs = [...points.map((p) => p.x), ...(line ?? []).map((l) => l.x)];
+  const ys = [...points.map((p) => p.y), ...(line ?? []).flatMap((l) => [l.lower, l.upper]), ...(yRef != null ? [yRef] : [])];
+  const pad5 = (lo: number, hi: number) => (hi > lo ? [lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05] : [lo - 1, hi + 1]) as [number, number];
+  const x = scale(pad5(Math.min(...xs), Math.max(...xs)), [pad.left, width - pad.right], { ticks: 5 });
+  const y = scale(pad5(Math.min(...ys), Math.max(...ys)), [height - pad.bottom, pad.top], { ticks: 4 });
+  const maxSize = Math.max(1, ...points.map((p) => p.size ?? 0));
+  const radius = (p: ScatterPoint) => (p.size != null ? 3 + 9 * Math.sqrt(p.size / maxSize) : 4);
+  const [x0, x1] = x.domain;
+  const [y0, y1] = y.domain;
+  return (
+    <svg ref={ref} className="kx-chart kx-scatter" viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={label}>
+      {y.ticks.map((t) => (
+        <g key={`y${t}`}>
+          <line x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} style={stroke("--kx-line-content")} />
+          <text x={pad.left - 6} y={y(t)} textAnchor="end" dominantBaseline="central" fontSize={10} style={ink("--kx-text-3")}>
+            {yFormat(t)}
+          </text>
+        </g>
+      ))}
+      {x.ticks.map((t) => (
+        <text key={`x${t}`} x={x(t)} y={height - pad.bottom + 14} textAnchor="middle" fontSize={10} style={ink("--kx-text-3")}>
+          {formatTick(t)}
+        </text>
+      ))}
+      <line x1={pad.left} x2={width - pad.right} y1={height - pad.bottom} y2={height - pad.bottom} style={stroke("--kx-line-strong")} />
+      {yRef != null && <line x1={pad.left} x2={width - pad.right} y1={y(yRef)} y2={y(yRef)} style={stroke("--kx-line-strong", 1, "4 3")} />}
+      {line && line.length > 1 && (
+        <>
+          <polygon points={[...line.map((l) => `${x(l.x)},${y(l.upper)}`), ...[...line].reverse().map((l) => `${x(l.x)},${y(l.lower)}`)].join(" ")} style={{ ...ink("--kx-accent-soft"), stroke: "none", opacity: 0.8 }} />
+          <polyline points={line.map((l) => `${x(l.x)},${y(l.fit)}`).join(" ")} style={stroke("--kx-accent", 1.5)} />
+        </>
+      )}
+      {points.map((p, i) => {
+        const near = labelOutliers && p.label && (p.x - x0) / (x1 - x0 || 1) < 0.6 && (p.y - y0) / (y1 - y0 || 1) < 0.6;
+        return (
+          <g key={i}>
+            <circle cx={x(p.x)} cy={y(p.y)} r={radius(p)} style={p.hollow ? { fill: "var(--kx-bg)", stroke: `var(${TONE[p.tone ?? "accent"]})`, strokeWidth: 1.5 } : { ...ink(TONE[p.tone ?? "accent"]), stroke: "var(--kx-bg)", strokeWidth: 1, opacity: p.size != null ? 0.75 : 1 }}>
+              {p.label && <title>{p.label}</title>}
+            </circle>
+            {labelOutliers && p.label && !near && (
+              <text x={x(p.x) > width * 0.7 ? x(p.x) - radius(p) - 3 : x(p.x) + radius(p) + 3} y={y(p.y)} textAnchor={x(p.x) > width * 0.7 ? "end" : "start"} dominantBaseline="central" fontSize={10} style={ink("--kx-text-2")}>
+                {clip(p.label, 120)}
+              </text>
+            )}
+          </g>
+        );
+      })}
+      {xLabel && (
+        <text x={(pad.left + width - pad.right) / 2} y={height - 6} textAnchor="middle" fontSize={10} style={ink("--kx-text-2")}>
+          {xLabel}
+        </text>
+      )}
+      {yLabel && (
+        <text x={12} y={(pad.top + height - pad.bottom) / 2} transform={`rotate(-90 12 ${(pad.top + height - pad.bottom) / 2})`} textAnchor="middle" fontSize={10} style={ink("--kx-text-2")}>
+          {yLabel}
+        </text>
+      )}
+    </svg>
+  );
+});
+
+/** A funnel centred on no effect with the regions where a study would be significant at
+ * p < .10, .05 and .01 shaded (Peters et al. 2008); imputed studies (trim and fill) hollow. */
+export const ContourFunnel = forwardRef<SVGSVGElement, { points: FunnelPoint[]; filled?: FunnelPoint[]; nullValue?: number; adjusted?: number; width?: number; height?: number; axisLabel?: string; tickFormat?: (v: number) => string; label?: string }>(function ContourFunnel(
+  { points, filled = [], nullValue = 0, adjusted, width = 420, height = 300, axisLabel, tickFormat = formatTick, label = "Contour-enhanced funnel plot" },
+  ref,
+) {
+  const pad = { left: 44, right: 12, top: 12, bottom: axisLabel ? 52 : 38 };
+  const all = [...points, ...filled];
+  const maxSe = Math.max(0.01, ...all.map((p) => p.se)) * 1.08;
+  const z = [1.645, 1.96, 2.576];
+  const reach = z[2] * maxSe;
+  const extra = adjusted != null && Number.isFinite(adjusted) ? [adjusted] : [];
+  const lo = Math.min(nullValue - reach, ...all.map((p) => p.estimate), ...extra),
+    hi = Math.max(nullValue + reach, ...all.map((p) => p.estimate), ...extra);
+  const x = scale([lo, hi], [pad.left, width - pad.right], { ticks: 5 });
+  const y = scale([0, maxSe], [pad.top, height - pad.bottom], { ticks: 4, nice: false });
+  const wedge = (zz: number) => `${x(nullValue)},${y(0)} ${x(nullValue - zz * maxSe)},${y(maxSe)} ${x(nullValue + zz * maxSe)},${y(maxSe)}`;
+  const bands: [string, string][] = [
+    ["--kx-fill-2", "p < 0.01"],
+    ["--kx-fill", "0.01 – 0.05"],
+    ["--kx-bg-sunken", "0.05 – 0.10"],
+  ];
+  return (
+    <svg ref={ref} className="kx-chart kx-funnel" viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={label}>
+      <rect x={pad.left} y={pad.top} width={width - pad.left - pad.right} height={height - pad.top - pad.bottom} style={{ ...ink("--kx-fill-2"), stroke: "none" }} />
+      <polygon points={wedge(z[2])} style={{ ...ink("--kx-fill"), stroke: "none" }} />
+      <polygon points={wedge(z[1])} style={{ ...ink("--kx-bg-sunken"), stroke: "none" }} />
+      <polygon points={wedge(z[0])} style={{ ...ink("--kx-bg"), stroke: "none" }} />
+      <line x1={x(nullValue)} x2={x(nullValue)} y1={y(0)} y2={y(maxSe)} style={stroke("--kx-line-strong")} />
+      {adjusted != null && <line x1={x(adjusted)} x2={x(adjusted)} y1={y(0)} y2={y(maxSe)} style={stroke("--kx-accent", 1, "4 3")} />}
+      {y.ticks.map((t) => (
+        <text key={t} x={pad.left - 6} y={y(t)} textAnchor="end" dominantBaseline="central" fontSize={10} style={ink("--kx-text-3")}>
+          {formatTick(t)}
+        </text>
+      ))}
+      <text x={12} y={(pad.top + height - pad.bottom) / 2} transform={`rotate(-90 12 ${(pad.top + height - pad.bottom) / 2})`} textAnchor="middle" fontSize={10} style={ink("--kx-text-2")}>
+        Standard error
+      </text>
+      <line x1={pad.left} x2={width - pad.right} y1={height - pad.bottom} y2={height - pad.bottom} style={stroke("--kx-line-strong")} />
+      {x.ticks.map((t) => (
+        <text key={t} x={x(t)} y={height - pad.bottom + 14} textAnchor="middle" fontSize={10} style={ink("--kx-text-3")}>
+          {tickFormat(t)}
+        </text>
+      ))}
+      {axisLabel && (
+        <text x={(pad.left + width - pad.right) / 2} y={height - pad.bottom + 28} textAnchor="middle" fontSize={10} style={ink("--kx-text-2")}>
+          {axisLabel}
+        </text>
+      )}
+      <g fontSize={10} style={ink("--kx-text-3")}>
+        {bands.map(([tone, text], i) => (
+          <g key={text} transform={`translate(${pad.left + i * 96}, ${height - 12})`}>
+            <rect x={0} y={-8} width={10} height={10} rx={2} style={{ ...ink(tone), stroke: "var(--kx-line-strong)", strokeWidth: 0.5 }} />
+            <text x={14} y={0}>
+              {text}
+            </text>
+          </g>
+        ))}
+      </g>
+      {filled.map((p, i) => (
+        <circle key={`f${i}`} cx={x(p.estimate)} cy={y(Math.min(p.se, maxSe))} r={4} style={{ fill: "var(--kx-bg)", stroke: "var(--kx-text-3)", strokeWidth: 1.5 }}>
+          <title>Imputed by trim and fill</title>
+        </circle>
+      ))}
+      {points.map((p, i) => (
+        <circle key={i} cx={x(p.estimate)} cy={y(Math.min(p.se, maxSe))} r={4} style={{ ...ink("--kx-accent"), stroke: "var(--kx-bg)", strokeWidth: 1 }}>
+          {p.label && <title>{p.label}</title>}
+        </circle>
+      ))}
+    </svg>
+  );
+});
+// std-D end.

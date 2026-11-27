@@ -519,7 +519,18 @@ pub fn suggest(c: &Context) -> BTreeMap<String, Suggested> {
         match &a.egger {
             Some(e) if k >= 10 => {
                 let j = if e.p < 0.10 { "serious" } else { "none" };
-                s(Some(j), vec![format!("Egger's test: p = {:.3} with {k} studies{}", e.p, if e.p < 0.10 { ": the funnel plot may be asymmetric (small studies show larger effects)" } else { "" })])
+                let mut why = vec![format!("Egger's test: p = {:.3} with {k} studies{}", e.p, if e.p < 0.10 { ": the funnel plot may be asymmetric (small studies show larger effects)" } else { "" })];
+                // std-D: the corrected estimates beside it (pubbias.rs), on the outcome's scale.
+                let y: Vec<f64> = a.studies.iter().map(|x| x.yi).collect();
+                let v: Vec<f64> = a.studies.iter().map(|x| x.vi).collect();
+                let tr = |x: f64| crate::meta::back_transform(x, &a.transform, a.harmonic_n);
+                if let Ok(pp) = crate::pubbias::pet_peese(&y, &v, None, 0.05, false) {
+                    why.push(format!("PET-PEESE ({}): {:.2} [{:.2}, {:.2}] against {:.2} pooled", pp.chosen, tr(pp.estimate.estimate), tr(pp.estimate.lower), tr(pp.estimate.upper), tr(m.estimate)));
+                }
+                if let Ok(t) = crate::pubbias::trim_fill(&y, &v, m.method, "L0") {
+                    why.push(if t.k0 == 0 { "Trim and fill imputes no missing studies".to_string() } else { format!("Trim and fill imputes {} missing {} on the {}; adjusted {:.2} [{:.2}, {:.2}]", t.k0, if t.k0 == 1 { "study" } else { "studies" }, t.side, tr(t.pooled.estimate), tr(t.pooled.lower), tr(t.pooled.upper)) });
+                }
+                s(Some(j), why)
             }
             _ => s(None, vec![format!("{k} {}: too few for a funnel test (10 or more are needed). Consider whether small, unpublished or sponsor-run studies could be missing (search of registers, grey literature).", if k == 1 { "study" } else { "studies" })]),
         },

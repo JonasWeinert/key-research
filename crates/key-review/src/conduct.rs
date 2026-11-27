@@ -183,6 +183,7 @@ pub const CHECKS: &[(&str, &[&str])] = &[
     ("risk-of-bias", &["systematic", "rapid", "living"]),
     ("risk-of-bias-dual", &["systematic", "living"]),
     ("unplanned-outcomes", &["systematic", "rapid", "living"]),
+    ("unplanned-analyses", &["systematic", "rapid", "living"]),
     ("conflicts", &["systematic", "scoping", "rapid", "living"]),
     ("awaiting", &["systematic", "scoping", "rapid", "living"]),
     ("ai-audit", &["systematic", "scoping", "rapid", "living"]),
@@ -340,11 +341,39 @@ pub fn checks(state: &State, now: i64, outcomes: &[String]) -> Vec<Warning> {
     }
     // Outcomes with data that the protocol's plan does not name (std-A's protocol builder).
     let planned: BTreeSet<String> = state.std_b.plan.get("outcomes").and_then(Json::as_array).into_iter().flatten().filter_map(|o| o.get("name").and_then(Json::as_str).or_else(|| o.as_str())).map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect();
+    // std-D: the outcomes of saved analyses (analysis.set) count too.
+    let saved = crate::interop::saved(state);
+    let mut outcomes: Vec<String> = outcomes.to_vec();
+    for s in &saved {
+        if let Some(o) = s.request.get("outcome").and_then(Json::as_str)
+            && !outcomes.iter().any(|x| x.trim().eq_ignore_ascii_case(o.trim()))
+        {
+            outcomes.push(o.to_string());
+        }
+    }
     if !planned.is_empty() {
         let unplanned: Vec<&String> = outcomes.iter().filter(|o| !planned.contains(&o.trim().to_lowercase())).collect();
         if !unplanned.is_empty() {
             let names: Vec<String> = unplanned.iter().take(4).map(|s| format!("“{s}”")).collect();
             push("unplanned-outcomes", "MECIR C68 · Campbell 1 · PRISMA 24c", "Outcomes not in the protocol", format!("Data were extracted for {} that the protocol does not plan. Analyses that were not planned should be reported as changes to the protocol, with the reason.", names.join(", ")), "Record the change in the protocol's deviations, or add the outcome", "setup", CAMPBELL, "warn");
+        }
+    }
+    // std-D: saved analyses whose moderators or subgroups the plan does not name (MECIR C68).
+    let planned_analyses: Vec<String> = ["subgroups", "sensitivity"].iter().flat_map(|k| state.std_b.plan.get(*k).and_then(Json::as_array).into_iter().flatten().filter_map(Json::as_str).map(|s| s.trim().to_lowercase())).filter(|s| !s.is_empty()).collect();
+    if !state.std_b.plan.is_null() && !saved.is_empty() {
+        let mut extra: Vec<String> = Vec::new();
+        for s in &saved {
+            for m in s.advanced.get("moderators").and_then(Json::as_array).into_iter().flatten() {
+                let name = m.get("name").and_then(Json::as_str).unwrap_or("").trim().to_string();
+                let low = name.to_lowercase();
+                if !name.is_empty() && !planned_analyses.iter().any(|p| p.contains(&low) || low.contains(p.as_str())) && !extra.contains(&name) {
+                    extra.push(name);
+                }
+            }
+        }
+        if !extra.is_empty() {
+            let names: Vec<String> = extra.iter().take(4).map(|s| format!("“{s}”")).collect();
+            push("unplanned-analyses", "MECIR C68 · PRISMA 13e, 24c", "Analyses not in the protocol", format!("Saved analyses examine {} as moderators, which the protocol's planned subgroup and sensitivity analyses do not name. Report them as post hoc, with the reason.", names.join(", ")), "Add them to the protocol's planned analyses, or record a deviation", "setup", MECIR, "info");
         }
     }
     let conflicts: usize = [Stage::Ta, Stage::Ft].iter().map(|s| state.records.iter().filter(|r| state.status(r, *s) == Status::Conflict).count()).sum();

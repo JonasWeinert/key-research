@@ -36,6 +36,20 @@ pub mod ai_audit;
 pub mod chasing;
 pub mod conduct;
 pub mod xpilot;
+// std-D: advanced synthesis and interop.
+pub mod conversions;
+pub mod dependence;
+pub mod interop;
+pub mod linalg;
+pub mod metareg;
+pub mod migrate;
+pub mod multilevel;
+pub mod pubbias;
+pub mod revman;
+pub mod rscript;
+pub mod sensitivity;
+pub mod synthesis;
+// std-D end.
 
 pub use ops::{Library, NoLibrary};
 pub use store::Reviews;
@@ -53,3 +67,5 @@ mod tests_reporting;
 // std-C
 #[cfg(test)]
 mod tests_certainty;
+#[cfg(test)]
+mod tests_interop;
