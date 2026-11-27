@@ -24,6 +24,7 @@ import { highlightUsage } from "./highlight-usage";
 import type { HighlightUsage } from "@key-reader/pdfjs/HighlightInfo";
 import { FirstUseTip } from "./explain";
 import ReadingMode, { ContentsPopover, TypographyPopover, useTypography, type ReadingModeHandle, type ReadingModeState } from "./ReadingMode";
+import { opensInReadingMode, rememberReadingMode } from "./reading-preference";
 import { couldNot, plainError } from "../shared/plain-error";
 
 
@@ -404,18 +405,32 @@ export default function PdfReader() {
       else reader.current?.goTo(at.page, at.top ?? 0);
     });
   }, []);
+  // The user switching views: remembered for PDFs (Key Settings › General › Reading).
+  const toggleReading = useCallback(() => {
+    void rememberReadingMode("pdf", !reading);
+    if (reading) exitReading();
+    else enterReading();
+  }, [reading, enterReading, exitReading]);
+  // A PDF opens in reading mode when that was the view last used (not at a search hit).
+  const openedOnce = useRef(false);
+  useEffect(() => {
+    if (!document || !inLibrary || openedOnce.current) return;
+    openedOnce.current = true;
+    if (target || document.initial.searchTarget) return;
+    void opensInReadingMode("pdf").then((on) => on && setTimeout(enterReading, 300));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [document, inLibrary]);
   // Shift-Cmd-R, as Safari's Reader.
   useEffect(() => {
     if (!inLibrary) return;
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === "r")) return;
       event.preventDefault();
-      if (reading) exitReading();
-      else enterReading();
+      toggleReading();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [inLibrary, reading, enterReading, exitReading]);
+  }, [inLibrary, toggleReading]);
   const flash = useCallback((message: string) => {
     setNotice(message);
     setTimeout(() => setNotice(""), 5000);
@@ -500,7 +515,7 @@ export default function PdfReader() {
                   aria-label="Reading mode"
                   title={reading ? "Back to the page view (⇧⌘R)" : "Reading mode: the text, reflowed (⇧⌘R)"}
                   aria-pressed={!!reading}
-                  onClick={() => (reading ? exitReading() : enterReading())}
+                  onClick={toggleReading}
                 >
                   <Icon name="readingMode" />
                 </button>

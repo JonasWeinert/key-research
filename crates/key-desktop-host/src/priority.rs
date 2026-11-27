@@ -34,7 +34,7 @@ const INTERACTIVE: &[&str] = &[
     "store_fill_cell", "store_fill_cell_use_answer", "store_fill_cell_keep", "store_fill_again_ids", "store_fill_source_cells",
     "store_selection_overview",
     // Reading mode: a highlight made in the text (store_reflow_document is a foreground read).
-    "store_reflow_locate",
+    "store_reflow_locate", "store_web_reflow_locate", "store_web_reflow_project",
     "store_power_continue",
     // Systematic reviews (review_commands.rs): screening keystrokes and the reads behind them.
     "review_get", "review_stamp", "review_record", "review_queue", "review_records", "review_decide", "review_undo", "review_retract", "review_resolve", "review_reopen",

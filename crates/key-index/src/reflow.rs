@@ -18,6 +18,10 @@ pub struct Run {
     pub page: i64,
     /// [x, y, width, height] on the 0..65535 page scale.
     pub rects: Vec<[u16; 4]>,
+    /// A saved web page's: where the run's text starts in the page's text (UTF-16, as the web
+    /// reader's text index counts); the run is that text exactly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub at: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -32,9 +36,89 @@ pub struct Crop {
 pub struct Caption {
     pub text: String,
     pub runs: Vec<Run>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<Span>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+/// Inline markup over `start..end` (UTF-16) of a text: emphasis, code, a link (to an address or
+/// to another item), a citation of a reference, MathML, or a small picture standing for one
+/// character (U+FFFC) of the text. Web pages only; PDF text has none.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+    /// em | strong | code | sup | sub | link | cite | math | image
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    /// The item a link inside the page goes to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target: Option<usize>,
+    /// Sanitised MathML.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub math: Option<String>,
+    /// A picture by its resource number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt: Option<String>,
+}
+
+/// A picture of a saved web page, by its resource number (the page's own inlined copy).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Image {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource: Option<usize>,
+    pub alt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Cell {
+    pub text: String,
+    pub runs: Vec<Run>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<Span>,
+    pub header: bool,
+    #[serde(skip_serializing_if = "is_one")]
+    pub colspan: u32,
+    #[serde(skip_serializing_if = "is_one")]
+    pub rowspan: u32,
+}
+fn is_one(n: &u32) -> bool {
+    *n == 1
+}
+
+/// A web page's table as text, cell by cell.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Table {
+    pub rows: Vec<Vec<Cell>>,
+}
+
+/// What a web page says about itself, shown under its title.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Meta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub byline: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub id: usize,
@@ -50,6 +134,22 @@ pub struct Item {
     pub crop: Option<Crop>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub caption: Option<Caption>,
+    // Web pages only (web_reflow.rs).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub spans: Vec<Span>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub table: Option<Table>,
+    /// An equation's MathML (sanitised).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub math: Option<String>,
+    /// A list item's bullet or number.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub marker: Option<String>,
+    /// The page's element ids that start in this item (in-page links go there).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -79,6 +179,8 @@ pub struct Document {
     pub quality: Quality,
     pub items: Vec<Item>,
     pub outline: Vec<OutlineEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meta: Option<Meta>,
 }
 
 const FULL: f32 = u16::MAX as f32;
@@ -186,7 +288,7 @@ fn citation_marker(text: &str) -> bool {
 }
 
 /// "Figure 2.", "Fig. 3:", "Table 1", "Scheme 4" at the start of a block.
-fn caption_kind(text: &str) -> Option<&'static str> {
+pub(crate) fn caption_kind(text: &str) -> Option<&'static str> {
     let lower = text.trim_start().to_lowercase();
     let (kind, rest) = [("figure", "figure"), ("fig.", "figure"), ("fig", "figure"), ("table", "table"), ("tab.", "table"), ("scheme", "figure"), ("chart", "figure"), ("exhibit", "figure")]
         .iter()
@@ -260,7 +362,7 @@ impl Builder {
         let start = utf16_len(&self.text);
         self.text.push_str(&piece);
         let end = utf16_len(&self.text);
-        self.runs.push(Run { start, end, page, rects });
+        self.runs.push(Run { start, end, page, rects, at: None });
     }
 
     fn block(&mut self, block: &LayoutBlock, sep: &str) {
@@ -392,7 +494,7 @@ pub fn assemble(layout: &Layout) -> Document {
     let caption_for = |index: usize| -> Option<Caption> {
         let mut b = Builder::default();
         b.block(&blocks[index], "");
-        (!b.text.is_empty()).then(|| Caption { text: b.text, runs: b.runs })
+        (!b.text.is_empty()).then(|| Caption { text: b.text, runs: b.runs, ..Default::default() })
     };
     let levels: Vec<u8> = {
         let mut seen: Vec<u8> = blocks.iter().filter(|b| b.kind == "heading").filter_map(|b| b.level).collect();
@@ -405,7 +507,7 @@ pub fn assemble(layout: &Layout) -> Document {
     let mut items: Vec<Item> = Vec::new();
     let mut open: Option<(Builder, i64)> = None;
     let mut pending: Vec<Item> = Vec::new();
-    let new_item = |kind: &str, builder: Builder, page: i64| Item { id: 0, kind: kind.into(), level: None, text: builder.text, page, runs: builder.runs, crop: None, caption: None };
+    let new_item = |kind: &str, builder: Builder, page: i64| Item { kind: kind.into(), text: builder.text, page, runs: builder.runs, ..Default::default() };
     let flush = |open: &mut Option<(Builder, i64)>, pending: &mut Vec<Item>, items: &mut Vec<Item>| {
         if let Some((builder, page)) = open.take() {
             if !builder.text.is_empty() {
@@ -522,7 +624,7 @@ pub fn assemble(layout: &Layout) -> Document {
         .map(|i| OutlineEntry { item: i.id, level: i.level.unwrap_or(2), text: i.text.clone(), page: i.page })
         .collect();
     let quality = quality(&items, page_count);
-    Document { page_count, engine: layout.engine.clone(), quality, items, outline }
+    Document { page_count, engine: layout.engine.clone(), quality, items, outline, meta: None }
 }
 
 fn quality(items: &[Item], page_count: usize) -> Quality {
@@ -601,6 +703,9 @@ fn find_all(haystack: &[char], needle: &[char]) -> Vec<usize> {
 pub struct Mark {
     pub annotation_id: String,
     pub item: usize,
+    /// Which text of the item, when not its own: "caption", or a table cell "cell:row:column".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub part: Option<String>,
     pub start: usize,
     pub end: usize,
     pub color: String,
@@ -619,6 +724,7 @@ pub fn marks(document: &Document, annotations: &[Json]) -> Vec<Mark> {
         let mark = |item: usize, start: usize, end: usize| Mark {
             annotation_id: id.to_string(),
             item,
+            part: None,
             start,
             end,
             color: annotation["color"].as_str().unwrap_or("orange").to_string(),
@@ -930,7 +1036,7 @@ mod tests {
         let quote = slice16(&paragraph.text, start, end);
         let annotation = serde_json::json!({ "id": "a1", "text": quote, "color": "green", "range": { "start": { "page": 0, "index": first.0 }, "end": { "page": 1, "index": last.1 } } });
         let found = marks(&doc, &[annotation]);
-        assert_eq!(found, vec![Mark { annotation_id: "a1".into(), item: paragraph.id, start, end, color: "green".into(), comment: None }]);
+        assert_eq!(found, vec![Mark { annotation_id: "a1".into(), item: paragraph.id, part: None, start, end, color: "green".into(), comment: None }]);
         // Twice on a page and not inside the selection's rectangles: not certain.
         let twice = PageChars { page: 0, width: 600.0, height: 800.0, chars: chars("both both", 700.0) };
         assert_eq!(locate(&twice, &Piece { page: 0, text: "both".into(), rects: vec![q(0.1, 0.1, 0.1, 0.05)] }), None);

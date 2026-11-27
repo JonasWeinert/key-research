@@ -362,6 +362,26 @@ function General({
           </select>
         </Row>
       </Group>
+      <Group title="Reading" footer="Key remembers the view you used last for each kind of source. Switch with ⇧⌘R while reading.">
+        <Row label="Open PDFs in reading mode" help="settings.reading.mode" detail="The text, reflowed in your font and size. Highlights stay on the PDF.">
+          <input
+            type="checkbox"
+            className="kx-switch"
+            aria-label="Open PDFs in reading mode"
+            checked={settings.readingMode?.pdf === true}
+            onChange={(e) => onSettings({ readingMode: { web: settings.readingMode?.web === true, pdf: e.target.checked } })}
+          />
+        </Row>
+        <Row label="Open saved web pages in reading mode" detail="The article without the site around it. Pages that do not read well open as saved.">
+          <input
+            type="checkbox"
+            className="kx-switch"
+            aria-label="Open saved web pages in reading mode"
+            checked={settings.readingMode?.web === true}
+            onChange={(e) => onSettings({ readingMode: { pdf: settings.readingMode?.pdf === true, web: e.target.checked } })}
+          />
+        </Row>
+      </Group>
       <Group title="Keyboard">
         <div className="kx-settings-row kx-settings-row-wide">
           <dl className="kx-settings-keys">

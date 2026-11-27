@@ -11,6 +11,9 @@ key-embed = { path = "../key-embed" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+# Reading mode for saved web pages (web_reflow.rs): the HTML parsed exactly as a browser does.
+html5ever = "0.27"
+markup5ever_rcdom = "0.3"
 
 [dev-dependencies]
 rusqlite = { version = "0.40", features = ["bundled"] }

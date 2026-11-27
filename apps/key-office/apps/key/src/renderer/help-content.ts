@@ -125,6 +125,13 @@ export const HELP = {
       "It makes highlights, references and search more accurate. It takes about a second per page and runs on this Mac.",
     ],
   ),
+  "settings.reading.mode": explain(
+    "Reading mode",
+    [
+      "Reading mode shows a PDF or a saved web page as plain, reflowed text in the font, size and line width you choose, in light or dark. A web page shows only its article: menus, adverts, cookie notices and comments are left out.",
+      "Highlights and quotes you make in reading mode are kept on the original, at the same words, and show in both views. Press ⇧⌘R to switch between the two.",
+    ],
+  ),
   "settings.search.metadata": explain(
     "Metadata lookup",
     [

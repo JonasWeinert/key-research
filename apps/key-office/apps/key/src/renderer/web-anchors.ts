@@ -43,7 +43,7 @@ export function textIndex(root: Node) {
 export type TextIndex = ReturnType<typeof textIndex>;
 
 /** The character offset of a DOM point (a text node or an element boundary) in `index`. */
-function offsetOf(index: TextIndex, container: Node, offset: number): number {
+export function offsetOf(index: TextIndex, container: Node, offset: number): number {
   if (container.nodeType === 3) {
     const at = index.nodes.indexOf(container as Text);
     return at < 0 ? -1 : index.starts[at] + offset;
