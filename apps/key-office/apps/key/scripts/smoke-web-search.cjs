@@ -2,7 +2,7 @@
 // Web search against a local mock of OpenAlex and Semantic Scholar (no real network): an
 // ordinary search asks neither; the Web pill asks both and merges what they find; a 429
 // from Semantic Scholar shows a skeleton and is retried; a provider that stays down gets a
-// quiet "Couldn't reach … Retry" while the other's results stay; Load more pages on; a work
+// quiet "Couldn’t reach …" with a plain explanation and Retry while the other's results stay; Load more pages on; a work
 // whose DOI is in the library shows "In library"; Add to library makes a reference with its
 // details and fetches the open-access PDF.
 const { _electron: electron } = require("playwright-core");
@@ -249,7 +249,8 @@ const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host
     await web.locator(".kx-web-hit", { hasText: "Highly accurate protein" }).waitFor();
     const note = web.locator('.kx-web-note[data-provider="s2"]');
     await note.waitFor({ timeout: 20000 });
-    assert.match(await note.textContent(), /Couldn't reach Semantic Scholar/);
+    assert.match(await note.textContent(), /Couldn['’]t reach Semantic Scholar/);
+    assert.match(await note.textContent(), /Nothing is wrong with your library/, "the plain-language explanation follows");
     await shot(page, "web-error-light");
     const before = webRequests().length;
     await note.getByRole("button", { name: "Retry" }).click();
