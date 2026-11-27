@@ -83,6 +83,16 @@ fn attach_full_text(root: &Path, library: &Library, reviews: &Reviews, review: &
         return Err(format!("{} is not a file", path.display()));
     }
     let hash = key_index::file_hash(path)?;
+    // The same file again: nothing to add.
+    let same = reviews.read(review, |s, _| Ok(s.record(record).and_then(|r| r.fulltext.file.as_ref()).is_some_and(|f| f.hash == hash)))?;
+    if same {
+        if owned_temp {
+            if let Some(parent) = path.parent().filter(|p| p.starts_with(std::env::temp_dir()) && *p != std::env::temp_dir()) {
+                let _ = std::fs::remove_dir_all(parent);
+            }
+        }
+        return Ok(json!({ "same": true, "hash": hash }));
+    }
     let name = if name.trim().is_empty() { path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() } else { name.to_string() };
     let result = if let Some(source) = library.store.source_by_hash(&hash)?.filter(|s| s.trashed_at.is_none()) {
         reviews.fulltext(review, record, Some("retrieved"), None, Some(Some(&source.id)), actor)?;
@@ -697,6 +707,8 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             // Full texts.
             "review_fulltexts" => reviews.fulltext_status(&review()?)?,
             "review_fulltext_match" => json!(reviews.match_dropped(&review()?, &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
+            // A PDF caught in the review's browser for one record: is it that record's work?
+            "review_fulltext_check" => reviews.check_dropped(&review()?, text(args, "recordId"), &arg::<key_review::records::DroppedFile>(args, "file")?)?,
             "review_fulltext_csv_read" => json!(reviews.read_csv(&review()?, text(args, "text"), &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
             "review_fulltext_attach" => {
                 let path = std::path::PathBuf::from(arg::<String>(args, "path")?);

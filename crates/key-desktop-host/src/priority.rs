@@ -41,7 +41,7 @@ const INTERACTIVE: &[&str] = &[
     "review_note", "review_labels", "review_flags_clear", "review_fulltext", "review_extract", "review_extraction", "review_pair_resolve", "review_create",
     "review_rename", "review_team_save", "review_protocol_save", "review_protocol_impact", "review_complete_form", "review_parse_selection",
     "review_records_remove", "review_record_edit", "review_study_link", "review_duplicates", "review_fulltexts", "review_fulltext_bytes", "review_fulltext_info",
-    "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match",
+    "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match", "review_fulltext_check",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
