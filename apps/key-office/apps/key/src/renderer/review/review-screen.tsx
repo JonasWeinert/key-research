@@ -24,6 +24,7 @@ import type { StageProps } from "./ReviewPage";
 
 const ReviewReader = lazy(() => import("./review-reader").then((m) => ({ default: m.ReviewReader })));
 const ReviewBrowser = lazy(() => import("./review-browser").then((m) => ({ default: m.ReviewBrowser })));
+const LibraryLink = lazy(() => import("./review-library-link").then((m) => ({ default: m.LibraryLink })));
 
 type Mode = "screen" | "list" | "conflicts" | "fulltexts";
 
@@ -878,6 +879,9 @@ function CompactHeader(props: StageProps & { stage: Stage; view: RecordView; rel
         <Ids view={view} stage={stage} />
       </div>
       <div className="kx-rv-compact-tools">
+        <Suspense fallback={null}>
+          <LibraryLink {...props} view={view} reload={props.reload} />
+        </Suspense>
         {m.abstractText && (
           <Btn small quiet aria-expanded={abstract} onClick={() => setAbstract(!abstract)}>
             Abstract
@@ -977,7 +981,8 @@ function NoFullText(props: StageProps & { view: RecordView; reload: () => void }
     run(async () => {
       const result = await invoke<{ status: string; path?: string; url?: string }>("web_find_pdf_for", { doi: view.meta.doi || undefined, title: view.meta.title || undefined, url: view.meta.url || undefined }, workspaceId);
       if (result.status === "downloaded" && result.path) {
-        await api.attach(view.meta.id, result.path, `${(view.meta.title || "Full text").slice(0, 80)}.pdf`, "find", viewer, true);
+        const done = await api.attach(view.meta.id, result.path, `${(view.meta.title || "Full text").slice(0, 80)}.pdf`, "find", viewer, true);
+        void import("./review-library-link").then((m) => m.afterAttach(done, view.meta.id));
         notify("Full text added", "ok");
         reload();
         onChanged();

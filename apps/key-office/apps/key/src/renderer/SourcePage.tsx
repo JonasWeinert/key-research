@@ -26,7 +26,7 @@ import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
 import { SavePageOffer, saveSourceWebPage } from "./source-web-page";
-import { FullTextList, KeptPageOffer, useFullTexts } from "./source-full-texts";
+import { FullTextList, KeptPageOffer, ReviewLinks, useFullTexts } from "./source-full-texts";
 import { findPdf as findPdfFor, findPdfMessage } from "./find-pdf";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
@@ -782,6 +782,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         <>
           <RetractionNotice invoke={invoke} workspaceId={workspaceId} source={source} onChanged={() => void loadSource()} />
           <VersionsLine invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} />
+          <ReviewLinks invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} />
           {readingSummary(reading) && <p className="kx-reading-summary">{`${reading ? (reading.status === "read" ? "Read" : reading.status === "reading" ? "In progress" : "Unread") : ""} · ${readingSummary(reading)}`}</p>}
           {updating && (
             <MetadataUpdateSheet

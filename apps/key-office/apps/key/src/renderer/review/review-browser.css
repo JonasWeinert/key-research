@@ -65,6 +65,23 @@
 .kx-rv-browser-question span {
   color: var(--kx-text-2);
 }
+/* The record's link to its library source (review-library-link.tsx). */
+.kx-rv-library-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+  font: 500 11px var(--kx-font);
+  white-space: nowrap;
+}
+.kx-rv-library-chip:hover {
+  background: color-mix(in srgb, var(--kx-accent) 18%, transparent);
+}
 .kx-rv-browser-page {
   flex: 1 1 auto;
   min-height: 120px;

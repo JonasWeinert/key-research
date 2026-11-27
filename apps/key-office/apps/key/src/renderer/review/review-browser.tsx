@@ -12,6 +12,7 @@ import { FindPdfBanner, type FindPdfBannerOp, type FindPdfBannerState } from "..
 import type { RecordView } from "./review-api";
 import { Btn, errorText } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
+import { afterAttach } from "./review-library-link";
 import "./review-browser.css";
 
 // ── Requests from elsewhere in the review (the Full texts list) and live updates ──
@@ -135,6 +136,7 @@ export function ReviewBrowser(props: StageProps & { view: RecordView; url: strin
     async (path: string, name: string) => {
       setQuestion(undefined);
       const done = await api.attach(view.meta.id, path, name, "browser", viewer, true);
+      afterAttach(done, view.meta.id);
       queue = queue.filter((q) => q.id !== view.meta.id);
       finish((done as { same?: boolean }).same ? "This full text was attached already" : "Full text added");
     },
@@ -191,6 +193,7 @@ export function ReviewBrowser(props: StageProps & { view: RecordView; url: strin
     try {
       const saved = await invoke<{ path: string; title: string; abstractOnly?: boolean }>("saved_page_capture", { viewId: id }, workspaceId);
       const done = await api.attach(view.meta.id, saved.path, `${(saved.title || view.meta.title).slice(0, 80)}.html`, "snapshot", viewer, true);
+      afterAttach(done, view.meta.id);
       queue = queue.filter((q) => q.id !== view.meta.id);
       finish((done as { same?: boolean }).same ? "This page was attached already" : saved.abstractOnly ? "Saved the page; it may show only the abstract" : "Saved the page as the full text", saved.abstractOnly ? "error" : "ok");
     } catch (e) {

@@ -5,9 +5,13 @@
 //   - clicking the page's own PDF link attaches it to the review record (no library source),
 //     the reader shows it at once and the Full texts row says so;
 //   - closing the browser without a PDF ends the attempt and leaves the record needing one;
-//   - a PDF of another work is held back with "Attach anyway?".
+//   - a PDF of another work is held back with "Attach anyway?";
+//   - records linked to a library source (the same work) share one full text: a PDF attached
+//     in the library shows in the open review record at once, one found in the review goes to
+//     the library source (whose page then says it is in the review), and when both hold
+//     different files the person chooses which one the work keeps.
 const { electron } = require("./lib/launch.cjs");
-const { mkdtemp } = require("node:fs/promises");
+const { mkdir, mkdtemp, writeFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
@@ -25,6 +29,9 @@ async function until(check, what, timeout = 30000) {
 }
 
 const RIVERS = "Rivers and the growth of market towns";
+const BRIDGES = "Bridges and ferry crossings on lowland rivers";
+const HARBOUR = "Harbour tolls and the river trade of small ports";
+const CANALS = "Canal building and the decline of river ports";
 const GLACIERS = "Glaciers and alpine farming in the northern valleys";
 const prose = (topic, n) => Array.from({ length: n }, (_, i) => `${topic} paragraph ${i}: the records of the valleys were read and compared with care, season by season, across many years of trade and travel.`).join(" ");
 const pdfHtml = (title, authors = "Ada Example, Ben Sample") => `<!doctype html><html><head><title>${title}</title><style>body{font:11pt Times,serif;margin:0} .p{page-break-after:always}</style></head><body>
@@ -53,8 +60,9 @@ const page = (title, body) => `<!doctype html><html><head><title>${title}</title
     if (url.pathname === "/signin") return html(page("Sign in", `<h1>Sign in</h1><form method="post" action="/signin?next=${encodeURIComponent(url.searchParams.get("next") ?? "/")}"><input name="user" value="ana"><button id="go">Sign in</button></form>`));
     if (url.pathname === "/rivers/full") return html(page(RIVERS, `<h1>${RIVERS}</h1><p>Full article view.</p><p><a id="pdf" href="/files/rivers.pdf">Download PDF</a></p>`));
     if (url.pathname === "/glaciers") return html(page(GLACIERS, `<h1>${GLACIERS}</h1><p><a id="pdf" href="/files/wrong.pdf">Download PDF</a></p>`));
+    if (url.pathname === "/bridges") return html(page(BRIDGES, `<h1>${BRIDGES}</h1><p><a id="pdf" href="/files/bridges.pdf">Download PDF</a></p>`));
     if (url.pathname === "/closing") return html(page("A page with nothing", `<h1>Nothing to download here</h1>`));
-    const file = url.pathname.match(/^\/files\/(rivers|wrong)\.pdf$/);
+    const file = url.pathname.match(/^\/files\/(rivers|wrong|bridges)\.pdf$/);
     if (file && pdfs[file[1]]) {
       res.writeHead(200, { "content-type": "application/pdf", "content-length": pdfs[file[1]].length });
       return res.end(pdfs[file[1]]);
@@ -108,6 +116,14 @@ const page = (title, body) => `<!doctype html><html><head><title>${title}</title
         }
       }, html);
     pdfs.rivers = Buffer.from(await print(pdfHtml(RIVERS)), "base64");
+    pdfs.bridges = Buffer.from(await print(pdfHtml(BRIDGES)), "base64");
+    const files = {};
+    for (const [name, title] of [["harbour", HARBOUR], ["canalsA", CANALS], ["canalsB", `${CANALS}: a second copy`]]) {
+      const dir = path.join(temp, `pdf-${name}`);
+      await mkdir(dir);
+      files[name] = path.join(dir, `${name}.pdf`);
+      await writeFile(files[name], Buffer.from(await print(pdfHtml(title)), "base64"));
+    }
     pdfs.wrong = Buffer.from(await print(pdfHtml("Harbour fees and coastal shipping routes", "Dora Other")), "base64");
 
     // A review with three records at full text, none with an open copy.
@@ -119,6 +135,9 @@ const page = (title, body) => `<!doctype html><html><head><title>${title}</title
         { title: RIVERS, authors: ["Example, Ada"], year: 2024, url: "http://journal.example/rivers", abstractText: "River access and market towns." },
         { title: GLACIERS, authors: ["Sample, Ben"], year: 2021, url: "http://journal.example/glaciers", abstractText: "Glaciers and farms." },
         { title: "Ferries and fairs in coastal villages", authors: ["Coast, Cy"], year: 2019, url: "http://journal.example/closing", abstractText: "Ferries." },
+        { title: HARBOUR, authors: ["Port, Pia"], year: 2018, doi: "10.5555/harbour-tolls", abstractText: "Harbour tolls." },
+        { title: BRIDGES, authors: ["Ford, Fay"], year: 2017, doi: "10.5555/bridges", url: "http://journal.example/bridges", abstractText: "Bridges." },
+        { title: CANALS, authors: ["Lock, Lu"], year: 2016, doi: "10.5555/canals", abstractText: "Canals." },
       ],
       batch: { group: "databases", name: "Mock" },
       actor: ana,
@@ -209,6 +228,53 @@ const page = (title, body) => `<!doctype html><html><head><title>${title}</title
     await until(async () => !app.windows().some((p) => /\/closing$/.test(p.url())), "the closed browser's page gone");
     assert.equal((await call("review_fulltexts", { reviewId })).rows.find((r) => /Ferries/.test(r.title)).state, "need");
     report.closed = true;
+
+    // 4. Linked with the library: one full text for the same work, live both ways.
+    const source = (fields) => call("store_create", { source: { kind: "reference", itemType: "article", indexStatus: "skipped", ...fields } });
+    const harbourSource = await source({ title: HARBOUR, doi: "10.5555/harbour-tolls" });
+    const bridgesSource = await source({ title: BRIDGES, doi: "10.5555/bridges" });
+    // The review kept its own file for Canals before the library had the work, with another file.
+    await call("review_fulltext_attach", { reviewId, recordId: idOf(/Canal/), path: files.canalsB, name: "canals-review.pdf", origin: "upload", ownedTemp: false, actor: ana });
+    const canalsSource = await source({ title: CANALS, doi: "10.5555/canals" });
+    await call("store_attach_file", { id: canalsSource.id, path: files.canalsA });
+    await openRecord(HARBOUR);
+    const chip = shell.locator(".kx-rv-library-chip");
+    await chip.waitFor();
+    await shell.getByRole("button", { name: "Find full text" }).waitFor();
+    // a. A PDF attached in the library shows in the open review record, no reload.
+    await call("store_attach_file", { id: harbourSource.id, path: files.harbour });
+    await shell.locator(".kx-rv-reader[data-kind=pdf]").waitFor({ timeout: 30000 });
+    await shot("linked-library-file-light");
+    report.libraryToReview = true;
+    // b. A PDF found in the review goes to the linked library source.
+    await shell.getByRole("radio", { name: /Full texts/ }).click();
+    await shell.getByRole("radio", { name: "Still needed" }).click();
+    await openRecord(BRIDGES);
+    await shell.getByRole("button", { name: "Find full text" }).click();
+    await browser.waitFor();
+    web = await webPage(/\/bridges$/);
+    await (await web.waitForSelector("#pdf")).click();
+    await shell.locator(".kx-rv-reader[data-kind=pdf]").waitFor({ timeout: 40000 });
+    await until(async () => (await call("store_source", { id: bridgesSource.id }))?.filePath, "the review's PDF in the library source");
+    assert.equal((await call("review_fulltexts", { reviewId })).rows.find((r) => r.id === idOf(/Bridges/)).file, null, "one file, the library's");
+    await shell.evaluate(({ ws, id }) => window.key.tabAction("open-source-page", { workspaceId: ws, sourceId: id }), { ws: ws.id, id: bridgesSource.id });
+    await shell.locator(".kx-review-link", { hasText: "In review Rivers review (smoke)" }).waitFor();
+    await shot("source-in-review-light");
+    report.reviewToLibrary = true;
+    // c. Both hold different files: the person chooses; the review's goes to the library too.
+    await shell.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id }), { ws: ws.id, id: reviewId });
+    await shell.getByRole("radio", { name: /Full texts/ }).click();
+    await shell.getByRole("radio", { name: "All at full text" }).click();
+    await shell.locator(".kx-rv-fulltext-table button", { hasText: CANALS }).click();
+    const reconcile = shell.getByRole("dialog", { name: "Two full texts for this work" });
+    await reconcile.waitFor();
+    await shot("reconcile-light");
+    await reconcile.getByRole("button", { name: "Use the review’s file" }).click();
+    await reconcile.waitFor({ state: "detached" });
+    const texts = await call("store_full_texts", { id: canalsSource.id });
+    assert.equal(texts.length, 2, "the library keeps its own file beside the review's");
+    assert.equal((await call("review_fulltexts", { reviewId })).rows.find((r) => r.id === idOf(/Canal/)).file, null);
+    report.reconciled = true;
 
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, temp, ...report }));

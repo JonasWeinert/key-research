@@ -59,11 +59,16 @@ export function FullTexts(props: StageProps & { onOpen: (id: string) => void }) 
   const pick = useRef<HTMLInputElement>(null);
   const csvPick = useRef<HTMLInputElement>(null);
   const reload = useCallback(() => {
-    api
-      .fulltexts()
-      .then(setData)
+    // Links to the library first (a work added there since shares its file).
+    void props
+      .invoke("review_links_refresh", { reviewId: props.reviewId, actor: viewer }, props.workspaceId)
+      .catch(() => undefined)
+      .then(() => api.fulltexts())
+      .then((d) => d && setData(d))
       .catch((e) => notify(errorText(e), "error"));
-  }, [api, notify]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, notify, viewer]);
+  useEffect(() => bridge().on?.("library-changed", reload), [reload]);
   useEffect(reload, [reload]);
   useEffect(() => onFullTextChanged(reload), [reload]);
   const stopRef = useRef(false);

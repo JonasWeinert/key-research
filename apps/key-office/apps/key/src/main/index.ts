@@ -514,8 +514,12 @@ const REVIEW_READS = new Set([
   "review_extraction", "review_outcomes", "review_analyse", "review_export", "review_audit", "review_db_runs", "review_preview_file", "review_template_read",
   "review_form_templates", "review_criteria_suggestions", "review_protocol_impact", "review_duplicates", "review_fulltexts", "review_fulltext_match",
   "review_fulltext_csv_read", "review_fulltext_info", "review_fulltext_bytes", "review_parse_selection", "review_form_preview", "review_agreement",
-  "review_ai_request", "review_ai_extract_request",
+  "review_ai_request", "review_ai_extract_request", "review_fulltext_check", "review_links_for_source",
 ]);
+/** Review commands that may change the library too (a full text shared with a linked source). */
+/** Library writes a review linked to a source must hear of (its file, a merge, the trash). */
+const LIBRARY_FILE_WRITES = new Set(["store_attach_file", "store_full_text_add", "store_full_text_primary", "store_full_text_remove", "store_trash", "store_restore", "store_merge_sources", "store_merge_exact", "store_delete"]);
+const REVIEW_LIBRARY_WRITES = new Set(["review_fulltext_attach", "review_fulltext_detach", "review_fulltext_reconcile", "review_fulltext_to_library", "review_link_library", "review_links_refresh"]);
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {
   for (const w of liveShells()) w.window.webContents.send(event, value);
@@ -2965,6 +2969,9 @@ else
           // A review changed: its open tabs (this window or another) read it again.
           if (command.startsWith("review_") && !REVIEW_READS.has(command))
             emit("review-changed", { workspaceId: targetWorkspace, reviewId: args?.reviewId ?? args?.id ?? (result as any)?.reviewId });
+          // Linked records share their full text with the library: its views follow.
+          if (LIBRARY_FILE_WRITES.has(command)) emit("library-changed");
+          if (REVIEW_LIBRARY_WRITES.has(command) && !(command === "review_links_refresh" && !(result as any)?.linked && !(result as any)?.repointed)) emit("library-changed");
           if (
             [
               "workspace_save_attribute",
