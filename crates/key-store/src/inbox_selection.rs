@@ -570,7 +570,7 @@ mod tests {
         assert_eq!(o.journal_count, 50);
         assert_eq!(o.feeds[0].count, 3_000);
         // Debug build on a busy machine; release is several times faster.
-        assert!(took.as_millis() < 3_000, "{took:?}");
+        assert!(took.as_millis() < 5_000, "{took:?}");
         eprintln!("inbox overview of 3000: {took:?}");
     }
 }

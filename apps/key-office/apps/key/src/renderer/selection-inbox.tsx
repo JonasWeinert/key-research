@@ -241,7 +241,6 @@ export function InboxSelection({ invoke, workspaceId, ids, loaded, onTriage, onD
           <>
             <button
               className="kx-icon-button"
-              data-active={allRead}
               aria-pressed={allRead}
               title={allRead ? "Mark all unread" : "Mark all read"}
               aria-label={allRead ? "Mark all unread" : "Mark all read"}

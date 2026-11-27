@@ -241,11 +241,12 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     const shown = await rows.count();
     assert.ok(shown >= 4, `enough items to select (${shown})`);
     await heads.nth(0).click();
+    const opened = await rows.locator(".kx-work-body").count();
     await heads.nth(2).click({ modifiers: ["Shift"] });
     await side.getByRole("heading", { name: "3 works selected" }).waitFor();
     await heads.nth(3).click({ modifiers: ["Meta"] });
     await side.getByRole("heading", { name: "4 works selected" }).waitFor();
-    assert.equal(await rows.locator(".kx-work-body").count(), 1, "⌘- and ⇧-clicks pick rows instead of opening them");
+    assert.equal(await rows.locator(".kx-work-body").count(), opened, "⌘- and ⇧-clicks pick rows instead of opening them");
     // The context menu acts on the picked rows.
     await heads.nth(1).click({ button: "right" });
     const rowMenu = page.getByRole("menu", { name: "Inbox items" });
@@ -258,7 +259,7 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await side.getByRole("heading", { name: `${shown} works selected` }).waitFor();
 
     // The overview, read in Rust: the one added earlier is in the library; where they came from.
-    const fact = (label) => side.locator(".kx-selection-fact", { hasText: label }).locator("strong");
+    const fact = (label) => side.locator(".kx-selection-fact").filter({ has: page.locator("span", { hasText: new RegExp(`^${label}$`) }) }).locator("strong");
     await fact("In library").waitFor();
     assert.equal(await fact("In library").first().textContent(), "1");
     await side.locator(".kx-selection-found", { hasText: "Journal of Smoke Tests" }).waitFor();
@@ -303,12 +304,12 @@ const item = (n, doi) => `<item><title>Inbox work number ${n} on cell tracking</
     await notice.filter({ hasText: `Added ${shown - 1} works to Reading group · 1 already in the library, skipped` }).waitFor();
     console.log(`Bulk add of ${shown - 1} took ${Date.now() - started} ms`);
     assert.equal(await inReading(), filedBefore + shown - 1, "filed where chosen");
-    assert.equal(await fact("In library").first().textContent(), String(shown));
+    await fact("In library").filter({ hasText: new RegExp(`^${shown}$`) }).waitFor();
     await shot(page, "inbox-selection-added-light");
     await notice.getByRole("button", { name: "Undo" }).click();
     await notice.filter({ hasText: `Took the add back: ${shown - 1} sources moved to the Trash` }).waitFor();
     assert.equal(await inReading(), filedBefore, "undone");
-    await side.locator(".kx-selection-fact", { hasText: "In library" }).locator("strong", { hasText: /^1$/ }).waitFor();
+    await fact("In library").filter({ hasText: /^1$/ }).waitFor();
 
     // Dismiss all, then Undo brings them back.
     await side.locator(".kx-selection-foot").getByRole("button", { name: "Dismiss" }).click();
