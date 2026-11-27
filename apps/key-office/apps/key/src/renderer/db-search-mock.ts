@@ -2,8 +2,18 @@
 // smokes, KEY_DB_SEARCH_MOCK=1): the connectors of connectors/COMMANDS.md with made-up but
 // stable counts and records, so every screen can be used and checked. Nothing here touches
 // the network. Adding to the library goes through the real library commands.
-import { cleanQuery, makeTerm, newId } from "./db-query";
-import type { Concept, DbConnector, DbQuery, DbRecord, DbSearchApi, Estimate, ParsedQuery, Progress, QueryTerm, ReportFile, RunPage, RunSummary, SavedSearch, TermField, TermSuggestion, Translation } from "./db-search-api";
+import { cleanQuery, makeTerm, newId, readQuery, topParts, terms as termsOf } from "./db-query";
+import type { Concept, DbConnector, DbQuery, DbRecord, DbSearchApi, Estimate, ParsedQuery, Progress, QNode, QTerm, QueryFilters, QueryTerm, ReportFile, RunPage, RunSummary, SavedSearch, TermField, TermSuggestion, Translation } from "./db-search-api";
+
+/** The tree as the older AND-of-concepts shape the sample numbers are made from. */
+function legacy(q: DbQuery): { concepts: Concept[]; exclude: QTerm[]; filters: QueryFilters } {
+  const clean = cleanQuery(q);
+  const concepts = topParts(clean)
+    .filter((n) => !n.not)
+    .map((n) => (n.type === "group" ? { id: n.id, label: n.label, terms: termsOf(n).filter((t) => !t.not) } : { id: n.id, terms: [n] }));
+  const exclude = clean.expr.items.filter((n) => n.not).flatMap(termsOf);
+  return { concepts: concepts.filter((c) => c.terms.length), exclude, filters: clean.filters };
+}
 import type { Invoke } from "./library-api";
 
 const ALL: TermField[] = ["all", "title", "title_abstract", "abstract", "keywords", "subject", "fulltext", "author", "journal", "affiliation", "identifier"];
@@ -102,8 +112,15 @@ function translateFor(c: DbConnector, q: DbQuery): Translation {
     return wordOf(t);
   };
   const clean = cleanQuery(q);
-  let native = clean.concepts.map((concept) => or(concept.terms.map(render))).join(" AND ");
-  if (clean.exclude.length) native += ` NOT ${or(clean.exclude.map(render))}`;
+  const node = (n: QNode, nested: boolean): string => {
+    if (n.type === "term") return render(n);
+    const pos = n.items.filter((i) => !i.not).map((i) => node(i, true));
+    const neg = n.items.filter((i) => i.not).map((i) => node(i, true));
+    let out = pos.join(n.op === "or" ? " OR " : " AND ");
+    if (neg.length) out = `${pos.length > 1 ? `(${out})` : out} NOT ${neg.length > 1 ? `(${neg.join(" OR ")})` : neg[0]}`;
+    return nested && n.items.length > 1 ? `(${out})` : out;
+  };
+  let native = node(clean.expr, false);
   const f = clean.filters;
   if (f.yearFrom || f.yearTo) {
     if (c.id === "pubmed") native += ` AND ${f.yearFrom ?? 1800}:${f.yearTo ?? 3000}[dp]`;
@@ -117,7 +134,7 @@ function translateFor(c: DbConnector, q: DbQuery): Translation {
   const max = c.id === "wos" ? 4000 : c.id === "nber" || c.id === "iza" ? 256 : undefined;
   return { connector: c.id, native, ...(c.manual && c.manualInfo ? { manualUrl: `${c.manualInfo.url}?q=${encodeURIComponent(native)}` } : {}), chunks: [native], mode: c.supports.fields.length > 5 ? "native" : "terms", warnings: [...warnings], length: native.length, ...(max ? { maxLength: max } : {}) };
 }
-const label = (f: TermField) => ({ all: "any field", title: "titles", title_abstract: "titles and abstracts", abstract: "abstracts", keywords: "keywords", subject: "subject headings", fulltext: "full texts", author: "authors", journal: "journal names", affiliation: "affiliations", identifier: "identifiers" })[f];
+const label = (f: TermField) => ({ all: "any field", title: "titles", title_abstract: "titles and abstracts", abstract: "abstracts", keywords: "keywords", subject: "subject headings", fulltext: "full texts", author: "authors", journal: "journal names", affiliation: "affiliations", identifier: "identifiers", year: "years", type: "document types", language: "languages" })[f];
 
 // ── Counts ───────────────────────────────────────────────────────────────────────────
 
@@ -133,7 +150,7 @@ function conceptCount(c: DbConnector, concept: Concept) {
   return concept.terms.reduce((sum, t, i) => sum + termCount(c, t) * (i ? 0.7 : 1), 0);
 }
 function totalFor(c: DbConnector, q: DbQuery) {
-  const clean = cleanQuery(q);
+  const clean = legacy(q);
   if (!clean.concepts.length || c.manual) return { total: undefined, perConcept: [] as number[] };
   const perConcept = clean.concepts.map((concept) => Math.round(conceptCount(c, concept)));
   // Each further concept keeps a share of what the others found.
@@ -157,7 +174,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** The work behind index `n` of the shared pool: databases that find the same `n` found the same work. */
 function poolWork(q: DbQuery, n: number) {
-  const clean = cleanQuery(q);
+  const clean = legacy(q);
   const pick = (terms: QueryTerm[], salt: string) => terms[hash(salt) % Math.max(1, terms.length)]?.text ?? "evidence";
   const a = pick(clean.concepts[0]?.terms ?? [], `a${n}`);
   const b = clean.concepts[1] ? pick(clean.concepts[1].terms, `b${n}`) : "outcomes";
@@ -340,7 +357,7 @@ export function parseBoolean(text: string): ParsedQuery {
   }
   const concepts = conceptsOf(main);
   if (!concepts) return { raw: text, error: "This query nests AND inside OR, which blocks cannot show; it is kept as the database's own query." };
-  return { query: { concepts: concepts.map((terms) => ({ id: newId("c"), terms })), exclude, filters: {} }, warnings };
+  return { query: readQuery({ concepts: concepts.map((terms) => ({ terms })), exclude, filters: {} }), warnings };
 }
 
 // ── The API ──────────────────────────────────────────────────────────────────────────
@@ -550,6 +567,18 @@ export function mockDbSearchApi(invoke: Invoke, workspaceId: string): DbSearchAp
       return { added: results.filter((r) => r.sourceId && !r.existed).length, existed: results.filter((r) => r.existed).length, results };
     },
     parse: async (text) => parseBoolean(text),
+    // Reading the text syntax is the host's even with sample data (no network involved).
+    parseText: (text) => invoke("db_query_parse", { text, defaultField: "title_abstract" }, workspaceId),
+    formatTree: (tree) => invoke<{ text: string }>("db_query_format", { tree, defaultField: "title_abstract" }, workspaceId).then((r) => r.text),
+    strategy: async (from, format) => {
+      const run = "runId" in from ? runs.get(from.runId) : undefined;
+      const query = run ? run.query : "query" in from ? from.query : undefined;
+      const ids = run ? run.progress.map((p) => p.connector) : "connectors" in from ? from.connectors : [];
+      if (!query) throw new Error("This search is no longer available. Run it again.");
+      const lines = ["## Search strategy (sample data)", "", ...connectorsById(ids).flatMap((c) => [`### ${c.name}`, "", `\`${translateFor(c, query).native}\``, ""])];
+      const content = format === "json" ? JSON.stringify({ format: "key-search-strategy", version: 1, sample: true, rerun: { query: cleanQuery(query), connectors: ids } }, null, 2) : lines.join("\n");
+      return { filename: `search-strategy.${format === "markdown" ? "md" : format === "text" ? "txt" : format}`, mime: "text/plain", content };
+    },
     suggest: async (text) => {
       const q = text.trim().toLowerCase();
       if (q.length < 2) return [];
