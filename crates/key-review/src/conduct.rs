@@ -58,8 +58,6 @@ pub struct StdB {
     pub xpilots: Vec<crate::xpilot::XPilot>,
     pub piloted: Vec<crate::xpilot::FormPiloted>,
     pub contacts: Vec<crate::xpilot::Contact>,
-    /// Risk-of-bias assessments seen (std-C's `rob.*` events): record → assessors.
-    pub rob: BTreeMap<String, BTreeSet<String>>,
 }
 
 /// Folds std-B's events (and what they read from others) into `StdB`. Called for every event
@@ -91,14 +89,6 @@ pub fn observe(s: &mut StdB, e: &Event) {
                 c.at = e.at;
                 c.actor = e.actor.clone();
                 s.retraction_checks.push(c);
-            }
-        }
-        // std-C's independent assessments: a completed assessment or an answer (not the tool
-        // choice `rob.study`, nor the consensus `rob.final`).
-        "rob.answer" | "rob.complete" if e.kind == "rob.answer" || p.get("complete").and_then(Json::as_bool).unwrap_or(false) => {
-            let study = e.record_id.clone().or_else(|| p.get("study").and_then(Json::as_str).map(str::to_string));
-            if let Some(r) = study.filter(|_| e.actor != "system") {
-                s.rob.entry(r).or_default().insert(e.actor.clone());
             }
         }
         _ => {}
@@ -328,10 +318,21 @@ pub fn checks(state: &State, now: i64, outcomes: &[String]) -> Vec<Warning> {
             push("form-pilot", "MECIR C43 · Campbell 5", "Extraction form not piloted", "The forms were not tried on a few studies by everyone who extracts before the main extraction. A pilot shows unclear fields early and gives the agreement to report.".into(), "Run an extraction pilot", "xpilot", MECIR, "warn");
         }
         let rob_forms: Vec<&Form> = state.protocol.forms.iter().filter(|f| is_rob_form(f)).collect();
-        if rob_forms.is_empty() && state.std_b.rob.is_empty() {
+        // std-C's assessments (rob.rs): study → the people who assessed it independently.
+        let mut rob: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for (k, a) in &state.rob.assessments {
+            let who = rob.entry(k.study.as_str()).or_default();
+            for (actor, w) in &a.by {
+                if actor != "system" && actor != "ai" && (w.complete || !w.answers.is_empty() || !w.judgements.is_empty()) {
+                    who.insert(actor.as_str());
+                }
+            }
+        }
+        rob.retain(|_, who| !who.is_empty());
+        if rob_forms.is_empty() && rob.is_empty() {
             push("risk-of-bias", "MECIR C52 · Campbell 5", "No risk-of-bias assessment", "The review has no risk-of-bias form or assessment for its included studies. Cochrane assesses risk of bias for each result that feeds the conclusions.".into(), "Add a risk-of-bias form (Setup › Forms)", "setup", MECIR, "warn");
         } else {
-            let single = if !state.std_b.rob.is_empty() { included.iter().any(|r| state.std_b.rob.get(&r.id).is_some_and(|who| who.len() < 2)) } else { rules.extractors < 2 };
+            let single = if !rob.is_empty() { included.iter().any(|r| rob.get(r.id.as_str()).is_some_and(|who| who.len() < 2)) } else { rules.extractors < 2 };
             if single {
                 push("risk-of-bias-dual", "MECIR C53", "Risk of bias assessed by one person", "Cochrane expects risk of bias to be assessed by two people independently, with a set way to resolve disagreements.".into(), "Have a second person assess risk of bias", "extract", MECIR, "info");
             }

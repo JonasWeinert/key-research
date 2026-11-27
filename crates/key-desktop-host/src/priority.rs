@@ -49,6 +49,10 @@ const INTERACTIVE: &[&str] = &[
     // std-A: reporting edits typed into fields
     "review_checklist_note", "review_search_source", "review_search_peer_review", "review_search_prior", "review_protocol_register",
     "review_fulltext_attach", "review_fulltext_detach", "review_fulltext_match", "review_fulltext_check",
+    // std-C: risk of bias and certainty, assessed key by key.
+    "review_rob_overview", "review_rob_assessment", "review_rob_answer", "review_rob_evidence", "review_rob_complete", "review_rob_final",
+    "review_grade_outcome", "review_grade_set",
+    // end std-C
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but

@@ -26,8 +26,8 @@ pub fn facts(state: &State) -> Json {
     let _ = state;
     let mut out = Map::new();
     merge(&mut out, crate::conduct::reporting_facts(state));
-    // std-C: replace Json::Null with crate::rob::reporting_facts(state)
-    merge(&mut out, Json::Null);
+    // std-C: risk of bias ("rob") and certainty ("grade").
+    merge(&mut out, crate::rob::reporting_facts(state));
     // std-D: replace Json::Null with crate::interop::reporting_facts(state)
     merge(&mut out, Json::Null);
     Json::Object(out)

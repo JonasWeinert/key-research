@@ -325,6 +325,10 @@ pub struct State {
     pub std_b: crate::conduct::StdB,
     // std-A: registration, checklist notes and PRISMA-S details (reporting.rs).
     pub reporting: crate::reporting::Reporting,
+    // std-C: risk of bias (rob.rs) and certainty of evidence (grade.rs).
+    pub rob: crate::rob::RobState,
+    pub grade: crate::grade::GradeState,
+    // end std-C
 }
 
 #[derive(Deserialize, Default)]
@@ -366,6 +370,9 @@ impl State {
             std_b: Default::default(),
             // std-A
             reporting: Default::default(),
+            // std-C
+            rob: Default::default(),
+            grade: Default::default(),
         }
     }
 
@@ -803,6 +810,10 @@ impl State {
                 let version = self.version.clone();
                 self.reporting.apply(e, &version);
             }
+            // std-C: risk of bias and certainty of evidence.
+            k if k.starts_with("rob.") => self.rob.apply(e),
+            k if k.starts_with("grade.") => self.grade.apply(e),
+            // end std-C
             _ => {}
         }
     }

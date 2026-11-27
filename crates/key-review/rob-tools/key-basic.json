@@ -1,0 +1,69 @@
+{
+  "id": "key-basic",
+  "name": "Key basic checklist (any design)",
+  "short": "Key basic",
+  "version": "1",
+  "design": "Any study design",
+  "level": "result",
+  "url": "",
+  "about": "Key's own short checklist, written for Key and not taken from any published instrument. Use it for a quick, transparent appraisal, or as a starting point for your own tool; for a Cochrane-style review use the tool your protocol names.",
+  "licence": "Written for Key; MIT, like Key.",
+  "optionSets": {
+    "yn": [
+      { "id": "yes", "label": "Yes" },
+      { "id": "partly", "label": "Partly" },
+      { "id": "no", "label": "No" },
+      { "id": "unknown", "label": "Can't tell" }
+    ]
+  },
+  "levels": [
+    { "id": "low", "label": "Low concern", "tone": "green", "symbol": "plus", "common": "low" },
+    { "id": "some", "label": "Some concern", "tone": "amber", "symbol": "minus", "common": "some" },
+    { "id": "high", "label": "High concern", "tone": "red", "symbol": "cross", "common": "high" }
+  ],
+  "domains": [
+    {
+      "id": "groups", "short": "G", "name": "Groups compared",
+      "prompt": "Whether the people compared differ only in what the study is about.",
+      "rule": { "kind": "worst", "map": ["low", "some", "high"] },
+      "questions": [
+        { "id": "q1", "text": "Is it clear how each person ended up in their group?", "options": "yn", "weights": { "yes": 0, "partly": 1, "no": 2, "unknown": 1 } },
+        { "id": "q2", "text": "Apart from what is being studied, do the groups look much the same?", "options": "yn", "weights": { "yes": 0, "partly": 1, "no": 2, "unknown": 1 } }
+      ]
+    },
+    {
+      "id": "measures", "short": "M", "name": "Measurement",
+      "prompt": "Whether everyone was measured in the same, trustworthy way.",
+      "rule": { "kind": "worst", "map": ["low", "some", "high"] },
+      "questions": [
+        { "id": "q1", "text": "Was this result measured the same way in every group?", "options": "yn", "weights": { "yes": 0, "partly": 1, "no": 2, "unknown": 1 } },
+        { "id": "q2", "text": "Could the people measuring it have been swayed by knowing who was in which group?", "options": "yn", "weights": { "yes": 2, "partly": 1, "no": 0, "unknown": 1 } }
+      ]
+    },
+    {
+      "id": "complete", "short": "C", "name": "Completeness",
+      "prompt": "Whether the result covers the people it should.",
+      "rule": { "kind": "worst", "map": ["low", "some", "high"] },
+      "questions": [
+        { "id": "q1", "text": "Does the result include nearly everyone who took part?", "options": "yn", "weights": { "yes": 0, "partly": 1, "no": 2, "unknown": 1 } }
+      ]
+    },
+    {
+      "id": "reporting", "short": "R", "name": "Reporting",
+      "prompt": "Whether what is reported is what the study meant to report.",
+      "rule": { "kind": "worst", "map": ["low", "some", "high"] },
+      "questions": [
+        { "id": "q1", "text": "Does this result match what the study said beforehand it would measure?", "options": "yn", "weights": { "yes": 0, "partly": 1, "no": 2, "unknown": 1 } }
+      ]
+    },
+    {
+      "id": "other", "short": "O", "name": "Anything else",
+      "prompt": "Funding, early stopping, an unusual analysis or anything else that worries you.",
+      "rule": { "kind": "worst", "map": ["low", "some", "high"] },
+      "questions": [
+        { "id": "q1", "text": "Is there another reason to doubt this result?", "options": "yn", "weights": { "yes": 2, "partly": 1, "no": 0, "unknown": 1 } }
+      ]
+    }
+  ],
+  "overall": { "kind": "worst", "note": "Suggested as the least favourable domain." }
+}

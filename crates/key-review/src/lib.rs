@@ -24,6 +24,11 @@ pub mod report_text;
 pub mod reporting;
 pub mod reporting_hooks;
 pub mod search_report;
+// std-C: risk of bias, certainty of evidence (GRADE) and their host commands.
+pub mod certainty;
+pub mod grade;
+pub mod rob;
+// end std-C
 
 // std-B: citation chasing, AI-use audit, conduct checks, extraction pilots and contacts.
 pub mod ai_audit;
@@ -44,3 +49,6 @@ mod tests_std_b;
 // std-A
 #[cfg(test)]
 mod tests_reporting;
+// std-C
+#[cfg(test)]
+mod tests_certainty;

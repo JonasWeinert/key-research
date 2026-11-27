@@ -79,6 +79,17 @@ pub const KINDS: &[&str] = &[
     "search.source",
     "search.peer_review",
     "search.prior",
+    // std-C: risk of bias (rob.rs) and certainty of evidence (grade.rs).
+    "rob.tool",
+    "rob.setup",
+    "rob.study",
+    "rob.answer",
+    "rob.evidence",
+    "rob.complete",
+    "rob.final",
+    "grade.set",
+    "grade.order",
+    // end std-C
 ];
 
 pub fn now_ms() -> i64 {

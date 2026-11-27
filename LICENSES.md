@@ -64,6 +64,26 @@ will be reimplemented separately. Git history keeps their provenance and licence
 | html5ever 0.27 and markup5ever_rcdom 0.3 (Servo project; reading mode for saved web pages parses snapshots with them, `crates/key-index/src/web_reflow.rs`) | MIT OR Apache-2.0 (Key uses MIT) | `THIRD-PARTY-NOTICES.txt` §2 | yes (host) |
 | GPUI reader graph (`crates/key-*-gpui`, `experiments/`) | see `THIRD_PARTY_NOTICES.md` and `scripts/audit-licenses.sh` | — | not in the Electron app |
 
+## Risk-of-bias tools (`crates/key-review/rob-tools/`)
+
+Key ships the *structure* of published risk-of-bias and appraisal tools (its own neutral domain
+labels, a judgement scale, a worst-domain default for the overall judgement and a link) and none
+of their text: no signalling questions, no paraphrases of them, no decision algorithms. The
+assessor answers with the official tool open. Licences as checked on 2026-11-27:
+
+| Tool | Published by | Licence found | Source checked | What Key ships |
+|---|---|---|---|---|
+| RoB 2 | riskofbias.info (the authors) | CC BY-NC-ND 4.0 | https://www.riskofbias.info/welcome/rob-2-0-tool | structure only |
+| ROBINS-I (v2) | riskofbias.info | CC BY-NC-ND 4.0 (the same statement covers RoB 2, ROBINS-I, ROBINS-E, ROB-ME) | https://www.riskofbias.info/welcome/rob-2-0-tool | structure only |
+| ROBINS-E | riskofbias.info | CC BY-NC-ND 4.0 (as above) | https://www.riskofbias.info/welcome/rob-2-0-tool | structure only |
+| Newcastle–Ottawa Scale | Ottawa Hospital Research Institute | none stated for the scale; site "All rights reserved" | https://www.ohri.ca/en/who-we-are/core-facilities-and-platforms/ottawa-methods-centre/newcastle-ottawa-scale | structure only |
+| QUADAS-2 | University of Bristol | none stated for the tool; site "All rights reserved"; listed as superseded by QUADAS-3 | https://www.bristol.ac.uk/population-health-sciences/projects/quadas/history/quadas-2/ | structure only |
+| JBI critical appraisal checklists | JBI | none stated on the tools page | https://jbi.global/critical-appraisal-tools | not shipped (a checklist has no structure apart from its items) |
+| Key basic checklist | Key | MIT (written for Key, not derived from an instrument) | — | full, with its own questions |
+
+A reviewer or institution that holds the rights to a fuller version imports it as a tool
+definition (JSON) into their own review; it is stored in that review, not in Key.
+
 ## What is not MIT, and why
 
 - **CSL styles and locales**: CC BY-SA 3.0 data, credited per file, shipped as separate data

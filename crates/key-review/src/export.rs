@@ -219,6 +219,9 @@ impl Reviews {
                     let (n, c, m) = crate::reporting_hooks::export(state, k)?;
                     (n, c, m)
                 }
+                // std-C: risk of bias and certainty (rob-csv, rob-covariates, grade-csv, sof-csv, sof-md, sof-html).
+                k if crate::certainty::EXPORTS.contains(&k) => crate::certainty::export(state, conn, k, &base).unwrap_or_else(|| Err(format!("Unknown export {k}")))?,
+                // end std-C
                 other => return Err(format!("Unknown export {other}")),
             };
             Ok(json!({ "filename": name, "content": content, "mime": mime }))

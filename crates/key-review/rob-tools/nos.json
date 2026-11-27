@@ -1,0 +1,23 @@
+{
+  "id": "nos",
+  "name": "Cohort studies (Newcastle–Ottawa structure)",
+  "short": "NOS",
+  "version": "2",
+  "design": "Cohort studies",
+  "level": "study",
+  "url": "https://www.ohri.ca/en/who-we-are/core-facilities-and-platforms/ottawa-methods-centre/newcastle-ottawa-scale",
+  "about": "Key provides the assessment structure: the scale's three parts and a rating per part. The items and how stars are awarded are in the official scale: open it beside Key, score there, and record each part's rating and its basis (for example the stars given) here.",
+  "licence": "The Newcastle–Ottawa Scale is published by the Ottawa Hospital Research Institute; the page states no licence for the scale (\"© 2025 Ottawa Hospital Research Institute. All rights reserved.\" for the site; checked 2026-11-27 at https://www.ohri.ca/en/who-we-are/core-facilities-and-platforms/ottawa-methods-centre/newcastle-ottawa-scale). Treated as restricted: Key ships none of its text.",
+  "optionSets": {},
+  "levels": [
+    { "id": "good", "label": "Good", "tone": "green", "symbol": "plus", "common": "low" },
+    { "id": "fair", "label": "Fair", "tone": "amber", "symbol": "minus", "common": "some" },
+    { "id": "poor", "label": "Poor", "tone": "red", "symbol": "cross", "common": "high" }
+  ],
+  "domains": [
+    { "id": "selection", "short": "S", "name": "Selection", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "comparability", "short": "C", "name": "Comparability", "prompt": "", "questions": [], "rule": { "kind": "manual" } },
+    { "id": "outcome", "short": "O", "name": "Outcome", "prompt": "", "questions": [], "rule": { "kind": "manual" } }
+  ],
+  "overall": { "kind": "worst", "note": "Key's default suggestion is the lowest of the three ratings; use your protocol's conversion of stars." }
+}

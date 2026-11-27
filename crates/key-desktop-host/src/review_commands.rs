@@ -898,6 +898,9 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 let (filename, content, mime) = reviews.read(&id, |state, _| key_review::reporting_hooks::export_with(state, text(args, "kind"), &strategies))?;
                 json!({ "filename": filename, "content": content, "mime": mime })
             }
+            // std-C: risk of bias and certainty of evidence (key_review::certainty).
+            c if c.starts_with("review_rob_") || c.starts_with("review_grade_") => key_review::certainty::command(reviews, &review()?, c, args)?,
+            // end std-C
             _ => return Err(format!("Unknown Key command: {command}")),
         })
     })();

@@ -567,13 +567,13 @@ fn main_items(c: &Ctx) -> Vec<Item> {
     } else if c.scoping() {
         na(i, SCOPING_NA)
     } else if !c.plan("certainty").is_empty() {
-        let mut x = not_recorded(i, "Certainty of evidence (GRADE, in Analysis)", Some(Link::to("Certainty", "analysis", Some("certainty"))));
+        let mut x = not_recorded(i, "Certainty of evidence (GRADE, the Certainty view)", Some(Link::to("Certainty", "certainty", None)));
         x.status = "partly".into();
         x.rule = "Planned in the protocol; the certainty assessment is not recorded yet.".into();
         x.draft = Some(c.plan("certainty"));
         x
     } else {
-        not_recorded(i, "Certainty of evidence (GRADE, in Analysis)", Some(Link::to("Certainty", "analysis", Some("certainty"))))
+        not_recorded(i, "Certainty of evidence (GRADE, the Certainty view)", Some(Link::to("Certainty", "certainty", None)))
     });
 
     // Results
@@ -659,7 +659,7 @@ fn main_items(c: &Ctx) -> Vec<Item> {
     let i = mk("21", "Results", "Reporting biases", "Present the assessments of risk of bias from missing results.");
     out.push(if c.scoping() { na(i, SCOPING_NA) } else if !pb.is_empty() { done(i, "From the analysis.", None) } else if has_analysis { not_recorded(i, "Small-study and publication-bias results (Analysis)", Some(Link::to("Analysis", "analysis", None))) } else { gap(i, "missing", "No synthesis yet.", "Analyse an outcome", Link::to("Analysis", "analysis", None)) });
     let i = mk("22", "Results", "Certainty of evidence", "Present the certainty of the evidence for each outcome.");
-    out.push(if let Some(t) = c.fact_text("/grade/results") { done(i, "From the certainty assessment.", Some(t)) } else if c.scoping() { na(i, SCOPING_NA) } else { not_recorded(i, "Certainty of evidence (GRADE)", Some(Link::to("Certainty", "analysis", Some("certainty")))) });
+    out.push(if let Some(t) = c.fact_text("/grade/results") { done(i, "From the certainty assessment.", Some(t)) } else if c.scoping() { na(i, SCOPING_NA) } else { not_recorded(i, "Certainty of evidence (GRADE)", Some(Link::to("Certainty", "certainty", None))) });
 
     // Discussion
     out.push(manuscript(mk("23a", "Discussion", "Interpretation", "Interpret the results in the context of other evidence."), None));
