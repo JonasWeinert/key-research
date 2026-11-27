@@ -361,3 +361,81 @@
   background: var(--kx-accent);
   color: var(--kx-accent-ink);
 }
+
+/* Reading mode and Find in the reader's bar (ReadingMode.tsx draws the text). */
+.kx-web-reader-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.kx-web-reader-bar .kx-web-reader-count {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 3px;
+  width: auto;
+  min-width: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.kx-web-reader-divider {
+  width: 0.5px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--kx-line);
+}
+.kx-web-find {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 340px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  font-size: 13px;
+}
+.kx-web-find-icon {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-web-find input {
+  flex: 1;
+  min-width: 0;
+  margin-left: 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--kx-text);
+  font: inherit;
+}
+.kx-web-find [role="status"] {
+  flex: none;
+  margin: 0 4px;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.kx-web-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 45;
+  max-width: min(520px, calc(100% - 48px));
+  padding: 9px 14px;
+  transform: translateX(-50%);
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  color: var(--kx-text);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+}

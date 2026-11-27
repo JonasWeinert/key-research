@@ -1,11 +1,13 @@
-// Reading mode: the PDF as clean, reflowed text. The host assembles the text from the
-// structure layout analysis stored for the PDF (key-index reflow.rs) and maps places and
-// selections back to the page (store_reflow_document, store_reflow_locate); this view only
-// displays it, over the page view, which stays loaded underneath. Highlights show on their words
-// (CSS Custom Highlights, so the text stays one node per block); a selection becomes a highlight
-// stored at its real place in the PDF, or, when the host cannot place it for certain, the page
-// view opens at that spot. Typography follows the user's choice; colours follow the app's theme
-// (this is Key's rendering of the text; the page view itself is never re-themed).
+// Reading mode: a PDF or a saved web page as clean, reflowed text. The host assembles the text:
+// a PDF's from the structure layout analysis stored for it (key-index reflow.rs;
+// store_reflow_document, store_reflow_locate), a web page's from its saved snapshot (key-index
+// web_reflow.rs; store_web_reflow_*), in one document shape. This view only displays it, over
+// the original view, which stays loaded underneath. Highlights show on their words (CSS Custom
+// Highlights, so the text stays the item's own); a selection becomes a highlight stored at its
+// real place in the original, or, when the host cannot place it for certain, the original view
+// opens at that spot. Typography follows the user's choice (one setting for every reader);
+// colours follow the app's theme (this is Key's rendering of the text; the original is never
+// re-themed).
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { PdfReaderHandle } from "@key-reader/pdfjs/PdfJsBenchmarkApp";
@@ -21,6 +23,26 @@ interface Run {
   end: number;
   page: number;
   rects: Rect[];
+  /** A web page's: where the run's text starts in the page's text. */
+  at?: number;
+}
+export interface Span {
+  start: number;
+  end: number;
+  kind: "em" | "strong" | "code" | "sup" | "sub" | "link" | "cite" | "math" | "image";
+  href?: string;
+  target?: number;
+  math?: string;
+  resource?: number;
+  alt?: string;
+}
+interface Cell {
+  text: string;
+  runs: Run[];
+  spans?: Span[];
+  header: boolean;
+  colspan?: number;
+  rowspan?: number;
 }
 interface Item {
   id: number;
@@ -30,7 +52,13 @@ interface Item {
   page: number;
   runs: Run[];
   crop?: { page: number; rect: Rect };
-  caption?: { text: string; runs: Run[] };
+  caption?: { text: string; runs: Run[]; spans?: Span[] };
+  spans?: Span[];
+  images?: { resource?: number; alt: string; width?: number; height?: number }[];
+  table?: { rows: Cell[][] };
+  math?: string;
+  marker?: string;
+  anchors?: string[];
 }
 interface ReflowDocument {
   pageCount: number;
@@ -38,21 +66,25 @@ interface ReflowDocument {
   quality: { level: "good" | "poor" | "empty"; reason?: string };
   items: Item[];
   outline: { item: number; level: number; text: string; page: number }[];
+  meta?: { title?: string; byline?: string; date?: string; site?: string; url?: string };
 }
 interface Mark {
   annotationId: string;
   item: number;
+  part?: string;
   start: number;
   end: number;
   color: string;
   comment?: string;
 }
-interface Reply {
+export interface ReadingReply {
   status: "ready" | "missing" | "running" | "unsupported";
   running?: boolean;
   document?: ReflowDocument;
   marks?: Mark[];
   at?: number | null;
+  /** A web page's text: its length and checksum, to compare with the reader's own. */
+  text?: { length: number; hash: number };
 }
 interface Located {
   certain: boolean;
@@ -61,6 +93,30 @@ interface Located {
   text: string;
   range?: { start: { page: number; index: number }; end: { page: number; index: number } };
   rects?: Rect[];
+}
+/** A stretch of reading-mode text: an item's own text (part "") or its "caption" or a table
+ *  cell ("cell:row:column"), with UTF-16 offsets. */
+export interface Stretch {
+  item: number;
+  part?: string;
+  start: number;
+  end: number;
+}
+export interface ReadingSelection extends Stretch {
+  part: string;
+  text: string;
+}
+
+/** What a saved web page's reader does for reading mode (WebPageReader.tsx). */
+export interface WebReadingBackend {
+  load(first: boolean): Promise<ReadingReply>;
+  /** A picture of the page, by its resource number (the page's own inlined copy). */
+  resource(n: number): Promise<string>;
+  /** Highlights the selection on the page: its id, or null when Key cannot place it for certain. */
+  highlight(selection: ReadingSelection, color: HighlightColor): Promise<string | null>;
+  cite(selection: ReadingSelection): Promise<void>;
+  copy(selection: ReadingSelection): Promise<void>;
+  openLink(href: string): void;
 }
 
 export interface Typography {
@@ -109,7 +165,7 @@ export function useTypography(): [Typography, (next: Typography) => void] {
 }
 
 /** The "Aa" popover: size, line width, spacing and font. */
-export function TypographyPopover({ anchor, value, onChange, onClose }: { anchor: HTMLElement; value: Typography; onChange: (t: Typography) => void; onClose: () => void }) {
+export function TypographyPopover({ anchor, value, onChange, onClose, original = "PDF" }: { anchor: HTMLElement; value: Typography; onChange: (t: Typography) => void; onClose: () => void; original?: "PDF" | "web page" }) {
   const box = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLElement | null>(anchor);
   anchorRef.current = anchor;
@@ -164,20 +220,23 @@ export function TypographyPopover({ anchor, value, onChange, onClose }: { anchor
           { id: "relaxed", label: "Relaxed" },
         ]}
       />
-      <p className="kx-reading-popover-hint">Light or dark follows Key’s appearance. The page view always shows the PDF as printed.</p>
+      <p className="kx-reading-popover-hint">
+        {original === "PDF" ? "Light or dark follows Key’s appearance. The page view always shows the PDF as printed." : "Light or dark follows Key’s appearance. The original view always shows the page as it was saved."}
+      </p>
     </div>,
     portalRoot(),
   );
 }
 
 /** The outline in reading mode: headings, each scrolling to its place. */
-export function ContentsPopover({ anchor, entries, onPick, onClose }: { anchor: HTMLElement; entries: ReflowDocument["outline"]; onPick: (item: number) => void; onClose: () => void }) {
+export function ContentsPopover({ anchor, entries, onPick, onClose, original = "PDF" }: { anchor: HTMLElement; entries: ReflowDocument["outline"]; onPick: (item: number) => void; onClose: () => void; original?: "PDF" | "web page" }) {
   const box = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLElement | null>(anchor);
   anchorRef.current = anchor;
   useDismiss(true, { refs: [box, anchorRef], onDismiss: onClose, scroll: false });
   const r = anchor.getBoundingClientRect();
   const left = Math.max(8, Math.min(r.left + r.width / 2 - 160, innerWidth - 328));
+  const pages = original === "PDF";
   return createPortal(
     <div ref={box} className="kx-reading-popover kx-reading-contents" role="dialog" aria-label="Contents" style={{ left, top: r.bottom + 8 }}>
       {entries.length ? (
@@ -187,6 +246,7 @@ export function ContentsPopover({ anchor, entries, onPick, onClose }: { anchor: 
               type="button"
               key={entry.item}
               className="kx-reading-contents-row"
+              data-level={Math.min(entry.level, 4)}
               style={{ paddingLeft: 10 + (Math.min(entry.level, 4) - 1) * 14 }}
               onClick={() => {
                 onPick(entry.item);
@@ -194,12 +254,12 @@ export function ContentsPopover({ anchor, entries, onPick, onClose }: { anchor: 
               }}
             >
               <span>{entry.text}</span>
-              <span className="kx-reading-contents-page">{entry.page + 1}</span>
+              {pages && <span className="kx-reading-contents-page">{entry.page + 1}</span>}
             </button>
           ))}
         </nav>
       ) : (
-        <p className="kx-reading-popover-hint">Key found no headings in this PDF.</p>
+        <p className="kx-reading-popover-hint">Key found no headings in this {original}.</p>
       )}
     </div>,
     portalRoot(),
@@ -207,11 +267,14 @@ export function ContentsPopover({ anchor, entries, onPick, onClose }: { anchor: 
 }
 
 export interface ReadingModeHandle {
-  /** Where the top of the reading view is in the PDF (to open the page view there). */
-  place(): { page: number; top: number } | null;
+  /** Where the top of the reading view is in the original (to open it there): a PDF's page and
+   *  fraction down it; a web page's offset into its text. */
+  place(): { page: number; top: number; offset?: number } | null;
   setQuery(query: string): void;
   step(direction: number): void;
   scrollToItem(item: number): void;
+  /** Brings stretches of the text into view and lights them (a search hit, a highlight). */
+  showPassage(stretches: Stretch[], keep?: boolean): boolean;
 }
 
 export interface ReadingModeState {
@@ -224,33 +287,105 @@ export interface ReadingModeState {
 }
 
 interface Props {
-  hash: string;
-  reader: RefObject<PdfReaderHandle | null>;
+  /** A PDF: its hash and page view. */
+  hash?: string;
+  reader?: RefObject<PdfReaderHandle | null>;
+  /** A saved web page: its reader's side of reading mode. */
+  web?: WebReadingBackend;
   /** Where the page view was when reading mode opened. */
   start: { page: number; fraction: number };
   typography: Typography;
   invoke: <T>(command: string, args?: unknown) => Promise<T>;
   /** Analyses the PDF again with layout analysis (user-triggered, high priority). */
   analyse?: () => Promise<void>;
-  /** Back to the page view, at a place (and the passage to show there). */
-  onExit(place?: { page: number; top?: number; quote?: string }): void;
+  /** Back to the original view, at a place (and the passage to show there). */
+  onExit(place?: { page: number; top?: number; quote?: string; offset?: number }): void;
   onState(state: ReadingModeState): void;
   onNotice(message: string): void;
+  /** The text does not read well: say why (the caller stays in the original view). Without it,
+   *  reading mode says so itself and offers the text anyway. */
+  onUnreadable?(reason: string): void;
   onCite?(passage: { text: string; page: number; rects: number[][]; color?: string }): void;
   onAddToNote?(passage: { text: string; page: number; color?: string }): void;
 }
 
-const fold = (s: string) => s.toLocaleLowerCase();
+/** Case and no-break spaces aside, as Find compares. */
+const fold = (s: string) => s.toLocaleLowerCase().replace(/ /g, " ");
 
-/** Which item and offset a DOM point in the article is at. */
+/** The texts of an item a reader can find, select and highlight in. */
+function textParts(item: Item, web: boolean): { part: string; text: string }[] {
+  if (!web) {
+    const captioned = item.kind === "table" || item.kind === "equation" || item.kind === "algorithm";
+    return captioned ? [{ part: "caption", text: item.caption?.text ?? "" }] : [{ part: "", text: item.text }];
+  }
+  const out = [{ part: "", text: item.text }];
+  if (item.caption) out.push({ part: "caption", text: item.caption.text });
+  item.table?.rows.forEach((row, r) => row.forEach((cell, c) => out.push({ part: `cell:${r}:${c}`, text: cell.text })));
+  return out.filter((p) => p.text);
+}
+function partOf(item: Item | undefined, part: string): { text: string; runs: Run[] } | undefined {
+  if (!item) return undefined;
+  if (!part) return item;
+  if (part === "caption") return item.caption;
+  const [, r, c] = part.split(":").map(Number);
+  return item.table?.rows[r]?.[c];
+}
+
+/** The element holding an item's text (or caption, or a cell). */
 function textTarget(node: Node | null): HTMLElement | null {
   const el = node instanceof HTMLElement ? node : node?.parentElement;
-  return el?.closest<HTMLElement>("[data-text]") ?? null;
+  return el?.closest<HTMLElement>("[data-text], [data-caption]") ?? null;
 }
+/** Characters of an element's text: its text nodes, and pictures standing for one character. */
+function countChars(node: Node): number {
+  if (node.nodeType === Node.TEXT_NODE) return (node as Text).data.length;
+  if (node instanceof Element && node.hasAttribute("data-char")) return 1;
+  let n = 0;
+  for (const child of node.childNodes) n += countChars(child);
+  return n;
+}
+/** The offset of a DOM point in an element's text. */
 function offsetIn(el: HTMLElement, node: Node, offset: number) {
-  if (node.nodeType === Node.TEXT_NODE) return offset;
-  // An element boundary (a triple click): before or after the whole text.
-  return offset === 0 ? 0 : (el.textContent ?? "").length;
+  if (!el.contains(node)) return countChars(el);
+  const range = document.createRange();
+  range.setStart(el, 0);
+  try {
+    range.setEnd(node, offset);
+  } catch {
+    return 0;
+  }
+  return countChars(range.cloneContents());
+}
+/** A DOM range for offsets into an element's text. */
+function rangeIn(el: Element, start: number, end: number): Range | null {
+  const range = document.createRange();
+  let seen = 0;
+  let started = false;
+  const walk = (node: Node): boolean => {
+    if (node.nodeType === Node.TEXT_NODE || (node instanceof Element && node.hasAttribute("data-char"))) {
+      const length = node.nodeType === Node.TEXT_NODE ? (node as Text).data.length : 1;
+      const text = node.nodeType === Node.TEXT_NODE;
+      if (!started && start < seen + length) {
+        if (text) range.setStart(node, start - seen);
+        else range.setStartBefore(node);
+        started = true;
+      }
+      if (started && end <= seen + length) {
+        if (text) range.setEnd(node, Math.max(0, end - seen));
+        else if (end > seen) range.setEndAfter(node);
+        else range.setEndBefore(node);
+        return true;
+      }
+      seen += length;
+      return false;
+    }
+    for (const child of node.childNodes) if (walk(child)) return true;
+    return false;
+  };
+  const done = walk(el);
+  if (!started) return null;
+  if (!done) range.setEnd(el, el.childNodes.length);
+  return range;
 }
 
 /** A figure, table or formula: its region of the page, drawn when it comes near the view. */
@@ -290,11 +425,115 @@ function Crop({ item, reader, width }: { item: Item; reader: RefObject<PdfReader
   );
 }
 
+/** A web page's picture, from its own saved copy, loaded when it comes near the view. */
+function Picture({ resource, alt, width, height, web, inline }: { resource?: number; alt: string; width?: number; height?: number; web: WebReadingBackend; inline?: boolean }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || resource == null) return;
+    let alive = true;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        observer.disconnect();
+        void web
+          .resource(resource)
+          .then((url) => alive && setSrc(url))
+          .catch(() => {});
+      },
+      { rootMargin: "800px 0px" },
+    );
+    observer.observe(el);
+    return () => {
+      alive = false;
+      observer.disconnect();
+    };
+  }, [resource, web]);
+  if (inline)
+    return src ? (
+      <img ref={box as RefObject<HTMLImageElement>} className="kx-reading-inline-image" data-char="" src={src} alt={alt} draggable={false} />
+    ) : (
+      <span ref={box as RefObject<HTMLSpanElement>} className="kx-reading-inline-image" data-char="" role="img" aria-label={alt} />
+    );
+  if (resource == null)
+    return (
+      <div className="kx-reading-picture" data-missing>
+        <span className="kx-reading-crop-wait">This picture was not saved with the page</span>
+      </div>
+    );
+  const aspect = width && height ? `${width} / ${height}` : undefined;
+  return (
+    <div ref={box as RefObject<HTMLDivElement>} className="kx-reading-picture" data-ready={src ? true : undefined} style={src ? undefined : { aspectRatio: aspect ?? "16 / 9" }}>
+      {src ? <img src={src} alt={alt} style={width ? { width } : undefined} draggable={false} /> : <span className="kx-reading-crop-wait">Figure</span>}
+    </div>
+  );
+}
+
+/** Text with its inline markup: emphasis, code, links, citations, maths and small pictures. */
+function rich(text: string, spans: Span[] | undefined, web: WebReadingBackend | undefined, onTarget: (item: number) => void): ReactNode {
+  if (!spans?.length || !web) return text;
+  const cuts = new Set<number>([0, text.length]);
+  for (const s of spans) {
+    cuts.add(Math.max(0, Math.min(text.length, s.start)));
+    cuts.add(Math.max(0, Math.min(text.length, s.end)));
+  }
+  const points = [...cuts].sort((a, b) => a - b);
+  const atoms = spans.filter((s) => s.kind === "math" || s.kind === "image");
+  const out: ReactNode[] = [];
+  for (let i = 0; i < points.length - 1; i++) {
+    const [a, b] = [points[i], points[i + 1]];
+    const atom = atoms.find((s) => s.start <= a && a < s.end);
+    if (atom) {
+      if (atom.start === a) {
+        out.push(
+          atom.kind === "math" ? (
+            <span key={`m${a}`} className="kx-reading-math-inline" dangerouslySetInnerHTML={{ __html: atom.math ?? "" }} />
+          ) : (
+            <Picture key={`i${a}`} inline resource={atom.resource} alt={atom.alt ?? ""} web={web} />
+          ),
+        );
+      }
+      continue;
+    }
+    let node: ReactNode = text.slice(a, b);
+    const covering = spans.filter((s) => s.start <= a && b <= s.end && s.kind !== "math" && s.kind !== "image").sort((x, y) => y.start - x.start || x.end - y.end);
+    for (const s of covering) {
+      const key = `${s.kind}${a}`;
+      if (s.kind === "em") node = <em key={key}>{node}</em>;
+      else if (s.kind === "strong") node = <strong key={key}>{node}</strong>;
+      else if (s.kind === "code") node = <code key={key}>{node}</code>;
+      else if (s.kind === "sup") node = <sup key={key}>{node}</sup>;
+      else if (s.kind === "sub") node = <sub key={key}>{node}</sub>;
+      else if (s.kind === "link" || s.kind === "cite")
+        node = (
+          <a
+            key={key}
+            className={s.kind === "cite" ? "kx-reading-cite" : "kx-reading-link"}
+            href={s.href ?? `#item-${s.target}`}
+            title={s.href ?? (s.kind === "cite" ? "Go to the reference" : "Go there")}
+            draggable={false}
+            onClick={(event) => {
+              event.preventDefault();
+              if (document.getSelection()?.isCollapsed === false) return;
+              if (s.target != null) onTarget(s.target);
+              else if (s.href) web.openLink(s.href);
+            }}
+          >
+            {node}
+          </a>
+        );
+    }
+    out.push(node);
+  }
+  return out;
+}
+
 const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
-  { hash, reader, start, typography, invoke, analyse, onExit, onState, onNotice, onCite, onAddToNote },
+  { hash, reader, web, start, typography, invoke, analyse, onExit, onState, onNotice, onUnreadable, onCite, onAddToNote },
   ref,
 ) {
-  const [reply, setReply] = useState<Reply>();
+  const [reply, setReply] = useState<ReadingReply>();
   const [error, setError] = useState("");
   const [showPoor, setShowPoor] = useState(false);
   const [analysing, setAnalysing] = useState(false);
@@ -302,14 +541,21 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
   const article = useRef<HTMLElement>(null);
   const startRef = useRef(start);
   const positioned = useRef(false);
+  const isWeb = !!web;
+  const original = isWeb ? "original view" : "page view";
   // The caller's functions may change identity on every render; reading them through refs keeps
   // the document from loading again each time.
   const call = useRef(invoke);
   call.current = invoke;
+  const webRef = useRef(web);
+  webRef.current = web;
 
   const load = useCallback(
     (first = false) =>
-      call.current<Reply>("store_reflow_document", { hash, ...(first ? { page: startRef.current.page, fraction: startRef.current.fraction } : {}) })
+      (webRef.current
+        ? webRef.current.load(first)
+        : call.current<ReadingReply>("store_reflow_document", { hash, ...(first ? { page: startRef.current.page, fraction: startRef.current.fraction } : {}) })
+      )
         .then((next) => {
           setError("");
           setReply((before) => (first || !before?.document || next.document ? next : { ...before, ...next, document: before.document }));
@@ -326,18 +572,24 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     const timer = setTimeout(() => void load(true), 1500);
     return () => clearTimeout(timer);
   }, [reply, analysing, load]);
-  // Highlights made or removed elsewhere (the page view, another window).
+  // Highlights made or removed elsewhere (the original view, another window).
   useEffect(() => {
     const bridge = (window as unknown as { key: { on(e: string, f: (v: unknown) => void): () => void } }).key;
     return bridge.on("annotations-changed", () => void load());
   }, [load]);
 
   const doc = reply?.status === "ready" ? reply.document : undefined;
-  const items = doc?.items ?? [];
+  const items = useMemo(() => doc?.items ?? [], [doc]);
   const marks = reply?.marks ?? [];
   const usable = !!doc && (doc.quality.level === "good" || (doc.quality.level === "poor" && showPoor));
+  // A web page that does not read well: the reader says so and stays in the original view.
+  const unreadable = useRef(onUnreadable);
+  unreadable.current = onUnreadable;
+  useEffect(() => {
+    if (doc && doc.quality.level !== "good" && unreadable.current) unreadable.current(doc.quality.reason ?? "This page does not read well as text.");
+  }, [doc]);
 
-  // Open where the page view was.
+  // Open where the original view was.
   useLayoutEffect(() => {
     if (!usable || positioned.current) return;
     positioned.current = true;
@@ -345,20 +597,29 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     if (at != null && at > 0) article.current?.querySelector(`[data-item="${at}"]`)?.scrollIntoView({ block: "start" });
   }, [usable, reply?.at]);
 
+  /** The element holding a part of an item's text. */
+  const partElement = useCallback(
+    (item: number, part = "") =>
+      article.current?.querySelector<HTMLElement>(isWeb ? `[data-text="${item}"][data-part="${part}"]` : part === "caption" ? `[data-caption="${item}"]` : `[data-text="${item}"]`) ?? null,
+    [isWeb],
+  );
+  const rangeOf = useCallback(
+    (s: Stretch) => {
+      const el = partElement(s.item, s.part ?? "") ?? (isWeb ? null : partElement(s.item, "caption"));
+      return el ? rangeIn(el, s.start, s.end) : null;
+    },
+    [partElement, isWeb],
+  );
+
   // Highlights on their words.
-  const textNode = useCallback((item: number) => article.current?.querySelector(`[data-text="${item}"]`)?.firstChild ?? null, []);
   useEffect(() => {
     const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
     const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
     if (!registry || !HighlightCtor || !usable) return;
     const byColor = new Map<string, Range[]>();
     for (const mark of marks) {
-      const node = textNode(mark.item);
-      if (!node) continue;
-      const length = node.textContent?.length ?? 0;
-      const range = document.createRange();
-      range.setStart(node, Math.min(mark.start, length));
-      range.setEnd(node, Math.min(mark.end, length));
+      const range = rangeOf(mark);
+      if (!range) continue;
       const color = HIGHLIGHT_COLORS.includes(mark.color as HighlightColor) ? mark.color : "orange";
       byColor.set(color, [...(byColor.get(color) ?? []), range]);
     }
@@ -366,54 +627,77 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     return () => {
       for (const color of HIGHLIGHT_COLORS) registry.delete(`kx-reading-${color}`);
     };
-  }, [marks, usable, textNode]);
+  }, [marks, usable, rangeOf]);
 
   // Find in reading mode: every match in the text, the active one brought into view.
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const matches = useMemo(() => {
     const q = fold(query.trim());
-    if (q.length < 2) return [] as { item: number; start: number }[];
-    const out: { item: number; start: number }[] = [];
+    if (q.length < 2) return [] as Stretch[];
+    const out: Stretch[] = [];
     for (const item of items) {
-      const text = fold(item.kind === "figure" ? item.text : item.kind === "table" || item.kind === "equation" || item.kind === "algorithm" ? (item.caption?.text ?? "") : item.text);
-      for (let at = text.indexOf(q); at >= 0 && out.length < 5000; at = text.indexOf(q, at + q.length)) out.push({ item: item.id, start: at });
+      for (const { part, text } of textParts(item, isWeb)) {
+        const t = fold(text);
+        for (let at = t.indexOf(q); at >= 0 && out.length < 5000; at = t.indexOf(q, at + q.length)) out.push({ item: item.id, part, start: at, end: at + q.length });
+      }
     }
     return out;
-  }, [items, query]);
+  }, [items, query, isWeb]);
   useEffect(() => setActive(0), [matches]);
+  const bringIntoView = useCallback((range: Range) => {
+    const box = range.getBoundingClientRect();
+    const view = scroller.current?.getBoundingClientRect();
+    if (view && (box.top < view.top + 60 || box.bottom > view.bottom - 40)) scroller.current!.scrollBy({ top: box.top - view.top - view.height / 3 });
+  }, []);
   useEffect(() => {
     const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
     const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
     if (!registry || !HighlightCtor) return;
-    const length = query.trim().length;
-    const rangeOf = (m: { item: number; start: number }) => {
-      const node = textNode(m.item) ?? article.current?.querySelector(`[data-caption="${m.item}"]`)?.firstChild;
-      if (!node) return null;
-      const range = document.createRange();
-      const max = node.textContent?.length ?? 0;
-      range.setStart(node, Math.min(m.start, max));
-      range.setEnd(node, Math.min(m.start + length, max));
-      return range;
-    };
     const all = matches.map(rangeOf).filter((r): r is Range => !!r);
     const current = matches[active] ? rangeOf(matches[active]) : null;
     registry.set("kx-reading-find", new HighlightCtor(...all));
     registry.set("kx-reading-find-active", new HighlightCtor(...(current ? [current] : [])));
-    if (current) {
-      const box = current.getBoundingClientRect();
-      const view = scroller.current?.getBoundingClientRect();
-      if (view && (box.top < view.top + 60 || box.bottom > view.bottom - 40)) scroller.current!.scrollBy({ top: box.top - view.top - view.height / 3 });
-    }
+    if (current) bringIntoView(current);
     return () => {
       registry.delete("kx-reading-find");
       registry.delete("kx-reading-find-active");
     };
-  }, [matches, active, query, textNode]);
+  }, [matches, active, rangeOf, bringIntoView]);
+
+  // A passage shown on request (a search hit, a highlight from the panel).
+  const passageTimer = useRef(0);
+  const showPassage = useCallback(
+    (stretches: Stretch[], keep = false) => {
+      const registry = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+      const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+      const ranges = stretches.map(rangeOf).filter((r): r is Range => !!r);
+      if (!ranges.length) return false;
+      // The view may still be hidden (its tab coming to the front): scroll once it is laid out.
+      const bring = (tries: number) => {
+        const el = scroller.current;
+        if (!el) return;
+        if (!el.clientHeight && tries > 0) return void setTimeout(() => bring(tries - 1), 50);
+        const box = ranges[0].getBoundingClientRect();
+        const view = el.getBoundingClientRect();
+        el.scrollBy({ top: box.top - view.top - view.height / 3 });
+      };
+      bring(60);
+      if (registry && HighlightCtor) {
+        registry.set("kx-reading-passage", new HighlightCtor(...ranges));
+        clearTimeout(passageTimer.current);
+        const clear = () => registry.delete("kx-reading-passage");
+        if (keep) scroller.current?.addEventListener("pointerdown", clear, { once: true });
+        else passageTimer.current = window.setTimeout(clear, 2600);
+      }
+      return true;
+    },
+    [rangeOf],
+  );
 
   // The page at the top of the view, for the toolbar's page number.
   const [topPage, setTopPage] = useState(start.page);
-  const place = useCallback((): { page: number; top: number } | null => {
+  const place = useCallback((): { page: number; top: number; offset?: number } | null => {
     const view = scroller.current?.getBoundingClientRect();
     const host = article.current;
     if (!view || !host || !doc) return null;
@@ -425,16 +709,21 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       if (!item) continue;
       if (item.crop && (item.kind !== "figure" || !item.runs.length)) return { page: item.crop.page, top: Math.max(0, item.crop.rect[1] / 65535 - 0.02) };
       const text = el.querySelector<HTMLElement>("[data-text]") ?? el;
-      // The words at the top edge: their run's line on the page.
+      // The words at the top edge: their run's line on the page (a web page: their place in its text).
       const caret = (document as unknown as { caretRangeFromPoint?(x: number, y: number): Range | null }).caretRangeFromPoint?.(box.left + 6, Math.max(box.top + 4, y));
       const offset = caret && text.contains(caret.startContainer) ? offsetIn(text, caret.startContainer, caret.startOffset) : 0;
-      const run = item.runs.find((r) => offset >= r.start && offset < r.end) ?? item.runs[0];
+      const runs = isWeb && !item.runs.length ? (partOf(item, "caption")?.runs ?? item.table?.rows.flat().find((c) => c.runs.length)?.runs ?? []) : item.runs;
+      const run = runs.find((r) => offset >= r.start && offset < r.end) ?? runs[0];
+      if (isWeb) {
+        if (!run) continue;
+        return { page: 0, top: 0, offset: (run.at ?? 0) + Math.max(0, Math.min(offset, run.end) - run.start) };
+      }
       if (!run) return { page: item.page, top: 0 };
       const rect = run.rects[0];
       return { page: run.page, top: rect ? Math.max(0, rect[1] / 65535 - 0.02) : 0 };
     }
     return null;
-  }, [doc, items]);
+  }, [doc, items, isWeb]);
   useEffect(() => {
     const el = scroller.current;
     if (!el || !usable) return;
@@ -442,8 +731,10 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     const onScroll = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const p = place();
-        if (p) setTopPage(p.page);
+        if (!isWeb) {
+          const p = place();
+          if (p) setTopPage(p.page);
+        }
         setSelection(null);
       });
     };
@@ -453,14 +744,16 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       el.removeEventListener("scroll", onScroll);
       cancelAnimationFrame(frame);
     };
-  }, [usable, place]);
+  }, [usable, place, isWeb]);
 
   useEffect(() => {
     onState({ outline: doc?.outline ?? [], page: topPage, searchCount: matches.length, searchIndex: active, ready: usable });
   }, [doc, topPage, matches.length, active, usable, onState]);
 
-  const scrollToItem = useCallback((item: number) => {
-    article.current?.querySelector(`[data-item="${item}"]`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  const scrollToItem = useCallback((item: number, flash = false) => {
+    const el = article.current?.querySelector<HTMLElement>(`[data-item="${item}"]`);
+    el?.scrollIntoView({ block: flash ? "center" : "start", behavior: "smooth" });
+    if (flash && el) el.animate?.([{ backgroundColor: "var(--kx-reading-flash)" }, { backgroundColor: "transparent" }], { duration: 1600, easing: "ease-out" });
   }, []);
   useImperativeHandle(
     ref,
@@ -469,12 +762,13 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       setQuery,
       step: (direction) => setActive((a) => (matches.length ? (a + direction + matches.length) % matches.length : 0)),
       scrollToItem,
+      showPassage,
     }),
-    [place, matches.length, scrollToItem],
+    [place, matches.length, scrollToItem, showPassage],
   );
 
-  // A selection in one block: highlight, cite, add to the note, or show it on the page.
-  const [selection, setSelection] = useState<{ item: number; caption: boolean; start: number; end: number; text: string; rect: DOMRect } | null>(null);
+  // A selection in one block: highlight, cite, add to the note, or show it in the original.
+  const [selection, setSelection] = useState<(ReadingSelection & { caption: boolean; rect: DOMRect }) | null>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = article.current;
@@ -485,12 +779,14 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       const range = sel.getRangeAt(0);
       const el = textTarget(range.startContainer);
       if (!el || !host.contains(el)) return setSelection(null);
-      const startOffset = offsetIn(el, range.startContainer, range.startOffset);
-      const endOffset = el.contains(range.endContainer) ? offsetIn(el, range.endContainer, range.endOffset) : (el.textContent ?? "").length;
-      const text = (el.textContent ?? "").slice(startOffset, endOffset);
-      if (!text.trim()) return setSelection(null);
       const item = Number(el.dataset.text ?? el.dataset.caption);
-      setSelection({ item, caption: el.dataset.caption !== undefined || items[item]?.kind === "figure", start: startOffset, end: endOffset, text: text.trim(), rect: range.getBoundingClientRect() });
+      const part = el.dataset.part ?? (el.dataset.caption !== undefined ? "caption" : "");
+      const full = partOf(items[item], isWeb ? part : el.dataset.caption !== undefined ? "caption" : "")?.text ?? el.textContent ?? "";
+      const startOffset = offsetIn(el, range.startContainer, range.startOffset);
+      const endOffset = el.contains(range.endContainer) ? offsetIn(el, range.endContainer, range.endOffset) : countChars(el);
+      const text = full.slice(startOffset, endOffset).replace(/￼/g, "");
+      if (!text.trim()) return setSelection(null);
+      setSelection({ item, part, caption: el.dataset.caption !== undefined || items[item]?.kind === "figure", start: startOffset, end: endOffset, text: text.trim(), rect: range.getBoundingClientRect() });
     };
     const up = () => setTimeout(read);
     host.addEventListener("mouseup", up);
@@ -499,26 +795,38 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
       host.removeEventListener("mouseup", up);
       host.removeEventListener("keyup", up);
     };
-  }, [items, usable]);
+  }, [items, usable, isWeb]);
   useDismiss(!!selection, { refs: [toolbar], onDismiss: () => setSelection(null), kind: "passive", scroll: false });
 
   const located = async () => {
     if (!selection) return null;
     return call.current<Located>("store_reflow_locate", { hash, item: selection.item, caption: selection.caption, start: selection.start, end: selection.end });
   };
-  const uncertain = (found: Located) => {
-    onNotice("Key could not place this passage exactly in the PDF, so the page view opens there. Highlight it on the page.");
+  const uncertain = (found: { page: number; quote: string }) => {
+    onNotice(
+      isWeb
+        ? "Key could not place this passage exactly on the saved page, so the original view opens there. Highlight it on the page."
+        : "Key could not place this passage exactly in the PDF, so the page view opens there. Highlight it on the page.",
+    );
     onExit({ page: found.page, quote: found.quote });
   };
   const highlight = async (color: HighlightColor) => {
     const chosen = selection;
     try {
-      const found = await located();
-      if (!found || !chosen) return;
-      if (!found.certain || !found.range) return uncertain(found);
-      const id = reader.current?.addHighlightAt(found.range, found.text, color);
-      if (!id) return onNotice("The page view is not ready yet. Try again in a moment.");
-      setReply((r) => r && { ...r, marks: [...(r.marks ?? []), { annotationId: id, item: chosen.item, start: chosen.start, end: chosen.end, color }] });
+      if (!chosen) return;
+      let id: string | null | undefined;
+      if (web) {
+        id = await web.highlight(chosen, color);
+        if (!id) return uncertain({ page: 0, quote: chosen.text });
+      } else {
+        const found = await located();
+        if (!found) return;
+        if (!found.certain || !found.range) return uncertain(found);
+        id = reader?.current?.addHighlightAt(found.range, found.text, color);
+        if (!id) return onNotice("The page view is not ready yet. Try again in a moment.");
+      }
+      const made = id;
+      setReply((r) => r && { ...r, marks: [...(r.marks ?? []), { annotationId: made, item: chosen.item, part: chosen.part || undefined, start: chosen.start, end: chosen.end, color }] });
       document.getSelection()?.removeAllRanges();
       setSelection(null);
       setTimeout(() => void load(), 1200);
@@ -527,6 +835,10 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     }
   };
   const cite = async () => {
+    if (web && selection) {
+      await web.cite(selection).catch((e) => onNotice(String(e)));
+      return setSelection(null);
+    }
     const found = await located().catch(() => null);
     if (!found) return;
     if (!found.certain || !found.rects?.length) return uncertain(found);
@@ -539,7 +851,8 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     onAddToNote?.({ text: found.certain ? found.text : selection?.text ?? found.quote, page: found.page });
     setSelection(null);
   };
-  const showInPage = async () => {
+  const showInOriginal = async () => {
+    if (web && selection) return onExit({ page: 0, quote: selection.text });
     const found = await located().catch(() => null);
     if (found) onExit({ page: found.page, quote: found.quote });
   };
@@ -560,19 +873,21 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
   );
   const back = (
     <button type="button" className="kx-reading-button" onClick={() => onExit()}>
-      Back to page view
+      Back to {original}
     </button>
   );
+
+  const onTarget = useCallback((target: number) => scrollToItem(target, true), [scrollToItem]);
 
   let content: ReactNode;
   if (error)
     content = panel(
       "Reading mode is not available",
-      /not in the library/i.test(error) ? "Reading mode works for PDFs in your library. Add this PDF to the library and it can be read as text." : error,
+      /not in the library/i.test(error) ? `Reading mode works for ${isWeb ? "saved pages" : "PDFs"} in your library. Add this ${isWeb ? "page" : "PDF"} to the library and it can be read as text.` : error,
       back,
     );
-  else if (!reply) content = panel("Preparing the text…", "Key is putting this PDF’s text together.", null, true);
-  else if (reply.status === "unsupported") content = panel("Reading mode is for PDFs", "This source has no PDF layout to show as text.", back);
+  else if (!reply) content = panel("Preparing the text…", isWeb ? "Key is finding the article on this saved page." : "Key is putting this PDF’s text together.", null, true);
+  else if (reply.status === "unsupported") content = panel(isWeb ? "Reading mode is for saved web pages" : "Reading mode is for PDFs", "This source has no text to show this way.", back);
   else if (reply.status === "running" || (analysing && reply.status === "missing"))
     content = panel("Analysing this PDF…", "Key is reading the layout of this PDF: its columns, headings, figures and tables. Reading mode opens as soon as that is done.", back, true);
   else if (reply.status === "missing")
@@ -603,7 +918,7 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     );
   else if (doc && !usable)
     content = panel(
-      doc.quality.level === "empty" ? "There is no text to show" : "This PDF does not read well as text",
+      doc.quality.level === "empty" ? "There is no text to show" : isWeb ? "This page does not read well as text" : "This PDF does not read well as text",
       doc.quality.reason ?? "",
       <>
         {back}
@@ -618,13 +933,17 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     const commented = new Map<number, Mark[]>();
     for (const mark of marks) if (mark.comment) commented.set(mark.item, [...(commented.get(mark.item) ?? []), mark]);
     let lastPage = -1;
+    const meta = doc.meta;
+    const dateline = isWeb && meta && [meta.site, meta.date].filter(Boolean).join(" · ");
+    const hasByline = items.some((i) => i.kind === "byline");
+    const textProps = (item: Item, part = "") => (isWeb ? { "data-text": item.id, "data-part": part } : { "data-text": item.id });
     content = (
-      <article ref={article} className="kx-reading-article" aria-label="Reading mode text">
-        {items.map((item) => {
+      <article ref={article} className="kx-reading-article" aria-label="Reading mode text" data-source={isWeb ? "web" : "pdf"}>
+        {items.map((item, index) => {
           const firstPage = item.runs[0]?.page ?? item.crop?.page ?? item.page;
           const turned = firstPage !== lastPage;
           lastPage = item.runs.at(-1)?.page ?? item.crop?.page ?? item.page;
-          const marker = (
+          const marker = isWeb ? null : (
             <button
               type="button"
               className="kx-reading-page"
@@ -646,25 +965,44 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
               <Icon name="comment" size={13} />
             </span>
           );
+          const body = (text: string, spans?: Span[]) => rich(text, spans, web, onTarget);
+          // Under a web page's title (and byline): its site and date.
+          const after =
+            isWeb && dateline && ((item.kind === "byline") || (!hasByline && index === 0 && item.kind === "heading")) ? (
+              <p className="kx-reading-dateline" key={`d${item.id}`}>
+                {!hasByline && meta?.byline ? <span>{meta.byline}</span> : null}
+                {dateline}
+              </p>
+            ) : null;
           if (item.kind === "heading") {
             const level = Math.min(4, item.level ?? 2);
             const Tag = `h${level + 1}` as "h2";
-            return (
+            return [
               <div key={item.id} className="kx-reading-block" data-item={item.id} data-kind="heading">
                 {marker}
-                <Tag className="kx-reading-heading" data-level={level} data-text={item.id}>
-                  {item.text}
+                <Tag className="kx-reading-heading" data-level={level} {...textProps(item)}>
+                  {body(item.text, item.spans)}
                 </Tag>
-              </div>
-            );
+              </div>,
+              after,
+            ];
           }
+          if (item.kind === "byline")
+            return [
+              <div key={item.id} className="kx-reading-block" data-item={item.id} data-kind="byline">
+                <p className="kx-reading-byline" {...textProps(item)}>
+                  {body(item.text, item.spans)}
+                </p>
+              </div>,
+              after,
+            ];
           if (item.crop) {
             const caption = item.kind === "figure" ? item.text : item.caption?.text;
             return (
               <figure key={item.id} className="kx-reading-block kx-reading-figure" data-item={item.id} data-kind={item.kind}>
                 {marker}
                 {item.kind === "table" && caption && <figcaption data-caption={item.id}>{caption}</figcaption>}
-                <Crop item={item} reader={reader} width={article.current?.querySelector(".kx-reading-text")?.clientWidth ?? 680} />
+                {reader && <Crop item={item} reader={reader} width={article.current?.querySelector(".kx-reading-text")?.clientWidth ?? 680} />}
                 {item.kind !== "table" && caption && (
                   <figcaption {...(item.kind === "figure" ? { "data-text": item.id } : { "data-caption": item.id })}>{caption}</figcaption>
                 )}
@@ -672,11 +1010,77 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
               </figure>
             );
           }
+          if (isWeb && web && (item.kind === "figure" || item.kind === "equation" || item.kind === "table")) {
+            const caption = item.kind === "figure" ? (item.text ? { text: item.text, spans: item.spans, part: "" } : null) : item.caption ? { text: item.caption.text, spans: item.caption.spans, part: "caption" } : null;
+            const captionNode = caption && (
+              <figcaption data-text={item.id} data-part={caption.part}>
+                {body(caption.text, caption.spans)}
+              </figcaption>
+            );
+            return (
+              <figure key={item.id} className="kx-reading-block kx-reading-figure" data-item={item.id} data-kind={item.kind}>
+                {item.kind === "table" && captionNode}
+                {item.kind === "figure" && (
+                  <div className="kx-reading-pictures" data-count={item.images?.length ?? 0}>
+                    {(item.images ?? []).map((image, k) => (
+                      <Picture key={k} resource={image.resource} alt={image.alt} width={image.width} height={image.height} web={web} />
+                    ))}
+                  </div>
+                )}
+                {item.kind === "equation" && (
+                  <div className="kx-reading-equation">
+                    {item.math ? <div className="kx-reading-math" dangerouslySetInnerHTML={{ __html: item.math }} /> : (item.images ?? []).map((image, k) => <Picture key={k} resource={image.resource} alt={image.alt} web={web} />)}
+                    {caption && (
+                      <span className="kx-reading-equation-label" data-text={item.id} data-part="caption">
+                        {caption.text}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {item.kind === "table" && item.table && (
+                  <div className="kx-reading-table-wrap">
+                    <table className="kx-reading-table">
+                      <tbody>
+                        {item.table.rows.map((row, r) => (
+                          <tr key={r}>
+                            {row.map((cell, c) => {
+                              const Cell = cell.header ? "th" : "td";
+                              return (
+                                <Cell key={c} colSpan={cell.colspan} rowSpan={cell.rowspan} data-text={item.id} data-part={`cell:${r}:${c}`}>
+                                  {body(cell.text, cell.spans)}
+                                </Cell>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {item.kind === "figure" && captionNode}
+                {comment}
+              </figure>
+            );
+          }
+          if (item.kind === "code")
+            return (
+              <div key={item.id} className="kx-reading-block" data-item={item.id} data-kind="code">
+                <pre className="kx-reading-code" {...textProps(item)}>
+                  {item.text}
+                </pre>
+                {comment}
+              </div>
+            );
           return (
-            <div key={item.id} className="kx-reading-block" data-item={item.id} data-kind={item.kind}>
+            <div key={item.id} className="kx-reading-block" data-item={item.id} data-kind={item.kind} data-level={item.kind === "list" ? item.level : undefined}>
               {marker}
-              <p className="kx-reading-text" data-kind={item.kind} data-text={item.id}>
-                {item.text}
+              {isWeb && item.marker && (
+                <span className="kx-reading-marker" aria-hidden="true">
+                  {item.marker}
+                </span>
+              )}
+              <p className="kx-reading-text" data-kind={item.kind} {...textProps(item)}>
+                {body(item.text, item.spans)}
               </p>
               {comment}
             </div>
@@ -687,7 +1091,7 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
   }
 
   return (
-    <div className="kx-reading" data-font={typography.font} style={style}>
+    <div className="kx-reading" data-font={typography.font} data-source={isWeb ? "web" : "pdf"} style={style}>
       <div ref={scroller} className="kx-reading-scroll" data-reading-scroll>
         {content}
       </div>
@@ -705,8 +1109,13 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
               <button key={color} type="button" className="kx-reading-swatch" data-color={color} aria-label={`Highlight ${color}`} title={`Highlight ${color}`} onClick={() => void highlight(color)} />
             ))}
             <span className="kx-reading-selection-divider" aria-hidden="true" />
-            {onCite && (
-              <button type="button" className="kx-reading-selection-action" aria-label="Cite" title="Copy as a quote that links back here" onClick={() => void cite()}>
+            {web && (
+              <button type="button" className="kx-reading-selection-action" aria-label="Copy" title="Copy" onClick={() => void web.copy(selection).then(() => setSelection(null))}>
+                <Icon name="copy" size={14} />
+              </button>
+            )}
+            {(onCite || web) && (
+              <button type="button" className="kx-reading-selection-action" aria-label="Cite" title={web ? "Copy as a quote with its source" : "Copy as a quote that links back here"} onClick={() => void cite()}>
                 <Icon name="quote" size={14} />
               </button>
             )}
@@ -715,8 +1124,14 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
                 <Icon name="note" size={14} />
               </button>
             )}
-            <button type="button" className="kx-reading-selection-action" aria-label="Show in page view" title="Show this passage in the page view" onClick={() => void showInPage()}>
-              <Icon name="filePdf" size={14} />
+            <button
+              type="button"
+              className="kx-reading-selection-action"
+              aria-label={web ? "Show in original view" : "Show in page view"}
+              title={web ? "Show this passage on the saved page" : "Show this passage in the page view"}
+              onClick={() => void showInOriginal()}
+            >
+              <Icon name={web ? "globe" : "filePdf"} size={14} />
             </button>
           </div>,
           portalRoot(),

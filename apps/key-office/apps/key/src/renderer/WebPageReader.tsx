@@ -7,8 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { bridge, type Invoke, type Source } from "./library-api";
 import { openItemAt, toast } from "./item-actions";
-import { describeRange, locate, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
-import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT } from "./web-page-open";
+import { describeRange, locate, offsetOf, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
+import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT, type WebFocus } from "./web-page-open";
+import ReadingMode, { ContentsPopover, TypographyPopover, useTypography, type ReadingModeHandle, type ReadingModeState, type ReadingReply, type ReadingSelection, type Stretch, type WebReadingBackend } from "./ReadingMode";
+import { opensInReadingMode, rememberReadingMode } from "./reading-preference";
 import { writeQuoteClipboard } from "./quote-clipboard";
 import { quoteAttribution } from "./cite";
 import { AnnotationText } from "./annotation-text";
@@ -75,6 +77,7 @@ const pageStyle = () =>
   `mark.key-passage{color:inherit;background:rgb(255 185 60 / .45);border-radius:2px;animation:key-flash 2.4s ease-out forwards}` +
   `mark.key-passage-kept{animation:key-flash 2.4s ease-out}` +
   `@keyframes key-flash{0%,30%{background:rgb(var(--key-hl, 255 185 60) / .85)}}` +
+  `::highlight(key-find){background-color:rgb(255 185 60 / .38)}::highlight(key-find-active){background-color:rgb(255 150 30 / .8)}` +
   `::selection{background:rgb(80 158 255 / .35)}`;
 
 type Context =
@@ -96,6 +99,45 @@ const host = (url?: string) => {
 };
 
 type PanelTab = "details" | "highlights" | "references";
+
+/** The reader's text, checked against the host's (FNV-1a over UTF-16 units, web_reflow.rs). */
+const fingerprint = (text: string) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return { length: text.length, hash: h };
+};
+
+/** The page's text offset at the top of the frame's view. */
+function topOffset(d: Document) {
+  const w = d.defaultView;
+  if (!w || w.scrollY < 4) return 0;
+  const index = textIndex(d.body);
+  const caret = (x: number, y: number) => (d as unknown as { caretRangeFromPoint?(x: number, y: number): Range | null }).caretRangeFromPoint?.(x, y);
+  for (const y of [12, 48, 96, 160, 240])
+    for (const x of [w.innerWidth / 2, w.innerWidth / 3, (w.innerWidth * 2) / 3, 48]) {
+      const range = caret(x, y);
+      if (range?.startContainer.nodeType === 3) {
+        const at = offsetOf(index, range.startContainer, range.startOffset);
+        if (at >= 0) return at;
+      }
+    }
+  return 0;
+}
+
+/** The frame shows nothing readable (a page hidden until its scripts ran, which a saved copy
+ *  never runs). */
+function looksBlank(d: Document) {
+  const view = d.defaultView;
+  if (!view || !d.body) return true;
+  const hidden = (el: Element) => {
+    const s = view.getComputedStyle(el);
+    return s.display === "none" || s.visibility === "hidden" || Number(s.opacity) < 0.05;
+  };
+  return hidden(d.documentElement) || hidden(d.body) || d.body.innerText.trim().length < 40;
+}
 
 export function WebPageReader({
   invoke,
@@ -123,6 +165,33 @@ export function WebPageReader({
   const body = useRef<HTMLDivElement>(null);
   const latest = useRef(annotations);
   latest.current = annotations;
+
+  // Reading mode (ReadingMode.tsx): the article as reflowed text over the saved page, which
+  // stays loaded underneath (its text index is what highlights are anchored to).
+  const readingRef = useRef<ReadingModeHandle>(null);
+  const [reading, setReading] = useState<{ offset: number } | null>(null);
+  const [readingState, setReadingState] = useState<ReadingModeState>();
+  const [typography, setTypography] = useTypography();
+  const [popover, setPopover] = useState<{ kind: "type" | "contents"; anchor: HTMLElement }>();
+  const [notice, setNotice] = useState("");
+  const [preference, setPreference] = useState<boolean>();
+  const [pendingFocus, setPendingFocus] = useState<WebFocus>();
+  const readingOn = useRef(false);
+  readingOn.current = !!reading;
+  const docRef = useRef<Document | null>(null);
+  const hostText = useRef<{ length: number; hash: number } | undefined>(undefined);
+  const pictures = useRef(new Map<number, Promise<string>>());
+  useEffect(() => {
+    pictures.current = new Map();
+    void opensInReadingMode("web").then((on) => {
+      setPreference(on);
+      if (on) setReading((r) => r ?? { offset: 0 });
+    });
+  }, [sourceId]);
+  const say = useCallback((message: string) => {
+    setNotice(message);
+    window.setTimeout(() => setNotice((m) => (m === message ? "" : m)), 6500);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -259,17 +328,20 @@ export function WebPageReader({
     [flash],
   );
   useEffect(() => {
-    if (!doc) return;
+    // Which view opens decides where the passage shows: wait for it.
+    if (!doc || preference === undefined) return;
     const take = () => {
       const focus = takeWebFocus(sourceId);
+      if (!focus) return;
+      if (readingOn.current) setPendingFocus(focus);
       // After the highlights are drawn.
-      if (focus) setTimeout(() => goTo(doc, focus), 60);
+      else setTimeout(() => goTo(doc, focus), 60);
     };
     take();
     const listener = (event: Event) => (event as CustomEvent).detail === sourceId && take();
     window.addEventListener(WEB_FOCUS_EVENT, listener);
     return () => window.removeEventListener(WEB_FOCUS_EVENT, listener);
-  }, [doc, sourceId, goTo]);
+  }, [doc, sourceId, goTo, preference]);
 
   // The frame's document: selection, clicks on highlights and links, scrolling.
   const onLoad = () => {
@@ -293,6 +365,12 @@ export function WebPageReader({
     d.addEventListener("mouseup", () => setTimeout(() => selected(), 0));
     d.addEventListener("keyup", (e) => e.shiftKey && selected());
     d.addEventListener("keydown", (e) => {
+      // The reader.s shortcuts work with the focus in the page.
+      if (e.metaKey && !e.altKey && ((e.shiftKey && e.key.toLowerCase() === "r") || (!e.shiftKey && e.key.toLowerCase() === "f"))) {
+        e.preventDefault();
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, metaKey: true, shiftKey: e.shiftKey }));
+        return;
+      }
       if (e.key === "Escape") {
         d.getSelection()?.removeAllRanges();
         setContext(null);
@@ -342,7 +420,10 @@ export function WebPageReader({
       },
       { passive: true },
     );
+    docRef.current = d;
     setDoc(d);
+    // The page shows nothing as saved: its article in reading mode instead.
+    if (looksBlank(d)) setReading((r) => r ?? { offset: 0 });
   };
 
   const byId = useMemo(() => new Map(annotations.map((a) => [a.id, a])), [annotations]);
@@ -390,20 +471,20 @@ export function WebPageReader({
     await navigator.clipboard.writeText(contextText.trim());
     toast("Copied");
   };
-  const cite = async () => {
-    if (!source || !contextText.trim()) return;
+  const cite = async (text = contextText, color: Color | undefined = active?.color) => {
+    if (!source || !text.trim()) return;
     const authors = (source.creators ?? []).map((c) => c.family || c.literal || c.given || "").filter(Boolean);
     const attribution = sourceId ? await quoteAttribution(invoke, workspaceId, sourceId).then((a) => a.text).catch(() => undefined) : undefined;
     await writeQuoteClipboard({
       v: 1,
       attribution,
-      text: contextText,
+      text,
       workspaceId,
       sourceId,
       documentHash: source.fileHash ?? sourceId,
       page: -1,
       rects: [],
-      color: active?.color,
+      color,
       citation: { authors: authors.length ? authors : [source.containerTitle || host(source.url)].filter(Boolean), year: source.year ?? undefined, title: source.title },
     });
     toast("Quote copied: paste it into a note");
@@ -458,6 +539,213 @@ export function WebPageReader({
     onFlash: (el) => void (el as HTMLElement).animate?.([{ backgroundColor: "rgb(255 185 60 / 0.45)" }, { backgroundColor: "transparent" }], { duration: 1800, easing: "ease-out" }),
   });
 
+  // Reading mode's side of the page: the document (opened where the page was), its pictures
+  // from the page's own copies, and a selection made a highlight at its place on the page.
+  const startOffset = reading?.offset ?? 0;
+  const startRef = useRef(startOffset);
+  startRef.current = startOffset;
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  const citeRef = useRef(cite);
+  citeRef.current = cite;
+  const backend = useMemo<WebReadingBackend>(
+    () => ({
+      load: (first) =>
+        invoke<ReadingReply>("store_web_reflow_document", { id: sourceId, ...(first ? { offset: startRef.current } : {}) }, workspaceId).then((reply) => {
+          hostText.current = reply.text;
+          return reply;
+        }),
+      resource: (n) => {
+        let found = pictures.current.get(n);
+        if (!found) {
+          found = invoke<{ src: string }>("store_web_reflow_resource", { id: sourceId, resource: n }, workspaceId).then((r) => r.src);
+          pictures.current.set(n, found);
+        }
+        return found;
+      },
+      highlight: async (selection: ReadingSelection, color) => {
+        const d = docRef.current;
+        if (!d?.body) return null;
+        const index = textIndex(d.body);
+        // The host's text must be the reader's, or no place it gives is certain.
+        const mine = fingerprint(index.text);
+        if (!hostText.current || hostText.current.length !== mine.length || hostText.current.hash !== mine.hash) return null;
+        const found = await invoke<{ certain: boolean; start?: number; end?: number; exact?: string; prefix?: string; suffix?: string }>(
+          "store_web_reflow_locate",
+          { id: sourceId, item: selection.item, part: selection.part, start: selection.start, end: selection.end },
+          workspaceId,
+        );
+        if (!found.certain || found.start == null || found.end == null || !found.exact || index.text.slice(found.start, found.end) !== found.exact) return null;
+        const now = new Date().toISOString();
+        const anchor: WebAnchor = {
+          version: 1,
+          kind: "web",
+          selectors: [
+            { type: "TextQuoteSelector", exact: found.exact, prefix: found.prefix ?? "", suffix: found.suffix ?? "" },
+            { type: "TextPositionSelector", start: found.start, end: found.end },
+          ],
+        };
+        const created: WebAnnotation = { id: crypto.randomUUID(), documentId: sourceId, text: found.exact, color: color as Color, anchor, createdAt: now, updatedAt: now };
+        await saveRef.current([created]);
+        return created.id;
+      },
+      cite: (selection) => citeRef.current(selection.text, undefined),
+      copy: async (selection) => {
+        await navigator.clipboard.writeText(selection.text);
+        toast("Copied");
+      },
+      // As a link in the saved page: Key's browser, in a tab.
+      openLink: (href) => void window.open(href, "_blank"),
+    }),
+    [invoke, workspaceId, sourceId],
+  );
+
+  /** Scrolls the saved page so that text offset `offset` is at the top. */
+  const scrollPageTo = useCallback((offset: number) => {
+    const d = docRef.current;
+    const w = d?.defaultView;
+    if (!d?.body || !w) return;
+    const range = rangeFor(textIndex(d.body), offset, offset + 1);
+    const rect = range?.getBoundingClientRect();
+    if (rect) w.scrollTo({ top: Math.max(0, rect.top + w.scrollY - 56), behavior: "instant" as ScrollBehavior });
+  }, []);
+  const enterReading = useCallback(() => {
+    setContext(null);
+    setDraft(null);
+    setPopover(undefined);
+    setReading({ offset: docRef.current ? topOffset(docRef.current) : 0 });
+  }, []);
+  const exitReading = useCallback(
+    (place?: { page: number; top?: number; quote?: string; offset?: number } | null) => {
+      const at: { quote?: string; offset?: number } | null = place ?? readingRef.current?.place() ?? null;
+      setReading(null);
+      setReadingState(undefined);
+      setPopover(undefined);
+      readingRef.current?.setQuery("");
+      if (!at) return;
+      requestAnimationFrame(() => {
+        const d = docRef.current;
+        if (at.quote && d) goTo(d, { text: at.quote });
+        else if (at.offset != null) scrollPageTo(at.offset);
+      });
+    },
+    [goTo, scrollPageTo],
+  );
+  // The user switching views: remembered for saved pages (Key Settings › General › Reading).
+  const toggleReading = useCallback(() => {
+    void rememberReadingMode("web", !reading);
+    if (reading) exitReading();
+    else enterReading();
+  }, [reading, enterReading, exitReading]);
+
+  // A passage asked for while reading (a search hit, a highlight in the panel): shown in the
+  // text once it is there; text reading mode leaves out is shown on the saved page instead.
+  useEffect(() => {
+    const d = docRef.current;
+    if (!pendingFocus || !reading || !readingState?.ready || !d?.body) return;
+    const focus = pendingFocus;
+    setPendingFocus(undefined);
+    const index = textIndex(d.body);
+    let at: { start: number; end: number } | undefined;
+    const annotation = focus.annotationId ? latest.current.find((a) => a.id === focus.annotationId) : undefined;
+    if (annotation) at = locate(index, annotation.anchor, annotation.text);
+    for (const text of [focus.text, ...(focus.fallback ?? [])]) {
+      if (at) break;
+      if (text) at = locate(index, undefined, text);
+    }
+    if (!at) return void toast("That passage is not on the saved page");
+    const range = at;
+    void invoke<Stretch[][]>("store_web_reflow_project", { id: sourceId, ranges: [range] }, workspaceId)
+      .then(([stretches]) => {
+        if (stretches?.length && readingRef.current?.showPassage(stretches, focus.keep)) return;
+        exitReading(null);
+        setTimeout(() => goTo(d, focus), 120);
+      })
+      .catch(() => goTo(d, focus));
+  }, [pendingFocus, reading, readingState?.ready, invoke, sourceId, workspaceId, exitReading, goTo]);
+
+  // Find, in either view: in reading mode its text; on the saved page the frame's own.
+  const [finding, setFinding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [pageFind, setPageFind] = useState({ count: 0, index: 0 });
+  const pageMatches = useRef<Range[]>([]);
+  const findInput = useRef<HTMLInputElement>(null);
+  const showPageMatch = useCallback((index: number) => {
+    const d = docRef.current;
+    const registry = (d?.defaultView as unknown as { CSS?: { highlights?: Map<string, unknown> } } | null)?.CSS?.highlights;
+    const HighlightCtor = (d?.defaultView as unknown as { Highlight?: new (...ranges: Range[]) => unknown } | null)?.Highlight;
+    const ranges = pageMatches.current;
+    if (!registry || !HighlightCtor) return;
+    registry.set("key-find", new HighlightCtor(...ranges));
+    registry.set("key-find-active", new HighlightCtor(...(ranges[index] ? [ranges[index]] : [])));
+    const rect = ranges[index]?.getBoundingClientRect();
+    const w = d?.defaultView;
+    if (rect && w && (rect.top < 60 || rect.bottom > w.innerHeight - 40)) w.scrollBy({ top: rect.top - w.innerHeight / 3 });
+    setPageFind({ count: ranges.length, index });
+  }, []);
+  const findOnPage = useCallback(
+    (text: string) => {
+      const d = docRef.current;
+      pageMatches.current = [];
+      const q = text.trim().toLocaleLowerCase();
+      if (d?.body && q.length >= 2) {
+        const index = textIndex(d.body);
+        const hay = index.text.toLocaleLowerCase().replace(/ /g, " ");
+        for (let at = hay.indexOf(q); at >= 0 && pageMatches.current.length < 5000; at = hay.indexOf(q, at + q.length)) {
+          const range = rangeFor(index, at, at + q.length);
+          if (range && range.getClientRects().length) pageMatches.current.push(range);
+        }
+      }
+      showPageMatch(0);
+    },
+    [showPageMatch],
+  );
+  const runFind = (text: string) => {
+    setQuery(text);
+    if (reading) readingRef.current?.setQuery(text);
+    else findOnPage(text);
+  };
+  const stepFind = (direction: number) => {
+    if (reading) return readingRef.current?.step(direction);
+    const n = pageMatches.current.length;
+    if (n) showPageMatch((pageFind.index + direction + n) % n);
+  };
+  const closeFind = () => {
+    setFinding(false);
+    setQuery("");
+    readingRef.current?.setQuery("");
+    findOnPage("");
+  };
+  // The find moves with the view.
+  useEffect(() => {
+    if (!finding || !query) return;
+    if (reading) {
+      findOnPage("");
+      const timer = setTimeout(() => readingRef.current?.setQuery(query), 50);
+      return () => clearTimeout(timer);
+    }
+    findOnPage(query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reading, readingState?.ready]);
+
+  // Shift-Cmd-R as Safari's Reader; Cmd-F finds.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (event.shiftKey && key === "r") {
+        event.preventDefault();
+        toggleReading();
+      } else if (!event.shiftKey && key === "f") {
+        event.preventDefault();
+        setFinding(true);
+        requestAnimationFrame(() => findInput.current?.select());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleReading]);
+
   if (error) return <div className="kx-web-reader"><p className="kx-web-reader-error">{error}</p></div>;
   return (
     <div className="kx-web-reader">
@@ -471,6 +759,54 @@ export function WebPageReader({
           </span>
         </div>
         <span className="kx-spacer" />
+        <span className="kx-web-reader-tools">
+          {reading && (
+            <>
+              <button
+                type="button"
+                className="kx-icon-button"
+                aria-label="Text options"
+                title="Text size, font, line width and spacing"
+                aria-pressed={popover?.kind === "type"}
+                onClick={(event) => setPopover(popover?.kind === "type" ? undefined : { kind: "type", anchor: event.currentTarget })}
+              >
+                <Icon name="typography" size={14} />
+              </button>
+              <button
+                type="button"
+                className="kx-icon-button kx-web-reader-count"
+                aria-label="Contents"
+                title="Headings of this page"
+                aria-pressed={popover?.kind === "contents"}
+                disabled={!readingState?.ready}
+                onClick={(event) => setPopover(popover?.kind === "contents" ? undefined : { kind: "contents", anchor: event.currentTarget })}
+              >
+                <Icon name="list" size={14} />
+                {readingState?.outline.length ? <span>{readingState.outline.length}</span> : null}
+              </button>
+            </>
+          )}
+          <button type="button" className="kx-icon-button" aria-label="Reading mode" title={reading ? "Back to the saved page (⇧⌘R)" : "Reading mode: the article as text (⇧⌘R)"} aria-pressed={!!reading} onClick={toggleReading}>
+            <Icon name="readingMode" size={14} />
+          </button>
+          <button
+            type="button"
+            className="kx-icon-button"
+            aria-label="Find"
+            title="Find on this page (⌘F)"
+            aria-pressed={finding}
+            onClick={() => {
+              if (finding) closeFind();
+              else {
+                setFinding(true);
+                requestAnimationFrame(() => findInput.current?.focus());
+              }
+            }}
+          >
+            <Icon name="search" size={14} />
+          </button>
+        </span>
+        <span className="kx-web-reader-divider" aria-hidden="true" />
         {url && (
           <button type="button" className="kx-web-reader-action" title={`Open the live page: ${url}`} onClick={() => window.open(url, "_blank")}>
             <Icon name="external" size={13} />
@@ -497,6 +833,74 @@ export function WebPageReader({
             />
           )}
         </div>
+        {reading && (
+          <ReadingMode
+            ref={readingRef}
+            web={backend}
+            start={{ page: 0, fraction: 0 }}
+            typography={typography}
+            invoke={(command, args) => invoke(command, args as Record<string, unknown>, workspaceId)}
+            onExit={exitReading}
+            onState={setReadingState}
+            onNotice={say}
+            onUnreadable={(reason) => {
+              exitReading(null);
+              say(`Reading mode is not available for this page. ${reason}`);
+            }}
+          />
+        )}
+        {reading && popover?.kind === "type" && <TypographyPopover original="web page" anchor={popover.anchor} value={typography} onChange={setTypography} onClose={() => setPopover(undefined)} />}
+        {reading && popover?.kind === "contents" && (
+          <ContentsPopover original="web page" anchor={popover.anchor} entries={readingState?.outline ?? []} onPick={(item) => readingRef.current?.scrollToItem(item)} onClose={() => setPopover(undefined)} />
+        )}
+        {finding && (
+          <form
+            className="kx-web-find"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              stepFind(1);
+            }}
+          >
+            <Icon name="search" size={13} className="kx-web-find-icon" />
+            <input
+              ref={findInput}
+              autoFocus
+              spellCheck={false}
+              aria-label="Find on page"
+              placeholder={reading ? "Find in the article" : "Find on this page"}
+              value={query}
+              onChange={(event) => runFind(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeFind();
+                }
+              }}
+            />
+            <span role="status">
+              {query.trim().length >= 2
+                ? reading
+                  ? `${readingState?.searchCount ? readingState.searchIndex + 1 : 0} of ${readingState?.searchCount ?? 0}`
+                  : `${pageFind.count ? pageFind.index + 1 : 0} of ${pageFind.count}`
+                : ""}
+            </span>
+            <button type="button" className="kx-icon-button" aria-label="Previous match" title="Previous match" onClick={() => stepFind(-1)}>
+              <Icon name="chevronUp" size={13} />
+            </button>
+            <button type="submit" className="kx-icon-button" aria-label="Next match" title="Next match">
+              <Icon name="chevronDown" size={13} />
+            </button>
+            <button type="button" className="kx-icon-button" aria-label="Close find" title="Close" onClick={closeFind}>
+              <Icon name="close" size={13} />
+            </button>
+          </form>
+        )}
+        {notice && (
+          <div className="kx-web-notice" role="alert">
+            {notice}
+          </div>
+        )}
         {citationCard}
         {context && !draft && active && (
           <HighlightInfo

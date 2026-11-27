@@ -42,6 +42,8 @@ export interface AppSettings {
   citationLocale: string
   /** What Key shows when it opens: the workspaces window, last time's windows, or the last workspace. */
   openAtLaunch: OpenAtLaunch
+  /** Which sources open in reading mode: the view last used for each kind (off by default). */
+  readingMode: ReadingModeSetting
   /** Say in the browser bar when a page waits for a passkey Key's browser cannot offer. */
   signInNotice: boolean
   /** The browser passkey sign-ins are finished in: the system's default, or one Key can read. */
@@ -58,6 +60,10 @@ export interface WebEnginesSetting {
   fallback: 'next' | 'stop'
   scholarly: boolean
 }
+export interface ReadingModeSetting {
+  pdf: boolean
+  web: boolean
+}
 export interface TipsSetting {
   seen: string[]
   off: boolean
@@ -71,7 +77,7 @@ export interface WebProviderSetting {
   /** A self-hosted engine's address (SearXNG). */
   baseUrl?: string
 }
-const DEFAULTS: AppSettings = { webEngines: { order: [], fallback: 'next', scholarly: false }, theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, modelsOwnSourcesOnly: false, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default', tips: { seen: [], off: false } }
+const DEFAULTS: AppSettings = { webEngines: { order: [], fallback: 'next', scholarly: false }, theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, modelsOwnSourcesOnly: false, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default', tips: { seen: [], off: false }, readingMode: { pdf: false, web: false } }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -121,6 +127,7 @@ function sanitize(input: AppSettings): AppSettings {
     signInBrowser: SIGN_IN_BROWSERS.includes(input.signInBrowser) ? input.signInBrowser : 'default',
     citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
     tips: tips(input.tips),
+    readingMode: { pdf: input.readingMode?.pdf === true, web: input.readingMode?.web === true },
     webEngines: webEngines(input.webEngines),
   }
 }

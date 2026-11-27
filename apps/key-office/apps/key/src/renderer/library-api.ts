@@ -405,6 +405,8 @@ export interface AppSettings {
   citationLocale?: string;
   /** What Key shows when it opens (app-level): the workspaces window, last time's windows, or the last workspace. */
   openAtLaunch?: "workspaces" | "restore" | "last";
+  /** Which sources open in reading mode (the view last used for each kind; off by default). */
+  readingMode?: { pdf: boolean; web: boolean };
   /** Say in the browser bar when a page waits for a passkey (on by default). */
   signInNotice?: boolean;
   /** The browser passkey sign-ins are finished in. */

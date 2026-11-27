@@ -60,6 +60,7 @@ will be reimplemented separately. Git history keeps their provenance and licence
 | npm packages bundled into the app (≈130, from the import graph) | MIT, ISC, BSD, Apache-2.0, OFL and similar | `THIRD-PARTY-NOTICES.txt` §1 | yes |
 | Electron and Chromium | MIT; Chromium BSD-style and others | `LICENSES.chromium.html` | yes |
 | Rust crates in the host (≈570) | MIT, Apache-2.0, BSD, ISC, Zlib, Unicode, etc.; dual-licensed crates used under their permissive branch | `THIRD-PARTY-NOTICES.txt` §2 (texts and NOTICE files) | yes |
+| html5ever 0.27 and markup5ever_rcdom 0.3 (Servo project; reading mode for saved web pages parses snapshots with them, `crates/key-index/src/web_reflow.rs`) | MIT OR Apache-2.0 (Key uses MIT) | `THIRD-PARTY-NOTICES.txt` §2 | yes (host) |
 | GPUI reader graph (`crates/key-*-gpui`, `experiments/`) | see `THIRD_PARTY_NOTICES.md` and `scripts/audit-licenses.sh` | — | not in the Electron app |
 
 ## What is not MIT, and why
