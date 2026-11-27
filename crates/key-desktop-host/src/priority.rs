@@ -77,7 +77,7 @@ const SOURCE_EDITS: &[&str] = &[
     "store_update", "store_edit", "store_trash", "store_delete", "store_bulk_tag", "store_tag_apply", "store_tag_apply_many", "store_retag", "store_undo",
     "store_redo", "store_merge_sources", "store_merge_exact", "store_citation_key_set", "store_set_reading_status", "store_membership",
     "library_update_metadata", "library_set_labels", "library_set_property",
-    "store_fill_cell_use_answer", "store_fill_cell_keep",
+    "store_fill_cell_use_answer", "store_fill_cell_keep", "store_fill_review", "store_fill_run_undo",
 ];
 
 pub fn changes_sources(command: &str) -> bool {

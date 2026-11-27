@@ -496,7 +496,7 @@ export default function FillSheet({
   // What the daily limit for automatic fills costs at most, at the provider's price.
   useEffect(() => {
     if (recipe.method !== "ai" || !(recipe.auto || recipe.onChange === "refill")) return setDailyCost(undefined);
-    const tokens = recipe.dailyTokens ?? 250_000;
+    const tokens = recipe.dailyTokens || 250_000;
     void invoke<{ cost?: number }>("ai_estimate_cost", { inputTokens: Math.round(tokens * 0.9), outputTokens: Math.round(tokens * 0.1) }, workspaceId)
       .then((c) => setDailyCost(c.cost))
       .catch(() => setDailyCost(undefined));
@@ -862,7 +862,7 @@ export default function FillSheet({
                   <div className="kx-fill-onchange" role="radiogroup" aria-label="When a source changes">
                     {ON_CHANGE.map(([id, label, detail]) => (
                       <label key={id} data-onchange={id}>
-                        <input type="radio" name="kx-fill-onchange" checked={(recipe.onChange ?? "mark") === id} onChange={() => set({ onChange: id })} />
+                        <input type="radio" name="kx-fill-onchange" checked={(recipe.onChange || "mark") === id} onChange={() => set({ onChange: id })} />
                         <span>
                           <strong>{label}</strong>
                           <small>{detail}</small>
@@ -875,7 +875,7 @@ export default function FillSheet({
                   <>
                     <label className="kx-form-row">
                       <span>Automatic fills use at most</span>
-                      <select className="kx-settings-select" aria-label="Daily limit" value={recipe.dailyTokens ?? 250_000} onChange={(e) => set({ dailyTokens: Number(e.target.value) })}>
+                      <select className="kx-settings-select" aria-label="Daily limit" value={recipe.dailyTokens || 250_000} onChange={(e) => set({ dailyTokens: Number(e.target.value) })}>
                         {DAILY.map(([n, label]) => (
                           <option key={n} value={n}>
                             {label} a day

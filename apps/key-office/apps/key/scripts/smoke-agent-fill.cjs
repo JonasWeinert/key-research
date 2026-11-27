@@ -35,7 +35,7 @@ const ABSTRACTS = {
       // The answer follows the material sent (so an edited abstract changes it).
       const text = prompt.split("Source material:")[1] ?? ABSTRACTS[title] ?? "";
       const value = /randomi[sz]ed/i.test(text) ? "Randomised controlled trial" : /cohort/i.test(text) ? "Cohort study" : "Modelling or simulation";
-      const quote = text.split(" ").slice(0, 6).join(" ");
+      const quote = (text.match(/\] Abstract\n([^\n]+)/)?.[1] ?? ABSTRACTS[title] ?? "").split(" ").slice(0, 6).join(" ");
       const answer = { value, confidence: 0.86, evidence: [{ passage: "P2", quote }] };
       response.end(JSON.stringify({ model: parsed.model, choices: [{ message: { content: JSON.stringify(answer) } }], usage: { prompt_tokens: 420, completion_tokens: 30 } }));
     });
@@ -245,6 +245,9 @@ const ABSTRACTS = {
     assert.equal(await value("Long-run effects of microcredit"), "Randomised controlled trial", "filled again automatically");
     assert.equal(await value("Village savings groups"), "Case report", "an edited value is never replaced");
     await studyCell("Long-run effects of microcredit").filter({ hasText: "Randomised controlled trial" }).waitFor();
+    // Filled again: no longer out of date; the edited value keeps its mark.
+    await tableRow("Long-run effects of microcredit").locator(".kx-fill-mark").waitFor({ state: "detached" });
+    await tableRow("Village savings groups").locator('.kx-fill-mark[data-mark="edited"]').waitFor();
     await page.screenshot({ path: path.join(temp, "fill-auto.png") });
     report.automatic = true;
     assert.deepEqual(errors, []);

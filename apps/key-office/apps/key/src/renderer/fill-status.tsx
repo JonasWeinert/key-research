@@ -27,13 +27,32 @@ export function useFillStatus(invoke: Invoke, workspaceId?: string): { item?: St
     void invoke<RunSummary[]>("fill_active", {}, workspaceId)
       .then((list) => setRuns(Object.fromEntries((list ?? []).map((r) => [r.id, r]))))
       .catch(() => {});
-    return bridge()?.on("fill-progress", (value) => {
+    const offProgress = bridge()?.on("fill-progress", (value) => {
       const v = value as { workspaceId?: string; run?: RunSummary; auto?: { capped?: Capped[] } };
       if (v?.workspaceId !== workspaceId) return;
       if (v.auto) return setCapped(v.auto.capped ?? []);
       if (!v.run?.id || v.run.sample) return;
       setRuns((all) => ({ ...all, [v.run!.id]: v.run! }));
     });
+    // Proposals reviewed elsewhere (the sheet, a cell's popover): the counts follow.
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const offChanged = bridge()?.on("library-changed", () => {
+      clearTimeout(pending);
+      pending = setTimeout(() => {
+        setRuns((all) => {
+          for (const id of Object.keys(all))
+            void invoke<{ run: RunSummary }>("store_fill_run", { runId: id, limit: 1 }, workspaceId)
+              .then((r) => setRuns((now) => (now[id] ? { ...now, [id]: { ...now[id], ...r.run } } : now)))
+              .catch(() => setRuns(({ [id]: _gone, ...rest }) => rest));
+          return all;
+        });
+      }, 300);
+    });
+    return () => {
+      offProgress?.();
+      offChanged?.();
+      clearTimeout(pending);
+    };
   }, [invoke, workspaceId]);
   const list = Object.values(runs);
   const running = list.find((r) => r.status === "running") ?? list.find((r) => r.status === "paused");
