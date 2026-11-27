@@ -215,18 +215,17 @@ export const HELP = {
   "settings.web.signin": explain(
     "Passkeys and sign-ins",
     [
-      "A passkey replaces a password: your phone, your Mac or a security key proves it is you, with your fingerprint, face or PIN. Many universities now ask for one when you sign in.",
-      "Key’s browser can use a USB or NFC security key. It can’t show the QR code for signing in with your phone, or reach passkeys saved in iCloud Keychain or a password manager: macOS offers those only to web browsers Apple has approved.",
-      "So when a site asks for a passkey, Key offers a small sign-in window of Google Chrome, Microsoft Edge or Brave, if one is on this Mac. That window can show the QR code for your phone. Once you are signed in there, Key copies the sign-in into its own browser and closes the window.",
-      "The window has its own profile that belongs to Key, so your usual browser, its bookmarks and saved passwords are not touched. It remembers your sign-in, so next time you often need not use your phone again. Forget sign-ins clears it.",
-      "Without one of those browsers, finish the sign-in in Safari or Firefox and choose Bring sign-in over: Key copies just that sign-in’s cookies, after showing you which sites.",
+      "Key’s browser can use a security key, but can’t show the QR code for your phone or reach passkeys saved on this Mac.",
+      "So Key offers a small Chrome, Edge or Brave window for the sign-in. Once you are signed in there, Key copies the sign-in over and closes the window.",
+      "That window has a profile of Key’s own: your usual browser is not touched. It remembers you, so next time you often need not use your phone. Forget sign-ins clears it.",
+      "Without such a browser, sign in in Safari or Firefox, then choose Bring sign-in over.",
     ],
-    { privacy: "Only cookies of the sites the sign-in went through are copied, between the two browsers on this Mac. Nothing is sent anywhere, and Key never sees your password or passkey." },
+    { privacy: "Only the sign-in’s cookies are copied, on this Mac. Key never sees your password or passkey." },
   ),
-  "settings.web.signin-browser": hint("The browser whose small window Key opens for passkey sign-ins. Safari and Firefox can’t be driven by Key: with them you finish the sign-in yourself and bring it over."),
+  "settings.web.signin-browser": hint("Whose small window Key opens for passkey sign-ins. With Safari or Firefox you sign in there yourself and bring it over."),
   "settings.web.signin-forget": hint("Signs the sign-in window out of every site and deletes its profile. Key’s own browser keeps the sign-ins it already has."),
   "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or sign in in a small browser window where your phone works."),
-  "browser.signin.offer": hint("Sign in on this page in a small Chrome or Edge window, where your phone’s QR code and saved passkeys work. Key brings the sign-in back by itself."),
+  "browser.signin.offer": hint("Sign in in a small Chrome or Edge window, where your phone’s QR code and saved passkeys work. Key brings it back."),
   "browser.signin.window": explain(
     "Signing in with a passkey",
     [
