@@ -1,4 +1,4 @@
-import { cancelFindPdfs, findPdfs, useFindPdfRun } from "./find-pdf";
+import { cancelFindPdfs, useFindPdfRun } from "./find-pdf";
 import { prepareReferences, preparedReferences } from "./cite";
 import { CreatorLink, TagLink, VenueLink } from "./entity-ui";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
@@ -45,12 +45,11 @@ import {
   TagManagerSheet,
   formulaValue,
   usePropertyDefinitions,
-  type PropertyDefinition,
   type PropertySheetState,
 } from "./PropertySheets";
 import { DatabaseToolbar, DatabaseView, useDatabaseViewState, type DatabaseViewHandle } from "./DatabaseView";
 import { DEFAULT_SORTS, SOURCE_SORTS, SourceCard, legacyColumnSettings, useSourceColumns } from "./library-columns";
-import BatchEditor from "./BatchEditor";
+import SelectionPanel from "./SelectionPanel";
 import { DuplicatesView, SourceMergeSheet } from "./DuplicatesView";
 import MetadataUpdateSheet from "./MetadataUpdateSheet";
 import { retractionOf, stepJournal, useHygiene } from "./library-hygiene";
@@ -211,7 +210,7 @@ export default function ReferenceLibrary({
     handle.addEventListener("pointerup", end);
     handle.addEventListener("pointercancel", end);
   };
-  const searchInput = useRef<HTMLInputElement>(null);
+  const searchInput = useRef<HTMLTextAreaElement>(null);
   const request = useRef(0);
   const loadingMore = useRef(false);
 
@@ -877,46 +876,6 @@ export default function ReferenceLibrary({
           />
         )}
 
-        {selected.size > 1 && (
-          <BulkBar
-            count={selected.size}
-            collections={collections}
-            trashed={scope === "trashed"}
-            onTag={async (tagName) => {
-              await invoke("store_bulk_tag", { ids: [...selected], add: [tagName] }, workspaceId);
-              await load(0);
-            }}
-            onCollect={async (id) => {
-              await invoke("store_membership", { collectionId: id, ids: [...selected], present: true }, workspaceId);
-              libraryChanged();
-              setToast({ text: `Added ${selected.size} to ${collections.find((c) => c.id === id)?.name}` });
-            }}
-            onStar={async () => {
-              await invoke("store_edit", { ids: [...selected], edit: { patch: { starred: true } }, label: `Star ${selected.size} sources` }, workspaceId);
-              await load(0);
-            }}
-            definitions={definitions}
-            onSetProperty={(definition) => {
-              const targets = items.filter((s) => selected.has(s.id));
-              setSheet(definition ? { mode: "edit", definition, targets, applyValue: true } : { mode: "new", targets });
-            }}
-            onFill={() => setAgent({ targets: items.filter((s) => selected.has(s.id)) })}
-            withoutFile={items.filter((s) => selected.has(s.id) && !s.filePath).length}
-            onFindPdfs={() => void findPdfs(invoke, workspaceId, items.filter((s) => selected.has(s.id)))}
-            onEnrich={async () => {
-              const count = await invoke<number>("store_enrich", { ids: [...selected] }, workspaceId);
-              setToast({ text: `Looking up ${count} ${count === 1 ? "source" : "sources"} in OpenAlex` });
-            }}
-            onTrash={() => void trash([...selected], scope !== "trashed")}
-            onDelete={async () => {
-              if (!window.confirm(`Delete ${selected.size} items permanently? Linked files stay on disk.`)) return;
-              await invoke("store_delete", { ids: [...selected] }, workspaceId);
-              setSelected(new Set());
-              await load(0);
-            }}
-            onClear={() => setSelected(new Set())}
-          />
-        )}
         {toast && (
           <div className="kx-toast" role="status">
             <span>{toast.text}</span>
@@ -931,7 +890,7 @@ export default function ReferenceLibrary({
           </div>
         )}
       </div>
-      {inspector && (
+      {(inspector || selected.size > 1) && (
         <div
           className="kx-splitter"
           role="separator"
@@ -950,36 +909,34 @@ export default function ReferenceLibrary({
           }}
         />
       )}
-      {inspector && selected.size > 1 ? (
-        // Several selected: one editor for all of them.
+      {selected.size > 1 ? (
+        // Several selected: their overview and every bulk control (SelectionPanel.tsx).
         <aside className="kx-inspector kx-inspector-page" aria-label="Selected sources">
-          <BatchEditor
+          <SelectionPanel
             invoke={invoke}
             workspaceId={workspaceId}
-            sources={rows.filter((s) => selected.has(s.id))}
-            total={selected.size}
+            ids={[...selected]}
+            loaded={rows.filter((s) => selected.has(s.id))}
             collections={collections}
             tagSuggestions={facets.tags}
             definitions={definitions}
-            onEdited={(text) => {
-              setToast({ text });
-              void load(0);
-              libraryChanged();
-            }}
+            trashed={scope === "trashed"}
+            onEdited={() => void load(0)}
             onClear={() => setSelected(new Set())}
-            onAction={(action) => {
-              const ids = [...selected];
-              if (action === "metadata") setMetadataIds(ids);
-              else if (action === "merge") setMergeIds(ids);
-              else if (action === "trash") void trash(ids, scope !== "trashed");
-              else
-                void invoke<{ checked: number; flagged: number }>("store_retraction_check", { ids }, workspaceId)
-                  .then((r) => {
-                    setToast({ text: r.flagged ? `${r.flagged} of ${r.checked} flagged as retracted` : `Checked ${r.checked}: no retractions` });
-                    hygiene.reload();
-                    void load(0);
-                  })
-                  .catch((e) => setError(String(e)));
+            onMetadata={setMetadataIds}
+            onMerge={setMergeIds}
+            onTrash={(ids, trashed) => void trash(ids, trashed)}
+            onDelete={async (ids) => {
+              if (!window.confirm(`Delete ${ids.length} items permanently? Linked files stay on disk.`)) return;
+              await invoke("store_delete", { ids }, workspaceId);
+              setSelected(new Set());
+              await load(0);
+            }}
+            onOpen={(sources) => sources.forEach(open)}
+            onFill={(targets) => setAgent({ targets })}
+            onRetractionsChecked={() => {
+              hygiene.reload();
+              void load(0);
             }}
           />
         </aside>
@@ -1577,118 +1534,6 @@ function TagPicker({ tags, value, onChange, onManage }: { tags: { value: string;
         </button>
       </div>
     </details>
-  );
-}
-
-function BulkBar({
-  count,
-  collections,
-  trashed,
-  definitions,
-  onSetProperty,
-  onFill,
-  onEnrich,
-  withoutFile,
-  onFindPdfs,
-  onTag,
-  onCollect,
-  onStar,
-  onTrash,
-  onDelete,
-  onClear,
-}: {
-  count: number;
-  collections: Collection[];
-  trashed: boolean;
-  definitions: PropertyDefinition[];
-  onSetProperty: (definition?: PropertyDefinition) => void;
-  onFill: () => void;
-  onEnrich: () => Promise<void>;
-  /** How many selected sources have no file: Find PDFs looks for theirs. */
-  withoutFile: number;
-  onFindPdfs: () => void;
-  onTag: (tag: string) => Promise<void>;
-  onCollect: (id: string) => Promise<void>;
-  onStar: () => Promise<void>;
-  onTrash: () => void;
-  onDelete: () => Promise<void>;
-  onClear: () => void;
-}) {
-  const [tag, setTag] = useState("");
-  return (
-    <div className="kx-bulk-bar" role="toolbar" aria-label="Selected sources">
-      <strong>{count} selected</strong>
-      <span className="kx-bulk-sep" />
-      {!trashed && (
-        <>
-          <button onClick={() => void onStar()}>
-            <Icon name="star" size={13} /> Star
-          </button>
-          <select
-            aria-label="Add selection to collection"
-            value=""
-            onChange={(e) => e.target.value && void onCollect(e.target.value)}
-          >
-            <option value="">Add to collection…</option>
-            {collections.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <form
-            className="kx-bulk-tag"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (tag.trim()) void onTag(tag.trim()).then(() => setTag(""));
-            }}
-          >
-            <Icon name="tag" size={13} />
-            <input aria-label="Tag selection" placeholder="Add tag…" value={tag} onChange={(e) => setTag(e.target.value)} />
-          </form>
-          <select
-            aria-label="Set a property on the selection"
-            value=""
-            onChange={(e) => {
-              const value = e.target.value;
-              if (value === "__new") onSetProperty();
-              else if (value) onSetProperty(definitions.find((d) => d.name === value));
-            }}
-          >
-            <option value="">Set property…</option>
-            {definitions.map((d) => (
-              <option key={d.name} value={d.name}>
-                {d.name}
-              </option>
-            ))}
-            <option value="__new">New property…</option>
-          </select>
-          <button onClick={onFill} title="Fill a property with AI or a rule">
-            <Icon name="sparkle" size={13} /> Fill with AI
-          </button>
-          <button onClick={() => void onEnrich()} title="Look the selection up in OpenAlex: authors, journal, topics, funding and citations">
-            <Icon name="globe" size={13} /> Look up
-          </button>
-          {withoutFile > 0 && (
-            <button onClick={onFindPdfs} title={`Look for open-access PDFs for the ${withoutFile} selected ${withoutFile === 1 ? "source" : "sources"} without a file`}>
-              <Icon name="filePdf" size={13} /> Find PDFs
-            </button>
-          )}
-          <span className="kx-bulk-sep" />
-        </>
-      )}
-      <button className="kx-danger" onClick={onTrash}>
-        <Icon name={trashed ? "retry" : "trash"} size={13} /> {trashed ? "Restore" : "Trash"}
-      </button>
-      {trashed && (
-        <button className="kx-danger" onClick={() => void onDelete()}>
-          Delete
-        </button>
-      )}
-      <button aria-label="Clear selection" onClick={onClear}>
-        <Icon name="close" size={12} />
-      </button>
-    </div>
   );
 }
 

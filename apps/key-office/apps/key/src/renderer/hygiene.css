@@ -62,8 +62,11 @@
   color: inherit;
   font: inherit;
 }
+/* On some of them: a quiet dashed outline instead of the card shadow. */
 .kx-tri-chip[data-partial] {
-  border-style: dashed;
+  border: 1px dashed var(--kx-line-strong);
+  background: transparent;
+  box-shadow: none;
   color: var(--kx-text-2);
 }
 .kx-chip.kx-tri-chip[data-partial] > button.kx-tri-chip-label {

@@ -32,11 +32,19 @@ pub struct CollectionCount {
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct YearBin {
+    pub from: i64,
+    pub to: i64,
+    pub count: i64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct Years {
     pub min: Option<i64>,
     pub max: Option<i64>,
-    /// Sources per year from `min` to `max`, every year present (zeros included).
-    pub histogram: Vec<Count>,
+    /// Sources per year (or span of years) from `min` to `max`, zeros included.
+    pub histogram: Vec<YearBin>,
     pub without: i64,
 }
 
@@ -237,7 +245,7 @@ fn year_histogram(years: &[(i64, i64)], total: i64) -> Years {
     while start <= max {
         let end = (start + step - 1).min(max);
         let count = (start..=end).map(|y| counts.get(&y).copied().unwrap_or(0)).sum();
-        histogram.push(Count { value: if start == end { start.to_string() } else { format!("{start}–{end}") }, count });
+        histogram.push(YearBin { from: start, to: end, count });
         start += step;
     }
     Years { min: Some(min), max: Some(max), histogram, without: total - with }
