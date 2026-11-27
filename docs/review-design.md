@@ -68,6 +68,9 @@ Event kinds (payload fields in `docs/review-sync.md`):
 | `extract.final` | the consensus value after dual extraction |
 | `ai.suggest` | an AI suggestion (never a decision) |
 | `analysis.set` | a saved meta-analysis setup |
+| `protocol.register` | the protocol's registration (registry, id, date, address), or its withdrawal |
+| `checklist.note` | where the manuscript reports a checklist item, and notes |
+| `search.source`, `search.peer_review`, `search.prior` | PRISMA-S details of a source, a peer review of the strategies, reused prior work |
 
 **Derived state** (`derive.rs`) is a fold over events: current decision per (record, stage,
 reviewer), each record's status per stage (undecided, needs another reviewer, conflict, included,
@@ -206,6 +209,39 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   variance); fixed and random effects (DerSimonian–Laird, REML; Hartung–Knapp); heterogeneity (Q,
   I², τ², prediction interval); subgroups; leave-one-out; Egger's test; forest and funnel plots
   (`src/renderer/charts/`), exportable.
+
+## Reporting (PRISMA checklist, protocol, search report)
+
+- **Overview › PRISMA checklist** (`checklist.rs`): PRISMA 2020's 42 rows and its 12 abstract
+  items, PRISMA-S's 16, PRISMA-ScR's 22 for a scoping review and two PRISMA-LSR additions for a
+  living one, each with a status computed from the review (evidenced, partly, missing, not
+  applicable, not recorded yet), the rule that decided it, links to where it shows (a Setup
+  section, a Sources view, the search report, an export), the one action that closes a gap, a
+  draft sentence from the data, and where the manuscript reports it (`checklist.note`).
+  "Generate methods section" drafts Methods and the Results flow paragraph (deterministic text,
+  no model). Exports: Markdown, HTML for Word, CSV, in the official order with attribution
+  (CC BY 4.0; descriptions are Key's paraphrases). Parts other review modules supply (AI use,
+  risk of bias, certainty, analysis and sharing statements) come through
+  `reporting_hooks::facts`.
+- **Setup › Protocol** (`protocol_doc.rs`): the protocol in PRISMA-P 2015's order. What Key knows
+  is written in (question, criteria, rules, forms, searches); the rest is `Protocol::plan`
+  (text fields, authors with guarantor and contact, outcomes with priority, planned subgroup and
+  sensitivity analyses, review type), versioned with the protocol. A completeness meter counts
+  the required fields. `protocol.register` records the registration (registry, id, date,
+  address); from then on any change the protocol states is a new version that needs a reason,
+  and the versions after the registered one are the **deviations from protocol** (PRISMA 24c,
+  exported as CSV or Markdown). Exports: a PRISMA-P protocol (Markdown, HTML), a PROSPERO copy
+  sheet (fields in the form's order, the review's stage derived from the log; the 2025 form's
+  labels come from a secondary description, as PROSPERO needs an account) and an OSF outline.
+  Nothing is submitted anywhere.
+- **Overview › Search report** (`search_report.rs`): PRISMA-S for the whole review. Database
+  search runs give platform, dates, every query as sent with its counts and Key's
+  reconstruction from their log (`db_strategy`); file imports are completed by the reviewer
+  (`search.source`: platform, coverage, date, strategy as run, limits with reasons, cited
+  filters, notes) with what is missing named per source; other methods with dates and counts;
+  update searches; prior work (`search.prior`); peer review of the strategies (`search.peer_review`,
+  PRESS 2015 by default); totals before and after de-duplication with the method described.
+  Exports: an appendix (Markdown, HTML), a CSV and the machine-readable JSON.
 
 ## PRISMA counts
 

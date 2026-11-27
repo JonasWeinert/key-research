@@ -52,6 +52,7 @@ will be reimplemented separately. Git history keeps their provenance and licence
 | Citation fallback style and locale (`crates/key-cite/src/fallback`) | MIT (written for Key) | `LICENSE` | yes (in the host) |
 | Fonts: Geist and Geist Mono (`@fontsource-variable/geist*`) | SIL OFL 1.1 | the packages' `LICENSE`, in `THIRD-PARTY-NOTICES.txt` §1 | yes |
 | Icons | Key's own glyph set (`apps/key/src/ui/glyphs.ts`) | `LICENSE` | yes |
+| Reporting checklist structure (`crates/key-review`: `checklist.rs`, `protocol_doc.rs`, `search_report.rs`): item numbers, topics and order of PRISMA 2020 and its abstracts checklist (Page et al., BMJ 2021;372:n71), PRISMA-P 2015 (Moher et al., Syst Rev 2015;4:1) and PRISMA-S (Rethlefsen et al., Syst Rev 2021;10:39); PRISMA-ScR's item order (Tricco et al., Ann Intern Med 2018) | **CC BY 4.0** (PRISMA 2020, PRISMA-P, PRISMA-S); item descriptions are Key's own paraphrases, credited in every export | https://creativecommons.org/licenses/by/4.0/ | yes (in the host) |
 
 ## Dependencies
 
