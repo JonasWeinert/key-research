@@ -348,10 +348,12 @@ export class PdfJsTileController {
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => {
         if (this.destroyed || this.resizeFrame) return;
-        const state = this.currentViewState();
         this.resizeFrame = requestAnimationFrame(() => {
           this.resizeFrame = 0;
           if (this.destroyed) return;
+          // Read the place here, not when the resize was seen: a scroll made in between
+          // (as a side panel closes) must not be undone by the new layout.
+          const state = this.currentViewState();
           this.updateLayout();
           this.restoreViewState(state);
         });
