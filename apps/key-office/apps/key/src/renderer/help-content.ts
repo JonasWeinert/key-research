@@ -888,6 +888,7 @@ export const HELP = {
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),
   "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Continue in your browser to use those."),
   "tip.proxies": tip("Library access", "This site can open through your library’s proxy, so you see articles your library pays for."),
+  "tip.reading-mode": tip("Read as text", "Reading mode shows this PDF as clean text in your font and size. Highlights you make there are kept on the PDF."),
 
   // ── Glossary ────────────────────────────────────────────────────────────────────────
   "term.api-key": term("API key", "A code a service gives you so the requests an app makes for you count under your own allowance. Optional in Key."),

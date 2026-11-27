@@ -29,6 +29,21 @@ pub struct LayoutBlock {
     pub text: String,
     pub bounds: [u16; 4],
     pub sentences: Vec<LayoutSentence>,
+    /// A heading's level as the analyser saw it (1 the largest); None for older analyses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u8>,
+}
+
+/// A page's geometry: its size in points and where it shows pictures (figures).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutPage {
+    pub page: i64,
+    pub width: f32,
+    pub height: f32,
+    /// Picture regions, [x, y, width, height] on the 0..65535 page scale.
+    #[serde(default)]
+    pub images: Vec<[u16; 4]>,
 }
 
 /// A document as layout analysis sees it.
@@ -40,6 +55,9 @@ pub struct Layout {
     pub page_count: usize,
     pub markdown: String,
     pub blocks: Vec<LayoutBlock>,
+    /// Page sizes and pictures (reading mode); empty for older analyses.
+    #[serde(default)]
+    pub pages: Vec<LayoutPage>,
 }
 
 fn indexed(kind: &str) -> bool {
@@ -148,7 +166,7 @@ mod tests {
     use super::*;
 
     fn block(page: i64, kind: &str, text: &str) -> LayoutBlock {
-        LayoutBlock { page, kind: kind.into(), text: text.into(), bounds: [1, 2, 3, 4], sentences: Vec::new() }
+        LayoutBlock { page, kind: kind.into(), text: text.into(), bounds: [1, 2, 3, 4], sentences: Vec::new(), level: None }
     }
 
     #[test]
@@ -181,6 +199,7 @@ mod tests {
             text: "x. ".repeat(1000),
             bounds: [0; 4],
             sentences: (0..40).map(|_| sentence(&"Income matters for health in many ways. ".repeat(2))).collect(),
+            level: None,
         };
         let chunks = chunk_layout(&[block(0, "paragraph", "First page."), block(1, "paragraph", "Second page."), long]);
         assert_eq!(chunks[0].page, Some(0));

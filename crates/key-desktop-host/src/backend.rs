@@ -37,6 +37,8 @@ mod databases;
 mod models_commands;
 #[path = "formula_worker.rs"]
 mod formula_worker;
+#[path = "reflow_commands.rs"]
+mod reflow_commands;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{
@@ -2993,6 +2995,9 @@ impl Host {
                 let vector = if full && text.chars().filter(|c| c.is_alphanumeric()).count() >= 3 { self.library.indexer.embed_query(&text) } else { None };
                 json_output(self.library.store.find(&query, &records, vector.as_deref())?)
             }));
+        }
+        if let Some(result) = tokio::task::block_in_place(|| reflow_commands::dispatch(&self.library, &self.native, command, args)) {
+            return Some(result);
         }
         if command.starts_with("store_") {
             let library = &self.library;

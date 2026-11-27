@@ -23,6 +23,7 @@ import { ReferenceAside } from "./ReferenceAside";
 import { highlightUsage } from "./highlight-usage";
 import type { HighlightUsage } from "@key-reader/pdfjs/HighlightInfo";
 import { FirstUseTip } from "./explain";
+import ReadingMode, { ContentsPopover, TypographyPopover, useTypography, type ReadingModeHandle, type ReadingModeState } from "./ReadingMode";
 
 
 type Target = {
@@ -374,13 +375,53 @@ export default function PdfReader() {
     }
   };
   const closeSearch = () => {
+    readingRef.current?.setQuery("");
     reader.current?.closeSearch();
     setShowSearch(false);
     setQuery("");
   };
+  // Reading mode: the PDF as reflowed text over the page view (ReadingMode.tsx).
+  const readingRef = useRef<ReadingModeHandle>(null);
+  const [reading, setReading] = useState<{ page: number; fraction: number } | null>(null);
+  const [readingState, setReadingState] = useState<ReadingModeState>();
+  const [typography, setTypography] = useTypography();
+  const [popover, setPopover] = useState<{ kind: "type" | "contents"; anchor: HTMLElement }>();
+  const inLibrary = !!bridge().invoke && !(document?.initial.web && "url" in document.initial.web);
+  const enterReading = useCallback(() => {
+    const state = latestState.current;
+    setReading({ page: state?.pageIndex ?? 0, fraction: state?.pageOffsetFraction ?? 0 });
+    setPopover(undefined);
+  }, []);
+  const exitReading = useCallback((place?: { page: number; top?: number; quote?: string } | null) => {
+    const at: { page: number; top?: number; quote?: string } | null = place ?? readingRef.current?.place() ?? null;
+    setReading(null);
+    setReadingState(undefined);
+    setPopover(undefined);
+    if (!at) return;
+    requestAnimationFrame(() => {
+      if (at.quote) reader.current?.focusAnnotation(undefined, at.page, at.quote);
+      else reader.current?.goTo(at.page, at.top ?? 0);
+    });
+  }, []);
+  // Shift-Cmd-R, as Safari's Reader.
+  useEffect(() => {
+    if (!inLibrary) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === "r")) return;
+      event.preventDefault();
+      if (reading) exitReading();
+      else enterReading();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [inLibrary, reading, enterReading, exitReading]);
+  const flash = useCallback((message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice(""), 5000);
+  }, []);
   const surface = useRef<HTMLElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
-  const chromeHidden = useFloatingChrome(surface, chromeRef, showSearch || !!target, !!document);
+  const chromeHidden = useFloatingChrome(surface, chromeRef, showSearch || !!target || !!reading, !!document);
   if (error)
     return (
       <main className="key-ui-root key-pdf-error">
@@ -401,15 +442,40 @@ export default function PdfReader() {
   return (
     <main className="key-ui-root key-pdf-reader">
       <FirstUseTip help="tip.cite" anchor='.pdfjs-selection-action[aria-label="Cite"]' side="above" delay={600} />
+      {inLibrary && !reading && <FirstUseTip help="tip.reading-mode" anchor='.key-pdf-tool[aria-label="Reading mode"]' delay={4000} />}
       <section className="key-pdf-surface" ref={surface}>
         {/* One floating stack over the top of the page: the controls, Find, a search result. */}
         <div ref={chromeRef} className="key-pdf-chrome" data-hidden={chromeHidden || undefined}>
           <header className="key-pdf-toolbar" aria-label="PDF controls">
-            <span className="key-pdf-page" aria-label={`Page ${page} of ${chrome?.pageCount || "…"}`}>
-              {page}
+            <span className="key-pdf-page" aria-label={`Page ${reading ? (readingState?.page ?? reading.page) + 1 : page} of ${chrome?.pageCount || "…"}`}>
+              {reading ? (readingState?.page ?? reading.page) + 1 : page}
               <span> / {chrome?.pageCount || "…"}</span>
             </span>
             <span className="key-pdf-toolbar-divider" aria-hidden="true" />
+            {reading ? (
+              <span className="key-pdf-seg">
+                <button
+                  className="key-pdf-tool"
+                  aria-label="Text options"
+                  title="Text size, font, line width and spacing"
+                  aria-pressed={popover?.kind === "type"}
+                  onClick={(event) => setPopover(popover?.kind === "type" ? undefined : { kind: "type", anchor: event.currentTarget })}
+                >
+                  <Icon name="typography" />
+                </button>
+                <button
+                  className="key-pdf-tool key-pdf-tool-label"
+                  aria-label="Contents"
+                  title="Headings of this PDF"
+                  aria-pressed={popover?.kind === "contents"}
+                  disabled={!readingState?.ready}
+                  onClick={(event) => setPopover(popover?.kind === "contents" ? undefined : { kind: "contents", anchor: event.currentTarget })}
+                >
+                  <Icon name="list" />
+                  {readingState?.outline.length ? <span className="key-pdf-count">{readingState.outline.length}</span> : null}
+                </button>
+              </span>
+            ) : (
             <span className="key-pdf-seg">
               <button className="key-pdf-tool" aria-label="Zoom out" title="Zoom out (⌘−)" onClick={() => reader.current?.zoomOut()}>
                 <Icon name="minus" />
@@ -424,8 +490,20 @@ export default function PdfReader() {
                 <Icon name="fitWidth" />
               </button>
             </span>
+            )}
             <span className="key-pdf-toolbar-divider" aria-hidden="true" />
             <span className="key-pdf-seg">
+              {inLibrary && (
+                <button
+                  className="key-pdf-tool"
+                  aria-label="Reading mode"
+                  title={reading ? "Back to the page view (⇧⌘R)" : "Reading mode: the text, reflowed (⇧⌘R)"}
+                  aria-pressed={!!reading}
+                  onClick={() => (reading ? exitReading() : enterReading())}
+                >
+                  <Icon name="readingMode" />
+                </button>
+              )}
               <button
                 className="key-pdf-tool"
                 aria-label="Find"
@@ -467,7 +545,8 @@ export default function PdfReader() {
               className="key-pdf-find"
               onSubmit={(event) => {
                 event.preventDefault();
-                reader.current?.nextSearchResult();
+                if (reading) readingRef.current?.step(1);
+                else reader.current?.nextSearchResult();
               }}
             >
               <Icon name="search" className="key-pdf-find-icon" />
@@ -479,7 +558,8 @@ export default function PdfReader() {
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
-                  reader.current?.setSearchQuery(event.target.value);
+                  if (reading) readingRef.current?.setQuery(event.target.value);
+                  else reader.current?.setSearchQuery(event.target.value);
                 }}
                 onKeyDown={(event) => {
                   if (event.key === "Escape") {
@@ -489,13 +569,17 @@ export default function PdfReader() {
                 }}
               />
               <span role="status">
-                {chrome?.searching
-                  ? "Searching…"
-                  : query
-                    ? `${chrome?.searchCount ? chrome.activeSearchIndex + 1 : 0} of ${chrome?.searchCount ?? 0}`
-                    : ""}
+                {reading
+                  ? query
+                    ? `${readingState?.searchCount ? readingState.searchIndex + 1 : 0} of ${readingState?.searchCount ?? 0}`
+                    : ""
+                  : chrome?.searching
+                    ? "Searching…"
+                    : query
+                      ? `${chrome?.searchCount ? chrome.activeSearchIndex + 1 : 0} of ${chrome?.searchCount ?? 0}`
+                      : ""}
               </span>
-              <button type="button" className="key-pdf-tool" aria-label="Previous match" title="Previous match (⇧⌘G)" onClick={() => reader.current?.previousSearchResult()}>
+              <button type="button" className="key-pdf-tool" aria-label="Previous match" title="Previous match (⇧⌘G)" onClick={() => (reading ? readingRef.current?.step(-1) : reader.current?.previousSearchResult())}>
                 <Icon name="chevronUp" />
               </button>
               <button type="submit" className="key-pdf-tool" aria-label="Next match" title="Next match (⌘G)">
@@ -619,6 +703,36 @@ export default function PdfReader() {
               : undefined
           }
         />
+        {reading && document && (
+          <ReadingMode
+            ref={readingRef}
+            hash={document.initial.source.hash}
+            reader={reader}
+            start={reading}
+            typography={typography}
+            invoke={(command, args) => bridge().invoke!(command, args)}
+            analyse={bridge().readerReanalyze ? () => bridge().readerReanalyze!().then(refreshAnalysis) : undefined}
+            onExit={exitReading}
+            onState={setReadingState}
+            onNotice={flash}
+            onCite={(passage) => void cite(passage)}
+            onAddToNote={
+              bridge().readerAddToNote
+                ? (passage) =>
+                    void bridge()
+                      .readerAddToNote?.(passage)
+                      .then(() => setPanelTab("details"))
+                      .catch((e) => flash(String(e).replace(/^Error: (Error invoking remote method '[^']+': )?(Error: )?/, "")))
+                : undefined
+            }
+          />
+        )}
+        {reading && popover?.kind === "type" && (
+          <TypographyPopover anchor={popover.anchor} value={typography} onChange={setTypography} onClose={() => setPopover(undefined)} />
+        )}
+        {reading && popover?.kind === "contents" && (
+          <ContentsPopover anchor={popover.anchor} entries={readingState?.outline ?? []} onPick={(item) => readingRef.current?.scrollToItem(item)} onClose={() => setPopover(undefined)} />
+        )}
       </section>
     </main>
   );

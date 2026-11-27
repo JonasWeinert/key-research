@@ -237,6 +237,9 @@ export const glyphs = {
   feed: { s: "M3.25 7.25A5.5 5.5 0 0 1 8.75 12.75M3.25 3.25A9.5 9.5 0 0 1 12.75 12.75", f: ci(4, 12, 1.15) },
   bell: { s: "M4.25 11.25V7.5A3.75 3.75 0 0 1 11.75 7.5V11.25L12.75 12.25H3.25ZM6.6 13.75H9.4M8 2.25V3.75" },
   readHalf: { s: ci(8, 8, 5.75), f: "M8 2.25A5.75 5.75 0 0 1 8 13.75Z" },
+  // Reading mode: the PDF as reflowed text, and its typography ("Aa").
+  readingMode: { s: rr(2.25, 2.25, 11.5, 11.5, 2) + "M5 5.5H11M5 8H11M5 10.5H8.75" },
+  typography: { s: "M1.75 12.75 5 3.75 8.25 12.75M2.9 9.6H7.1M10 12.75 11.85 7.75 13.75 12.75M10.55 11.25H13.2" },
 } satisfies Record<string, Glyph>;
 
 export type GlyphName = keyof typeof glyphs;

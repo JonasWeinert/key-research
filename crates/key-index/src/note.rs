@@ -86,7 +86,7 @@ fn note_blocks(markdown: &str) -> Vec<LayoutBlock> {
 fn block(kind: &str, text: String) -> LayoutBlock {
     // Sentences let the chunker split an overlong block; notes have no geometry.
     let sentences = sentences(&text).into_iter().map(|s| LayoutSentence { text: s.to_string(), rects: Vec::new() }).collect();
-    LayoutBlock { page: 0, kind: kind.into(), sentences, text, bounds: [0; 4] }
+    LayoutBlock { page: 0, kind: kind.into(), sentences, text, bounds: [0; 4], level: None }
 }
 
 /// A fence line: its marker (``` or ~~~, three or more) and the info after it.

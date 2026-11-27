@@ -17,8 +17,9 @@ mod chunk;
 mod layout;
 mod links;
 mod note;
+pub mod reflow;
 pub use chunk::{PageText, TextChar, chunk_pages, page_lines};
-pub use layout::{Layout, LayoutBlock, LayoutSentence, chunk_layout};
+pub use layout::{Layout, LayoutBlock, LayoutPage, LayoutSentence, chunk_layout};
 pub use links::{note_links, parse_href};
 pub use note::chunk_note;
 
@@ -705,6 +706,13 @@ impl Indexer {
             }
             if let Some(layout) = &analysed {
                 self.identify_by_heading(&source, &hash, layout)?;
+            }
+            // The structure stays for reading mode (reflow.rs); a fresh read without it drops an old one.
+            if source.kind == "pdf" && carried.is_none() {
+                match &analysed {
+                    Some(layout) => self.store.set_structure(id, &hash, &layout.engine, &serde_json::to_string(layout).map_err(|e| e.to_string())?)?,
+                    None => self.store.clear_structure(id)?,
+                }
             }
             let (body, page_count, engine, markdown) = match (carried, analysed) {
                 (Some(carried), _) => {
