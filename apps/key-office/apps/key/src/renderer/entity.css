@@ -169,10 +169,14 @@
 }
 .kx-enrich-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 2px 8px;
   color: var(--kx-text-3);
   font-size: 12px;
+}
+.kx-enrich-line > * {
+  white-space: nowrap;
 }
 .kx-enrich-line button {
   padding: 0;

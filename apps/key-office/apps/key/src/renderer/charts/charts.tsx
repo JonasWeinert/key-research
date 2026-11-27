@@ -78,7 +78,8 @@ export const Histogram = forwardRef<SVGSVGElement, { values?: number[]; bins?: {
   const barWidth = data.length ? (width - pad.left - pad.right) / data.length : 0;
   return (
     <svg ref={ref} className="kx-chart" viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label={label}>
-      {y.ticks.map((t) => (
+      {/* Bins hold counts: whole-number ticks only (no "0.5 sources"). */}
+      {y.ticks.filter((t) => Number.isInteger(t)).map((t) => (
         <g key={t}>
           <line x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} style={stroke("--kx-line-content")} />
           <text x={pad.left - 4} y={y(t)} textAnchor="end" dominantBaseline="central" fontSize={10} style={ink("--kx-text-3")}>

@@ -41,7 +41,8 @@ export function groupLabel(field: string, value: unknown, definition?: { type?: 
   if (field === "status") return READING[Number(value)] ?? String(value);
   const type = definition?.type === "formula" ? definition.resultType : definition?.type;
   if (type === "boolean" || type === "checkbox") return value === 1 || value === true || value === "true" ? "Yes" : "No";
-  if (typeof value === "number") return value.toLocaleString();
+  // Years read as years ("2020", not "2,020").
+  if (typeof value === "number") return field === "year" || /^property:.*\byear\b/i.test(field) ? String(value) : value.toLocaleString();
   return String(value);
 }
 

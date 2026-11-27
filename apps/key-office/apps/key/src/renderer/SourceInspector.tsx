@@ -149,7 +149,9 @@ export function Creators({ creators, onCommit }: { creators: Creator[]; onCommit
         <span>
           {creators.map((c, i) => (
             <Fragment key={i}>
-              {i > 0 && ", "}
+              {i > 0 && " "}
+              {/* The comma stays on the name's line: a line never starts with one. */}
+              <span className="kx-creator">
               {c.personId ? (
                 <EntityLink entity={{ kind: "person", id: c.personId, name: c.literal || [c.given, c.family].filter(Boolean).join(" ") }}>
                   {c.literal || [c.given, c.family].filter(Boolean).join(" ")}
@@ -158,6 +160,8 @@ export function Creators({ creators, onCommit }: { creators: Creator[]; onCommit
                 <FilterLink filter={sourceFilter.creator(c)}>{c.literal || [c.given, c.family].filter(Boolean).join(" ")}</FilterLink>
               )}
               {c.role && c.role !== "author" ? ` (${c.role})` : ""}
+              {i < creators.length - 1 && ","}
+              </span>
             </Fragment>
           ))}
         </span>
