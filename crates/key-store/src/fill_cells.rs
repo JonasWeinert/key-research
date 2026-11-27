@@ -501,12 +501,22 @@ mod tests {
         let store = Store::open(dir.path()).unwrap();
         let a = add(&store, "Alpha", "");
         let recipe = store
-            .save_fill_recipe(Recipe { property: "Gist".into(), shape: "text".into(), method: "ai".into(), instruction: "Gist".into(), inputs: vec!["notes".into()], ..Default::default() })
+            .save_fill_recipe(Recipe { property: "Gist".into(), shape: "text".into(), method: "ai".into(), instruction: "Gist".into(), inputs: vec!["notes".into(), "highlights".into()], ..Default::default() })
             .unwrap();
-        store.save_note(None, Some(&a), "First", "It works.", None).unwrap();
+        let note = store.save_note(None, Some(&a), "First", "It works.", None).unwrap();
+        store.apply_annotations(&a, &[json!({"id": "h1", "text": "works well"})], &[]).unwrap();
         fill(&store, &recipe, std::slice::from_ref(&a), &["{\"value\": \"Works\"}"], false, false);
         assert_eq!(store.fill_marks().unwrap()["cells"], json!({}));
-        store.save_note(None, Some(&a), "Second", "It does not.", None).unwrap();
+        // A note's body edited.
+        store.save_note(Some(&note.id), Some(&a), "First", "It does not.", None).unwrap();
+        assert_eq!(store.fill_marks().unwrap()["cells"][&a]["Gist"]["stale"], json!(true));
+        store.save_note(Some(&note.id), Some(&a), "First", "It works.", None).unwrap();
+        assert_eq!(store.fill_marks().unwrap()["cells"], json!({}));
+        // A highlight's comment edited.
+        store.apply_annotations(&a, &[json!({"id": "h1", "text": "works well", "comment": "but slowly"})], &[]).unwrap();
+        assert_eq!(store.fill_marks().unwrap()["cells"][&a]["Gist"]["stale"], json!(true));
+        // A new note.
+        store.save_note(None, Some(&a), "Second", "Another.", None).unwrap();
         assert_eq!(store.fill_marks().unwrap()["cells"][&a]["Gist"]["stale"], json!(true));
     }
 
