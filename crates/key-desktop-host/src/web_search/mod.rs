@@ -658,6 +658,30 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn openalex_applies_everything_but_venues_itself() {
+        let (calls, web) = Recorded::routed(|_| (200, fixture("openalex-search.json").to_string())).search();
+        let filters = WebFilters { venue: Some("Nature".into()), authors: Some(vec!["Jumper".into()]), language: Some("de".into()), ..Default::default() };
+        let page = web.search("openalex", "protein", 10, None, &filters, None).unwrap();
+        assert_eq!(page.skipped, None);
+        // The venue is checked here, on the results.
+        assert_eq!(page.results.iter().map(|r| r.venue.as_deref().unwrap_or_default()).collect::<Vec<_>>(), ["Nature"]);
+        let q = Recorded::query(&calls.lock().unwrap().urls[0]);
+        assert_eq!(q["filter"], "raw_author_name.search:Jumper,language:de");
+        assert_eq!(q["per-page"], "20", "asked for more, since some are left out");
+    }
+
+    #[test]
+    fn semantic_scholar_cannot_tell_languages_or_retractions() {
+        let web = WebSearch::default();
+        let info = web.providers_info();
+        let filters = |id: &str| info.as_array().unwrap().iter().find(|p| p["id"] == id).unwrap()["filters"].as_array().unwrap().clone();
+        assert!(!filters("s2").contains(&json!("language")));
+        assert!(!filters("s2").contains(&json!("retracted")));
+        assert!(filters("s2").contains(&json!("author")), "checked on its results");
+        assert!(filters("openalex").contains(&json!("language")));
+    }
+
+    #[test]
     fn retries_a_rate_limited_openalex_search_with_the_key() {
         let (calls, web) = Recorded::routed(|url| if url.query().unwrap_or("").contains("api_key=") { (200, fixture("openalex-search.json").to_string()) } else { (429, r#"{"error":"limited"}"#.into()) }).search();
         web.set_options(&json!({ "keys": { "openalex": { "key": "sk-test-abcdefgh9876", "mode": "fallback" } } }));
