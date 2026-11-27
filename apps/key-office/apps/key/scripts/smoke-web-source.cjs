@@ -225,7 +225,8 @@ async function serve() {
         },
         { id, text },
       );
-    const toolbar = shell.locator(".kx-web-toolbar");
+    // The shared selection menu (SelectionMenu.tsx) in the saved page's reader.
+    const toolbar = shell.locator(".ksm.kx-web-selection");
     await select("one", "Rivers supplied water, food and a road for trade.");
     await toolbar.waitFor();
     await shell.screenshot({ path: path.join(shots, "4-selection-toolbar.png") });

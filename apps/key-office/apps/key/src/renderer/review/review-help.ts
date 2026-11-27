@@ -29,9 +29,10 @@ export const REVIEW_HELP = {
     body: [
       "Read each report that passed title and abstract screening and check it against every criterion. Excluding names the criterion it does not meet, which PRISMA reports.",
       "The full text opens inside the review. Select a passage to mark a criterion as not met, with its place. Files you attach stay with the review unless you add them to the library.",
+      "In the selection menu a criterion's key marks the passage not met, Shift and the key met. The passage is kept as evidence and marked in the text; Enter then excludes and goes to the next record, and ⌘Z takes the mark back.",
     ],
   },
-  "review.evidence": { kind: "hint", text: "Select a passage in the full text: the menu lists the criteria. A number marks it not met, Shift and the number met; it is kept with its place as evidence and marked in the text. Enter then excludes and goes to the next record; ⌘Z takes the mark back." },
+  "review.evidence": { kind: "hint", text: "Select a passage in the full text and press a criterion's key: not met, or with Shift met. It is kept with its place." },
   "review.question": {
     kind: "explain",
     title: "The review question",
@@ -137,11 +138,11 @@ export const REVIEW_HELP = {
     title: "Data extraction",
     body: [
       "For each included study, fill in forms: study characteristics, outcome data for meta-analysis, and risk of bias. Build your own or start from a template, and change any field.",
-      "Select a passage in the full text and choose Use for a field: the value keeps its page and place. Questions can be shown only for some answers.",
+      "Select a passage in the full text: the menu offers the fields it fits, the focused one first. Enter fills it and keeps the passage as its source (⌥Enter adds only the source), and focus moves to the next empty field. A field's pick button (⌥P) takes the next selection with no menu; ⌘Z takes a fill back. Questions can be shown only for some answers.",
       "With two extractors, each fills the forms on their own; values that differ show side by side until one is agreed.",
     ],
   },
-  "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text: the menu offers the fields it fits, the focused one first (Enter). The passage is kept as the value's source and focus moves to the next empty field. A field's pick button (or ⌥P) takes the next selection with no menu; ⌘Z takes a fill back." },
+  "review.extraction.quotes": { kind: "hint", text: "Select a passage in the full text and press Enter: the focused field takes it, with the passage kept as its source." },
   "review.outcomes.table": { kind: "hint", text: "Not a RevMan import file: one row per study and outcome, laid out for typing into RevMan or another tool." },
   "review.forms": { kind: "hint", text: "Risk of bias has its own stage with dual assessment, plots and use in analyses." },
   "review.meta": {

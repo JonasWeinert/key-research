@@ -741,7 +741,7 @@ function optimise(file) {
           },
           { id, text },
         );
-      const toolbar = shell.locator(".kx-web-toolbar");
+      const toolbar = shell.locator(".ksm.kx-web-selection");
       await select("p2", "the benefits of preregistration depend almost entirely on this specificity");
       await toolbar.getByRole("button", { name: "blue highlight" }).click();
       await until(() => frame.evaluate(() => document.querySelectorAll("mark.key-hl").length === 1), "the first highlight");
