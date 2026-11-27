@@ -410,7 +410,8 @@ export class SignInService {
         url: chain.url,
         identityHosts,
         near: bounds,
-        headless: !!process.env.KEY_SIGNIN_HEADLESS,
+        // Test runs (main/test-mode.ts) never put a window on screen.
+        headless: !!process.env.KEY_SIGNIN_HEADLESS || process.env.KEY_TEST_MODE === "1",
         virtualAuthenticator: !!(process.env.KEY_BROWSER_SMOKE && process.env.KEY_SIGNIN_VIRTUAL_AUTHENTICATOR),
       });
     } catch (error) {
