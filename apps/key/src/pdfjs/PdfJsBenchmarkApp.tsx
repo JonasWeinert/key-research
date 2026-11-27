@@ -68,6 +68,7 @@ import { CitationCardBody, ExternalWorkCardBody } from './CitationCard';
 import type { LibraryWorks } from './library-works';
 import { ReferenceList } from './ReferenceList';
 import { SidePanel } from '../ui/SidePanel';
+import { SelectionMenu, type ReaderMark, type ReaderMarkMenu, type ReaderPassage, type ReaderSelectionActions, type ReaderSelectionMode } from '../ui/SelectionMenu';
 import {
   HoverCardBridge,
   anchoredFloatingCardPosition,
@@ -1513,6 +1514,11 @@ function linkPreviewText(link: NativeLink & { synthetic?: boolean }) {
   }
 }
 
+/** Boxes [x, y, width, height] in 0–65535 of the page → fractions. */
+function toBounds(rects: number[][]): NativeBounds[] {
+  return rects.map(([x, y, width, height]) => ({ left: x / 65535, top: y / 65535, right: (x + width) / 65535, bottom: (y + height) / 65535 }));
+}
+
 function unionBounds(bounds: NativeBounds[]): NativeBounds | undefined {
   if (bounds.length === 0) return;
   return {
@@ -1551,13 +1557,8 @@ function citationPreview(
     : linkPreviewText(link);
 }
 
-/** A host's action on the selected passage. */
-export interface ReaderSelectionAction {
-  id: string;
-  label: string;
-  title?: string;
-  run(passage: { text: string; page: number; rects: number[][] }): void;
-}
+// A host's actions on the selected passage, its menu mode and marks: ui/SelectionMenu.tsx.
+export type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderPassage, ReaderSelectionAction, ReaderSelectionActions, ReaderSelectionMode } from '../ui/SelectionMenu';
 
 interface PdfJsBenchmarkAppProps {
   initialFile?: File;
@@ -1583,7 +1584,14 @@ interface PdfJsBenchmarkAppProps {
   onCite?: (passage: { text: string; page: number; rects: number[][]; color?: string }) => void;
   /** Extra actions on the selection toolbar, given by the host (a systematic review's "Does not
    * meet…", "Use for field…"). The passage is as for Cite: page 0-based, rects 0–65535. */
-  selectionActions?: ReaderSelectionAction[];
+  selectionActions?: ReaderSelectionActions;
+  /** With it, the host's actions are the selection menu (a review's screening or extraction). */
+  selectionMode?: ReaderSelectionMode;
+  /** The host's marks in the page (not the user's highlights); a click opens `markActions`. */
+  marks?: ReaderMark[];
+  markActions?: (mark: ReaderMark) => ReaderMarkMenu | null;
+  /** While set, the next finished selection goes straight here, with no menu (a field's "pick"). */
+  pickSelection?: ((passage: ReaderPassage) => void) | null;
   /** Opens a cited work in the library when the host has it there (the citation card's action). */
   referenceInLibrary?: (number: number) => (() => void) | null | undefined;
   /** Lets the citation cards add a cited work to the library in one click. */
@@ -1680,6 +1688,8 @@ export interface PdfReaderHandle {
   /** Brings an annotation (or a quoted passage on `page`) to the middle of the view, zoomed
    * to read, and lights it up briefly; `page` when the annotation is not known. */
   focusAnnotation(id: string | undefined, page?: number, quote?: string): void;
+  /** Brings a host mark into view and lights it up; false when it is not here. */
+  showMark(id: string): boolean;
   closeSearch(): void;
   togglePanel(panel: PdfReaderPanel): void;
   closePanel(): void;
@@ -1715,6 +1725,10 @@ function PdfJsBenchmarkApp({
   onAddToNote,
   onCite,
   selectionActions,
+  selectionMode,
+  marks: hostMarks,
+  markActions,
+  pickSelection,
   referenceInLibrary,
   libraryWorks,
   highlightUsage,
@@ -1725,6 +1739,7 @@ function PdfJsBenchmarkApp({
   renderRail,
 }: PdfJsBenchmarkAppProps = {}, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<PdfJsTileController | null>(null);
   const overlayRef = useRef<PdfJsTextOverlayManager | null>(null);
@@ -1751,6 +1766,13 @@ function PdfJsBenchmarkApp({
   // A highlight that was clicked shows its info card; one just made keeps the small toolbar.
   const [annotationInfo, setAnnotationInfo] = useState(false);
   const [contextRect, setContextRect] = useState<DOMRect | null>(null);
+  /** A host mark that was clicked: the host's menu for it. */
+  const [markMenu, setMarkMenu] = useState<{ mark: ReaderMark; rect: DOMRect; menu: ReaderMarkMenu } | null>(null);
+  const markActionsRef = useRef(markActions);
+  markActionsRef.current = markActions;
+  const hostMarksRef = useRef(hostMarks);
+  hostMarksRef.current = hostMarks;
+  const selectedPassageRef = useRef<() => ReaderPassage | null>(() => null);
   const [commentDraft, setCommentDraft] = useState<CommentDraft | null>(null);
   const [commentEditorExpanded, setCommentEditorExpanded] = useState(false);
   const [commentAnchorRect, setCommentAnchorRect] = useState<DOMRect | null>(null);
@@ -2037,6 +2059,14 @@ function PdfJsBenchmarkApp({
         setSelection(snapshot);
         setContextRect(snapshot?.viewportRect ?? null);
         if (snapshot) setActiveAnnotation(null);
+      });
+      overlay.onHostMarkActivation((found, rect) => {
+        const mark = hostMarksRef.current?.find(m => m.id === found.id);
+        const menu = mark && markActionsRef.current?.(mark);
+        setSelection(null);
+        setActiveAnnotation(null);
+        setContextRect(null);
+        setMarkMenu(mark && menu ? { mark, rect, menu } : null);
       });
       overlay.onAnnotationActivation((annotation, rect) => {
         setSelection(null);
@@ -2520,6 +2550,8 @@ function PdfJsBenchmarkApp({
     };
   }, [activeAnnotation, selection]);
 
+  selectedPassageRef.current = selectedPassage;
+
   /** Cite: the passage, copied as a quote by the host. */
   const citeContext = useCallback(() => {
     if (!onCite) return;
@@ -2791,8 +2823,37 @@ function PdfJsBenchmarkApp({
     return () => highlightUsage({ id: annotation.id, text: annotation.text, page: annotation.range.start.page });
   }, [activeAnnotationId, highlightUsage]);
   const context = selection || activeAnnotation ? contextRect : null;
-  // The toolbar follows its passage while it scrolls and closes once it leaves the view.
-  useReaderOverlay(!!context && !commentDraft, '.pdfjs-selection-toolbar, .key-highlight-info', () => setContextRect(null), { scroll: false });
+  // The menu follows its passage while it scrolls and closes once it leaves the view.
+  useReaderOverlay(!!context && !commentDraft, '.ksm, .key-highlight-info', () => setContextRect(null), { scroll: false });
+  useReaderOverlay(!!markMenu, '.ksm', () => setMarkMenu(null), { scroll: false });
+  // The host's marks, drawn in the pages (again when the reader has its text).
+  useEffect(() => {
+    overlayRef.current?.setHostMarks((hostMarks ?? []).map(m => ({ id: m.id, page: m.page, bounds: toBounds(m.rects), tone: m.tone, label: m.label })));
+  }, [hostMarks, ready, readerIdentity]);
+  useEffect(() => {
+    if (markMenu && !hostMarks?.some(m => m.id === markMenu.mark.id)) setMarkMenu(null);
+  }, [hostMarks, markMenu]);
+  // A finished selection the host takes (no menu): after the pointer is up.
+  const interceptRef = useRef(pickSelection);
+  interceptRef.current = pickSelection;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  useEffect(() => {
+    const up = () =>
+      window.setTimeout(() => {
+        const take = interceptRef.current;
+        if (!take || !selectionRef.current) return;
+        const passage = selectedPassageRef.current();
+        if (passage) {
+          take(passage);
+          overlayRef.current?.clearBrowserSelection();
+          setSelection(null);
+          setContextRect(null);
+        }
+      }, 0);
+    window.addEventListener('pointerup', up);
+    return () => window.removeEventListener('pointerup', up);
+  }, []);
   useReaderOverlay(!!hoveredLink && !context, '.pdfjs-link-card', () => setHoveredLink(null));
   // A card the user clicked (or expanded) stays while the page or the card scrolls; one that
   // only follows the pointer goes when the page scrolls away from it.
@@ -2895,6 +2956,19 @@ function PdfJsBenchmarkApp({
         const annotation = comments.find(comment => comment.id === id);
         if (!annotation) return;
         void openAnnotationEditor(annotation);
+      },
+      showMark: id => {
+        const mark = hostMarksRef.current?.find(m => m.id === id);
+        const controller = controllerRef.current;
+        if (!mark || !controller) return false;
+        const bounds = toBounds(mark.rects);
+        void controller.preparePage(mark.page).then(() => {
+          const box = unionBounds(bounds);
+          if (box) controller.centerOnBounds(mark.page, box);
+          else controller.scrollToBounds(mark.page, { left: 0, right: 0, top: 0, bottom: 0 });
+          requestAnimationFrame(() => overlayRef.current?.flashHostMark(id));
+        }).catch(() => {});
+        return true;
       },
       focusAnnotation: (id, fallbackPage, quote) => {
         const controller = controllerRef.current;
@@ -3234,113 +3308,67 @@ function PdfJsBenchmarkApp({
           onDelete={removeActiveAnnotation}
         />
       )}
-      {context && !commentDraft && !(activeAnnotation && !selection && annotationInfo) && (
-        <div
-          className="pdfjs-selection-toolbar"
-          role="toolbar"
-          aria-label={selection ? 'Text selection actions' : 'Annotation actions'}
-          style={{
-            left: Math.max(
-              12,
-              Math.min(
-                window.innerWidth - 342,
-                context.left + context.width / 2 - 165,
-              ),
-            ),
-            top:
-              context.bottom + 54 < window.innerHeight
-                ? context.bottom + 10
-                : Math.max(54, context.top - 48),
-          }}
-          onPointerDown={event => event.preventDefault()}
-        >
-          {HIGHLIGHT_COLORS.map(color => (
-            <button
-              key={color}
-              type="button"
-              className={`pdfjs-color-button color-${color}`}
-              aria-label={`${color} highlight`}
-              aria-pressed={activeAnnotation?.color === color}
-              onClick={() => addHighlight(color)}
-            />
-          ))}
-          <span className="pdfjs-selection-divider" />
-          <button
-            type="button"
-            className="pdfjs-selection-action"
-            aria-label="Copy selected text"
-            title="Copy"
-            onClick={() => void copyContextText()}
-          >
-            <Icon name="copy" />
-          </button>
-          {onCite && (
-            <button
-              type="button"
-              className="pdfjs-selection-action"
-              aria-label="Cite"
-              title="Copy as a quote with its source"
-              onClick={citeContext}
-            >
-              <Icon name="quote" />
-            </button>
-          )}
-          {selection && selectionActions?.map(action => (
-            <button
-              key={action.id}
-              type="button"
-              className="pdfjs-selection-action pdfjs-selection-host"
-              data-action={action.id}
-              title={action.title ?? action.label}
-              onClick={() => {
-                const passage = selectedPassage();
-                if (passage) action.run(passage);
-              }}
-            >
-              <span>{action.label}</span>
-            </button>
-          ))}
-          {onAddToNote ? (
-            <button
-              type="button"
-              className="pdfjs-selection-action pdfjs-selection-to-note"
-              aria-label="Add to note"
-              title="Quote this passage in the source's note"
-              onClick={() => {
-                const text = (selection?.text ?? activeAnnotation?.text ?? '').trim();
-                const page = selection?.range.start.page ?? activeAnnotation?.range.start.page ?? 0;
-                if (!text) return;
-                onAddToNote({ text, page, color: activeAnnotation?.color });
-                window.getSelection()?.removeAllRanges();
-                setStatus('Added to note');
-              }}
-            >
-              <Icon name="note" />
-              <span>Add to note</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="pdfjs-selection-action"
-              aria-label={activeAnnotation?.comment ? 'Edit note' : 'Add note'}
-              title={activeAnnotation?.comment ? 'Edit note' : 'Add note'}
-              onClick={openCommentEditor}
-            >
-              <Icon name="note" />
-            </button>
-          )}
-          {activeAnnotation && (
-            <button
-              type="button"
-              className="danger"
-              aria-label="Delete annotation"
-              onClick={removeActiveAnnotation}
-            >
-              Delete
-            </button>
-          )}
-        </div>
-      )}
+      <SelectionMenu
+        open={!!context && !commentDraft && !(activeAnnotation && !selection && annotationInfo) && !(selection && pickSelection)}
+        anchor={context ?? null}
+        area={() => rootRef.current?.getBoundingClientRect()}
+        label={selection ? 'Text selection actions' : 'Annotation actions'}
+        passage={selectedPassage}
+        actions={selection ? selectionActions : undefined}
+        mode={selection && selectionActions ? selectionMode : undefined}
+        colors={HIGHLIGHT_COLORS.map(color => ({
+          id: color,
+          label: `${color} highlight`,
+          rgb: HIGHLIGHT_COLOR_RGB[color],
+          pressed: activeAnnotation?.color === color,
+          run: () => void addHighlight(color),
+        }))}
+        tools={[
+          { id: 'copy', label: 'Copy selected text', title: 'Copy', icon: 'copy', run: () => void copyContextText() },
+          ...(onCite ? [{ id: 'cite', label: 'Cite', title: 'Copy as a quote with its source', icon: 'quote' as const, run: citeContext }] : []),
+          onAddToNote
+            ? {
+                id: 'to-note',
+                label: 'Add to note',
+                title: "Quote this passage in the source's note",
+                icon: 'note' as const,
+                text: true,
+                run: () => {
+                  const text = (selection?.text ?? activeAnnotation?.text ?? '').trim();
+                  const page = selection?.range.start.page ?? activeAnnotation?.range.start.page ?? 0;
+                  if (!text) return;
+                  onAddToNote({ text, page, color: activeAnnotation?.color });
+                  window.getSelection()?.removeAllRanges();
+                  setStatus('Added to note');
+                },
+              }
+            : { id: 'comment', label: activeAnnotation?.comment ? 'Edit note' : 'Add note', icon: 'comment' as const, run: openCommentEditor },
+          ...(activeAnnotation ? [{ id: 'delete', label: 'Delete annotation', title: 'Delete', icon: 'trash' as const, danger: true, run: removeActiveAnnotation }] : []),
+        ]}
+        onDone={() => {
+          overlayRef.current?.clearBrowserSelection();
+          setSelection(null);
+          setContextRect(null);
+        }}
+        onClose={() => {
+          overlayRef.current?.clearBrowserSelection();
+          setSelection(null);
+          setActiveAnnotation(null);
+          setContextRect(null);
+        }}
+      />
+      <SelectionMenu
+        open={!!markMenu}
+        anchor={markMenu?.rect ?? null}
+        area={() => rootRef.current?.getBoundingClientRect()}
+        label={markMenu?.menu.title ?? 'Mark'}
+        title={markMenu?.menu.title}
+        passage={() => (markMenu ? { text: markMenu.mark.text, page: markMenu.mark.page, rects: markMenu.mark.rects } : null)}
+        actions={markMenu?.menu.actions}
+        mode={markMenu?.menu.mode}
+        onDone={() => setMarkMenu(null)}
+        onClose={() => setMarkMenu(null)}
+      />
       {hoveredLink && !context && (
         <LiveAnchoredCard
           className="pdfjs-link-card"

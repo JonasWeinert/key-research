@@ -9,6 +9,7 @@ import { bridge, type Invoke, type Source } from "./library-api";
 import { openItemAt, toast } from "./item-actions";
 import { describeRange, locate, offsetOf, rangeFor, textIndex, unwrap, wrapRange, type WebAnchor } from "./web-anchors";
 import { takeWebFocus, webPanelStatusItems, WEB_FOCUS_EVENT, type WebFocus } from "./web-page-open";
+import { SelectionMenu } from "@key-reader/ui/SelectionMenu";
 import ReadingMode, { ContentsPopover, TypographyPopover, useTypography, type ReadingModeHandle, type ReadingModeState, type ReadingReply, type ReadingSelection, type ReaderSelectionAction, type Stretch, type WebReadingBackend } from "./ReadingMode";
 import { opensInReadingMode, rememberReadingMode } from "./reading-preference";
 import { writeQuoteClipboard } from "./quote-clipboard";
@@ -930,39 +931,31 @@ export function WebPageReader({
             onDelete={() => remove(active.id)}
           />
         )}
-        {context && !draft && !active && (
-          <div className="kx-web-toolbar" role="toolbar" aria-label={context.kind === "selection" ? "Text selection actions" : "Highlight actions"} style={place(context.rect, 300, 36)} onPointerDown={(e) => e.preventDefault()}>
-            {HIGHLIGHT_COLORS.map((color) => (
-              <button key={color} type="button" className="kx-web-swatch" data-color={color} aria-label={`${color} highlight`} onClick={() => highlight(color)} />
-            ))}
-            <span className="kx-web-toolbar-divider" />
-            <button type="button" className="kx-web-toolbar-action" aria-label="Copy" title="Copy" onClick={() => void copy()}>
-              <Icon name="copy" size={15} />
-            </button>
-            <button type="button" className="kx-web-toolbar-action" aria-label="Cite" title="Copy as a quote with its source" onClick={() => void cite()}>
-              <Icon name="quote" size={15} />
-            </button>
-            <button type="button" className="kx-web-toolbar-action" aria-label="Add comment" title="Add comment" onClick={openComment}>
-              <Icon name="note" size={15} />
-            </button>
-            {context.kind === "selection" &&
-              selectionActions?.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  className="kx-web-toolbar-text"
-                  title={action.title}
-                  onClick={() => {
-                    action.run({ text: context.text, page: -1, rects: [] });
-                    clearSelection();
-                    setContext(null);
-                  }}
-                >
-                  {action.label}
-                </button>
-              ))}
-          </div>
-        )}
+        <SelectionMenu
+          open={!!context && !draft && !active}
+          anchor={(() => {
+            const b = body.current?.getBoundingClientRect();
+            return context && b ? new DOMRect(context.rect.left + b.left, context.rect.top + b.top, context.rect.width, context.rect.height) : null;
+          })()}
+          area={() => body.current?.getBoundingClientRect()}
+          label={context?.kind === "selection" ? "Text selection actions" : "Highlight actions"}
+          passage={() => (context?.kind === "selection" ? { text: context.text, page: -1, rects: [] } : null)}
+          actions={context?.kind === "selection" ? selectionActions : undefined}
+          colors={HIGHLIGHT_COLORS.map((color) => ({ id: color, label: `${color} highlight`, rgb: PAGE_RGB[color], run: () => highlight(color) }))}
+          tools={[
+            { id: "copy", label: "Copy", icon: "copy", run: () => void copy() },
+            { id: "cite", label: "Cite", title: "Copy as a quote with its source", icon: "quote", run: () => void cite() },
+            { id: "comment", label: "Add comment", icon: "comment", run: openComment },
+          ]}
+          onDone={() => {
+            clearSelection();
+            setContext(null);
+          }}
+          onClose={() => {
+            clearSelection();
+            setContext(null);
+          }}
+        />
         {draft && (
           <form
             className="kx-web-comment"

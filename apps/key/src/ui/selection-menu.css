@@ -1,0 +1,572 @@
+/* The selection menu (SelectionMenu.tsx): a popover of the app's material beside the passage.
+   Colours come from the app's theme tokens (system colours where the reader runs alone). */
+.ksm {
+  --ksm-bg: var(--kx-bg-raised, Canvas);
+  --ksm-text: var(--kx-text, CanvasText);
+  --ksm-text-2: var(--kx-text-2, GrayText);
+  --ksm-text-3: var(--kx-text-3, GrayText);
+  --ksm-line: var(--kx-line, color-mix(in srgb, CanvasText 12%, transparent));
+  --ksm-fill: var(--kx-fill, color-mix(in srgb, CanvasText 7%, transparent));
+  --ksm-fill-2: var(--kx-fill-2, color-mix(in srgb, CanvasText 11%, transparent));
+  --ksm-accent: var(--kx-accent, AccentColor);
+  --ksm-on-accent: var(--kx-on-accent, AccentColorText);
+  --ksm-not-met: var(--kx-red, CanvasText);
+  --ksm-met: var(--kx-green, CanvasText);
+  --ksm-evidence: var(--kx-accent, AccentColor);
+  --ksm-source: var(--kx-indigo, AccentColor);
+  position: fixed;
+  z-index: 2147483000;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 0;
+  padding: 4px;
+  overflow: hidden;
+  border-radius: 10px;
+  color: var(--ksm-text);
+  background: color-mix(in srgb, var(--ksm-bg) 94%, transparent);
+  box-shadow: var(--kx-shadow-pop, 0 0 0 0.5px var(--ksm-line), 0 8px 28px -8px color-mix(in srgb, CanvasText 30%, transparent));
+  backdrop-filter: blur(24px) saturate(1.6);
+  font: 13px/1.35 var(--kx-font, -apple-system, BlinkMacSystemFont, system-ui, sans-serif);
+  text-align: start;
+  animation: ksm-in 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  user-select: none;
+}
+.ksm *,
+.ksm *::before,
+.ksm *::after {
+  box-sizing: border-box;
+}
+@keyframes ksm-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.98);
+  }
+}
+.ksm[data-side="above"] {
+  animation-name: ksm-in-above;
+}
+@keyframes ksm-in-above {
+  from {
+    opacity: 0;
+    transform: translateY(-2px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ksm {
+    animation: none;
+  }
+}
+.ksm button {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+.ksm button:focus-visible,
+.ksm input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ksm-accent) 70%, transparent);
+  outline-offset: 1px;
+}
+.ksm-kbd {
+  display: inline-grid;
+  flex: 0 0 auto;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--ksm-text-2);
+  background: var(--ksm-fill);
+  box-shadow: inset 0 -0.5px 0 var(--ksm-line);
+  font: 500 10.5px/1 var(--kx-font, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The reader's own row: colours, a divider, icon tools. */
+.ksm-generic {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-height: 28px;
+}
+.ksm-swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ksm-swatch);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, CanvasText 18%, transparent);
+  transition: transform 110ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.ksm-swatch:hover {
+  transform: scale(1.14);
+}
+.ksm-swatch[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--ksm-bg), 0 0 0 3.5px var(--ksm-accent);
+}
+.ksm-generic[data-compact] .ksm-swatch {
+  width: 14px;
+  height: 14px;
+}
+.ksm-divider {
+  flex: 0 0 auto;
+  width: 0.5px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--ksm-line);
+}
+.ksm-tool {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ksm-text-2);
+  background: transparent;
+  white-space: nowrap;
+}
+.ksm-tool:hover {
+  color: var(--ksm-text);
+  background: var(--ksm-fill);
+}
+.ksm-tool[data-text] {
+  padding: 0 8px 0 6px;
+  color: var(--ksm-accent);
+  font-weight: 550;
+}
+.ksm-tool[data-danger] {
+  color: var(--ksm-not-met);
+}
+.ksm-generic[data-compact] .ksm-tool {
+  height: 22px;
+  min-width: 24px;
+}
+
+/* A host's actions without a mode: a second row of labelled buttons that wraps. */
+.ksm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--ksm-line);
+}
+.ksm-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ksm-text);
+  background: var(--ksm-fill);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ksm-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ksm-chip:hover {
+  background: var(--ksm-fill-2);
+}
+.ksm-chip[data-primary] {
+  color: var(--ksm-on-accent);
+  background: var(--ksm-accent);
+}
+.ksm-chip[data-primary] .ksm-kbd {
+  color: inherit;
+  background: color-mix(in srgb, var(--ksm-on-accent) 22%, transparent);
+  box-shadow: none;
+}
+.ksm-chip:disabled {
+  opacity: 0.5;
+}
+
+/* A host's mode: heading and filter, the rows, the reader's tools folded below. */
+.ksm[data-mode]:not([data-mode="follow"]) {
+  width: 340px;
+  padding: 0;
+}
+.ksm-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px 6px 10px;
+}
+.ksm:not([data-mode]) .ksm-head {
+  padding: 2px 4px 4px;
+}
+.ksm-mode {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ksm-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ksm-filter {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ksm-text);
+  background: var(--ksm-fill);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+  user-select: text;
+}
+.ksm-filter::placeholder,
+.ksm-input::placeholder {
+  color: var(--ksm-text-3);
+}
+.ksm-hint {
+  flex: 0 0 auto;
+  margin: -2px 10px 4px;
+  color: var(--ksm-text-3);
+  font-size: 11px;
+}
+.ksm-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 4px 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.ksm-group + .ksm-group {
+  margin-top: 2px;
+}
+.ksm-group-title {
+  margin: 6px 6px 2px;
+  color: var(--ksm-text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.ksm-empty {
+  margin: 6px 8px 8px;
+  color: var(--ksm-text-2);
+  font-size: 12px;
+}
+.ksm-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  border-radius: 7px;
+}
+.ksm-row[data-active] {
+  background: var(--ksm-fill);
+}
+.ksm-row-main {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 4px 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: start;
+}
+.ksm-row-icon {
+  flex: 0 0 auto;
+  color: var(--ksm-text-2);
+}
+.ksm-row[data-tone="notMet"] .ksm-row-icon {
+  color: var(--ksm-not-met);
+}
+.ksm-row[data-tone="met"] .ksm-row-icon {
+  color: var(--ksm-met);
+}
+.ksm-row[data-tone="source"] .ksm-row-icon {
+  color: var(--ksm-source);
+}
+.ksm-row-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+.ksm-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ksm-row-detail {
+  overflow: hidden;
+  color: var(--ksm-text-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ksm-row[data-secondary] .ksm-row-main {
+  min-height: 26px;
+  color: var(--ksm-text-2);
+  font-size: 12px;
+}
+.ksm-secondary {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--ksm-line);
+}
+.ksm-pill {
+  --ksm-tone: var(--ksm-accent);
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 3px 0 7px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ksm-tone);
+  background: color-mix(in srgb, var(--ksm-tone) 12%, transparent);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ksm-pill[data-tone="notMet"] {
+  --ksm-tone: var(--ksm-not-met);
+}
+.ksm-pill[data-tone="met"] {
+  --ksm-tone: var(--ksm-met);
+}
+.ksm-pill[data-tone="source"] {
+  --ksm-tone: var(--ksm-source);
+}
+.ksm-pill .ksm-kbd {
+  min-width: 16px;
+  height: 16px;
+  color: inherit;
+  background: color-mix(in srgb, var(--ksm-tone) 16%, transparent);
+  box-shadow: none;
+}
+.ksm-row-main:hover .ksm-pill,
+.ksm-row-main[data-target-active] .ksm-pill,
+.ksm-quick:hover,
+.ksm-quick[data-target-active] {
+  color: var(--ksm-on-accent);
+  background: var(--ksm-tone);
+}
+.ksm-row-main:hover .ksm-pill .ksm-kbd,
+.ksm-row-main[data-target-active] .ksm-pill .ksm-kbd,
+.ksm-quick:hover .ksm-kbd,
+.ksm-quick[data-target-active] .ksm-kbd {
+  background: color-mix(in srgb, var(--ksm-on-accent) 24%, transparent);
+}
+.ksm-quick {
+  margin-right: 4px;
+}
+.ksm-quick:not(:hover):not([data-target-active]) {
+  background: transparent;
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--ksm-tone) 40%, transparent);
+}
+.ksm-input-row {
+  gap: 6px;
+  padding: 3px 4px 3px 8px;
+}
+.ksm-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--ksm-text);
+  background: var(--ksm-fill);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+  user-select: text;
+}
+.ksm-more {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 10px 7px;
+  border: 0;
+  border-top: 0.5px solid var(--ksm-line);
+  color: var(--ksm-text-2);
+  background: transparent;
+  font-size: 11.5px;
+  text-align: start;
+}
+.ksm-more:hover {
+  color: var(--ksm-text);
+}
+.ksm[data-mode] .ksm-generic {
+  flex: 0 0 auto;
+  padding: 3px 6px 4px;
+  border-top: 0.5px solid var(--ksm-line);
+}
+
+/* After an action: what happened and what next. */
+.ksm-follow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 3px 3px 3px 8px;
+}
+.ksm-follow-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.ksm-follow-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+.ksm-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ksm-accent);
+}
+.ksm-dot[data-tone="notMet"] {
+  background: var(--ksm-not-met);
+}
+.ksm-dot[data-tone="met"] {
+  background: var(--ksm-met);
+}
+.ksm-dot[data-tone="source"] {
+  background: var(--ksm-source);
+}
+
+/* A host's marks in the page (review evidence, value sources): a tinted wash with an underline
+   in the purpose's colour and a small tag at the start, apart from the user's highlights. */
+.pdfjs-host-mark,
+.pdfjs-host-mark-tag,
+.ksm-legend {
+  --ksm-not-met: var(--kx-red, CanvasText);
+  --ksm-met: var(--kx-green, CanvasText);
+  --ksm-evidence: var(--kx-accent, AccentColor);
+  --ksm-source: var(--kx-indigo, AccentColor);
+  --ksm-mark: var(--ksm-evidence);
+}
+.tone-notMet,
+.ksm-legend [data-tone="notMet"] {
+  --ksm-mark: var(--ksm-not-met);
+}
+.tone-met,
+.ksm-legend [data-tone="met"] {
+  --ksm-mark: var(--ksm-met);
+}
+.tone-source,
+.ksm-legend [data-tone="source"] {
+  --ksm-mark: var(--ksm-source);
+}
+.pdfjs-host-mark {
+  position: absolute;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--ksm-mark) 16%, transparent);
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--ksm-mark) 85%, transparent);
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+.pdfjs-host-mark.flash {
+  animation: ksm-mark-flash 1.6s ease-out;
+}
+@keyframes ksm-mark-flash {
+  15%,
+  55% {
+    background: color-mix(in srgb, var(--ksm-mark) 42%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--ksm-mark) 60%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdfjs-host-mark.flash {
+    animation: none;
+    outline: 2px solid var(--ksm-mark);
+  }
+}
+.pdfjs-host-mark-tag {
+  position: absolute;
+  max-width: 40%;
+  padding: 0 4px;
+  overflow: hidden;
+  border-radius: 3px 3px 3px 0;
+  color: var(--kx-on-accent, Canvas);
+  background: var(--ksm-mark);
+  font: 600 9px/13px var(--kx-font, system-ui, sans-serif);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+/* The same marks in flowing text (text-marks.ts: reading mode). */
+::highlight(ksm-notMet) {
+  background-color: color-mix(in srgb, var(--kx-red, CanvasText) 18%, transparent);
+  text-decoration: underline 2px var(--kx-red, CanvasText);
+  text-underline-offset: 3px;
+}
+::highlight(ksm-met) {
+  background-color: color-mix(in srgb, var(--kx-green, CanvasText) 18%, transparent);
+  text-decoration: underline 2px var(--kx-green, CanvasText);
+  text-underline-offset: 3px;
+}
+::highlight(ksm-evidence) {
+  background-color: color-mix(in srgb, var(--kx-accent, AccentColor) 16%, transparent);
+  text-decoration: underline 2px var(--kx-accent, AccentColor);
+  text-underline-offset: 3px;
+}
+::highlight(ksm-source) {
+  background-color: color-mix(in srgb, var(--kx-indigo, AccentColor) 16%, transparent);
+  text-decoration: underline 2px var(--kx-indigo, AccentColor);
+  text-underline-offset: 3px;
+}
+.ksm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--kx-text-2, GrayText);
+  font-size: 11.5px;
+}
+.ksm-legend [data-tone] {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ksm-legend [data-tone]::before {
+  width: 12px;
+  height: 8px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ksm-mark) 20%, transparent);
+  box-shadow: inset 0 -2px 0 var(--ksm-mark);
+  content: "";
+}
