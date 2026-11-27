@@ -8,7 +8,8 @@
 //                                        KEY_CONNECTORS_SIGNING_KEY environment variable)
 //   certify --root FILE --key FILE --not-before T --not-after T [--out keys.json]
 //   keygen --out FILE [--note TEXT]      a new Ed25519 key file (secret: never commit it)
-//   verify --dir DIR [--dev]             verify a bundle as the app would
+//   verify --dir DIR [--dev]             verify a bundle as the app would (unsigned is
+//                                        accepted while connectors/trust.json has no root)
 //   dev-bundle --out DIR --sequence N    bundle signed with the public dev keys (smokes)
 use key_connectors::bundle::{self, KeyFile, Keys, Trust};
 use key_connectors::engine::{Credentials, Engine, RunControl};
@@ -290,7 +291,12 @@ fn run() -> Result<ExitCode, String> {
             let dir = PathBuf::from(flag(rest, "--dir").ok_or("--dir DIR")?);
             let trust = Trust::embedded(has(rest, "--dev"));
             let v = bundle::verify(&bundle::read_dir(&dir), &trust, key_connectors::time::now_secs(), None)?;
-            println!("ok: bundle {} with {} connectors", v.index.sequence, v.specs.len());
+            let signature = match &v.key_id {
+                Some(id) => format!("signed by key {id}"),
+                None if trust.requires_signature() => "unsigned".into(),
+                None => "unsigned (accepted: no signing key is trusted yet)".into(),
+            };
+            println!("ok: bundle {} with {} connectors, {signature}", v.index.sequence, v.specs.len());
             for w in v.warnings {
                 println!("warning: {w}");
             }

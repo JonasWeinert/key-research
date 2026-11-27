@@ -223,6 +223,15 @@ export const HELP = {
   "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or continue in your browser."),
   "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
 
+  // ── Settings: Database connectors ───────────────────────────────────────────────────
+  "settings.services.connectors": explain(
+    "Database connectors",
+    [
+      "A connector tells Key how to search one database, such as PubMed or EconStor. Key ships with a set of them and can download newer versions when a database changes how it answers.",
+      "Updates are not signed yet. Key still checks every downloaded file against the update’s list and never installs an older update, but it cannot prove who published it. Signing comes later; nothing changes for you then.",
+    ],
+    { privacy: "Checking for updates downloads a small list from Key’s update address. Your searches are not sent." },
+  ),
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
   "settings.services.intro": hint("Optional keys that give Key a higher allowance at some scholarly services. Key works without them."),
   "settings.services.api-key": explain(

@@ -13,7 +13,7 @@ set `KEY_CONNECTORS_BIN` to reuse a build).
 | `translate <id> query.json` | prints the native query string and warnings for a neutral query |
 | `bundle --out dist --sequence N` | writes `index.json` and `specs/` (unsigned) |
 | `sign --dir dist` | signs `dist/index.json` with `KEY_CONNECTORS_SIGNING_KEY` (or `--key FILE`) and copies `connectors/keys.json` |
-| `verify --dir dist [--dev]` | verifies a bundle the way the app does |
+| `verify --dir dist [--dev]` | verifies a bundle the way the app does (says signed or unsigned) |
 | `keygen --out FILE` | makes a new Ed25519 key file (secret) and `FILE.pub.json` (public) |
 | `certify --root ROOT --key KEY.pub.json --not-after T` | the root key certifies a signing key in `connectors/keys.json` |
 
@@ -22,11 +22,24 @@ credential's `secret` in upper case with `-` as `_` (for example `KEY_CONNECTOR_
 `KEY_CONNECTOR_CLARIVATE_WOS`, `KEY_CONNECTOR_NCBI`). `KEY_CONNECTORS_MAILTO` sets the contact
 address that polite APIs ask for.
 
+## Unsigned for now
+
+Signing is postponed. While `connectors/trust.json` has no root key, the publish workflow
+publishes an unsigned bundle (no `index.sig`), and the app accepts it: the spec hashes in
+`index.json` are still checked, older bundles are still refused, and Settings labels the
+downloaded connectors "Unsigned". No secret is needed for any workflow.
+
+Switching signing on is one change: add a root to `trust.json` (steps below). From the next app
+release on, only signed bundles are accepted, and the publish workflow signs with
+`CONNECTORS_SIGNING_KEY` (it skips publishing, with a warning, while that secret is missing).
+`"requireSignature": true` in `trust.json` requires signatures even without a root (nothing would
+then be accepted); `false` keeps accepting unsigned bundles after a root is added (a transition
+period; a signature that is present is still verified).
+
 ## Signing: what the owner sets up once
 
 The app trusts only the root public keys in `connectors/trust.json`, which are compiled in.
-Until a root is added, the app uses the connectors built into it and "Check for updates" says
-updates are not set up. Nothing unsigned is ever activated.
+Once a root is added, nothing unsigned is activated.
 
 1. Make a root key and a signing key on a trusted machine, outside the repository:
    ```

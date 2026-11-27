@@ -13,6 +13,7 @@ import { useLibraryStatus } from "./index-activity";
 import WebSearchSettings from "./WebSearchSettings";
 import BrowserSettings from "./BrowserSettings";
 import ServiceKeys from "./ServiceKeys";
+import DatabaseConnectorsSettings from "./DatabaseConnectorsSettings";
 import AiSetup from "./AiSetup";
 import CitationSettings from "./CitationSettings";
 import { APP_GROUPS, APP_SECTIONS, WORKSPACE_SECTIONS, matches, openWorkspaceSettings, type SectionInfo, type SettingsSection } from "./settings-catalog";
@@ -238,7 +239,12 @@ export default function Settings({
           <BrowserSettings settings={settings} onSettings={onSettings} />
         </>
       )}
-      {section === "services" && <ServiceKeys invoke={invoke} />}
+      {section === "services" && (
+        <>
+          <ServiceKeys invoke={invoke} />
+          <DatabaseConnectorsSettings invoke={invoke} workspaceId={host} />
+        </>
+      )}
       {section === "ai" && <AiSetup invoke={invoke} />}
       {section === "about" && <About info={info} />}
     </SettingsFrame>

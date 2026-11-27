@@ -2,8 +2,8 @@
 // crates/key-connectors run here. A search is a run in the background (one thread per
 // connector, polite to each service); the app polls `db_results`, which merges what came in
 // with key-store's duplicate matcher and marks what the library already has. Runs, saved
-// searches and connector health are kept on disk; connector updates are signed bundles
-// (key_connectors::bundle) checked on demand and at most daily.
+// searches and connector health are kept on disk; connector updates are bundles
+// (key_connectors::bundle; unsigned while signing is postponed) checked on demand and at most daily.
 //
 // Keys come from the app (`db_options`, like `web_options`); nothing here reads a keychain.
 use super::web_search::{self, Library, library::Asked, types::{Ids, WebResult}};
@@ -206,7 +206,7 @@ impl Databases {
     }
 
     /// A minute after start, and then every few hours, checks for connector updates (at most
-    /// once a day; nothing is fetched until updates are set up in connectors/trust.json).
+    /// once a day; nothing is fetched without an update address in connectors/trust.json).
     pub fn start_background_checks(self: &Arc<Self>) {
         if std::env::var("KEY_CONNECTORS_NO_AUTO_CHECK").is_ok() {
             return;
@@ -352,6 +352,8 @@ impl Databases {
             "health": self.health_of(&spec.id),
             "updatedAt": if l.origin == "update" { state.activated_at.map(|t| t * 1000) } else { None },
             "origin": l.origin,
+            // Built-in connectors ship inside the app; downloaded ones carry their bundle's state.
+            "signature": if l.origin == "update" { if self.loaded.read().unwrap_or_else(|e| e.into_inner()).1.as_ref().is_some_and(|v| v.signed) { "signed" } else { "unsigned" } } else { "built-in" },
         })
     }
 
@@ -371,7 +373,8 @@ impl Databases {
         json!({
             "sequence": sequence, "created": created, "origin": origin, "activatedAt": state.activated_at.map(|t| t * 1000),
             "lastCheckAt": state.last_check_at.map(|t| t * 1000), "lastResult": state.last_result, "lastError": state.last_error,
-            "updatesConfigured": trust.configured() && !trust.update_url.is_empty(), "updateUrl": trust.update_url,
+            "updatesConfigured": trust.configured(), "updateUrl": trust.update_url,
+            "signed": loaded.1.as_ref().map(|v| v.signed), "signingKey": loaded.1.as_ref().and_then(|v| v.key_id.clone()), "signatureRequired": trust.requires_signature(),
             "engine": key_connectors::ENGINE_VERSION, "connectors": loaded.0.len(), "warnings": loaded.1.as_ref().map(|v| v.warnings.clone()).unwrap_or_default(),
         })
     }
@@ -395,12 +398,14 @@ impl Databases {
             let response = transport.send(&request, &key_connectors::engine::CancellationToken::active()).map_err(|e| format!("{e:?}"))?;
             match response.status {
                 304 => Ok(None),
+                // Nothing published yet: the built-in connectors are current.
+                404 if rel == "index.json" => Ok(None),
                 404 => Err(format!("{rel} was not found at the update address")),
                 200..=299 => Ok(Some((response.body.clone(), response.header("etag").map(String::from)))),
                 s => Err(format!("The update address answered {s}")),
             }
         };
-        let fetch = |rel: &str| get(rel, None).map(|o| o.map(|(b, _)| b)).or_else(|e| if e.contains("was not found") && rel == "keys.json" { Ok(None) } else { Err(e) });
+        let fetch = |rel: &str| get(rel, None).map(|o| o.map(|(b, _)| b)).or_else(|e| if e.contains("was not found") && (rel == "keys.json" || rel == "index.sig") { Ok(None) } else { Err(e) });
         let conditional = |etag: Option<&str>| get("index.json", etag);
         let result = self.store().check(&trust, &fetch, key_connectors::time::now_secs(), force, &conditional);
         if result.state == "updated" {
