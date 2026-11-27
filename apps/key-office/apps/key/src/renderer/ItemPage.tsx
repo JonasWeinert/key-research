@@ -93,25 +93,41 @@ export function ItemPage({
   useLayoutEffect(() => {
     window.dispatchEvent(new Event("key:title-size"));
   }, [size]);
-  // Once the title has scrolled away, a compact copy stays at the top.
-  useEffect(() => {
-    const root = article.current;
-    const target = heading.current;
-    if (!root || !target) return;
-    // Only once the page has been scrolled: while a pane first lays out the title can briefly
-    // read as out of view.
-    const observer = new IntersectionObserver(
-      ([entry]) => setPinned(root.scrollTop > 8 && !entry.isIntersecting && entry.boundingClientRect.top < (entry.rootBounds?.top ?? 0) + 1),
-      { root, threshold: 0 },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
+  // Once the title has scrolled away, a compact copy stays at the top. The page itself scrolls,
+  // or, where its bar stays put above it (docked beside a reader), its body does.
+  const scroller = useCallback(() => {
+    const page = article.current;
+    const body = page?.querySelector<HTMLElement>(":scope > .kx-item-page-body");
+    return body && /auto|scroll/.test(getComputedStyle(body).overflowY) ? body : page;
   }, []);
+  useEffect(() => {
+    const page = article.current;
+    const target = heading.current;
+    if (!page || !target) return;
+    // Scrolls of the page or of its body (caught on the way down, as scroll does not bubble),
+    // read from whichever scrolls now. Only once the page has been scrolled: while a pane
+    // first lays out the title can briefly read as out of view.
+    let frame = 0;
+    const check = () => {
+      frame = 0;
+      const root = scroller();
+      if (!root) return;
+      setPinned(root.scrollTop > 8 && target.getBoundingClientRect().bottom <= root.getBoundingClientRect().top + 1);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(check);
+    };
+    page.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      page.removeEventListener("scroll", onScroll, { capture: true });
+      cancelAnimationFrame(frame);
+    };
+  }, [scroller]);
   return (
     <article ref={setArticle} className={`kx-item-page ${className}`} data-kind={kind} data-cover={!!appearance.cover} data-icon={!!appearance.icon} {...rest}>
       {titleText !== undefined && !stickyBar && (
         <div className="kx-page-pinned" aria-hidden={!pinned} data-visible={pinned}>
-          <button tabIndex={pinned ? 0 : -1} onClick={() => article.current?.scrollTo({ top: 0, behavior: "smooth" })} title="Back to the top">
+          <button tabIndex={pinned ? 0 : -1} onClick={() => scroller()?.scrollTo({ top: 0, behavior: "smooth" })} title="Back to the top">
             {titleText || "Untitled"}
           </button>
         </div>
@@ -120,7 +136,7 @@ export function ItemPage({
         className={`${innerClassName} kx-item-page-toprow`}
         data-sticky={stickyBar || undefined}
         data-pinned={stickyBar ? pinned : undefined}
-        onClick={stickyBar && pinned ? (e) => (e.target as HTMLElement).closest(".kx-bar-title") && article.current?.scrollTo({ top: 0, behavior: "smooth" }) : undefined}
+        onClick={stickyBar && pinned ? (e) => (e.target as HTMLElement).closest(".kx-bar-title") && scroller()?.scrollTo({ top: 0, behavior: "smooth" }) : undefined}
       >
         {bar}
       </div>

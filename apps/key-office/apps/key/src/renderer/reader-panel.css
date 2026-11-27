@@ -50,6 +50,14 @@
 .key-reader-panel .kx-source-page-bar > :not(.kx-kind-badge, .kx-bar-title, .kx-spacer) {
   flex: none;
 }
+/* The title, once scrolled away, pins just under the bar (the page's body is what scrolls). */
+.key-reader-panel .kx-source-page[data-kind] > .kx-page-pinned {
+  position: relative;
+  order: 1;
+}
+.key-reader-panel .kx-source-page[data-kind] > :is(.kx-page-cover, div.kx-item-page-body) {
+  order: 2;
+}
 .key-reader-panel .kx-source-page[data-kind] > div.kx-item-page-body {
   flex: 1;
   min-height: 0;

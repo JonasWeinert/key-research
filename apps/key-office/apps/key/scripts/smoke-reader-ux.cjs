@@ -472,6 +472,28 @@ const want = (name) => !only.length || only.includes(name);
         pane.style.flex = "";
         pane.style.width = "";
       });
+      // Scrolled, the page's title pins just under the bar ("Back to the top" brings it back).
+      const docked = shell.locator(".key-reader-panel .kx-source-page");
+      // Long enough to scroll: the details opened.
+      const details = docked.locator(".kx-page-details-toggle");
+      // (Its summary line changes while the PDF is analysed, so the click goes straight to it.)
+      if ((await details.getAttribute("aria-expanded")) !== "true") await details.evaluate((el) => el.click());
+      await shell.waitForTimeout(300);
+      await docked.locator(".kx-item-page-body").evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+      const pinned = docked.locator('.kx-page-pinned[data-visible="true"] button');
+      await pinned.waitFor({ timeout: 5000 });
+      await shell.waitForTimeout(400);
+      const pin = await shell.evaluate(() => {
+        const button = document.querySelector(".key-reader-panel .kx-page-pinned button").getBoundingClientRect();
+        const bar = document.querySelector(".key-reader-panel .kx-item-page-toprow").getBoundingClientRect();
+        return { top: Math.round(button.top), barBottom: Math.round(bar.bottom) };
+      });
+      if (pin.top < pin.barBottom - 1) throw Error(`The pinned title covers the panel's bar: ${JSON.stringify(pin)}`);
+      // (The page keeps reflowing while the PDF is analysed, so the click goes straight to it.)
+      await pinned.evaluate((el) => el.click());
+      await docked.locator('.kx-page-pinned[data-visible="false"]').waitFor({ state: "attached", timeout: 5000 });
+      await shell.waitForFunction(() => document.querySelector(".key-reader-panel .kx-item-page-body").scrollTop < 4, undefined, { timeout: 5000 });
+      result.pinnedTitle = pin;
       // The open reader follows an edit made elsewhere: the title changed in the library's
       // inspector shows in the docked Details and the tab once the reader is in front again.
       const readerTab = await shell.evaluate(async () => (await window.key.tabs()).tabs.find((t) => t.views[0]?.kind === "pdf")?.id);
