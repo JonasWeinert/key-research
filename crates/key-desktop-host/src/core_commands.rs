@@ -41,24 +41,49 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
             if source.kind != "web" {
                 return Err("Not a saved web page".to_string());
             }
-            let html = match html {
-                Some(html) => html,
+            let page_url = url.or_else(|| source.properties.get("webSnapshot").and_then(|s| s.get("url")).and_then(Json::as_str).map(String::from)).or_else(|| source.field("url").map(String::from));
+            let scan = match html {
+                Some(html) => detect_web_references(&html, page_url.as_deref()),
                 None => {
                     let path = source.file_path().ok_or("This source has no saved page")?;
-                    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > MAX_PAGE_BYTES {
+                    let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
+                    if meta.len() > MAX_PAGE_BYTES {
                         return Err("The saved page is too large to read".into());
                     }
-                    String::from_utf8_lossy(&std::fs::read(&path).map_err(|e| e.to_string())?).into_owned()
+                    // The saved file only changes when the page is saved again: opening the
+                    // reader again reads the scan from here instead of the whole page.
+                    let key = (path.to_string_lossy().into_owned(), meta.len(), meta.modified().ok(), page_url.clone());
+                    match saved_scans().lock().ok().and_then(|c| c.iter().find(|(k, _)| *k == key).map(|(_, s)| s.clone())) {
+                        Some(scan) => scan,
+                        None => {
+                            let html = String::from_utf8_lossy(&std::fs::read(&path).map_err(|e| e.to_string())?).into_owned();
+                            let scan = detect_web_references(&html, page_url.as_deref());
+                            if let Ok(mut cache) = saved_scans().lock() {
+                                cache.retain(|(k, _)| k.0 != key.0);
+                                cache.push((key, scan.clone()));
+                                if cache.len() > 24 {
+                                    cache.remove(0);
+                                }
+                            }
+                            scan
+                        }
+                    }
                 }
             };
-            let page_url = url.or_else(|| source.properties.get("webSnapshot").and_then(|s| s.get("url")).and_then(Json::as_str).map(String::from)).or_else(|| source.field("url").map(String::from));
-            let scan = detect_web_references(&html, page_url.as_deref());
             let analysis = if save { Some(store_scan(library, &id, &scan)?) } else { None };
             json_output(json!({ "scan": scan, "analysis": analysis }))
         })(),
         _ => return None,
     };
     Some(result)
+}
+
+type ScanKey = (String, u64, Option<std::time::SystemTime>, Option<String>);
+
+/// The last saved pages read, by file, size, modification time and page address.
+fn saved_scans() -> &'static std::sync::Mutex<Vec<(ScanKey, WebReferenceScan)>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Vec<(ScanKey, WebReferenceScan)>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
 }
 
 /// Kept as the PDF analysis' are, then looked up by the reference worker the same way.

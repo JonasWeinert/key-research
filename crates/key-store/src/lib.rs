@@ -455,6 +455,8 @@ pub struct Store {
     reader: Arc<priority::PriorityPool<Connection>>,
     /// The duplicate matcher's index of the library (duplicates.rs), rebuilt when it changed.
     duplicates: Arc<Mutex<duplicates::Cache>>,
+    /// What the last tag analysis found, so the next one redoes only what changed.
+    tag_analysis: Arc<Mutex<tag_analysis::AnalysisCache>>,
 }
 
 /// Read-only connections: a user's list or search never waits for one background query.
@@ -541,7 +543,7 @@ impl Store {
                 Ok(reader)
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default() })
+        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default(), tag_analysis: Default::default() })
     }
 
     pub fn root(&self) -> &Path {
