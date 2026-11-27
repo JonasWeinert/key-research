@@ -29,6 +29,8 @@ export interface Rules {
   autoAdvance: boolean;
   /** The default for fields: whether a value's place in the document is needed. */
   sourceDefault: SourceRule;
+  /** Also keep the review's marks as highlights on library copies of the full texts. */
+  mirrorMarks?: boolean;
 }
 export type SourceRule = "none" | "encouraged" | "required";
 /** When a field or section is shown: conditions on other answers (all or any). */

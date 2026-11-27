@@ -19,7 +19,7 @@ import { CHOICE_LABEL, ELEMENT_LABEL, STAGE_LABEL, asks, plural, reasonText, typ
 import { Btn, Highlighted, MenuButton, StatusPill, errorText, formatDate, type MenuItem } from "./review-ui";
 import { afterDecision, boundKeys, counter, criterionKeys, current as sessionCurrent, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step as sessionStep, toggle, type Session } from "./review-session";
 import type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
-import { MarksLegend, evidenceKey, evidenceLabel, evidenceMarks, flashRow, useMarksShown } from "./review-marks";
+import { MarksLegend, evidenceKey, evidenceLabel, evidenceMarks, flashRow, mirrorOf, useMarksShown } from "./review-marks";
 import { FullTexts, attachFiles } from "./review-fulltexts";
 import type { StageProps } from "./ReviewPage";
 
@@ -444,7 +444,9 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     () => ({ id: "screen", label: "Mark this passage", filter: reasonsFor.length > 4 ? "Filter criteria" : undefined, hint: reasonsFor.length ? `${reasonsFor.length > 9 ? "1–9, A…" : `1–${reasonsFor.length}`} not met · ⇧ and the key: met` : undefined, empty: "No criteria for this stage yet (Setup › Criteria)" }),
     [reasonsFor.length],
   );
-  const marks = useMemo<ReaderMark[]>(() => (marksShown ? evidenceMarks(evidence, reasonsFor) : []), [marksShown, evidence, reasonsFor]);
+  const allMarks = useMemo<ReaderMark[]>(() => evidenceMarks(evidence, reasonsFor), [evidence, reasonsFor]);
+  const marks = marksShown ? allMarks : [];
+  const mirror = useMemo(() => mirrorOf(summary, allMarks), [summary, allMarks]);
   /** A mark clicked in the page: change its verdict or criterion, or remove it. */
   const markActions = useCallback(
     (mark: ReaderMark): ReaderMarkMenu | null => {
@@ -577,8 +579,23 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         onConfirm={() => picking && void decide(picking)}
         onBack={() => setPicking(undefined)}
       />
-      {stage === "ft" && <EvidenceList evidence={evidence} criteria={reasonsFor} onShow={showEvidence} onRemove={(i) => removeMark(evidence[i])} />}
-      {stage === "ft" && view.hasFullText && <MarksLegend kinds={["notMet", "met", "evidence"]} shown={marksShown} onShown={setMarksShown} count={evidence.length} />}
+      {stage === "ft" && (evidence.length > 0 || view.hasFullText) && (
+        <MarksLegend
+          kinds={["notMet", "met", "evidence"]}
+          shown={marksShown}
+          onShown={setMarksShown}
+          count={evidence.length}
+          marks={allMarks}
+          onShow={(id) => {
+            const e = evidence.find((x) => evidenceKey(x) === id);
+            if (e) showEvidence(e);
+          }}
+          onRemove={(id) => {
+            const e = evidence.find((x) => evidenceKey(x) === id);
+            if (e) removeMark(e);
+          }}
+        />
+      )}
       <label className="kx-rv-note">
         <span>
           Note <kbd>N</kbd>
@@ -612,7 +629,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         <section className="kx-rv-reader-main" aria-label="Full text">
           <CompactHeader {...props} view={view} reload={() => load(current)} />
           {view.hasFullText ? (
-            <ReaderFor {...props} view={view} readerRef={reader} actions={readerActions} mode={screenMode} marks={marks} markActions={markActions} />
+            <ReaderFor {...props} view={view} readerRef={reader} actions={readerActions} mode={screenMode} marks={marks} markActions={markActions} mirror={mirror} />
           ) : (
             <NoFullText {...props} view={view} reload={() => load(current)} />
           )}
@@ -904,31 +921,6 @@ function Labels({ summary, view, keys, onToggle }: StageProps & { view: RecordVi
   );
 }
 
-/** Passages behind the decision, with where they are; a click shows the place. */
-function EvidenceList({ evidence, criteria, onShow, onRemove }: { evidence: Evidence[]; criteria: Criterion[]; onShow: (e: Evidence) => void; onRemove: (i: number) => void }) {
-  if (!evidence.length) return null;
-  const label = (e: Evidence) => evidenceLabel(e, criteria);
-  return (
-    <section className="kx-rv-evidence-list" aria-label="Evidence">
-      <h4>Evidence</h4>
-      <ul>
-        {evidence.map((e, i) => (
-          <li key={i} data-kind={e.kind ?? "highlight"}>
-            <button type="button" className="kx-rv-evidence-jump" onClick={() => onShow(e)} title="Show it in the full text">
-              <strong>{label(e)}</strong>
-              <span>“{(e.quote || e.text || "").slice(0, 200)}”</span>
-              {e.page != null && e.page >= 0 && <small>p. {e.page + 1}</small>}
-            </button>
-            <button type="button" className="kx-rv-icon" aria-label="Remove this evidence" onClick={() => onRemove(i)}>
-              <Icon name="close" size={11} />
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
 // ── Full text inside the review ─────────────────────────────────────────────────
 
 function CompactHeader(props: StageProps & { stage: Stage; view: RecordView; reload: () => void }) {
@@ -996,7 +988,7 @@ function FullTextMenu({ api, view, viewer, notify, reload, onChanged, invoke, wo
   );
 }
 
-function ReaderFor({ api, view, notify, readerRef, actions, mode, marks, markActions, invoke, workspaceId }: StageProps & { view: RecordView; readerRef: React.RefObject<ReviewReaderHandle | null>; actions: ReaderSelectionAction[]; mode?: ReaderSelectionMode; marks?: ReaderMark[]; markActions?: (mark: ReaderMark) => ReaderMarkMenu | null }) {
+function ReaderFor({ api, view, notify, readerRef, actions, mode, marks, markActions, mirror, invoke, workspaceId }: StageProps & { view: RecordView; readerRef: React.RefObject<ReviewReaderHandle | null>; actions: ReaderSelectionAction[]; mode?: ReaderSelectionMode; marks?: ReaderMark[]; markActions?: (mark: ReaderMark) => ReaderMarkMenu | null; mirror?: ReturnType<typeof mirrorOf> }) {
   const [mime, setMime] = useState<string>();
   const version = view.fulltext.file?.hash ?? view.sourceId ?? "";
   useEffect(() => {
@@ -1026,6 +1018,7 @@ function ReaderFor({ api, view, notify, readerRef, actions, mode, marks, markAct
         mode={mode}
         marks={marks}
         markActions={markActions}
+        mirror={mirror}
         onError={(t) => notify(t, "error")}
       />
     </Suspense>

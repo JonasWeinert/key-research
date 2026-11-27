@@ -3189,3 +3189,47 @@ td.kx-rv-roles {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* A criterion's screening key in Setup. */
+.kx-rv-criterion-keys {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+/* The marks in the sidebar: heading, legend that filters, the switch for the layer. */
+.kx-rv-marks .kx-rv-marks-bar h4 {
+  margin: 0;
+}
+.kx-rv-marks .ksm-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--kx-text-2);
+  background: transparent;
+  font: inherit;
+}
+.kx-rv-marks .ksm-legend button:hover {
+  background: var(--kx-fill);
+}
+.kx-rv-marks .ksm-legend button[aria-pressed="true"] {
+  color: var(--kx-text);
+  background: var(--kx-fill-2);
+}
+.kx-rv-marks .ksm-legend small {
+  color: var(--kx-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.kx-rv-marks .kx-rv-marks-toggle {
+  margin-left: auto;
+}
+.kx-rv-marks li[data-kind="source"] {
+  border-left-color: var(--kx-indigo);
+}
+.kx-rv-marks li[data-kind="evidence"] {
+  border-left-color: var(--kx-accent);
+}

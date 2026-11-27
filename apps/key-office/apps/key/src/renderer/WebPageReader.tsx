@@ -938,6 +938,7 @@ export function WebPageReader({
             return context && b ? new DOMRect(context.rect.left + b.left, context.rect.top + b.top, context.rect.width, context.rect.height) : null;
           })()}
           area={() => body.current?.getBoundingClientRect()}
+          className="kx-web-selection"
           label={context?.kind === "selection" ? "Text selection actions" : "Highlight actions"}
           passage={() => (context?.kind === "selection" ? { text: context.text, page: -1, rects: [] } : null)}
           actions={context?.kind === "selection" ? selectionActions : undefined}

@@ -143,8 +143,12 @@ function pdfWith(lines) {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
     await page.mouse.up();
-    await page.locator(".pdfjs-selection-host[data-action=rob-support]").click();
+    // The selection menu offers the domain in focus first (S), every other by its number.
+    await page.locator(".ksm[data-mode=rob] [data-action=rob-support]").waitFor();
+    await page.keyboard.press("s");
     await d1.locator(".kx-rob-evidence .kx-rv-source-chip").waitFor();
+    // The passage is a mark in the page.
+    await page.locator(".kx-rv-reader .pdfjs-host-mark.tone-evidence").first().waitFor();
     await both(page, "01-rob-assess");
     // The rest through the host, the same way; then Ben, who judges D1 differently.
     await assess(study[0], ana, "low");

@@ -5,6 +5,7 @@
 // one moves or removes its mark. They belong to the review's copy of the full text and never write
 // to the library's highlights. A layer the user can hide, with a legend.
 import { useEffect, useState } from "react";
+import { Icon } from "../icons";
 import type { ReaderMark } from "./review-reader";
 import type { Criterion, Evidence, ExtractionView, Form, SourcePos } from "./review-api";
 
@@ -82,27 +83,61 @@ export function useMarksShown(): [boolean, (on: boolean) => void] {
   return [on, setOn];
 }
 
-/** The legend and the layer's switch, beside the evidence or the form. */
-export function MarksLegend({ kinds, shown, onShown, count }: { kinds: Array<"notMet" | "met" | "evidence" | "source">; shown: boolean; onShown: (on: boolean) => void; count: number }) {
-  const names = { notMet: "Not met", met: "Met", evidence: "Evidence", source: "Source" } as const;
+type Kind = "notMet" | "met" | "evidence" | "source";
+const NAMES: Record<Kind, string> = { notMet: "Not met", met: "Met", evidence: "Evidence", source: "Source" };
+
+/** The marks in the sidebar: the layer's switch, the legend (each colour filters the list) and
+ *  the list itself; a row shows its passage in the text, × removes it where that is offered. */
+export function MarksLegend({ kinds, shown, onShown, count, marks, onShow, onRemove }: { kinds: Kind[]; shown: boolean; onShown: (on: boolean) => void; count: number; marks?: ReaderMark[]; onShow?: (id: string) => void; onRemove?: (id: string) => void }) {
+  const [only, setOnly] = useState<Kind | null>(null);
+  const present = kinds.filter((k) => !marks || marks.some((m) => m.tone === k));
+  const list = (marks ?? []).filter((m) => !only || m.tone === only);
   return (
-    <div className="kx-rv-marks-bar">
-      <label className="kx-check kx-rv-marks-toggle" title="The review's marks in the full text (not your own highlights)">
-        <input type="checkbox" checked={shown} onChange={(e) => onShown(e.target.checked)} />
-        Marks in the text{count ? ` (${count})` : ""}
-      </label>
-      {shown && (
-        <span className="ksm-legend" aria-label="What the colours mean">
-          {kinds.map((k) => (
-            <span key={k} data-tone={k}>
-              {names[k]}
-            </span>
+    <section className="kx-rv-marks kx-rv-evidence-list" aria-label="Marks">
+      <div className="kx-rv-marks-bar">
+        <h4>Marks{count ? ` (${count})` : ""}</h4>
+        <span className="ksm-legend" role="group" aria-label="Show only">
+          {(marks ? present : kinds).map((k) => (
+            <button key={k} type="button" data-tone={k} aria-pressed={only === k} title={only === k ? "Show all marks" : `Show only “${NAMES[k]}”`} onClick={() => setOnly(only === k ? null : k)}>
+              {NAMES[k]}
+              {marks && <small>{marks.filter((m) => m.tone === k).length}</small>}
+            </button>
           ))}
         </span>
+        <label className="kx-check kx-rv-marks-toggle" title="The review's marks in the full text (not your own highlights)">
+          <input type="checkbox" checked={shown} onChange={(e) => onShown(e.target.checked)} />
+          In the text
+        </label>
+      </div>
+      {list.length > 0 && (
+        <ul>
+          {list.map((m) => (
+            <li key={m.id} data-kind={m.tone}>
+              <button type="button" className="kx-rv-evidence-jump" onClick={() => onShow?.(m.id)} title="Show it in the full text">
+                <strong>{m.label}</strong>
+                <span>“{m.text.slice(0, 200)}”</span>
+                {m.page >= 0 && <small>p. {m.page + 1}</small>}
+              </button>
+              {onRemove && (
+                <button type="button" className="kx-rv-icon" aria-label="Remove this mark" onClick={() => onRemove(m.id)}>
+                  <Icon name="close" size={11} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
-    </div>
+    </section>
   );
 }
+
+/** The review's marks as the user's highlights on a library copy (Setup › rules › mirror). */
+export const mirrorOf = (summary: { review: { id: string; name: string }; protocol: { rules: { mirrorMarks?: boolean } } }, marks: ReaderMark[]) => ({
+  scope: summary.review.id,
+  note: `review “${summary.review.name}”`,
+  enabled: !!summary.protocol.rules.mirrorMarks,
+  marks,
+});
 
 /** Brings a sidebar row (a criterion, a field) into view and flashes it. */
 export function flashRow(selector: string) {
