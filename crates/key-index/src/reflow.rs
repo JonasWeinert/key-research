@@ -368,8 +368,11 @@ impl Builder {
     fn block(&mut self, block: &LayoutBlock, sep: &str) {
         if block.sentences.is_empty() || matches!(block.kind.as_str(), "list" | "reference_list" | "endnote_list") {
             let lines: Vec<&str> = block.text.lines().filter(|l| !l.trim().is_empty()).collect();
+            // A reference list whose entries are known (html_align.rs): an entry's lines join.
+            let entries = &block.entries;
             for (i, line) in lines.iter().enumerate() {
-                self.push(line, block.page, vec![block.bounds], if i == 0 { sep } else { "\n" });
+                let next = if entries.is_empty() || entries.contains(&(i as u32)) { "\n" } else { " " };
+                self.push(line, block.page, vec![block.bounds], if i == 0 { sep } else { next });
             }
         } else {
             for (i, sentence) in block.sentences.iter().enumerate() {
@@ -414,7 +417,7 @@ pub fn assemble(layout: &Layout) -> Document {
         if block.kind != "paragraph" || dropped(i, block) {
             continue;
         }
-        let Some(kind) = caption_kind(&block.text) else { continue };
+        let Some(kind) = block.caption.as_deref().map(|c| if c == "table" { "table" } else { "figure" }).or_else(|| caption_kind(&block.text)) else { continue };
         let distance = |r: &[u16; 4]| (top(&block.bounds) - bottom(r)).abs().min((top(r) - bottom(&block.bounds)).abs());
         if kind == "table" {
             let table = blocks
@@ -901,6 +904,7 @@ mod tests {
             bounds: rect,
             sentences: sentences.iter().map(|s| LayoutSentence { text: s.to_string(), rects: vec![rect] }).collect(),
             level: (kind == "heading").then_some(1),
+            ..Default::default()
         }
     }
     const LEFT: f32 = 0.08;

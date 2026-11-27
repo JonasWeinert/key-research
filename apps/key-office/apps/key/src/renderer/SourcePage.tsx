@@ -26,6 +26,7 @@ import { setItemDrag } from "./item-links";
 import { itemAttrs } from "./item-ui";
 import { readAppearance } from "./page-appearance";
 import { SavePageOffer, saveSourceWebPage } from "./source-web-page";
+import { FullTextList, KeptPageOffer, useFullTexts } from "./source-full-texts";
 import { findPdf as findPdfFor, findPdfMessage } from "./find-pdf";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
@@ -337,6 +338,11 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   };
   // No PDF to be had: the reference's web page, saved offline as its file instead.
   const [pdfMissing, setPdfMissing] = useState(false);
+  // Find PDF kept the publisher's page: that copy is offered instead of saving the page again.
+  const [keptPage, setKeptPage] = useState(false);
+  // A new full text (a page saved meanwhile) ends what the last Find PDF said.
+  useEffect(() => setFinding(""), [source?.fileHash]);
+  const fullTexts = useFullTexts(invoke, workspaceId, sourceId, typeof source?.fileHash === "string" ? source.fileHash : undefined);
   const [savingPage, setSavingPage] = useState(false);
   const saveWebPage = async (reader?: string) => {
     setError("");
@@ -395,6 +401,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const managed = !!source.filePath && MANAGED_FILE.test(source.filePath);
   const isPdf = !!source.filePath && source.kind === "pdf";
   const isSavedPage = !!source.filePath && source.kind === "web";
+  // A saved page is full text too; a PDF may still come for it (it then becomes primary).
+  const hasPdf = isPdf || fullTexts.some((f) => f.kind === "pdf");
   const readPage = (annotationId?: string) => void import("./web-page-open").then(({ openWebPage }) => openWebPage(workspaceId, sourceId, annotationId ? { annotationId } : undefined, source.title, docked ? {} : { placement: "split", fromViewId: viewId }));
   const pageNote = page?.body ?? "";
   /** The PDF on its own: jumps to it when it is already open anywhere. */
@@ -592,6 +600,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                   </div>
                 )
               )}
+              <FullTextList invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} fullTexts={fullTexts} onChanged={() => void loadSource()} onRead={() => openFile?.()} />
               <span className="kx-file-card-actions">
                 {source.filePath && (
                   <button className="kx-icon-button" title="Show in Finder" aria-label="Show in Finder" onClick={() => void libraryBridge().revealPath(source.filePath!)}>
@@ -731,7 +740,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
                 </button>
               ))}
               {isPdf && <button onClick={openReaderTab}>Open PDF in its own tab</button>}
-              {!source.filePath && canFindPdf && <button onClick={() => void findPdf()}>Find PDF</button>}
+              {!hasPdf && canFindPdf && <button onClick={() => void findPdf()}>Find PDF</button>}
               {!source.filePath && (source.doi || source.url) && <button onClick={() => void saveWebPage()}>Save web page</button>}
               {source.filePath && <button onClick={() => void libraryBridge().revealPath(source.filePath!)}>Show in Finder</button>}
               <button onClick={() => void enrich()}>Look up in OpenAlex</button>
@@ -797,10 +806,10 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
           </figure>
         )}
         {error && <p className="kx-inline-error">{error}</p>}
-        {!source.filePath && canFindPdf && (
+        {(!source.filePath || (isSavedPage && !hasPdf)) && canFindPdf && (
           <div className="kx-find-pdf" role="group" aria-label="PDF" data-busy={finding === "busy" || undefined}>
             {finding === "busy" ? <span className="kx-search-spinner" aria-hidden="true" /> : <Icon name="filePdf" size={14} />}
-            <span role="status">{finding === "busy" ? "Looking for a free, legal (open-access) PDF…" : finding || "No PDF yet."}</span>
+            <span role="status">{finding === "busy" ? "Looking for a free, legal (open-access) PDF…" : finding || (isSavedPage ? "The saved page is the full text. No PDF yet." : "No PDF yet.")}</span>
             <Explain help="findpdf.where" />
             <button className="kx-page-action kx-find-pdf-button" disabled={finding === "busy"} onClick={() => void findPdf()}>
               <Icon name="search" size={12} /> Find PDF
@@ -808,7 +817,8 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             <FirstUseTip help="tip.find-pdf" anchor=".kx-find-pdf-button" />
           </div>
         )}
-        {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (
+        {!source.filePath && <KeptPageOffer invoke={invoke} workspaceId={workspaceId} sourceId={sourceId} onSaved={() => void loadSource()} onKept={setKeptPage} />}
+        {(savingPage || (pdfMissing && !keptPage && !source.filePath && (source.doi || source.url))) && (
           <SavePageOffer busy={savingPage} invoke={invoke} onSave={(reader) => void saveWebPage(reader)} />
         )}
 

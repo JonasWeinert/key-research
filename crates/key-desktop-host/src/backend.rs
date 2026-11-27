@@ -39,6 +39,8 @@ mod models_commands;
 mod formula_worker;
 #[path = "reflow_commands.rs"]
 mod reflow_commands;
+#[path = "reflow_regions.rs"]
+mod reflow_regions;
 #[path = "web_reflow_commands.rs"]
 mod web_reflow_commands;
 #[path = "power.rs"]

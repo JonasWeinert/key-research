@@ -29,8 +29,9 @@ impl key_review::Library for Lookup<'_> {
     fn properties(&self, source_id: &str) -> Map<String, Json> {
         self.0.store.source(source_id).ok().flatten().map(|s| s.properties).unwrap_or_default()
     }
+    /// Full text to read: a PDF or a saved web page (key-store full_text.rs), its file or kept beside it.
     fn has_file(&self, source_id: &str) -> bool {
-        self.0.store.source(source_id).ok().flatten().is_some_and(|s| s.file_hash().is_some() || s.field("filePath").is_some())
+        self.0.store.full_texts(source_id).is_ok_and(|all| all.iter().any(|f| matches!(f.kind.as_str(), "pdf" | "web")))
     }
     /// The library's copy of the same work, with the fields a review record may lack.
     fn same_work(&self, meta: &RecordMeta) -> Option<(String, Map<String, Json>)> {
@@ -369,6 +370,14 @@ fn study_passages(library: &Library, meta: &RecordMeta, source: Option<&str>) ->
         }
         if total > 40_000 {
             break;
+        }
+    }
+    // A saved web page as the full text: its text has no pages.
+    if total == 0 {
+        if let Ok(text) = library.store.leading_text(source, 40_000) {
+            if !text.trim().is_empty() {
+                out.push(("Saved page".to_string(), text));
+            }
         }
     }
     out

@@ -1,0 +1,98 @@
+/* The Find PDF banner below a browser tab's bar (FindPdfBanner.tsx). */
+.kx-find-pdf-banner {
+  position: absolute;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 12px;
+  border-bottom: 0.5px solid var(--kx-line);
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: 13px/1.35 var(--kx-font);
+  overflow: hidden;
+}
+.kx-fpb-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+}
+.kx-fpb-icon[data-done] {
+  background: color-mix(in srgb, var(--kx-green) 16%, transparent);
+  color: var(--kx-green);
+}
+.kx-fpb-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.kx-fpb-text p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-fpb-lead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+.kx-fpb-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.kx-fpb-quiet {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fpb-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.kx-fpb-actions > .kx-settings-button,
+.kx-fpb-actions > .kx-button-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  white-space: nowrap;
+}
+.kx-fpb-link {
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-2);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kx-fpb-link:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+.kx-fpb-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+.kx-fpb-close:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}

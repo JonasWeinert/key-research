@@ -474,10 +474,80 @@ impl Library {
             "store_attach_file" => (|| {
                 let id: String = arg(args, "id")?;
                 let path: PathBuf = arg(args, "path")?;
-                let source = self.attach_file(&id, &path, root)?;
+                // `keepPrevious`: the file the source had stays as another full text (a saved page
+                // when its PDF comes); `carryFrom`: the browser's scratch library analysed it already.
+                let keep: bool = arg::<Option<bool>>(args, "keepPrevious")?.unwrap_or(false);
+                if let Some(from) = arg::<Option<PathBuf>>(args, "carryFrom")?.filter(|p| p.is_absolute()) {
+                    if let Ok(hash) = key_index::file_hash(&path) {
+                        if let Err(error) = self.store.carry_analysis(&hash, &from) {
+                            eprintln!("Key: the analysis could not be carried over: {error}");
+                        }
+                    }
+                }
+                let source = if keep { self.attach_keeping(&id, &path, root)? } else { self.attach_file(&id, &path, root)? };
                 self.indexer.wake();
                 json_output(source)
             })(),
+            // Full texts: a PDF, a saved web page or both (key-store full_text.rs).
+            "store_full_texts" => arg::<String>(args, "id").and_then(|id| json_output(self.store.full_texts(&id)?)),
+            "store_full_text_add" => (|| {
+                let id: String = arg(args, "id")?;
+                let path: PathBuf = arg(args, "path")?;
+                let primary: bool = arg::<Option<bool>>(args, "primary")?.unwrap_or(false);
+                let source = self.store.source(&id)?.ok_or("Source not found")?;
+                let result = if source.file_path().is_none() || primary {
+                    self.attach_keeping(&id, &path, root)?
+                } else {
+                    let hash = key_index::file_hash(&path)?;
+                    let stored = self.stored_path(&path, &hash, root)?;
+                    let (_, _, mime) = classify(&stored);
+                    let size = std::fs::metadata(&stored).map(|m| m.len() as i64).ok();
+                    if source.file_hash() != Some(hash.as_str()) {
+                        self.store.add_other_full_text(&id, &hash, &stored.to_string_lossy(), Some(&mime), size)?;
+                    }
+                    source
+                };
+                self.indexer.wake();
+                json_output(json!({ "source": result, "fullTexts": self.store.full_texts(&id)? }))
+            })(),
+            "store_full_text_primary" => (|| {
+                let id: String = arg(args, "id")?;
+                let hash: String = arg(args, "hash")?;
+                let other = self.store.full_texts(&id)?.into_iter().find(|f| f.hash == hash && !f.primary).ok_or("That full text is not kept for this source")?;
+                let source = self.attach_keeping(&id, Path::new(&other.path), root)?;
+                self.store.remove_other_full_text(&id, &hash)?;
+                self.indexer.wake();
+                json_output(json!({ "source": source, "fullTexts": self.store.full_texts(&id)? }))
+            })(),
+            "store_full_text_remove" => (|| {
+                let id: String = arg(args, "id")?;
+                let hash: String = arg(args, "hash")?;
+                self.store.remove_other_full_text(&id, &hash)?;
+                json_output(json!({ "fullTexts": self.store.full_texts(&id)? }))
+            })(),
+            // The publisher's page Find PDF landed on: its structure folds into the PDF's layout
+            // now when the PDF's is stored, else when the indexer has stored it (key-index html_align.rs).
+            "store_structure_hint" => (|| {
+                let id: String = arg(args, "id")?;
+                let html: String = arg(args, "html")?;
+                let url: Option<String> = arg(args, "url")?;
+                if html.len() > 40 * 1024 * 1024 {
+                    return Err("The page is too large".into());
+                }
+                self.store.set_html_hint(&id, &html, url.as_deref())?;
+                let applied = key_index::html_align::apply_html_hint(&self.store, &id)?;
+                json_output(json!({ "applied": applied.is_some(), "pending": applied.is_none(), "alignment": applied }))
+            })(),
+            "store_structure_alignment" => arg::<String>(args, "id").and_then(|id| {
+                let found = self.store.structure_alignment(&id)?;
+                json_output(found.map(|a| {
+                    let mut report: Json = serde_json::from_str(&a.report).unwrap_or(Json::Null);
+                    if let Some(labels) = report.get_mut("labels").and_then(Json::as_array_mut) {
+                        labels.truncate(50);
+                    }
+                    json!({ "fileHash": a.file_hash, "url": a.url, "accepted": a.accepted, "confidence": a.confidence, "alignedAt": a.aligned_at, "report": report })
+                }))
+            }),
             // Document analysis: how a source was read, its Markdown and its bibliography.
             "store_analysis" => arg::<String>(args, "id").and_then(|id| {
                 json_output(json!({
@@ -783,6 +853,33 @@ impl Library {
         }
         let updated = self.store.update_source(id, &patch)?;
         self.store.set_index_status(id, "pending", None, 0, 0)?;
+        Ok(updated)
+    }
+
+    /// Attaches a file as the source's primary full text; the file it had (a PDF or a saved page)
+    /// stays as another one of its full texts.
+    pub fn attach_keeping(&self, id: &str, path: &Path, root: &Path) -> Result<Source, String> {
+        let before = self.store.source(id)?.ok_or("Source not found")?;
+        let mut updated = self.attach_file(id, path, root)?;
+        // A PDF and a saved page swap: the source is the kind of its primary full text.
+        if matches!(before.kind.as_str(), "pdf" | "web") {
+            let kind = updated.file_path().map(|p| classify(&p).0).unwrap_or("reference");
+            if matches!(kind, "pdf" | "web") && kind != updated.kind {
+                let mut patch = Map::new();
+                patch.insert("kind".into(), Json::from(kind));
+                updated = self.store.update_source(id, &patch)?;
+            }
+        }
+        if let (Some(old_path), Some(old_hash)) = (before.file_path(), before.file_hash()) {
+            if updated.file_hash() != Some(old_hash) && old_path.is_file() {
+                let mime = before.field("mime").map(String::from).unwrap_or_else(|| classify(&old_path).2.to_string());
+                let size = before.fields.get("fileSize").and_then(Json::as_i64);
+                self.store.add_other_full_text(id, old_hash, &old_path.to_string_lossy(), Some(&mime), size)?;
+            }
+        }
+        if let Some(hash) = updated.file_hash() {
+            self.store.remove_other_full_text(id, hash)?;
+        }
         Ok(updated)
     }
 

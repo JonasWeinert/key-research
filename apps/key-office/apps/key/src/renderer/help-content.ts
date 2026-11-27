@@ -243,6 +243,25 @@ export const HELP = {
     { privacy: "The window uses a separate profile that belongs to Key, not your own browser profile. Only the sign-in’s cookies are copied, and nothing leaves this Mac." },
   ),
   "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
+  "browser.find-pdf.banner": explain(
+    "Getting the PDF from the publisher’s page",
+    [
+      "Key looked for a free copy of the PDF and couldn’t download one, so it opened the article’s page instead.",
+      "If you can open the PDF here (perhaps after signing in, or through your library), Key saves it to this source by itself. Key never signs in or clicks through for you.",
+      "Key keeps a copy of this page for a few days. When the PDF comes from it, Key uses the page’s headings, captions and references to lay out the PDF’s contents, then deletes the copy.",
+    ],
+    { privacy: "The page is saved on this Mac only." },
+  ),
+  "browser.find-pdf.save": hint("Keep this page as the source’s full text: you can read, search, quote and highlight it like a PDF."),
+  "browser.find-pdf.unavailable": hint("Stop looking here. Key deletes its copy of the page; the source stays without full text."),
+  "source.full-text": explain(
+    "Full text",
+    [
+      "A source’s full text is a PDF, a saved copy of its web page, or both. Read opens the one marked primary.",
+      "Search, quotes, highlights, AI fill and reading mode use the primary one. Make the other one primary to switch.",
+    ],
+  ),
+  "source.no-pdf.page": hint("Key kept a copy of the publisher’s page from Find PDF. Save it as the full text, or look for the PDF again."),
 
   // ── Settings: Database connectors ───────────────────────────────────────────────────
   "settings.services.connectors": explain(
@@ -899,7 +918,6 @@ export const HELP = {
   "empty.dbsearch-results": empty("No search run yet", "Results of a database search show here, without duplicates.", "Build a query, choose databases and press Search."),
 
   // ── First-use tips ──────────────────────────────────────────────────────────────────
-  "tip.cite": tip("Cite what you select", "Cite copies the passage as a quote with its source and page, ready to paste into a note or a document."),
   "tip.citation-hover": tip("Look up a citation", "In the PDF, point at a citation like [12] or (Smith, 2020) to see the work it names, and add it to your library."),
   "tip.note-cite": tip("Cite in notes", "Type @ in a note and start typing a title or author to cite a source from your library."),
   "tip.split-tabs": tip("Read side by side", "Drag a tab to the left or right edge of the window to show two things side by side."),

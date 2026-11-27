@@ -46,7 +46,7 @@ const INTERACTIVE: &[&str] = &[
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
 /// not starved by bulk work, or progress would look frozen.
-const VISIBLE: &[&str] = &["store_status", "store_zotero_progress", "pdfjs_companion_snapshot", "store_formula_status"];
+const VISIBLE: &[&str] = &["store_status", "store_reflow_regions", "store_zotero_progress", "pdfjs_companion_snapshot", "store_formula_status"];
 
 /// Nobody waits on these: timers, syncs, bulk imports and maintenance.
 const BACKGROUND: &[&str] = &[
@@ -60,7 +60,7 @@ const BACKGROUND: &[&str] = &[
 ];
 
 /// Network or long work: never interactive, and bounded in flight by the bridge.
-const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "web_read_page", "review_import", "review_link_library", "review_db_runs"];
+const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "web_read_page", "review_import", "review_link_library", "review_db_runs", "store_structure_hint", "web_landing_page", "store_full_text_add", "store_full_text_primary"];
 
 /// Exceptions to the prefixes: quick despite their family.
 const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_md_export_restore", "store_file_mirror_config", "store_autoexport_targets"];

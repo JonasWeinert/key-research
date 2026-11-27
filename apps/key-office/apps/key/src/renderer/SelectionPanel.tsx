@@ -17,7 +17,8 @@ import type { PropertyDefinition } from "./PropertySheets";
 import { stepJournal, type BatchEdit, type Operation } from "./library-hygiene";
 import { ReadingStatusControl, type ReadingStatus } from "./reading-ui";
 import { libraryChanged, onLibraryChanged } from "./library-nav";
-import { findPdfs, useFindPdfRun, cancelFindPdfs } from "./find-pdf";
+import { findPdfs, useFindPdfRun, cancelFindPdfs, wantsPdf } from "./find-pdf";
+import { FindPdfResultsList } from "./find-pdf-results";
 import { copyCitation, copyInTextCitation } from "./item-actions";
 import { openBibExport } from "./BiblioSheets";
 import { selectionActionsFor, useSelectionActions, type SelectionGroup } from "./selection-actions";
@@ -183,7 +184,8 @@ function LibrarySelection({
   const allStarred = !!overview && overview.starred === total;
   const status: ReadingStatus | undefined = overview ? (overview.unread === total ? "unread" : overview.reading === total ? "reading" : overview.read === total ? "read" : undefined) : undefined;
   const editable = definitions.filter((d) => d.type === "text" || d.type === "number" || d.type === "select" || d.type === "boolean");
-  const withoutFile = overview ? total - overview.withFile : loaded.filter((s) => !s.filePath).length;
+  // Sources Find PDFs works on: no file, or a saved web page without its PDF yet.
+  const withoutFile = loaded.length >= total ? loaded.filter(wantsPdf).length : overview ? total - overview.withFile : loaded.filter(wantsPdf).length;
   const registered = (group: SelectionGroup) => selectionActionsFor(ctx, group);
   const actionButtons = (group: SelectionGroup) =>
     registered(group).map((a) => (
@@ -389,6 +391,7 @@ function LibrarySelection({
                 />
                 {actionButtons("metadata")}
               </div>
+              <FindPdfResultsList invoke={invoke} workspaceId={workspaceId} />
               <h3>AI</h3>
               <div className="kx-selection-buttons">
                 {registered("ai").length ? actionButtons("ai") : <ActionButton icon="sparkle" label="Fill with AI…" title="Fill a property with AI or a rule" onClick={() => onFill(loaded)} />}

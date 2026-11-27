@@ -1,0 +1,81 @@
+/* A source's full texts and the kept publisher's page (source-full-texts.tsx). */
+.kx-full-texts {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+  font-size: 12px;
+}
+.kx-full-texts-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px 2px;
+  color: var(--kx-text-3);
+  font-weight: 500;
+}
+.kx-full-text {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 26px;
+  padding: 0 2px;
+  color: var(--kx-text);
+}
+.kx-full-text > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-full-text-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-full-text-badge {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+.kx-full-text-action {
+  height: 22px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-accent);
+  font: inherit;
+  font-weight: 500;
+}
+.kx-full-text-action:hover:not(:disabled) {
+  background: var(--kx-fill);
+}
+.kx-kept-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 7px 8px 7px 12px;
+  border: 0.5px solid var(--kx-line);
+  border-radius: 10px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.kx-kept-page > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-kept-page-text {
+  display: grid;
+  flex: 1 1 auto;
+  min-width: 0;
+}

@@ -271,6 +271,7 @@ export function TagEditor({ tags, suggestions, onCommit }: { tags: string[]; sug
 }
 
 /** Defined properties with typed editors, then any free-form keys on this item. */
+const INTERNAL_PROPERTIES = new Set(["webSnapshot"]);
 export function TypedProperties({
   source,
   definitions,
@@ -290,7 +291,8 @@ export function TypedProperties({
 }) {
   const defined = new Set(definitions.map((d) => d.name));
   const filled = useSourceFillCells(source.id);
-  const extra = Object.fromEntries(Object.entries(source.properties).filter(([key]) => !defined.has(key)));
+  // Key's own records (a saved page's snapshot details) are not properties to show.
+  const extra = Object.fromEntries(Object.entries(source.properties).filter(([key]) => !defined.has(key) && !INTERNAL_PROPERTIES.has(key)));
   const glyph = (type: string) => <Icon name={propertyTypeIcon(type)} size={11} />;
   // Rows only: they sit in the Details list under the bibliographic fields.
   return (

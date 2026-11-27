@@ -134,28 +134,36 @@ async function until(check, what, timeout = 30000) {
     await themes("paper-results");
 
     // 3. A selection in reading mode becomes a highlight at its exact place on the page.
+    // Selects text in the reading view from `from` (or the phrase's start) to the phrase's end, as a
+    // drag would; scrolled into view first, since scrolling closes the selection's toolbar.
+    const selectPhrase = async (phrase, from = "") => {
+      const find = `[...document.querySelectorAll(".kx-reading-article [data-text]")].find((e) => e.textContent.includes(${JSON.stringify(from || phrase)}) && e.textContent.includes(${JSON.stringify(phrase)}))`;
+      await shell.evaluate(`${find}.scrollIntoView({ block: "center" })`);
+      await wait(400);
+      await shell.evaluate(
+        ({ phrase, from, find }) => {
+          const el = eval(find);
+          const start = el.textContent.indexOf(from || phrase);
+          const end = el.textContent.indexOf(phrase, start) + phrase.length;
+          const walker = document.createTreeWalker(el, 4);
+          let seen = 0;
+          const range = document.createRange();
+          for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+            const len = n.data.length;
+            if (start >= seen && start < seen + len) range.setStart(n, start - seen);
+            if (end > seen && end <= seen + len) range.setEnd(n, end - seen);
+            seen += len;
+          }
+          getSelection().removeAllRanges();
+          getSelection().addRange(range);
+          el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        },
+        { phrase, from, find },
+      );
+      await shell.locator(".kx-reading-selection").waitFor();
+    };
     const phrase = "the soil stays wet longest";
-    const holder = (phrase) => [...document.querySelectorAll(".kx-reading-article [data-text]")].find((e) => e.textContent.includes(phrase));
-    // Scrolling closes the selection's toolbar: in view first, then select.
-    await shell.evaluate(`(${holder})(${JSON.stringify(phrase)}).scrollIntoView({ block: "center" })`);
-    await wait(400);
-    await shell.evaluate((phrase) => {
-      const el = [...document.querySelectorAll(".kx-reading-article [data-text]")].find((e) => e.textContent.includes(phrase));
-      const walker = document.createTreeWalker(el, 4);
-      let seen = 0;
-      const start = el.textContent.indexOf(phrase);
-      const range = document.createRange();
-      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-        const len = n.data.length;
-        if (start >= seen && start < seen + len) range.setStart(n, start - seen);
-        if (start + phrase.length > seen && start + phrase.length <= seen + len) range.setEnd(n, start + phrase.length - seen);
-        seen += len;
-      }
-      getSelection().removeAllRanges();
-      getSelection().addRange(range);
-      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-    }, phrase);
-    await shell.locator(".kx-reading-selection").waitFor();
+    await selectPhrase(phrase);
     await wait(200);
     await themes("paper-selection");
     await shell.locator(".kx-reading-selection").getByRole("button", { name: "Highlight blue" }).click();
@@ -164,6 +172,26 @@ async function until(check, what, timeout = 30000) {
     assert.equal(made.text, phrase);
     assert.equal(pageText.slice(position.start, position.end), phrase, "stored at the phrase's place on the page");
     await until(() => shell.evaluate(() => CSS.highlights.get("kx-reading-blue")?.size > 0), "the new highlight in reading mode");
+
+    // A comment first: the selection's Comment makes a highlight with it; its mark opens it again.
+    await selectPhrase("explained 61%");
+    await shell.locator(".kx-reading-selection").getByRole("button", { name: "Add comment" }).click();
+    await shell.locator(".kx-reading-comment-card textarea").fill("Compare with the north slope alone.");
+    await themes("paper-comment-new");
+    await shell.locator(".kx-reading-comment-card").getByRole("button", { name: "Save" }).click();
+    const commented = await until(async () => (await call("library_annotations", { hash: sources.paper.id })).find((a) => a.comment === "Compare with the north slope alone."), "the comment stored");
+    assert.equal(commented.text, "explained 61%");
+    await shell.locator(".kx-web-reader:visible button.kx-reading-comment").first().click();
+    await shell.locator(".kx-reading-comment-card textarea").fill("Compare with the north slope alone, and the valley.");
+    await themes("paper-comment-edit");
+    await shell.locator(".kx-reading-comment-card").getByRole("button", { name: "Save" }).click();
+    await until(async () => (await call("library_annotations", { hash: sources.paper.id })).find((a) => a.id === commented.id && /valley/.test(a.comment ?? "")), "the comment edited");
+    // A selection across inline maths is placed on the page too.
+    await selectPhrase("as a function", "first flowering ");
+    await shell.locator(".kx-reading-selection").getByRole("button", { name: "Highlight pink" }).click();
+    const maths = await until(async () => (await call("library_annotations", { hash: sources.paper.id })).find((a) => a.color === "pink"), "the highlight across maths stored");
+    report.acrossMaths = maths.text;
+    assert.match(maths.text.replace(/\s+/g, " "), /^first flowering F/, `across the formula: ${maths.text}`);
 
     // 4. Contents and Find.
     await reader.getByRole("button", { name: "Contents", exact: true }).click();

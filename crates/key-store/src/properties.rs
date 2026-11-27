@@ -322,7 +322,7 @@ impl Store {
     /// Text for agent context: the first chunks of the source, bounded.
     pub fn leading_text(&self, id: &str, limit: usize) -> Result<String> {
         let db = self.db()?;
-        let mut statement = db.prepare("SELECT text FROM chunks WHERE source_id = ? AND page IS NOT NULL ORDER BY seq LIMIT 60").map_err(e)?;
+        let mut statement = db.prepare("SELECT c.text FROM chunks c JOIN sources s ON s.id = c.source_id WHERE c.source_id = ? AND (c.page IS NOT NULL OR (s.kind = 'web' AND NOT (c.seq = 0 AND coalesce(s.abstract, '') <> ''))) ORDER BY c.seq LIMIT 60").map_err(e)?;
         let mut text = String::new();
         for row in statement.query_map([id], |r| r.get::<_, String>(0)).map_err(e)? {
             let piece = row.map_err(e)?;

@@ -591,7 +591,7 @@ export const KIND_ICON: Record<string, IconName> = {
 };
 export const KIND_LABEL: Record<string, string> = {
   pdf: "PDFs",
-  web: "Web",
+  web: "Web pages",
   video: "Video",
   audio: "Audio",
   image: "Images",

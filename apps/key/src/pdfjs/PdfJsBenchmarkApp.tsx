@@ -1688,7 +1688,10 @@ export interface PdfReaderHandle {
   /** Reading mode: a page region drawn as an image (`rect` [x, y, width, height] in 0–65535). */
   renderRegion(page: number, rect: number[], width: number): Promise<string | null>;
   /** Reading mode: a highlight on a text range the host located; its id. */
-  addHighlightAt(range: TextRange, text: string, color: HighlightColor): string | undefined;
+  addHighlightAt(range: TextRange, text: string, color: HighlightColor, comment?: string): string | undefined;
+  /** Reading mode: a highlight's colour or comment changed; false when it is not here. */
+  updateAnnotation(id: string, patch: { color?: HighlightColor; comment?: string }): boolean;
+  removeAnnotation(id: string): boolean;
 }
 
 const PdfJsBenchmarkApp = forwardRef<PdfReaderHandle, PdfJsBenchmarkAppProps>(
@@ -2936,13 +2939,32 @@ function PdfJsBenchmarkApp({
       goTo: (page, top = 0) =>
         controllerRef.current?.scrollToBounds(page, { left: 0, right: 0, top, bottom: top }),
       renderRegion: (page, rect, width) => controllerRef.current?.renderRegion(page, rect, width) ?? Promise.resolve(null),
-      addHighlightAt: (range, text, color) => {
+      addHighlightAt: (range, text, color, comment) => {
         const documentId = documentIdRef.current;
         if (!documentId) return undefined;
         const now = new Date().toISOString();
-        const created: ReaderAnnotation = { id: annotationId(), documentId, range, text, color, createdAt: now, updatedAt: now };
+        const created: ReaderAnnotation = { id: annotationId(), documentId, range, text, color, createdAt: now, updatedAt: now, ...(comment?.trim() ? { comment: comment.trim() } : {}) };
         updateAnnotations([...annotationSnapshotRef.current, created]);
         return created.id;
+      },
+      updateAnnotation: (id, patch) => {
+        const current = annotationSnapshotRef.current;
+        if (!current.some(a => a.id === id)) return false;
+        const now = new Date().toISOString();
+        updateAnnotations(
+          current.map(a =>
+            a.id === id
+              ? { ...a, ...(patch.color ? { color: patch.color } : {}), ...(patch.comment !== undefined ? { comment: patch.comment.trim() || undefined } : {}), updatedAt: now }
+              : a,
+          ),
+        );
+        return true;
+      },
+      removeAnnotation: id => {
+        const current = annotationSnapshotRef.current;
+        if (!current.some(a => a.id === id)) return false;
+        updateAnnotations(current.filter(a => a.id !== id));
+        return true;
       },
     }),
     [
