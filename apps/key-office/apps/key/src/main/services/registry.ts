@@ -218,5 +218,5 @@ export const SERVICES: KeyedService[] = [
   },
 ];
 
-export const serviceFor = (id: string) => SERVICES.find((s) => s.id === id);
+export const serviceFor =(id: string) => SERVICES.find((s) => s.id === id);
 export const serviceForProvider = (providerId: string) => SERVICES.find((s) => s.webProvider === providerId);

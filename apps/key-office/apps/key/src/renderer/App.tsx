@@ -33,6 +33,7 @@ import { BiblioSheets } from "./BiblioSheets";
 import { MarkdownExportHost } from "./markdown-export";
 import { FileRenameHost } from "./file-names";
 import { offerTagCleanup, openTagManager, TagManagerHost } from "./tag-manager-open";
+import { openDatabaseSearch } from "./db-search-entry";
 import { libraryChanged, selectLibrary } from "./library-nav";
 import { GROUP_GAP, MAX_GROUPS, TAB_STRIP_HEIGHT, dragGroupSash, groupBody, layoutGroups, layoutPanel, type Rect } from "../shared/tab-model";
 import { STATUS_BAR_HEIGHT } from "../shared/status-items";
@@ -797,6 +798,7 @@ export default function App() {
           { id: "new-canvas", label: "New canvas", icon: "canvas", run: createCanvas },
           { id: "library", label: "Show library", icon: "books", run: () => action("open-content", { section: "sources", workspaceId }) },
           ...(workspaceId ? [{ id: "tags", label: "Organise tags…", icon: "tag" as const, run: () => openTagManager(workspaceId) }] : []),
+          ...(workspaceId ? [{ id: "databases", label: "Search databases…", icon: "database" as const, keywords: "pubmed scopus web of science openalex systematic review query builder", run: () => openDatabaseSearch(workspaceId) }] : []),
           { id: "highlights", label: "All highlights", icon: "quote", shortcut: "⌘⇧H", run: () => action("open-content", { section: "highlights", workspaceId }) },
           { id: "inspector", label: inspectorOpen ? "Hide inspector" : "Show inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => setInspectorOpen((o) => !o) },
           { id: "sidebar", label: sidebarCollapsed ? "Show sidebar" : "Hide sidebar", icon: "sidebar", run: () => setSidebarCollapsed((v) => !v) },

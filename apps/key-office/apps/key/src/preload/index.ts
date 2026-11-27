@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, webUtils } from "electron";
 contextBridge.exposeInMainWorld("key", {
   // Automated checks run without first-use tips unless they ask for them (renderer/explain.tsx).
   automation: process.env.KEY_SKIP_ONBOARDING === "1" && process.env.KEY_SHOW_TIPS !== "1",
+  // Database search shows sample data (renderer/db-search-mock.ts) for checks without the engine.
+  dbSearchMock: process.env.KEY_DB_SEARCH_MOCK === "1",
   invoke: (
     command: string,
     args?: unknown,

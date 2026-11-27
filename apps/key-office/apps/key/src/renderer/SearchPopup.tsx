@@ -5,6 +5,7 @@
 // with the Web pill on or from the "Search the web for …" row; otherwise nothing leaves
 // the Mac. Keyboard first: ↑↓ move, ⇥ applies a suggested filter or jumps to the next
 // group, ⌘1–9 jump to a group, ↩ open, ⌥↩ or ⌘↩ beside, ⌘Y (or Space in the list) quick look.
+import { DatabasesPill, openDatabaseSearch } from "./db-search-entry";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { GlobalDialog } from "./GlobalDrawer";
 import { Icon, type IconName } from "./icons";
@@ -273,6 +274,7 @@ export default function SearchPopup({ invoke, workspaceId, label, placeholder, s
         <div className="kx-spot-chips">
           <KindChips result={result} kinds={state.kinds} onKinds={(kinds) => setState((s) => ({ ...s, kinds }))} />
           <WebPill pressed={webOn} onClick={() => setWebOn(!webOn)} />
+          <DatabasesPill onClick={() => (onClose(), openDatabaseSearch(workspaceId, state.text))} />
           <span className="kx-spacer" />
           {expand && (
             <button type="button" className="kx-palette-expand" title="Open this search in its own tab (⌘⇧↩)" onMouseDown={(e) => e.preventDefault()} onClick={expand}>

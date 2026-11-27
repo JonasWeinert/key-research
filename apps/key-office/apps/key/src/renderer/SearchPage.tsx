@@ -17,6 +17,7 @@ import { useWebSearch, webTokenNote } from "./web-search";
 import { useWebAdd } from "./WebAddButton";
 import WebPreview from "./WebPreview";
 import WebResults, { WebPill } from "./WebResults";
+import { DatabasesPill, openDatabaseSearch } from "./db-search-entry";
 import "./reference-library.css";
 import "./search-page.css";
 import { Explain } from "./explain";
@@ -238,6 +239,7 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
             }}
           />
           <WebPill pressed={web !== "off"} onClick={(e) => setWeb(e.metaKey || e.shiftKey ? (web === "off" ? "with" : "off") : web === "only" ? "off" : "only")} />
+          <DatabasesPill onClick={() => openDatabaseSearch(workspaceId, state.text)} />
           <Explain help="search.syntax" />
           <span className="kx-spacer" />
           <div className="kx-segmented" role="group" aria-label="Group by">

@@ -570,6 +570,57 @@ export const HELP = {
     { privacy: "Downloading is a plain file download. Nothing about you or your library is sent, and the models never send anything." },
   ),
 
+  // ── Database search ─────────────────────────────────────────────────────────────────
+  "dbsearch.intro": hint("Search PubMed, Scopus, OpenAlex and other databases at once, with one query built from blocks."),
+  "dbsearch.concepts": explain(
+    "Concepts and synonyms",
+    [
+      "Split your question into its main ideas, such as who (teenagers), what (mindfulness) and the outcome (anxiety). Each idea is a concept: a card here.",
+      "In a card, list every word authors use for that idea: synonyms, spellings, older terms. A work needs only one of them (OR). Across cards, a work must match every concept (AND).",
+      "The count on each card is how many works that concept finds alone. The narrowest one limits the search most: add synonyms there to find more.",
+    ],
+    { example: "(teenager* or adolescen*) and (mindfulness or meditation) and (anxiety or depress*)", steps: ["Type a word in a card and press Return", "Paste a list to add one term per line", "Drag a term to another card, or use ⌥← and ⌥→"] },
+  ),
+  "dbsearch.term": explain(
+    "Phrase, endings and fields",
+    [
+      "Phrase finds the words together and in order (“social capital”); All words finds them anywhere in the field.",
+      "Any ending, written child*, also finds child, children and childhood. This is called truncation. Use it on the word stem, not on very short words.",
+      "Search in decides where the words must appear. Title and abstract is the usual choice. Subject headings are labels indexers give each article, such as MeSH in PubMed: they find works whatever words the authors used.",
+      "Near finds a phrase's words a few words apart (“school … attendance”), where the database supports it.",
+    ],
+  ),
+  "dbsearch.exclude": explain("Leaving works out", ["Works that match any term here are removed from every database's results, for example protocols or animal studies.", "Use it sparingly: a word in an abstract can remove a relevant study."]),
+  "dbsearch.translation": explain(
+    "How each database runs the query",
+    [
+      "Each database has its own way of writing a search. Key writes your blocks in each one's syntax, shown here so you can check it, copy it into a protocol, or edit it by hand (marked Customised).",
+      "Counts differ between databases because each covers different journals, and some search abstracts or subject headings that others lack. A warning says when a database cannot do something you asked, and what Key does instead.",
+      "Counts are estimates asked a moment after you stop typing.",
+    ],
+  ),
+  "dbsearch.databases": explain(
+    "Choosing databases",
+    [
+      "A systematic search uses several databases, because none covers everything: PubMed for medicine, Scopus or Web of Science across fields, working-paper series for economics.",
+      "Scopus and Web of Science need an API key from your institution, added in Key Settings › Services & API keys. Manual databases have no API: Key writes the query and opens their search page for you.",
+      "Save a set you use often, and make it this library's default.",
+    ],
+  ),
+  "dbsearch.progress": explain("While a search runs", ["Key asks each database in turn, a page at a time. Some limit how often they may be asked, so Key pauses between requests: this is normal and keeps your access working.", "Works found by more than one database are merged, so you screen each work once. Stop keeps what has arrived; Resume carries on."]),
+  "dbsearch.provenance": explain("Where it was found", ["Each database that returned this work, with its id there, its position in that database's results and when it was fetched. This is the record a systematic review keeps."]),
+  "dbsearch.report": explain(
+    "The search report",
+    [
+      "A systematic review reports every database searched, the date, the exact query and how many records each gave. The PRISMA flow diagram starts from these numbers, and duplicates removed is its next box.",
+      "Export it as Markdown for your methods section, CSV for a spreadsheet of the works, or JSON for the full log.",
+    ],
+  ),
+  "dbsearch.saved": explain("Saved searches", ["A saved search keeps the query and databases. Run it again later to see what is new since the last run, for example before you submit a review."]),
+  "dbsearch.sample": hint("Showing sample data: this build's library has no database search engine yet. Counts and works are made up."),
+  "empty.dbsearch-saved": empty("No saved searches", "Saved searches keep a query and its databases, to run again later.", "Build a query and choose Save search."),
+  "empty.dbsearch-results": empty("No search run yet", "Results of a database search show here, without duplicates.", "Build a query, choose databases and press Search."),
+
   // ── First-use tips ──────────────────────────────────────────────────────────────────
   "tip.cite": tip("Cite what you select", "Cite copies the passage as a quote with its source and page, ready to paste into a note or a document."),
   "tip.citation-hover": tip("Look up a citation", "In the PDF, point at a citation like [12] or (Smith, 2020) to see the work it names, and add it to your library."),
@@ -608,6 +659,10 @@ export const HELP = {
   "term.preprint": term("Preprint", "A version of a paper shared before peer review, for example on arXiv. It may change before it is published."),
   "term.open-access": term("Open access", "A work anyone can read for free, legally. Find PDF looks for these copies."),
   "term.markdown": term("Markdown and Obsidian vault", "Markdown is plain text with light formatting. An Obsidian vault is a folder of such files."),
+  "term.boolean": term("Boolean search", "Combining terms with AND (all must match), OR (any may match) and NOT (leave out). The query builder writes these for you."),
+  "term.truncation": term("Truncation", "An asterisk at the end of a word stem, child*, finds every ending: child, children, childhood."),
+  "term.mesh": term("MeSH", "Medical Subject Headings: the labels PubMed's indexers give each article, so a search finds it whatever words its authors used."),
+  "term.grey-literature": term("Grey literature", "Reports, working papers, theses and registrations published outside journals. Reviews search it to avoid publication bias."),
   "term.mirror": term("Mirror folder", "A Finder folder showing your PDFs by collection, using hard links so it takes no extra space."),
 } satisfies Record<string, HelpEntry>;
 
