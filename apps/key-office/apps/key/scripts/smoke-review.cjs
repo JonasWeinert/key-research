@@ -1,8 +1,13 @@
 // A small systematic review from start to finish in the real app, with invented records:
-// create it from the sidebar, import a RIS file (one duplicate), set criteria and keywords,
-// screen titles and abstracts with the keyboard (including an undo and a rule suggestion),
-// assess full texts with reasons, extract outcome data, run the meta-analysis and look at the
-// PRISMA diagram and forest plot. Screenshots (light and dark) go to the printed temp folder.
+// create it from the sidebar, import a RIS file (one duplicate), look at the Sources table and
+// the duplicate decisions, set criteria and keywords, screen titles and abstracts with the
+// keyboard by both routes (E then the criterion's number; the number then E), Other…, a label
+// key and the counter, gather full texts (dropped PDFs matched by DOI, a CSV of file names),
+// screen a full text in the embedded reader and exclude it from a selected passage, extract a
+// value from a selection with its required source, a conditional form (Qualitative brings the
+// method question; Quantitative hides it and it is not required), run the meta-analysis and
+// look at the PRISMA diagram and forest plot. Screenshots (light and dark) go to the printed
+// temp folder.
 const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
@@ -22,12 +27,41 @@ const STUDIES = [
   ["Editorial: why we should all walk more", "Kerr, Ian", 2022, "10.9999/ed.9", "An editorial on walking."],
   ["Aquatic exercise for knee osteoarthritis: a randomised trial", "Novak, Jon", 2019, "10.9999/aqua.10", "Adults with knee osteoarthritis were randomised to pool exercise or education."],
 ];
+/** A one-page PDF with these lines of text (Helvetica), for full texts in the smoke. */
+function pdfWith(lines) {
+  const text = lines.map((l, i) => `BT /F1 13 Tf 72 ${720 - i * 22} Td (${l.replace(/[()\\]/g, "")}) Tj ET`).join("\n");
+  const objs = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${Buffer.byteLength(text)} >>\nstream\n${text}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets = [];
+  objs.forEach((o, i) => {
+    offsets.push(Buffer.byteLength(out));
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(out);
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+
 const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR", `TI  - ${title}`, `AU  - ${author}`, `PY  - ${year}`, doi && `DO  - ${doi}`, `AB  - ${abstract}`, "JO  - Journal of Invented Examples", "ER  - "].filter(Boolean).join("\n")).join("\n");
 
 (async () => {
   const temp = await mkdtemp(path.join(tmpdir(), "key-review-"));
   const file = path.join(temp, "pubmed-search.ris");
   await writeFile(file, ris);
+  const yogaPdf = path.join(temp, "moreau-2018.pdf");
+  await writeFile(yogaPdf, pdfWith(["Yoga for chronic low back pain: a randomised trial", "Eli Moreau", "doi: 10.9999/yoga.5", "Participants were recruited in Norway from four clinics.", "Pain improved more with yoga than with the booklet."]));
+  const notesPdf = path.join(temp, "meeting-notes.pdf");
+  await writeFile(notesPdf, pdfWith(["Notes from a team meeting about room bookings"]));
+  const pilatesPdf = path.join(temp, "silva-2020.pdf");
+  await writeFile(pilatesPdf, pdfWith(["Pilates versus usual care for neck pain: a randomised trial", "Participants were adolescents aged 12 to 16 at one school.", "Neck pain was measured at twelve weeks."]));
+  const taichiPdf = path.join(temp, "taichi.pdf");
+  await writeFile(taichiPdf, pdfWith(["Tai chi and balance in older people", "Falls were fewer with tai chi."]));
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
     args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
@@ -67,7 +101,7 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
 
     // Sources: import the RIS file through the file chooser.
     await page.getByRole("tab", { name: /Sources/ }).click();
-    await page.locator(".kx-rv-sources input[type=file]").setInputFiles(file);
+    await page.locator(".kx-rv-sources input[type=file]").first().setInputFiles(file);
     const importSheet = page.getByRole("dialog", { name: "Import records" });
     await importSheet.getByText("11 records", { exact: true }).waitFor();
     assert.equal(await importSheet.getByRole("textbox", { name: "Database" }).inputValue(), "PubMed");
@@ -80,6 +114,36 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     assert.equal(s.active, 10);
     await shot(page, "04-sources");
     report.import = { records: s.records, active: s.active, duplicates: s.duplicates };
+    // Records: every record in one table; one without an abstract, filtered.
+    await page.getByRole("radio", { name: /^Records/ }).click();
+    await page.locator(".kx-rv-record-row .kx-rv-list-title").first().waitFor();
+    assert.equal(await page.locator(".kx-rv-records .kx-rv-muted", { hasText: /^11 records$/ }).count(), 1);
+    await page.getByRole("combobox", { name: "Status" }).selectOption("active");
+    await page.locator(".kx-rv-records .kx-rv-muted", { hasText: /^10 records$/ }).waitFor();
+    await shot(page, "04b-sources-records");
+    // A record removed by hand leaves screening (PRISMA: removed for other reasons), then comes back.
+    await page.locator(".kx-rv-record-row .kx-rv-list-main", { hasText: "Editorial" }).click();
+    const recordSheet = page.getByRole("dialog", { name: "Record" });
+    await recordSheet.getByRole("button", { name: "Remove…" }).click();
+    await page.getByRole("button", { name: "Remove record" }).click();
+    await page.locator(".kx-rv-records .kx-rv-muted", { hasText: /^9 records$/ }).waitFor();
+    assert.equal((await call("review_prisma", { reviewId })).removedOther, 1);
+    await page.locator(".kx-rv-notice button", { hasText: "Undo" }).click();
+    await page.locator(".kx-rv-records .kx-rv-muted", { hasText: /^10 records$/ }).waitFor();
+    assert.equal((await call("review_prisma", { reviewId })).removedOther, 0);
+    // Duplicates: the automatic decision, with why; split, then merged again.
+    await page.getByRole("radio", { name: /^Duplicates/ }).click();
+    const dupGroup = page.locator(".kx-rv-dup-groups > li").first();
+    await dupGroup.getByText("Automatically").waitFor();
+    await shot(page, "04c-sources-duplicates");
+    await dupGroup.getByRole("button", { name: "Not duplicates" }).click();
+    for (let i = 0; i < 50 && (await summary()).active !== 11; i++) await page.waitForTimeout(100);
+    assert.equal((await summary()).active, 11);
+    await page.locator(".kx-rv-notice button", { hasText: "Undo" }).click();
+    for (let i = 0; i < 50 && (await summary()).active !== 10; i++) await page.waitForTimeout(100);
+    s = await summary();
+    assert.equal(s.active, 10);
+    assert.equal((await call("review_prisma", { reviewId })).duplicates, 1);
 
     // Setup: the question, keywords and a criterion checked from the year (through the host),
     // then criteria added from the suggestions in the editor (one click each).
@@ -90,6 +154,27 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
       { id: "c-year", element: "other", label: "Published 2000 or later", reason: "Published before 2000", guidance: "", stages: ["ta"], link: { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } },
     ];
     protocol.forms.push((await call("review_form_templates")).find((f) => f.id === "f-outcomes"));
+    // Excluding at title and abstract asks for the first criterion not met.
+    protocol.rules.ta.reasons = "first";
+    // The country needs its place in the document; a conditional form for the design.
+        protocol.forms.find((f) => f.id === "f-characteristics").sections.forEach((sec) => sec.fields.forEach((f) => f.id === "country" && (f.source = "required")));
+    protocol.forms.push({
+      id: "f-design",
+      name: "Design",
+      kind: "custom",
+      sections: [
+        {
+          id: "s-design",
+          title: "Design",
+          guidance: "",
+          fields: [
+            { id: "study_type", label: "Study type", kind: "choice", guidance: "", required: true, quote: false, options: ["Quantitative", "Qualitative"], unit: "", columns: [], role: "", source: "none" },
+            { id: "method", label: "Method", kind: "choice", guidance: "", required: true, quote: false, options: ["Interviews", "Focus groups", "Ethnography"], unit: "", columns: [], role: "", source: "none", showWhen: { conditions: [{ field: "study_type", op: "is", value: "Qualitative" }], all: true } },
+          ],
+        },
+      ],
+    });
+
     await call("review_protocol_save", { reviewId, protocol, note: "", actor: s.team[0].id, rescreen: false });
     await page.getByRole("tab", { name: /Setup/ }).click();
     await page.getByRole("button", { name: "Criteria", exact: false }).first().click();
@@ -118,6 +203,10 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
       await page.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), before);
       return before;
     };
+    const taCriteria = s.protocol.criteria.filter((c) => !c.stages.length || c.stages.includes("ta"));
+    const num = (id) => String(taCriteria.findIndex((c) => c.id === id) + 1);
+    const counterText = () => page.locator(".kx-rv-counter").textContent();
+    assert.equal(await counterText(), "1 of 10");
     const titles = [];
     for (let i = 0; i < 10; i++) {
       const title = await page.locator(".kx-rv-record-title").textContent();
@@ -126,15 +215,41 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
         // The rule suggests excluding the 1987 record.
         await page.locator(".kx-rv-suggestion").getByText("Not met: Year is 2000 or later").waitFor();
         await shot(page, "07-screen-suggestion");
-      }
-      const key = /rats|Editorial|survey|Cycling/.test(title) ? "e" : /Pilates/.test(title) ? "m" : "i";
-      await decide(key);
-      if (i === 2) {
-        // Undo brings the last record back.
+        // Other…: E opens the criteria step, 0 the text field, Enter records and goes on.
+        await page.keyboard.press("e");
+        await page.locator(".kx-rv-criteria-pick[data-picking]").waitFor();
+        await page.keyboard.press("0");
+        await page.getByRole("textbox", { name: "Other reason" }).fill("A survey of members, not a trial");
+        await shot(page, "07b-screen-other");
+        await page.keyboard.press("Enter");
+        await page.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b, title);
+      } else if (/rats|Cycling/.test(title)) {
+        // Route a: E, then the criterion's number (the first one: that records it).
+        await page.keyboard.press("e");
+        await page.locator(".kx-rv-criteria-pick[data-picking]").waitFor();
+        if (/rats/.test(title)) await shot(page, "07c-screen-criteria-step");
+        await page.keyboard.press(num("c-population"));
+        await page.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b, title);
+      } else if (/Editorial/.test(title)) {
+        // Route b: the number first, then E.
+        await page.keyboard.press(num("c-design"));
+        await page.locator(".kx-rv-criteria-pick label[data-on]").waitFor();
+        await decide("e");
+      } else if (/Tai chi/.test(title)) {
+        // A label key toggles the label and stays on the record.
+        await page.keyboard.press("l");
+        await page.locator(".kx-rv-label[aria-pressed=true]", { hasText: "Check later" }).waitFor();
+        assert.equal(await page.locator(".kx-rv-record-title").textContent(), title);
+        await decide("i");
+      } else await decide(/Pilates/.test(title) ? "m" : "i");
+      if (i === 0) assert.equal(await counterText(), "2 of 10", "the counter moves on through the session");
+      if (i === 1) {
+        // Undo brings the last record back, in its place.
         await page.keyboard.press("Meta+z");
         await page.locator(".kx-rv-notice", { hasText: "Took back" }).waitFor();
         await page.waitForFunction((t) => document.querySelector(".kx-rv-record-title")?.textContent === t, title);
-        await decide(key);
+        assert.equal(await counterText(), "2 of 10");
+        await decide("i");
       }
     }
     await page.locator(".kx-rv-done").waitFor();
@@ -143,54 +258,102 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     report.ta = s.stages.ta;
     assert.equal(s.stages.ta.done, 10);
     assert.equal(s.stages.ta.excluded, 4);
+    assert.equal(s.labelCounts["Check later"], 1);
+    const survey = (await call("review_records", { reviewId, viewer: s.team[0].id, query: { stage: "ta", filter: "excluded", text: "gym" } })).rows[0];
+    assert.equal((await call("review_record", { reviewId, recordId: survey.id, stage: "ta", viewer: s.team[0].id })).mine.other, "A survey of members, not a trial");
 
     // The list view.
     await page.getByRole("radio", { name: "List" }).click();
     await page.getByRole("combobox", { name: "Show" }).selectOption("all");
     await page.locator(".kx-rv-list-row .kx-rv-list-title").first().waitFor();
+    await page.locator(".kx-rv-label-tabs [role=tab]", { hasText: "Check later" }).getByText("1").waitFor();
     await shot(page, "09-list");
 
-    // Full text: the first record gets a PDF from the library; it opens in the reader beside.
-    const pdf = path.resolve(__dirname, "../../../../../tests/fixtures/scientific-unlinked.pdf");
-    const info = await call("library_import_file", { path: pdf });
-    const source = await call("store_source", { id: info.id });
+    // Full texts: the Pilates record gets its PDF from the library (linked); dropped files are
+    // matched by DOI (Yoga) and an unrelated one stays unmatched; a CSV names Tai chi's file.
+    const pilatesInfo = await call("library_import_file", { path: pilatesPdf });
+    const source = await call("store_source", { id: pilatesInfo.id });
     assert(source?.id, "the PDF is in the library");
+    const ftRows = async () => (await call("review_fulltexts", { reviewId })).rows;
+    const recordOf = async (re) => (await ftRows()).find((r) => re.test(r.title)).id;
+    await call("review_fulltext", { reviewId, recordId: await recordOf(/Pilates/), status: "retrieved", sourceId: source.id, actor: s.team[0].id });
+    const librarySources = (await call("store_sources", { limit: 50 })).items.length;
     await page.getByRole("tab", { name: /Full text/ }).click();
-    await page.locator(".kx-rv-record-title").waitFor();
-    const firstFt = (await call("review_queue", { reviewId, stage: "ft", viewer: s.team[0].id, filter: "" }))[0];
-    await call("review_fulltext", { reviewId, recordId: firstFt, sourceId: source.id, actor: s.team[0].id });
-    await page.getByRole("tab", { name: "Overview" }).click();
-    await page.getByRole("tab", { name: /Full text/ }).click();
-    await page.getByRole("button", { name: "Open full text beside" }).click();
-    for (let i = 0; i < 100 && !app.windows().some((w) => w.url().endsWith("/pdf.html")); i++) await page.waitForTimeout(100);
-    assert(app.windows().some((w) => w.url().endsWith("/pdf.html")), "the reader opened");
-    const groups = await page.evaluate(() => window.key.tabs().then((t) => t.groups?.length ?? 0));
-    report.readerBeside = groups;
-    await page.waitForTimeout(1500);
-    await shot(page, "10-fulltext");
-    // Back to the review (the reader took the focus).
-    await page.locator(".kx-rv-decide-head").click();
+    await page.getByRole("radio", { name: /Full texts/ }).click();
+    await page.locator(".kx-rv-fulltext-table tbody tr").first().waitFor();
+    await page.locator(".kx-rv-fulltexts input[type=file]").first().setInputFiles([yogaPdf, notesPdf]);
+    const matchSheet = page.getByRole("dialog", { name: "Match files to records" });
+    await matchSheet.locator("li[data-level=confident]", { hasText: "moreau-2018.pdf" }).waitFor();
+    await matchSheet.locator("li[data-level=unmatched]", { hasText: "meeting-notes.pdf" }).waitFor();
+    await shot(page, "10a-fulltexts-match");
+    await matchSheet.getByRole("button", { name: "Attach 1" }).click();
+    await matchSheet.waitFor({ state: "detached" });
+    const yogaId = await recordOf(/Yoga/);
+    const yoga = (await ftRows()).find((r) => r.id === yogaId);
+    assert.equal(yoga.state, "have");
+    assert.equal(yoga.sourceId, null, "kept with the review, not a library source");
+    assert.equal((await call("store_sources", { limit: 50 })).items.length, librarySources, "no library source was made");
+    const sheetCsv = (await call("review_export", { reviewId, kind: "fulltext-csv", viewer: s.team[0].id })).content;
+    const taichiId = await recordOf(/Tai chi/);
+    const filled = sheetCsv
+      .trim()
+      .split("\n")
+      .map((line, n) => (n === 0 ? line : line.startsWith(taichiId) ? `${line}taichi.pdf` : /Aquatic/.test(line) ? `${line}missing.pdf` : line))
+      .join("\n");
+    const csvFile = path.join(temp, "full-texts.csv");
+    await writeFile(csvFile, filled);
+    await page.locator(".kx-rv-fulltexts input[type=file]").nth(1).setInputFiles([csvFile, taichiPdf]);
+    const csvSheet = page.getByRole("dialog", { name: "Full texts from the CSV" });
+    await csvSheet.getByText("“missing.pdf” was not among the files uploaded").waitFor();
+    await shot(page, "10b-fulltexts-csv");
+    await csvSheet.getByRole("button", { name: "Attach 1" }).click();
+    await csvSheet.waitFor({ state: "detached" });
+    assert.equal((await ftRows()).find((r) => r.id === taichiId).state, "have");
+    report.fulltexts = (await call("review_fulltexts", { reviewId })).have;
+
+    // Screen at full text: the PDF is the main panel inside the review tab, the decision beside.
+    await page.getByRole("radio", { name: "Screen" }).click();
+    await page.locator(".kx-rv-record-title").first().waitFor();
     for (let i = 0; i < 12 && !(await page.locator(".kx-rv-done").count()); i++) {
-      // The reader beside may hold the keyboard: give it back to the review.
-      await page.locator(".kx-rv-decide-head").click();
-      const title = await page.locator(".kx-rv-record-title").textContent();
+      const title = await page.locator(".kx-rv-compact .kx-rv-record-title").textContent();
       if (/Pilates/.test(title)) {
-        await page.keyboard.press("e");
-        await page.locator(".kx-rv-criteria-pick[data-picking]").waitFor();
-        await shot(page, "11-fulltext-reasons");
+        // The PDF renders in the review layout; a passage selected there shows the population
+        // criterion is not met, and the record is excluded from it.
+        const span = page.locator(".kx-rv-reader .pdfjs-text-layer span", { hasText: "adolescents" }).first();
+        await span.waitFor();
+        assert.equal(await page.locator(".kx-rv-single[data-layout=reader] .kx-rv-reader[data-kind=pdf]").count(), 1);
+        await shot(page, "10-fulltext-reader");
+        const box = await span.boundingBox();
+        await page.mouse.move(box.x + 2, box.y + box.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2, { steps: 8 });
+        await page.mouse.up();
+        await page.locator(".pdfjs-selection-host[data-action=review-not-met]").click();
+        const pick = page.getByRole("dialog", { name: "Does not meet" });
+        await pick.waitFor();
+        await shot(page, "11-fulltext-not-met");
         await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
-        await shot(page, "11-fulltext-reasons-dark");
+        await shot(page, "11-fulltext-not-met-dark");
         await page.evaluate(() => document.documentElement.removeAttribute("data-theme"));
-        const before = title;
-        // The criteria are the choices: 1 is the population criterion (the first at full text).
         await page.keyboard.press("1");
-        await page.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), before);
-      } else await decide("i");
+        await pick.waitFor({ state: "detached" });
+        await page.locator(".kx-rv-evidence-list li[data-kind=notMet]").waitFor();
+        await page.getByRole("button", { name: "Exclude and go to next" }).click();
+        await page.waitForFunction((b) => document.querySelector(".kx-rv-compact .kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), title);
+      } else {
+        await page.locator(".kx-rv-decide-head").click();
+        const before = title;
+        await page.keyboard.press("i");
+        await page.waitForFunction((b) => document.querySelector(".kx-rv-compact .kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), before);
+      }
       if (await page.locator(".kx-rv-done").count()) break;
     }
-    // Close the reader: the rest is looked at full width.
-    await page.evaluate((id) => window.key.tabAction("close-view", { viewId: id }), `pdf:${ws.id}:${info.hash}`);
-    await page.waitForFunction(() => window.key.tabs().then((t) => (t.groups?.length ?? 1) === 1));
+    await page.locator(".kx-rv-done").waitFor();
+    const pilatesId = (await call("review_records", { reviewId, viewer: s.team[0].id, query: { stage: "ft", filter: "excluded", text: "Pilates" } })).rows[0].id;
+    const pilates = await call("review_record", { reviewId, recordId: pilatesId, stage: "ft", viewer: s.team[0].id });
+    assert.equal(pilates.mine.evidence[0].kind, "notMet");
+    assert.equal(pilates.mine.evidence[0].page, 0);
+    assert(pilates.mine.evidence[0].rects.length > 0, "the passage keeps its place");
     s = await summary();
     report.ft = s.stages.ft;
     assert.equal(s.included, 5);
@@ -223,6 +386,42 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-xform").first().waitFor();
     await page.locator(".kx-rv-xsuggestion", { hasText: "Norway" }).waitFor();
     await shot(page, "12-extraction");
+    // Yoga's study: its PDF in the reader; "Norway" taken from a selection with its place.
+    await page.getByRole("combobox", { name: "Study", exact: true }).selectOption(yogaId);
+    const norway = page.locator(".kx-rv-reader .pdfjs-text-layer span", { hasText: "Norway" }).first();
+    await norway.waitFor();
+    // Typed without its place, the country stops the form from being completed.
+    await call("review_extract", { reviewId, recordId: yogaId, formId: "f-characteristics", fieldId: "country", value: "Norway", actor: s.team[0].id });
+    const before = await call("review_complete_form", { reviewId, recordId: yogaId, formId: "f-characteristics", actor: s.team[0].id }).then(() => "", (e) => String(e));
+    assert(/Country or countries: pick it from the document/.test(before), before);
+    const nb = await norway.boundingBox();
+    await page.mouse.move(nb.x + 2, nb.y + nb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(nb.x + nb.width - 2, nb.y + nb.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await page.locator(".pdfjs-selection-host[data-action=review-use]").click();
+    const use = page.getByRole("dialog", { name: "Use the passage" });
+    await use.getByRole("textbox").fill("Country");
+    await page.keyboard.press("Enter");
+    await use.getByRole("heading", { name: "Use for Country or countries" }).waitFor();
+    await shot(page, "12b-extraction-use");
+    await use.getByRole("button", { name: "The passage" }).click();
+    await use.waitFor({ state: "detached" });
+    const xv = await call("review_extraction", { reviewId, recordId: yogaId, viewer: s.team[0].id });
+    const country = xv.values["f-characteristics/country"].mine;
+    assert(/Norway/.test(country.value) && country.sourcePos?.page === 0 && country.sourcePos.rects.length > 0, "the value keeps its place");
+    const after = await call("review_complete_form", { reviewId, recordId: yogaId, formId: "f-characteristics", actor: s.team[0].id }).then(() => "", (e) => String(e));
+    assert(!/Country or countries/.test(after), after);
+    await page.locator(".kx-rv-xfield[data-field=country] .kx-rv-source-chip[data-placed]").waitFor();
+    // The conditional form: Qualitative brings the method question; Quantitative hides it.
+    const design = page.locator(".kx-rv-xform", { has: page.getByRole("heading", { name: "Design" }) });
+    await design.getByRole("combobox", { name: "Study type" }).selectOption("Qualitative");
+    await design.locator(".kx-rv-xfield[data-field=method]").waitFor();
+    await shot(page, "12c-extraction-conditional");
+    await design.getByRole("combobox", { name: "Study type" }).selectOption("Quantitative");
+    await design.locator(".kx-rv-xfield[data-field=method]").waitFor({ state: "detached" });
+    await design.getByRole("button", { name: "Complete form" }).click();
+    await design.locator(".kx-rv-pill", { hasText: "Complete" }).waitFor();
 
     // Analysis: forest plot of the pooled risk ratio.
     await page.getByRole("tab", { name: /Analysis/ }).click();
@@ -271,7 +470,7 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await call("review_decide", { reviewId, recordIds: [fresh], stage: "ta", value: "include", reasons: [], note: "", actor: ana.id });
     const blind = await call("review_record", { reviewId, recordId: fresh, stage: "ta", viewer: second.id });
     assert.deepEqual(blind.others, [], "blind: the second reviewer does not see the first decision");
-    await call("review_decide", { reviewId, recordIds: [fresh], stage: "ta", value: "exclude", reasons: [], note: "Not an exercise intervention", actor: second.id });
+    await call("review_decide", { reviewId, recordIds: [fresh], stage: "ta", value: "exclude", reasons: [], other: "Not an exercise intervention", note: "", actor: second.id });
     await page.getByRole("tab", { name: /Title & abstract/ }).click();
     await page.getByRole("radio", { name: /Conflicts/ }).click();
     await page.locator(".kx-rv-resolve-note").waitFor();
