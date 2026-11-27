@@ -42,7 +42,7 @@ import { deliverDeepLinks, listenForDeepLinks } from "./deep-links";
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
-import { SignInService, type SignInOp } from "./browser/sign-in";
+import { SignInService, signInDiagnostics, type SignInOp } from "./browser/sign-in";
 import { properUrlOf, ProxyService, withLibraryAccess, type ProxyOp } from "./browser/proxy-service";
 import { simulateNetwork } from "./browser/network";
 import { importProxies } from "./browser/proxy-import";
@@ -3375,6 +3375,10 @@ else
       ipcMain.handle("key:sign-in-forget", async (event) => {
         shell(event.sender.id);
         await signInService?.forget();
+      });
+      ipcMain.handle("key:sign-in-diagnostics", (event) => {
+        shell(event.sender.id);
+        return signInDiagnostics();
       });
       ipcMain.handle("key:sign-in-host", (event, host: unknown, choice: unknown) => {
         shell(event.sender.id);

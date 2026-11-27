@@ -21,7 +21,7 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { isIdentityUrl, redactUrl, signInEntry, type Hop } from "./sign-in-entry";
+import { hasOneTimeParams, isIdentityUrl, redactUrl, signInEntry, type Hop } from "./sign-in-entry";
 import { browserSession } from "./profile";
 import {
   browserOfAppName,
@@ -137,6 +137,8 @@ interface Tab {
   returning?: { entry: string; site: string; until: number; failed: string[]; browser: string; timer?: ReturnType<typeof setTimeout>; shown?: boolean };
   /** Where the site was entered, for "Use the window for this site" after a loop. */
   loopEntry?: string;
+  /** The last sign-in window started for this tab: a retry starts there again. */
+  attempt?: { entry: string; at: number };
   card?: SignInCard;
   /** The card was put aside (Not now) for the request that waits now. */
   aside?: boolean;
@@ -219,7 +221,14 @@ export class SignInHosts {
 
 /** A debug trace of sign-ins (KEY_SIGNIN_TRACE=1, and in smokes): addresses without their
  * query values, never cookie values or tokens. */
+const diagnostics: Array<Record<string, unknown>> = [];
 function trace(event: string, detail: Record<string, unknown> = {}) {
+  // Addresses only ever without their query values.
+  if (typeof detail.url === "string") detail = { ...detail, url: redactUrl(detail.url) };
+  // "Copy sign-in diagnostics": hosts, classifications and reasons only (no paths, no queries).
+  const host = typeof detail.host === "string" ? detail.host : typeof detail.url === "string" ? siteHost(detail.url) : undefined;
+  diagnostics.push({ at: new Date().toISOString().slice(11, 23), event, ...(host ? { host } : {}), ...pick(detail, ["signIn", "kind", "reason", "set", "failed", "sites", "returning"]) });
+  if (diagnostics.length > 300) diagnostics.splice(0, diagnostics.length - 300);
   if (!process.env.KEY_SIGNIN_TRACE && !process.env.KEY_BROWSER_SMOKE) return;
   const line = { at: Date.now(), event, ...detail };
   if (process.env.KEY_BROWSER_SMOKE) {
@@ -227,6 +236,11 @@ function trace(event: string, detail: Record<string, unknown> = {}) {
     (store.keySignInTrace ??= []).push(line);
   }
   if (process.env.KEY_SIGNIN_TRACE) console.error("[sign-in]", JSON.stringify(line));
+}
+const pick = (from: Record<string, unknown>, keys: string[]) => Object.fromEntries(keys.filter((k) => from[k] !== undefined).map((k) => [k, from[k]]));
+/** The diagnostics text the card's help copies (see trace). */
+export function signInDiagnostics() {
+  return ["Key sign-in diagnostics (hosts and steps only: no addresses, no cookies)", ...diagnostics.map((l) => JSON.stringify(l))].join("\n");
 }
 
 /** How a passkey sign-in goes on from Key's browser: in Key's sign-in window when a Chromium
@@ -250,8 +264,8 @@ export class SignInService {
   private touchId: "on" | "unsigned" | "unsupported" = process.platform === "darwin" ? "unsigned" : "unsupported";
   private installed: ChromiumApp[] = [];
   private hostsStore?: SignInHosts;
-  /** Sign-in windows kept open for a site that would not take the sign-in in Key. */
-  private kept = new Set<SignInWindow>();
+  /** The sign-in window (one per profile; reused for the next sign-in while it runs). */
+  private current?: { window: SignInWindow; app: string };
   constructor(private readonly settings: () => SignInSettings) {}
 
   private get hosts() {
@@ -312,8 +326,7 @@ export class SignInService {
     });
     // Sign-in windows Key opened close with it.
     app.on("will-quit", () => {
-      for (const tab of this.tabs.values()) void tab.signInWindow?.close();
-      for (const window of this.kept) void window.close();
+      void this.current?.window.close();
     });
     void this.refreshBrowsers();
     void this.configureTouchId();
@@ -378,7 +391,7 @@ export class SignInService {
     contents.once("destroyed", () => {
       clearTimeout(tab.timer);
       if (tab.returning) clearTimeout(tab.returning.timer);
-      void tab.signInWindow?.close();
+      void this.closeTabWindow(tab);
       this.tabs.delete(contents.id);
     });
   }
@@ -542,9 +555,8 @@ export class SignInService {
 
   /** Settings › Forget sign-ins: closes any sign-in window and removes Key's sign-in profiles. */
   async forget() {
-    await Promise.all([...this.tabs.values()].map((t) => t.signInWindow?.close()));
-    await Promise.all([...this.kept].map((w) => w.close()));
-    this.kept.clear();
+    for (const tab of this.tabs.values()) tab.signInWindow = undefined;
+    await this.closeCurrent();
     await forgetSignInProfiles(SignInService.profileRoot());
   }
 
@@ -572,16 +584,12 @@ export class SignInService {
       // The window opened by itself: close it, sign in here, and remember that.
       const host = card?.host ?? this.signInHost(tab);
       if (host) this.hosts.set(host, "here");
-      const window = tab.signInWindow;
-      tab.signInWindow = undefined;
       tab.card = undefined;
-      await window?.close();
+      await this.closeTabWindow(tab);
     } else if (op === "signin-cancel") {
       tab.handoff = undefined;
       tab.card = undefined;
-      const window = tab.signInWindow;
-      tab.signInWindow = undefined;
-      await window?.close();
+      await this.closeTabWindow(tab);
     } else if (op === "signin-window") {
       // Chosen here (arrival or a page waiting for a passkey): remembered for the service.
       const host = card?.host ?? this.signInHost(tab);
@@ -630,6 +638,7 @@ export class SignInService {
     tab.card = undefined;
     tab.changed();
     if (way.kind !== "window" || !entry) return;
+    await this.closeCurrent();
     const window = await SignInWindow.open({
       app: way.app,
       profileDir: join(SignInService.profileRoot(), way.app.id),
@@ -637,10 +646,11 @@ export class SignInService {
       near: this.bounds(tab),
       headless: !!process.env.KEY_SIGNIN_HEADLESS || process.env.KEY_TEST_MODE === "1",
       keep: true,
+      onTrace: (event, detail) => trace(event, detail),
     }).catch(() => undefined);
     if (!window) return;
-    this.kept.add(window);
-    void window.ended.then(() => this.kept.delete(window));
+    // Kept for this site; the next sign-in reuses it.
+    this.current = { window, app: way.app.id };
   }
 
   /** Opens the sign-in window on the page of the site this sign-in is for (never on a sign-in
@@ -652,24 +662,17 @@ export class SignInService {
       tab.card = { stage: "offer", site: siteHost(tab.contents.getURL()) ?? "", way: "handoff", browser: way.appName };
       return tab.changed();
     }
-    const old = tab.signInWindow;
-    if (old?.open) return void old.focus();
-    // One window per profile: a sign-in still open in another tab gives way.
-    for (const other of this.tabs.values())
-      if (other.signInWindow) {
-        const window = other.signInWindow;
-        other.signInWindow = undefined;
-        other.card = undefined;
-        other.changed();
-        await window.close();
-      }
     const waiting = tab.waiting ?? [...tab.pending.values()][0];
     const known = this.pendingHosts(tab);
     const current = tab.contents.getURL();
     const host = this.signInHost(tab);
-    const entry = options.entry ?? signInEntry(tab.trail, tab.opener, known);
+    // A retry starts where the last attempt did, as long as the tab has only been on sign-in
+    // pages since (their addresses are stale by now).
+    const retry = tab.attempt && !tab.trail.some((h) => h.at > tab.attempt!.at && h.committed && !isIdentityUrl(h.url, known)) ? tab.attempt.entry : undefined;
+    const entry = options.entry ?? retry ?? signInEntry(tab.trail, tab.opener, known);
     trace("window-entry", {
       entry: entry ? redactUrl(entry) : null,
+      retry: !!retry && !options.entry,
       current: redactUrl(current),
       opener: tab.opener ? redactUrl(tab.opener) : null,
       hops: tab.trail.map((h) => `${h.committed ? "page" : "redirect"}${h.dwell !== undefined ? `(${h.dwell}ms)` : ""} ${redactUrl(h.url)}`),
@@ -690,46 +693,73 @@ export class SignInService {
       tab.card = { stage: "where", site: host ?? siteHost(current) ?? "", way: "window", browser: way.app.name, entries, host };
       return tab.changed();
     }
+    tab.attempt = { entry, at: Date.now() };
     const site = siteHost(entry) ?? "";
     this.stopRequests(tab);
     this.clearWaiting(tab);
     tab.handoff = undefined;
     tab.card = { stage: "open", site, way: "window", browser: way.app.name, auto: options.auto, host };
     tab.changed();
-    let window: SignInWindow;
+    // One sign-in window per profile: an open one is reused (another tab's attempt gives way).
+    let window = this.current?.app === way.app.id && this.current.window.running ? this.current.window : undefined;
+    for (const other of this.tabs.values())
+      if (other !== tab && other.signInWindow) {
+        other.signInWindow = undefined;
+        other.card = undefined;
+        other.changed();
+      }
+    if (this.current && !window) {
+      const stale = this.current.window;
+      this.current = undefined;
+      await stale.close();
+    }
     try {
-      window = await SignInWindow.open({
-        app: way.app,
-        profileDir: join(SignInService.profileRoot(), way.app.id),
-        url: entry,
-        identityHosts: known,
-        near: this.bounds(tab),
-        // Test runs (main/test-mode.ts) never put a window on screen.
-        headless: !!process.env.KEY_SIGNIN_HEADLESS || process.env.KEY_TEST_MODE === "1",
-        virtualAuthenticator: !!(process.env.KEY_BROWSER_SMOKE && process.env.KEY_SIGNIN_VIRTUAL_AUTHENTICATOR),
-        onHop: (url) => trace("window-hop", { url: redactUrl(url) }),
-      });
+      if (window) {
+        trace("window-reuse", { url: entry });
+        await window.restart(entry, known);
+        void window.focus();
+      } else {
+        window = await SignInWindow.open({
+          app: way.app,
+          profileDir: join(SignInService.profileRoot(), way.app.id),
+          url: entry,
+          identityHosts: known,
+          near: this.bounds(tab),
+          // Test runs (main/test-mode.ts) never put a window on screen.
+          headless: !!process.env.KEY_SIGNIN_HEADLESS || process.env.KEY_TEST_MODE === "1",
+          virtualAuthenticator: !!(process.env.KEY_BROWSER_SMOKE && process.env.KEY_SIGNIN_VIRTUAL_AUTHENTICATOR),
+          onTrace: (event, detail) => trace(event, detail),
+        });
+        this.current = { window, app: way.app.id };
+      }
     } catch (error) {
+      trace("window-failed", { reason: (error as Error).message });
       if (tab.card?.stage === "open") tab.card = { stage: "failed", site, way: "window", browser: way.app.name, problem: (error as Error).message };
       return tab.changed();
     }
-    if (tab.card?.stage !== "open" || tab.contents.isDestroyed()) return void window.close();
+    if (tab.card?.stage !== "open" || tab.contents.isDestroyed()) return void this.closeCurrent();
     tab.signInWindow = window;
+    const attempt = window.attempt;
     const end = await window.ended;
-    trace("window-end", { kind: end.kind, url: "url" in end && end.url ? redactUrl(end.url) : null });
-    if (tab.signInWindow !== window) return; // cancelled, or the tab is gone
+    trace("window-end", { kind: end.kind, reason: "reason" in end ? end.reason : "byPerson" in end && end.byPerson ? "closed by the person" : undefined, url: "url" in end && end.url ? end.url : undefined });
+    if (tab.signInWindow !== window || window.attempt !== attempt) return; // cancelled, taken over, or the tab is gone
     tab.signInWindow = undefined;
     const fail = async (problem: string) => {
-      await window.close();
+      await this.closeCurrent();
       tab.card = { stage: "failed", site, way: "window", browser: way.app.name, problem };
       tab.changed();
     };
-    if (end.kind !== "signed-in") return fail(end.kind === "failed" ? end.problem : "The sign-in window was closed before the sign-in was finished.");
+    // Closed by hand: done, as far as the person is concerned; try with what there is.
+    const byPerson = end.kind === "closed" && end.byPerson;
+    if (end.kind === "failed") return fail(end.problem);
+    if (end.kind === "closed" && !byPerson) return fail(`The ${way.app.name} window closed before the sign-in was finished.`);
     // The cookies of the sites this sign-in went through, in Key's tab and in the window.
     const hosts = new Set([...chainHosts(tab.trail, entry, current, waiting?.rpId), ...window.hosts]);
     const found = await window.cookies(hosts).catch(() => ({ cookies: [], partitioned: [] }));
-    await window.close();
-    if (!found.cookies.length) return fail(`No sign-in came back from ${way.app.name}. Try again, and finish signing in there before you choose I’m signed in.`);
+    await this.closeCurrent();
+    this.bringKeyForward(tab);
+    if (!found.cookies.length)
+      return fail(byPerson ? `The ${way.app.name} window was closed, and no sign-in came back from it.` : `No sign-in came back from ${way.app.name}. Finish signing in there before you choose I’m signed in.`);
     const ses = browserSession();
     const failed = found.partitioned.map((c) => `${c.name} (partitioned)`);
     let set = 0;
@@ -742,9 +772,14 @@ export class SignInService {
     trace("cookies", { set, failed, sites: cookieSites(found.cookies) });
     if (!set) return fail("The sign-in came back, but Key’s browser did not accept it.");
     tab.card = undefined;
-    // Back to the site, where it started: it sees the sign-in and lets the tab in.
-    tab.returning = { entry, site, until: Date.now() + 30_000, failed, browser: way.app.name };
-    void tab.contents.loadURL(entry).catch(() => undefined);
+    // Back to the site: where the window ended up (unless that is a one-time address), or
+    // where the sign-in started. It sees the sign-in and lets the tab in.
+    const landing = end.kind === "signed-in" ? end.url : undefined;
+    const target = landing && /^https?:/i.test(landing) && !isIdentityUrl(landing, known) && !hasOneTimeParams(landing) ? landing : entry;
+    tab.attempt = undefined;
+    tab.returning = { entry: target, site, until: Date.now() + 30_000, failed, browser: way.app.name };
+    trace("return", { url: target });
+    void tab.contents.loadURL(target).catch(() => undefined);
     const names = cookieSites(found.cookies);
     setTimeout(() => {
       if (tab.card) return;
@@ -752,6 +787,31 @@ export class SignInService {
       tab.changed();
     }, 300);
     tab.changed();
+  }
+
+  /** Ends the tab's sign-in (its window, if it is the open one). */
+  private async closeTabWindow(tab: Tab) {
+    const window = tab.signInWindow;
+    tab.signInWindow = undefined;
+    if (window && this.current?.window === window) await this.closeCurrent();
+    else await window?.close();
+  }
+
+  private async closeCurrent() {
+    const current = this.current;
+    this.current = undefined;
+    await current?.window.close();
+  }
+
+  /** The sign-in came back: Key's window comes forward (not in test runs). */
+  private bringKeyForward(tab: Tab) {
+    if (process.env.KEY_TEST_MODE === "1" || process.env.KEY_BROWSER_SMOKE) return;
+    try {
+      app.focus({ steal: true });
+      (tab.window() as Electron.BaseWindow | undefined)?.focus();
+    } catch {
+      /* no window */
+    }
   }
 
   /** Asks, then copies the sign-in's cookies from the other browser and reloads the page. */

@@ -11,7 +11,7 @@ const IDP_HOSTS =
 /** The usual names of an institution's own sign-in hosts (idp.uni.edu, sso.…, login.…). */
 const IDP_LABEL = /(^|\.)(idp|idp[0-9]+|sso|login|signin|auth|shibboleth|shib|adfs|sts|cas|wayf|weblogin|websso)[0-9-]*\./i;
 /** Paths that are sign-in endpoints wherever they live. */
-const IDP_PATH = /\/idp\/profile\/(saml2|cas|oidc)\/|\/adfs\/(ls|oauth2)\b|\/oauth2\/(v2\.0\/)?authorize\b|\/saml2?\/(sso|idp|login)\b|\/(?:common|organizations|consumers|[0-9a-f-]{36})\/(saml2|wsfed|login|oauth2)\b|\/cas\/login\b|\/fido\/get\b/i;
+const IDP_PATH = /\/idp\/profile\/|\/adfs\/(ls|oauth2)\b|\/oauth2\/(v2\.0\/)?authorize\b|\/saml2?\/(sso|idp|login)\b|\/(?:common|organizations|consumers|[0-9a-f-]{36})\/(saml2|wsfed|login|oauth2)\b|\/cas\/login\b|\/fido\/get\b/i;
 /** Query parameters that are a one-time request or its answer. */
 const ONE_TIME_PARAM =
   /^(samlrequest|samlresponse|relaystate|sigalg|signature|ticket|code|state|session_state|nonce|flowtoken|ctx|sft|sfttag|wctx|wresult|wa|request|request_uri|login_hint_token|id_token|access_token|authuser_state|execution|conversation|spentityid|samlds|return_to_state)$/i;
