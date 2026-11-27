@@ -11,7 +11,7 @@ import { bridge, type Source } from "../library-api";
 import { findPdf } from "../find-pdf";
 import { highlightPage, type Highlight } from "../item-actions";
 import { GlobalDialog } from "../GlobalDrawer";
-import { CHOICE_LABEL, STAGE_LABEL, plural, type Choice, type DecisionInfo, type Evidence, type ListRow, type RecordView, type Stage } from "./review-api";
+import { CHOICE_LABEL, ELEMENT_LABEL, STAGE_LABEL, plural, reasonText, type Choice, type Criterion, type DecisionInfo, type Evidence, type ListRow, type RecordView, type Stage } from "./review-api";
 import { Btn, Highlighted, MenuButton, StatusPill, errorText, formatDate } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
 
@@ -107,7 +107,8 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     const el = document.activeElement as HTMLElement | null;
     if (el?.closest(".kx-rv-stages, .kx-rv-seg")) el.blur();
   }, []);
-  const reasonsFor = protocol.reasons.filter((r) => !r.stages?.length || r.stages.includes(stage));
+  // The stage's criteria: what is shown beside the record and what an exclusion names.
+  const reasonsFor = protocol.criteria.filter((c) => !c.stages.length || c.stages.includes(stage));
 
   const loadQueue = useCallback(
     (keep?: string) =>
@@ -166,12 +167,15 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     [loadQueue, onChanged, queue],
   );
 
-  const resolving = view?.status.name === "conflict" && summary.canResolve;
+  // Reviewers who excluded for different criteria are not in conflict; at full text whoever may
+  // resolve can settle which criterion is reported.
+  const settling = stage === "ft" && !!view?.reasonsDiffer && summary.canResolve;
+  const resolving = (view?.status.name === "conflict" || settling) && summary.canResolve;
 
   const decide = useCallback(
     async (value: Choice, chosen = reasons) => {
       if (!view || !current) return;
-      const needs = value === "exclude" ? rule.reasons : "none";
+      const needs = value === "exclude" && reasonsFor.length ? rule.reasons : "none";
       if (value === "maybe" && !rule.maybe) return notify(`“Maybe” is off for ${STAGE_LABEL[stage].toLowerCase()} (Setup › Rules)`, "error");
       if (needs === "one" && chosen.length !== 1) {
         setPicking("exclude");
@@ -190,7 +194,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         notify(errorText(e), "error");
       }
     },
-    [view, current, rule, reasons, note, evidence, resolving, api, stage, viewer, advance, notify],
+    [view, current, rule, reasons, reasonsFor.length, note, evidence, resolving, api, stage, viewer, advance, notify],
   );
 
   const undo = useCallback(async () => {
@@ -299,7 +303,8 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
                 {view.flagged && <span className="kx-rv-pill" data-tone="amber" title="The protocol changed after this was decided">Re-screen</span>}
               </div>
             )}
-            {resolving && <p className="kx-rv-resolve-note">Reviewers disagree. Your choice settles it{summary.protocol.rules.conflicts === "third" ? " as tie-breaker" : ""}.</p>}
+            {resolving && !settling && <p className="kx-rv-resolve-note">Reviewers disagree. Your choice settles it{summary.protocol.rules.conflicts === "third" ? " as tie-breaker" : ""}.</p>}
+            {settling && <p className="kx-rv-resolve-note" data-soft>Excluded by everyone, for different criteria. PRISMA reports the first in the list; choose the one to report to settle it.</p>}
             {(view.others.length > 0 || view.resolution) && <Decisions view={view} summary={summary} />}
             {view.suggestions.length > 0 && (
               <div className="kx-rv-suggestions">
@@ -337,35 +342,20 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
               {rule.maybe && <ChoiceButton value="maybe" mine={view.mine?.value} k={protocol.shortcuts.maybe || "M"} onClick={() => void decide("maybe")} />}
               <ChoiceButton value="exclude" mine={view.mine?.value} k={protocol.shortcuts.exclude || "E"} picking={picking === "exclude"} onClick={() => void decide("exclude")} />
             </div>
-            {(rule.reasons !== "none" || picking === "exclude" || reasons.length > 0) && reasonsFor.length > 0 && (
-              <fieldset className="kx-rv-reasons" data-picking={picking === "exclude" || undefined}>
-                <legend>
-                  {rule.reasons === "one" ? "Exclusion reason" : rule.reasons === "all" ? "Exclusion reasons (all that apply)" : "Reasons (optional)"}
-                  {picking === "exclude" && <span className="kx-rv-muted"> · {rule.reasons === "one" ? "press its number" : "then Enter"}</span>}
-                </legend>
-                {reasonsFor.map((r, i) => (
-                  <label key={r.id} title={r.guidance}>
-                    <input
-                      type={rule.reasons === "one" ? "radio" : "checkbox"}
-                      name="reason"
-                      checked={reasons.includes(r.id)}
-                      onChange={() => {
-                        const next = reasons.includes(r.id) ? reasons.filter((x) => x !== r.id) : rule.reasons === "one" ? [r.id] : [...reasons, r.id];
-                        setReasons(next);
-                        if (picking === "exclude" && rule.reasons === "one") void decide("exclude", next);
-                      }}
-                    />
-                    {i < 9 && <kbd>{i + 1}</kbd>}
-                    <span>{r.label}</span>
-                  </label>
-                ))}
-                {picking === "exclude" && rule.reasons === "all" && (
-                  <Btn primary small disabled={!reasons.length} onClick={() => void decide("exclude")}>
-                    Exclude
-                  </Btn>
-                )}
-              </fieldset>
-            )}
+            <CriteriaPicker
+              criteria={reasonsFor}
+              checks={view.checks}
+              rule={rule.reasons}
+              selected={reasons}
+              picking={picking === "exclude"}
+              onToggle={(id) => {
+                const next = reasons.includes(id) ? reasons.filter((x) => x !== id) : rule.reasons === "one" ? [id] : [...reasons, id];
+                setReasons(next);
+                // With one criterion to name, naming it while excluding is the decision.
+                if (picking === "exclude" && rule.reasons === "one") void decide("exclude", next);
+              }}
+              onConfirm={() => void decide("exclude")}
+            />
             {stage === "ft" && <FullTextPanel {...props} view={view} evidence={evidence} setEvidence={setEvidence} reload={() => load(current)} />}
             <label className="kx-rv-note">
               <span>
@@ -392,7 +382,6 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
                 {askingAi ? "Asking…" : "Ask AI for a suggestion"}
               </Btn>
             )}
-            <CriteriaPanel protocol={protocol} stage={stage} checks={view.checks} />
           </>
         )}
       </aside>
@@ -401,41 +390,45 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
   );
 }
 
-/** The stage's criteria beside the record, with what linked ones say about it. */
-function CriteriaPanel({ protocol, stage, checks }: { protocol: StageProps["summary"]["protocol"]; stage: Stage; checks: RecordView["checks"] }) {
-  const criteria = protocol.criteria.filter((c) => c.stages.includes(stage));
-  if (!criteria.length) return null;
-  const group = (kind: "include" | "exclude", title: string) => {
-    const list = criteria.filter((c) => c.kind === kind);
-    if (!list.length) return null;
-    return (
-      <>
-        <h4>{title}</h4>
-        <ul>
-          {list.map((c) => {
-            const check = checks.find((x) => x.criterionId === c.id);
-            const fails = check?.met != null && (kind === "include" ? !check.met : check.met);
-            const state = !check ? "plain" : check.met == null ? "unknown" : fails ? "fails" : "ok";
-            return (
-              <li key={c.id} data-state={state} title={c.guidance || undefined}>
-                {state === "plain" ? <span className="kx-rv-bullet" aria-hidden="true" /> : <Icon name={state === "ok" ? "check" : state === "fails" ? "close" : "info"} size={11} />}
-                <span>
-                  {c.label}
-                  {check && <small>{check.met == null ? `${check.rule}: not known` : fails ? (kind === "include" ? `Not met: ${check.rule}` : check.rule) : check.rule}</small>}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </>
-    );
-  };
+/** The stage's criteria: the rules beside the record and, when excluding, the choice of the
+ * ones it fails (numbers 1–9 pick them). One list, in the protocol's order. */
+function CriteriaPicker({ criteria, checks, rule, selected, picking, onToggle, onConfirm }: { criteria: Criterion[]; checks: RecordView["checks"]; rule: "none" | "one" | "all"; selected: string[]; picking: boolean; onToggle: (id: string) => void; onConfirm: () => void }) {
+  if (!criteria.length) return <p className="kx-rv-muted kx-rv-no-criteria">No criteria for this stage yet: add them in Setup › Criteria, and excluding will ask which one a record fails.</p>;
+  const grouped = criteria.length > 9;
+  const hint = picking ? (rule === "one" ? "Which one does it fail? Press its number" : "Tick each it fails, then Enter") : rule === "none" ? "Excluding? Tick the ones it fails (optional)" : "Exclude, then pick the one it fails";
+  let lastElement = "";
   return (
-    <details className="kx-rv-criteria-panel" open>
-      <summary>Criteria</summary>
-      {group("include", "Include if")}
-      {group("exclude", "Exclude if")}
-    </details>
+    <fieldset className="kx-rv-criteria-pick" data-picking={picking || undefined}>
+      <legend>
+        Criteria <span className="kx-rv-muted">· {hint}</span>
+      </legend>
+      {criteria.map((c, i) => {
+        const check = checks.find((x) => x.criterionId === c.id);
+        const state = !check ? undefined : check.met == null ? "unknown" : check.met ? "ok" : "fails";
+        const on = selected.includes(c.id);
+        const heading = grouped && c.element !== lastElement ? (ELEMENT_LABEL[c.element] ?? c.element) : null;
+        lastElement = c.element;
+        return (
+          <div key={c.id} className="kx-rv-criteria-item">
+            {heading && <h4>{heading}</h4>}
+            <label title={c.guidance || undefined} data-state={state} data-on={on || undefined}>
+              <input type={rule === "one" ? "radio" : "checkbox"} name="criterion" checked={on} onChange={() => onToggle(c.id)} />
+              {i < 9 ? <kbd>{i + 1}</kbd> : <span className="kx-rv-kbd-space" />}
+              <span>
+                {c.label}
+                {on ? <small>Reason: {reasonText(c)}</small> : check && <small>{check.met == null ? `${check.rule}: not known` : check.met ? check.rule : `Not met: ${check.rule}`}</small>}
+              </span>
+              {state && <Icon name={state === "ok" ? "check" : state === "fails" ? "close" : "info"} size={11} />}
+            </label>
+          </div>
+        );
+      })}
+      {picking && rule === "all" && (
+        <Btn primary small disabled={!selected.length} onClick={onConfirm}>
+          Exclude
+        </Btn>
+      )}
+    </fieldset>
   );
 }
 
@@ -450,7 +443,10 @@ function ChoiceButton({ value, mine, k, onClick, picking }: { value: Choice; min
 }
 
 function Decisions({ view, summary }: { view: RecordView; summary: StageProps["summary"] }) {
-  const reason = (id: string) => summary.protocol.reasons.find((r) => r.id === id)?.label ?? id;
+  const reason = (id: string) => {
+    const c = summary.protocol.criteria.find((x) => x.id === id);
+    return c ? reasonText(c) : id;
+  };
   const row = (d: DecisionInfo, label?: string) => (
     <li key={d.event} data-value={d.value}>
       <span className="kx-rv-avatar" title={d.reviewerName}>

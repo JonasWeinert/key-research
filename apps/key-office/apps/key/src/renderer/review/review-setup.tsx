@@ -1,4 +1,4 @@
-// Setup: the protocol (question, rules, criteria, reasons, keywords), the team, splits (pilot
+// Setup: the protocol (question, rules, criteria, keywords), the team, splits (pilot
 // rounds and assignment) and the history of versions. Edits are a draft: before anyone decided
 // under the current version they save as they are made; after, saving makes a new version with
 // a note and can flag the decisions the change affects for re-screening.
@@ -6,17 +6,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Explain, Hint } from "../explain";
 import { downloadText } from "../db-ui";
 import { Icon } from "../icons";
-import { plural, type Condition, type Criterion, type Member, type Protocol, type Reason, type Stage } from "./review-api";
+import { ELEMENT_LABEL, ELEMENT_PART, plural, reasonText, type Condition, type Criterion, type Member, type Protocol, type Stage } from "./review-api";
 import { Btn, MenuButton, Row, Segmented, Toggle, errorText, formatTime, useLoad } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
 import { FormsEditor } from "./review-forms";
 
-type Section = "question" | "team" | "criteria" | "reasons" | "forms" | "splits" | "history";
+type Section = "question" | "team" | "criteria" | "keywords" | "forms" | "splits" | "history";
 const SECTIONS: [Section, string][] = [
   ["question", "Question"],
   ["team", "Team & rules"],
   ["criteria", "Criteria"],
-  ["reasons", "Reasons & keywords"],
+  ["keywords", "Keywords & labels"],
   ["forms", "Extraction forms"],
   ["splits", "Pilot & assignment"],
   ["history", "Versions & audit"],
@@ -106,7 +106,7 @@ export function Setup(props: StageProps) {
         {section === "question" && <QuestionSection {...child} />}
         {section === "team" && <TeamSection {...child} />}
         {section === "criteria" && <CriteriaSection {...child} />}
-        {section === "reasons" && <ReasonsSection {...child} />}
+        {section === "keywords" && <KeywordsSection {...child} />}
         {section === "forms" && <FormsEditor forms={draft.forms} onChange={(forms) => change((p) => void (p.forms = forms))} api={api} rules={draft.rules} onRules={(r) => change((p) => void (p.rules = r))} />}
         {section === "splits" && <SplitsSection {...props} />}
         {section === "history" && <HistorySection {...props} />}
@@ -456,17 +456,23 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
   );
 }
 
-function CriterionCard({ c, reasons, onChange, onRemove, onMove, first, last }: { c: Criterion; reasons: Reason[]; onChange: (c: Criterion) => void; onRemove: () => void; onMove: (by: number) => void; first: boolean; last: boolean }) {
-  const [open, setOpen] = useState(!c.label);
+function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, autoOpen }: { c: Criterion; number: number; onChange: (c: Criterion) => void; onRemove: () => void; onMove: (by: number) => void; first: boolean; last: boolean; autoOpen?: boolean }) {
+  const [open, setOpen] = useState(!!autoOpen);
   const link = c.link;
   return (
-    <li className="kx-rv-criterion" data-kind={c.kind}>
+    <li className="kx-rv-criterion">
       <div className="kx-rv-criterion-head">
-        <span className="kx-rv-pill" data-tone={c.kind === "include" ? "green" : "red"}>
-          {c.kind === "include" ? "Include" : "Exclude"}
+        <span className="kx-rv-criterion-number" title="Its place in the order: the first criterion a study fails is the reason PRISMA reports">
+          {number}
         </span>
-        <input className="kx-rv-input kx-rv-criterion-label" placeholder={c.kind === "include" ? "e.g. Adults aged 18 or over" : "e.g. Animal studies"} value={c.label} onChange={(e) => onChange({ ...c, label: e.target.value })} aria-label="Criterion" />
-        {link && <span className="kx-rv-pill" data-tone="info" title="Linked to metadata">{link.effect === "auto" ? "Auto" : "Suggests"}</span>}
+        <span className="kx-rv-criterion-prefix">Include if</span>
+        <input className="kx-rv-input kx-rv-criterion-label" placeholder="what a study must meet, e.g. adults aged 18 or over" value={c.label} onChange={(e) => onChange({ ...c, label: e.target.value })} aria-label="Criterion" autoFocus={autoOpen && !c.label} />
+        {c.stages.length === 1 && <span className="kx-rv-pill" data-tone="muted">{c.stages[0] === "ta" ? "Title & abstract" : "Full text"}</span>}
+        {link && (
+          <span className="kx-rv-pill" data-tone="info" title="Linked to metadata">
+            {link.effect === "auto" ? "Auto" : "Suggests"}
+          </span>
+        )}
         <button type="button" className="kx-rv-icon" aria-label="Move up" disabled={first} onClick={() => onMove(-1)}>
           <Icon name="chevronUp" size={12} />
         </button>
@@ -480,51 +486,38 @@ function CriterionCard({ c, reasons, onChange, onRemove, onMove, first, last }: 
           <Icon name="trash" size={12} />
         </button>
       </div>
+      <div className="kx-rv-criterion-reason">
+        <span>Reason when not met</span>
+        <input className="kx-rv-input" value={c.reason} placeholder={reasonText({ ...c, reason: "" })} onChange={(e) => onChange({ ...c, reason: e.target.value })} aria-label="Reason when not met" />
+      </div>
       {open && (
         <div className="kx-rv-criterion-body">
-          <div className="kx-rv-criterion-grid">
-            <label className="kx-rv-field">
-              <span>Kind</span>
-              <Segmented label="Kind" value={c.kind} options={[["include", "Inclusion"], ["exclude", "Exclusion"]]} onChange={(kind) => onChange({ ...c, kind })} />
-            </label>
-            <div className="kx-rv-field">
-              <span>Applies at</span>
-              <span className="kx-rv-inline">
-                {(["ta", "ft"] as Stage[]).map((s) => (
-                  <label key={s} className="kx-check">
-                    <input type="checkbox" checked={c.stages.includes(s)} onChange={(e) => onChange({ ...c, stages: e.target.checked ? [...c.stages, s] : c.stages.filter((x) => x !== s) })} />
-                    {s === "ta" ? "Title & abstract" : "Full text"}
-                  </label>
-                ))}
-              </span>
-            </div>
-            <label className="kx-rv-field">
-              <span>Reason when not met</span>
-              <select className="kx-rv-select" value={c.reasonId ?? ""} onChange={(e) => onChange({ ...c, reasonId: e.target.value || null })}>
-                <option value="">None</option>
-                {reasons.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
           <label className="kx-rv-field" data-wide>
             <span>Guidance for reviewers</span>
             <textarea className="kx-rv-input" rows={2} placeholder="How to decide, borderline cases, examples" value={c.guidance} onChange={(e) => onChange({ ...c, guidance: e.target.value })} />
           </label>
+          <div className="kx-rv-field">
+            <span>Checked at</span>
+            <span className="kx-rv-inline">
+              {(["ta", "ft"] as Stage[]).map((s) => (
+                <label key={s} className="kx-check">
+                  <input type="checkbox" checked={c.stages.includes(s)} onChange={(e) => onChange({ ...c, stages: e.target.checked ? [...c.stages, s] : c.stages.filter((x) => x !== s) })} />
+                  {s === "ta" ? "Title & abstract" : "Full text"}
+                </label>
+              ))}
+            </span>
+          </div>
           <div className="kx-rv-link">
             <div className="kx-rv-link-head">
               <label className="kx-check">
                 <input type="checkbox" checked={!!link} onChange={(e) => onChange({ ...c, link: e.target.checked ? { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } : null })} />
-                Link to metadata
+                Check it from the record’s details
               </label>
               <Explain help="review.criteria.link" />
             </div>
             {link && (
               <>
-                <p className="kx-rv-muted">{c.kind === "include" ? "Met when" : "Applies when"}</p>
+                <p className="kx-rv-muted">{link.failsWhen ? "Not met when" : "Met when"}</p>
                 {link.conditions.map((cond, i) => (
                   <ConditionRow
                     key={i}
@@ -538,7 +531,7 @@ function CriterionCard({ c, reasons, onChange, onRemove, onMove, first, last }: 
                     Condition
                   </Btn>
                   {link.conditions.length > 1 && <Segmented label="Match" value={link.all ? "all" : "any"} options={[["all", "All"], ["any", "Any"]]} onChange={(v) => onChange({ ...c, link: { ...link, all: v === "all" } })} />}
-                  <span className="kx-rv-muted">then</span>
+                  <span className="kx-rv-muted">otherwise</span>
                   <Segmented
                     label="Effect"
                     value={link.effect}
@@ -549,7 +542,7 @@ function CriterionCard({ c, reasons, onChange, onRemove, onMove, first, last }: 
                     onChange={(effect) => onChange({ ...c, link: { ...link, effect } })}
                   />
                 </div>
-                {link.effect === "auto" && <p className="kx-rv-warning">Undecided records the rule catches are excluded by “Rules”, shown with the rule as the reason, counted by PRISMA as “marked ineligible by automation tools”, and can be taken back.</p>}
+                {link.effect === "auto" && <p className="kx-rv-warning">Undecided records that fail it are excluded by “Rules” with this criterion as the reason, counted by PRISMA as “marked ineligible by automation tools”, and can be taken back.</p>}
               </>
             )}
           </div>
@@ -559,49 +552,96 @@ function CriterionCard({ c, reasons, onChange, onRemove, onMove, first, last }: 
   );
 }
 
-function CriteriaSection({ draft, change }: DraftProps) {
-  const move = (i: number, by: number) =>
+/** Criteria grouped by the question's parts; order within the list is the reason hierarchy. */
+function CriteriaSection({ draft, change, api }: DraftProps) {
+  const framework = draft.question.framework || "pico";
+  const suggestions = useLoad(() => api.criteriaSuggestions(draft.question), [api, framework, JSON.stringify(draft.question.parts)]);
+  const [fresh, setFresh] = useState<string>();
+  const order = suggestions.value?.elements.map((e) => e.id) ?? [];
+  // Elements in the framework's order, then any others criteria use (from an older question).
+  const elements = [...order, ...[...new Set(draft.criteria.map((c) => c.element))].filter((e) => !order.includes(e))];
+  const rank = (e: string) => (elements.indexOf(e) < 0 ? elements.length : elements.indexOf(e));
+  /** Keeps the list grouped, so its order (the hierarchy) is what the groups show. */
+  const grouped = (list: Criterion[]) => list.map((c, i) => [c, i] as const).sort((a, b) => rank(a[0].element) - rank(b[0].element) || a[1] - b[1]).map(([c]) => c);
+  const add = (c: Criterion) =>
     change((p) => {
-      const [c] = p.criteria.splice(i, 1);
-      p.criteria.splice(i + by, 0, c);
+      const taken = new Set(p.criteria.map((x) => x.id));
+      let id = c.id || newId("c-");
+      for (let n = 2; taken.has(id); n++) id = `${c.id || "c"}-${n}`;
+      p.criteria = grouped([...p.criteria, { ...c, id }]);
+      setFresh(id);
     });
-  const add = (kind: "include" | "exclude") => change((p) => void p.criteria.push({ id: newId("c-"), kind, label: "", guidance: "", stages: ["ta", "ft"], reasonId: null, link: null }));
+  const move = (id: string, by: number) =>
+    change((p) => {
+      const list = grouped(p.criteria);
+      const i = list.findIndex((c) => c.id === id);
+      const j = i + by;
+      if (j < 0 || j >= list.length || list[j].element !== list[i].element) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      p.criteria = list;
+    });
+  const shown = draft.criteria.map((c, i) => ({ c, i }));
+  const offered = (element: string) =>
+    (suggestions.value?.criteria ?? []).filter((s) => s.element === element && !draft.criteria.some((c) => c.id === s.id || reasonText(c).toLowerCase() === reasonText(s).toLowerCase()));
+  const part = (element: string) => {
+    const key = ELEMENT_PART[framework]?.[element];
+    return key ? draft.question.parts[key]?.trim() : undefined;
+  };
   return (
-    <section className="kx-rv-section">
+    <section className="kx-rv-section kx-rv-criteria-editor">
       <div className="kx-rv-section-head">
         <h2>Eligibility criteria</h2>
         <Explain help="review.criteria" />
       </div>
       <Hint help="review.criteria.hint" />
-      {draft.criteria.length > 0 && (
-        <ul className="kx-rv-criteria">
-          {draft.criteria.map((c, i) => (
-            <CriterionCard
-              key={c.id}
-              c={c}
-              reasons={draft.reasons}
-              first={i === 0}
-              last={i === draft.criteria.length - 1}
-              onMove={(by) => move(i, by)}
-              onRemove={() => change((p) => void p.criteria.splice(i, 1))}
-              onChange={(next) => change((p) => void (p.criteria[i] = next))}
-            />
-          ))}
-        </ul>
-      )}
-      <div className="kx-rv-inline">
-        <Btn icon="plus" onClick={() => add("include")}>
-          Inclusion criterion
-        </Btn>
-        <Btn icon="plus" onClick={() => add("exclude")}>
-          Exclusion criterion
-        </Btn>
-      </div>
+      {elements.map((element) => {
+        const mine = shown.filter(({ c }) => c.element === element);
+        const chips = offered(element);
+        const first = mine[0]?.i;
+        const last = mine.at(-1)?.i;
+        return (
+          <div key={element} className="kx-rv-element" data-element={element}>
+            <div className="kx-rv-element-head">
+              <h3>{ELEMENT_LABEL[element] ?? element}</h3>
+              {part(element) && <span className="kx-rv-muted">{part(element)}</span>}
+            </div>
+            {mine.length > 0 && (
+              <ul className="kx-rv-criteria">
+                {mine.map(({ c, i }) => (
+                  <CriterionCard
+                    key={c.id}
+                    c={c}
+                    number={i + 1}
+                    first={i === first}
+                    last={i === last}
+                    autoOpen={c.id === fresh}
+                    onMove={(by) => move(c.id, by)}
+                    onRemove={() => change((p) => void (p.criteria = p.criteria.filter((x) => x.id !== c.id)))}
+                    onChange={(next) => change((p) => void (p.criteria = p.criteria.map((x) => (x.id === c.id ? next : x))))}
+                  />
+                ))}
+              </ul>
+            )}
+            <div className="kx-rv-chips" aria-label={`Suggested criteria: ${ELEMENT_LABEL[element] ?? element}`}>
+              {chips.map((s) => (
+                <button key={s.id} type="button" className="kx-rv-chip" title={`Include if: ${s.label}${s.guidance ? ` — ${s.guidance}` : ""}`} onClick={() => add(s)}>
+                  <Icon name="plus" size={10} />
+                  {reasonText(s)}
+                </button>
+              ))}
+              <button type="button" className="kx-rv-chip" data-blank onClick={() => add({ id: "", element, label: "", reason: "", guidance: "", stages: ["ta", "ft"], link: null })}>
+                <Icon name="plus" size={10} />
+                Own criterion
+              </button>
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
 
-// ── Reasons and keywords ─────────────────────────────────────────────────────────
+// ── Keywords and labels ──────────────────────────────────────────────────────────
 
 function ListInput({ value, onChange, placeholder, label }: { value: string[]; onChange: (v: string[]) => void; placeholder: string; label: string }) {
   const [text, setText] = useState(value.join(", "));
@@ -619,47 +659,9 @@ function ListInput({ value, onChange, placeholder, label }: { value: string[]; o
   );
 }
 
-function ReasonsSection({ draft, change }: DraftProps) {
+function KeywordsSection({ draft, change }: DraftProps) {
   return (
     <>
-      <section className="kx-rv-section">
-        <div className="kx-rv-section-head">
-          <h2>Exclusion reasons</h2>
-          <Explain help="review.reasons" />
-        </div>
-        <Hint help="review.reasons.order" />
-        <ol className="kx-rv-reason-list">
-          {draft.reasons.map((r, i) => (
-            <li key={r.id}>
-              <span className="kx-rv-muted kx-rv-num">{i + 1}</span>
-              <input className="kx-rv-input" value={r.label} aria-label="Reason" onChange={(e) => change((p) => void (p.reasons[i].label = e.target.value))} />
-              <input className="kx-rv-input kx-rv-reason-guidance" value={r.guidance} placeholder="Guidance" aria-label="Guidance" onChange={(e) => change((p) => void (p.reasons[i].guidance = e.target.value))} />
-              <select
-                className="kx-rv-select"
-                aria-label="Offered at"
-                value={r.stages?.length === 1 ? r.stages[0] : "both"}
-                onChange={(e) => change((p) => void (p.reasons[i].stages = e.target.value === "both" ? [] : [e.target.value as Stage]))}
-              >
-                <option value="both">Both stages</option>
-                <option value="ta">Title & abstract</option>
-                <option value="ft">Full text</option>
-              </select>
-              <button type="button" className="kx-rv-icon" aria-label="Move up" disabled={i === 0} onClick={() => change((p) => void p.reasons.splice(i - 1, 0, ...p.reasons.splice(i, 1)))}>
-                <Icon name="chevronUp" size={12} />
-              </button>
-              <button type="button" className="kx-rv-icon" aria-label="Move down" disabled={i === draft.reasons.length - 1} onClick={() => change((p) => void p.reasons.splice(i + 1, 0, ...p.reasons.splice(i, 1)))}>
-                <Icon name="chevronDown" size={12} />
-              </button>
-              <button type="button" className="kx-rv-icon" aria-label="Remove reason" onClick={() => change((p) => void p.reasons.splice(i, 1))}>
-                <Icon name="trash" size={12} />
-              </button>
-            </li>
-          ))}
-        </ol>
-        <Btn icon="plus" small onClick={() => change((p) => void p.reasons.push({ id: newId("r-"), label: "New reason", guidance: "", stages: [] }))}>
-          Reason
-        </Btn>
-      </section>
       <section className="kx-rv-section">
         <div className="kx-rv-section-head">
           <h2>Highlighted words</h2>

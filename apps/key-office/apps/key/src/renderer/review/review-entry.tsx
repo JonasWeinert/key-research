@@ -185,7 +185,7 @@ function NewReviewSheet({ invoke, workspaceId, onClose, then }: { invoke: Invoke
           <div className="kx-rv-field" data-wide>
             <span>Start from</span>
             <span className="kx-rv-inline">
-              <span className="kx-rv-muted">{template ? template.name : "Key’s defaults: one reviewer, Maybe at title and abstract, a reason at full text"}</span>
+              <span className="kx-rv-muted">{template ? template.name : "Key’s defaults: one reviewer, Maybe at title and abstract, the failed criterion named at full text"}</span>
               <Btn
                 small
                 onClick={() => {

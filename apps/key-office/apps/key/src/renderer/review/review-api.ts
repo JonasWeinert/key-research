@@ -29,22 +29,44 @@ export interface MetadataLink {
   conditions: Condition[];
   all: boolean;
   effect: "suggest" | "auto";
+  /** The conditions say when the criterion is not met (criteria that were exclusion criteria). */
+  failsWhen?: boolean;
 }
+/** A rule a study must meet. Excluding a study means choosing the criteria it fails: the
+ * criterion is the reason PRISMA reports. The list's order is the reason hierarchy. */
 export interface Criterion {
   id: string;
-  kind: "include" | "exclude";
+  /** The part of the question it belongs to: population, intervention … other. */
+  element: string;
+  /** What a study must meet. */
   label: string;
+  /** The reason's wording in reports ("Wrong population"); empty: derived from the label. */
+  reason: string;
   guidance: string;
   stages: Stage[];
-  reasonId?: string | null;
   link?: MetadataLink | null;
 }
-export interface Reason {
-  id: string;
-  label: string;
-  guidance: string;
-  stages: Stage[];
-}
+/** The reason as reports show it. */
+export const reasonText = (c: Pick<Criterion, "reason" | "label">) => c.reason.trim() || `Not met: ${c.label.trim().replace(/^./, (x, i, all) => (all.length > 1 && /[A-Z]/.test(all[1]) ? x : x.toLowerCase()))}`;
+export const ELEMENT_LABEL: Record<string, string> = {
+  population: "Population",
+  intervention: "Intervention",
+  exposure: "Exposure",
+  comparator: "Comparator",
+  outcome: "Outcome",
+  sample: "Sample",
+  phenomenon: "Phenomenon of interest",
+  evaluation: "Evaluation",
+  research: "Research type",
+  design: "Study design",
+  other: "Other",
+};
+/** The question part each element's words come from. */
+export const ELEMENT_PART: Record<string, Record<string, string>> = {
+  pico: { population: "p", intervention: "i", comparator: "c", outcome: "o" },
+  peco: { population: "p", exposure: "e", comparator: "c", outcome: "o" },
+  spider: { sample: "s", phenomenon: "pi", design: "d", evaluation: "e", research: "r" },
+};
 export interface Field {
   id: string;
   label: string;
@@ -75,7 +97,6 @@ export interface Protocol {
   notes: string;
   rules: Rules;
   criteria: Criterion[];
-  reasons: Reason[];
   keywords: { include: string[]; exclude: string[] };
   labels: string[];
   forms: Form[];
@@ -226,6 +247,8 @@ export interface RecordView {
   mine: DecisionInfo | null;
   others: DecisionInfo[];
   unblinded: boolean;
+  /** Reviewers excluded it for different criteria (not a conflict). */
+  reasonsDiffer: boolean;
   needed: number;
   resolution: DecisionInfo | null;
   earlier: { resolution: DecisionInfo | null; decisions: DecisionInfo[]; mine: DecisionInfo | null } | null;
@@ -391,6 +414,7 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
       call<{ version: string; number: number; newVersion: boolean; flagged: number; autoApplied: number }>("review_protocol_save", { protocol, note, actor, rescreen }),
     readTemplate: (text: string) => call<Protocol>("review_template_read", { text }),
     formTemplates: () => call<Form[]>("review_form_templates"),
+    criteriaSuggestions: (question: Protocol["question"]) => call<{ criteria: Criterion[]; elements: { id: string; label: string }[] }>("review_criteria_suggestions", { question }),
     previewFile: (text: string, fileName: string) => call<{ format: string; count: number; sample: { title: string; byline: string }[]; warnings: number }>("review_preview_file", { text, fileName }),
     importFile: (text: string, fileName: string, batch: Partial<Batch>, actor: string) => call<{ report: ImportReport; format: string; warnings: string[] }>("review_import_file", { text, fileName, batch, actor }),
     importLibrary: (args: { ids?: string[]; query?: Record<string, unknown> }, batch: Partial<Batch>, actor: string) => call<{ report: ImportReport }>("review_import_library", { ...args, batch, actor }),
