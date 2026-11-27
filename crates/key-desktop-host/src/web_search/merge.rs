@@ -33,7 +33,7 @@ pub fn merge(lists: &[ProviderList]) -> Vec<WebHit> {
     for list in lists {
         for (rank, result) in list.results.iter().enumerate() {
             // A fallback provider can answer in the place of the one asked (Google Scholar).
-            let provider = if result.fallback_for.is_some() { result.provider.clone() } else { list.provider.clone() };
+            let provider = if result.fallback_for.is_some() || list.provider == "web" { result.provider.clone() } else { list.provider.clone() };
             let title = title_key(&result.title);
             let arxiv = result.ids.arxiv.as_ref().map(|a| a.to_lowercase());
             let mut at = result.doi.as_ref().and_then(|d| by_doi.get(d).copied());

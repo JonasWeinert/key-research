@@ -17,6 +17,9 @@ const assert = require("node:assert/strict");
 const fixtures = path.resolve(__dirname, "../../../../../crates/key-desktop-host/src/web_search/fixtures");
 const OPENALEX_KEY = "oa-smoke-key-7f3a9c21b8d4";
 const SERPAPI_KEY = "serp-smoke-key-5e6d7c8b9a01";
+const TAVILY_KEY = "tvly-smoke-key-1a2b3c4d5e6f";
+const FIRECRAWL_KEY = "fc-smoke-key-6f5e4d3c2b1a";
+const KEYS = [OPENALEX_KEY, SERPAPI_KEY, TAVILY_KEY, FIRECRAWL_KEY];
 
 async function filesUnder(dir) {
   const out = [];
@@ -39,14 +42,31 @@ async function filesUnder(dir) {
   const openalexPage = JSON.parse(await readFile(path.join(fixtures, "openalex-search.json"), "utf8"));
   const scholarPage = JSON.parse(await readFile(path.join(fixtures, "serpapi-scholar.json"), "utf8"));
 
+  const tavilyPage = JSON.parse(await readFile(path.join(fixtures, "tavily-search.json"), "utf8"));
+  const firecrawlPage = JSON.parse(await readFile(path.join(fixtures, "firecrawl-search.json"), "utf8"));
+  const firecrawlScrape = JSON.parse(await readFile(path.join(fixtures, "firecrawl-scrape.json"), "utf8"));
+
   const log = [];
-  const server = createServer((req, res) => {
+  const bodies = [];
+  const server = createServer(async (req, res) => {
     const url = new URL(req.url, "http://mock");
-    log.push(url.pathname + url.search);
+    log.push(`${req.method === "POST" ? "POST " : ""}${url.pathname}${url.search}`);
     const json = (status, body, headers = {}) => {
       res.writeHead(status, { "content-type": "application/json", ...headers });
       res.end(JSON.stringify(body));
     };
+    // Web search engines: Tavily is out of credits (432), Firecrawl answers.
+    const auth = req.headers.authorization ?? "";
+    if (req.method === "POST") {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      bodies.push({ path: url.pathname, auth: auth.slice(0, 7), body: JSON.parse(raw || "{}") });
+      if (url.pathname === "/search") return auth === `Bearer ${TAVILY_KEY}` ? json(432, { detail: { error: "usage limit" } }) : json(401, { detail: { error: "Unauthorized" } });
+      if (url.pathname === "/v2/search") return auth === `Bearer ${FIRECRAWL_KEY}` ? json(200, firecrawlPage) : json(401, { success: false, error: "Unauthorized" });
+      if (url.pathname === "/v2/scrape") return auth === `Bearer ${FIRECRAWL_KEY}` ? json(200, firecrawlScrape) : json(401, { success: false, error: "Unauthorized" });
+    }
+    if (url.pathname === "/usage") return auth === `Bearer ${TAVILY_KEY}` ? json(200, { key: { usage: 1000, limit: 1000 }, account: { current_plan: "Researcher" } }) : json(401, {});
+    if (url.pathname === "/v2/team/credit-usage") return auth === `Bearer ${FIRECRAWL_KEY}` ? json(200, { success: true, data: { remainingCredits: 480, planCredits: 500 } }) : json(401, { success: false });
     if (url.pathname === "/works") {
       // The anonymous pool is used up; a request with the user's key gets through.
       if (url.searchParams.get("api_key") !== OPENALEX_KEY) return json(429, { error: "Rate limit exceeded" });
@@ -78,6 +98,8 @@ async function filesUnder(dir) {
       KEY_WEB_OPENALEX_URL: mock,
       KEY_WEB_S2_URL: mock,
       KEY_WEB_SERPAPI_URL: mock,
+      KEY_WEB_TAVILY_URL: mock,
+      KEY_WEB_FIRECRAWL_URL: mock,
       KEY_WEB_MAX_RETRY_WAIT_MS: "1",
     },
   });
@@ -178,20 +200,97 @@ async function filesUnder(dir) {
     seen("web_providers", await call("web_providers"));
     seen("appSettings", await page.evaluate(() => window.key.appSettings()));
 
+    // Web search engines: keys for Tavily and Firecrawl, tested without a search; a key alone
+    // turns neither on. In Settings › Web & browser both are turned on, Tavily first.
+    await settings.getByRole("heading", { name: "Tavily" }).scrollIntoViewIfNeeded();
+    await settings.getByLabel("Tavily API key").fill(TAVILY_KEY);
+    await settings.locator('[data-service="tavily"]').locator("xpath=..").getByRole("button", { name: "Save" }).click();
+    await settings.getByText("Tavily accepted the key").waitFor();
+    await settings.getByLabel("Firecrawl API key").fill(FIRECRAWL_KEY);
+    await settings.locator('[data-service="firecrawl"]').locator("xpath=..").getByRole("button", { name: "Save" }).click();
+    await settings.getByText("Firecrawl accepted the key").waitFor();
+    await settings.getByText("480", { exact: true }).waitFor();
+    assert.ok(!bodies.length, "testing engine keys runs no search");
+    assert.ok(log.includes("/usage") && log.includes("/v2/team/credit-usage"), "keys were tested on the usage endpoints");
+    await settings.locator('[data-service="exa"]').scrollIntoViewIfNeeded();
+    await settings.locator('[data-service="exa"]').getByText("testing uses one search").waitFor();
+    await shot(page, "services-engines-light");
+    await settings.getByRole("button", { name: "Web & browser" }).click();
+    const engines = settings.locator("section", { has: page.getByRole("heading", { name: "Web search engines" }) });
+    await engines.waitFor();
+    await engines.locator('[data-engine="tavily"]').scrollIntoViewIfNeeded();
+    const tavilySwitch = engines.getByLabel("Search with Tavily");
+    await page.waitForFunction(() => !document.querySelector('[aria-label="Search with Tavily"]')?.disabled, null, { timeout: 15000 });
+    assert.equal(await tavilySwitch.isChecked(), false, "a key alone does not turn an engine on");
+    assert.equal(await engines.getByLabel("Search with Exa").isDisabled(), true, "no key: cannot be turned on");
+    // A controlled switch: it shows on once the setting is saved.
+    const turnOn = async (name) => {
+      await engines.getByLabel(`Search with ${name}`).click();
+      await page.waitForFunction((n) => document.querySelector(`[aria-label="Search with ${n}"]`)?.checked, name);
+    };
+    await turnOn("Tavily");
+    await turnOn("Firecrawl");
+    await engines.locator('[data-engine="tavily"]').getByText("Asked first").waitFor();
+    await engines.locator('[data-engine="firecrawl"]').getByText("Asked when the ones above fail").waitFor();
+    await shot(page, "web-engines-light");
+    // Firecrawl first by keyboard on its grip, then back: Tavily first.
+    await engines.getByRole("button", { name: "Move Firecrawl (arrow keys)" }).focus();
+    await page.keyboard.press("ArrowUp");
+    await engines.locator('[data-engine="firecrawl"]').getByText("Asked first").waitFor();
+    await engines.getByRole("button", { name: "Move Firecrawl (arrow keys)" }).focus();
+    await page.keyboard.press("ArrowDown");
+    await engines.locator('[data-engine="tavily"]').getByText("Asked first").waitFor();
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.evaluate(() => window.key.setAppSettings({ theme: "dark" }));
+    await page.waitForTimeout(400);
+    await shot(page, "web-engines-dark");
+    await page.evaluate(() => window.key.setAppSettings({ theme: "system" }));
+    await page.emulateMedia({ colorScheme: "light" });
+    await settings.getByRole("button", { name: "Close Key Settings" }).click();
+
+    // A search: Tavily is out of credits (not retried), Firecrawl answers and says so.
+    await page.waitForTimeout(300);
+    await search.click();
+    await search.fill("diffusion models");
+    await page.waitForFunction(() => document.querySelector(".kx-search-page [role=combobox]")?.value === "diffusion models");
+    await web.locator(".kx-web-hit", { hasText: "Denoising Diffusion" }).waitFor({ timeout: 30000 });
+    const picker = web.locator(".kx-engine-button");
+    await picker.getByText("via Firecrawl").waitFor();
+    // Turning the engines on may re-run the open search too: each query asks Tavily, then Firecrawl, once.
+    const asked = (q) => bodies.filter((b) => b.body.query === q).map((b) => b.path);
+    assert.deepEqual(asked("diffusion models"), ["/search", "/v2/search"], `Tavily first, then Firecrawl, once each: ${JSON.stringify(bodies.map((b) => [b.path, b.body.query]))}`);
+    await web.locator('.kx-web-badge[data-provider="firecrawl"]').first().waitFor();
+    // Close the field's suggestions, which cover the results' head.
+    await search.press("Escape");
+    await picker.click();
+    await page.getByRole("menu", { name: "Ask this engine" }).getByText("Tavily: this key has no credits left").waitFor();
+    await page.waitForTimeout(300);
+    await shot(page, "search-engine-fallback-light");
+    // Pick Firecrawl for this query: only Firecrawl is asked.
+    const before = bodies.length;
+    await page.getByRole("menuitemradio", { name: "Firecrawl" }).click();
+    await picker.getByText("via Firecrawl").waitFor();
+    await page.waitForTimeout(500);
+    // Firecrawl's answer to this query is cached; Tavily is not asked again.
+    assert.ok(!bodies.slice(before).some((b) => b.path === "/search"), "the picked engine alone");
+    assert.equal(await picker.locator("svg").count(), 1, "no fallback warning when Firecrawl was picked");
+    await shot(page, "search-engine-picked-light");
+    seen("web_providers engines", await call("web_providers"));
+
     // Nothing the renderer was given, nothing the app printed, no file it wrote holds a key.
-    for (const [label, value] of visible) for (const key of [OPENALEX_KEY, SERPAPI_KEY]) assert.ok(!value.includes(key), `${label} carries no key`);
+    for (const [label, value] of visible) for (const key of KEYS) assert.ok(!value.includes(key), `${label} carries no key`);
     const dom = await page.content();
-    for (const key of [OPENALEX_KEY, SERPAPI_KEY]) assert.ok(!dom.includes(key), "the page holds no key");
+    for (const key of KEYS) assert.ok(!dom.includes(key), "the page holds no key");
     await app.evaluate(({ app }) => app.emit("before-quit"));
     await page.waitForTimeout(500);
     const files = [...(await filesUnder(profile)), ...(await filesUnder(path.join(temp, "workspaces")))];
     const leaks = [];
     for (const file of files) {
       const bytes = await readFile(file).catch(() => Buffer.alloc(0));
-      for (const key of [OPENALEX_KEY, SERPAPI_KEY]) if (bytes.includes(Buffer.from(key))) leaks.push(`${path.relative(temp, file)} holds ${key.slice(0, 8)}…`);
+      for (const key of KEYS) if (bytes.includes(Buffer.from(key))) leaks.push(`${path.relative(temp, file)} holds ${key.slice(0, 8)}…`);
     }
     assert.deepEqual(leaks, [], "no file under the profile or workspaces holds a key");
-    for (const key of [OPENALEX_KEY, SERPAPI_KEY]) assert.ok(!output.includes(key), "the app's output holds no key");
+    for (const key of KEYS) assert.ok(!output.includes(key), "the app’s output holds no key");
 
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, temp, migrated: true, keychain: false, retriedWithKey: true, scholarFallback: true, usageShown: true, filesChecked: files.length, noLeaks: true }));

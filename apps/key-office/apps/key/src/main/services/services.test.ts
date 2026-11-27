@@ -101,3 +101,56 @@ describe("keyed services", () => {
   });
 });
 
+describe("web search engine keys", () => {
+  it("checks a Tavily key on its usage endpoint, which runs no search", async () => {
+    const fetch = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toBe("https://api.tavily.com/usage");
+      expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${KEY}`);
+      return json({ key: { usage: 150, limit: 1000 }, account: { current_plan: "Researcher", plan_usage: 150, plan_limit: 1000 } });
+    });
+    const { keyed } = await services(fetch as never);
+    const list = (await keyed.handle("services_set_key", { id: "tavily", key: KEY })) as ReturnType<KeyedServices["list"]>;
+    expect(list.services.find((s) => s.id === "tavily")).toMatchObject({ engine: true, checkUsesQuota: false, hasPricing: true });
+    expect(JSON.stringify(list)).not.toContain(KEY);
+    expect(await keyed.handle("services_test", { id: "tavily" })).toMatchObject({ ok: true, remaining: { value: 850, label: "credits left this month" } });
+  });
+  it("says when an engine's key is spent or refused", async () => {
+    let status = 432;
+    const fetch = vi.fn(async () => json({ detail: { error: "limit" } }, status));
+    const { keyed } = await services(fetch as never);
+    await keyed.handle("services_set_key", { id: "tavily", key: KEY });
+    expect(await keyed.handle("services_test", { id: "tavily" })).toMatchObject({ ok: false, message: "Tavily accepted the key, but it has no credits left" });
+    status = 401;
+    expect(await keyed.handle("services_test", { id: "tavily" })).toMatchObject({ ok: false, message: "Tavily refused this key" });
+  });
+  it("reads Firecrawl's remaining credits without a search", async () => {
+    const fetch = vi.fn(async (url: string) => {
+      expect(url).toBe("https://api.firecrawl.dev/v2/team/credit-usage");
+      return json({ success: true, data: { remainingCredits: 420, planCredits: 500 } });
+    });
+    const { keyed } = await services(fetch as never);
+    await keyed.handle("services_set_key", { id: "firecrawl", key: KEY });
+    expect(await keyed.handle("services_test", { id: "firecrawl" })).toMatchObject({ ok: true, remaining: { value: 420, label: "credits left" } });
+  });
+  it("checks keys of engines without an account endpoint with the smallest search, and says so", async () => {
+    const calls: { url: string; body?: string; headers: Record<string, string> }[] = [];
+    const fetch = vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, body: init.body as string | undefined, headers: init.headers as Record<string, string> });
+      return json({ results: [] });
+    });
+    const { keyed } = await services(fetch as never);
+    for (const id of ["exa", "brave", "perplexity", "you", "jina"]) {
+      const list = (await keyed.handle("services_set_key", { id, key: KEY })) as ReturnType<KeyedServices["list"]>;
+      expect(list.services.find((s) => s.id === id)?.checkUsesQuota).toBe(true);
+      expect(await keyed.handle("services_test", { id })).toMatchObject({ ok: true });
+    }
+    expect(JSON.parse(calls[0].body!)).toMatchObject({ numResults: 1 });
+    expect(calls[0].headers["x-api-key"]).toBe(KEY);
+    expect(calls[1].url).toContain("count=1");
+    expect(calls[1].headers["X-Subscription-Token"]).toBe(KEY);
+    expect(JSON.parse(calls[2].body!)).toMatchObject({ max_results: 1 });
+    expect(calls[3].headers["X-API-Key"]).toBe(KEY);
+    expect(calls[4].url).toBe("https://r.jina.ai/https://example.com");
+  });
+});
+

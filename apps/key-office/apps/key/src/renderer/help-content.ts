@@ -321,6 +321,105 @@ export const HELP = {
     },
   ),
 
+  // ── Settings: Web search engines (WebSearchSettings.tsx) and their keys ────────────
+  "settings.web.engines-intro": hint("Optional search engines for the whole web, beyond scholarly catalogues. Each needs its own key, and none is on until you turn it on."),
+  "settings.web.engines": explain(
+    "Web search engines",
+    [
+      "Scholarly catalogues find papers. A web search engine finds everything else too: reports, policy documents, news, blog posts and project pages. Key can use engines such as Tavily, Firecrawl, Exa or Brave Search with a key from each.",
+      "Key asks one engine at a time, in the order shown. If it fails or its key runs out of credits, the next one that is on is asked, unless you choose Stop. In a search you can pick another engine for that search.",
+      "An engine that cannot apply a filter you set, such as a language, is passed over for one that can.",
+    ],
+    { privacy: "Your search words go only to the engines you turn on here, and only when you search the web. Turning an engine off stops every request to it." },
+  ),
+  "settings.services.tavily": explain(
+    "A Tavily key",
+    ["Tavily is a search engine built for research and AI tools. It searches the whole web and answers with the most relevant pages. It has a free monthly allowance; larger plans cost money. Each basic search uses one credit."],
+    {
+      steps: ["Open tavily.com and sign up (an e-mail address is enough).", "Your key is shown on the dashboard's home page; copy it.", "Paste it here and press Save. Testing it reads your usage and runs no search.", "Turn Tavily on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at tavily.com", url: "https://app.tavily.com/home" },
+        { label: "Tavily pricing", url: "https://www.tavily.com/pricing" },
+      ],
+      privacy: "Your search words go to Tavily with your key, only while Tavily is on.",
+    },
+  ),
+  "settings.services.firecrawl": explain(
+    "A Firecrawl key",
+    [
+      "Firecrawl searches the web and can read a web page as clean text. Key uses the second to save a page into your library when its own browser cannot open it, or when you choose Firecrawl for it.",
+      "It has a free allowance of credits; more costs money. A search or a saved page uses credits.",
+    ],
+    {
+      steps: ["Open firecrawl.dev and sign up.", "Open API Keys in your dashboard and copy the key.", "Paste it here and press Save. Testing it reads your credits and runs no search.", "Turn Firecrawl on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at firecrawl.dev", url: "https://www.firecrawl.dev/app/api-keys" },
+        { label: "Firecrawl pricing", url: "https://www.firecrawl.dev/pricing" },
+      ],
+      privacy: "Your search words, or the address of a page you save, go to Firecrawl with your key.",
+    },
+  ),
+  "settings.services.exa": explain(
+    "An Exa key",
+    ["Exa finds pages by what they mean rather than by matching words, and can keep to scholarly publications. New accounts get some free credit; after that it is paid per search."],
+    {
+      steps: ["Open exa.ai and sign up.", "Open API Keys in the dashboard and create a key.", "Paste it here and press Save. Testing it runs one small search, which uses a little credit.", "Turn Exa on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at exa.ai", url: "https://dashboard.exa.ai/api-keys" },
+        { label: "Exa pricing", url: "https://exa.ai/pricing" },
+      ],
+      privacy: "Your search words go to Exa with your key, only while Exa is on.",
+    },
+  ),
+  "settings.services.brave": explain(
+    "A Brave Search key",
+    ["The Brave Search API searches Brave's own index of the web, independent of Google and Bing. Brave offers a plan with a small free allowance; you choose a plan when you create the key."],
+    {
+      steps: ["Open the Brave Search API dashboard and sign up.", "Choose a plan (a card may be asked for, even for the free one).", "Open API Keys, copy the key, paste it here and press Save. Testing it runs one search."],
+      links: [
+        { label: "Get a key at brave.com", url: "https://api-dashboard.search.brave.com/app/keys" },
+        { label: "Brave Search API plans", url: "https://brave.com/search/api/" },
+      ],
+      privacy: "Your search words go to Brave with your key, only while Brave Search is on.",
+    },
+  ),
+  "settings.services.perplexity": explain(
+    "A Perplexity key",
+    ["Perplexity's Search API answers with ranked web pages, not a written answer. It is paid per request from credit you add to your API account."],
+    {
+      steps: ["Open perplexity.ai, sign in and open API in your account settings.", "Add credit and create an API key.", "Paste it here and press Save. Testing it runs one search."],
+      links: [
+        { label: "Get a key at perplexity.ai", url: "https://www.perplexity.ai/account/api/keys" },
+        { label: "Perplexity pricing", url: "https://docs.perplexity.ai/getting-started/pricing" },
+      ],
+      privacy: "Your search words go to Perplexity with your key, only while it is on.",
+    },
+  ),
+  "settings.services.you": explain(
+    "A You.com key",
+    ["You.com's Search API answers with web pages from its own index. New accounts usually get some free credit; after that it is paid."],
+    {
+      steps: ["Open you.com/platform and sign up.", "Create an API key and copy it.", "Paste it here and press Save. Testing it runs one search."],
+      links: [
+        { label: "Get a key at you.com", url: "https://you.com/platform" },
+        { label: "You.com billing", url: "https://you.com/docs/administration/billing" },
+      ],
+      privacy: "Your search words go to You.com with your key, only while it is on.",
+    },
+  ),
+  "settings.services.jina": explain(
+    "A Jina key",
+    ["Jina Search finds pages on the web, and Jina Reader turns a page into clean text, which Key can use to save a page it cannot open itself. A new key comes with free tokens; a search uses far more of them than reading a page."],
+    {
+      steps: ["Open jina.ai; a key with free tokens is shown on the Reader page.", "Copy it, paste it here and press Save. Testing it reads one small page, a few tokens.", "Turn Jina on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at jina.ai", url: "https://jina.ai/api-dashboard/key-manager" },
+        { label: "Jina pricing", url: "https://jina.ai/reader/#pricing" },
+      ],
+      privacy: "Your search words, or the address of a page you save, go to Jina with your key.",
+    },
+  ),
+
   // ── Settings: AI ─────────────────────────────────────────────────────────────────────
   "settings.ai.intro": hint("Three steps: choose a provider, connect it, pick a model. Key uses it only for tasks you start, such as Fill with AI."),
   "settings.ai.provider": explain(

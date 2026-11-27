@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld("key", {
         "workspaces-changed",
         "launcher-command",
         "tab-switcher",
+        "web-providers-changed",
       ].includes(event)
     )
       throw Error("Unknown event");

@@ -4,8 +4,13 @@
 // it to `providers()` in mod.rs. Settings (on/off, API key), the Web pill, merging, retries,
 // caching, the keyed fallback and "Add to library" pick it up from there. Let its base URL be
 // overridden by an environment variable (http::Base::from_env) so smokes can use a mock.
+//
+// General web search engines (Tavily, Firecrawl, Exa, Brave …) are providers too, with
+// `engine()` saying so: they are not asked side by side like the catalogues but one at a time
+// in the user's order, the next one only when the one before fails (mod.rs, `WebSearch::chain`).
+// Their shared helpers (POST, errors, filter mapping) are in engines.rs.
 use super::filters::WebFilters;
-use super::http::{Base, ProviderError, Transport, json_of};
+use super::http::{Base, PostTransport, ProviderError, Transport, json_of, redact};
 use super::types::{WebPage, WebResult};
 use key_safe_http::CancellationToken;
 use serde_json::Value as Json;
@@ -18,13 +23,52 @@ pub struct Context<'a> {
     pub mailto: &'a str,
     pub cancel: &'a CancellationToken,
     pub transport: &'a Transport,
+    /// For engines whose API takes a JSON body.
+    pub post: &'a PostTransport,
+    /// The user's own address for a self-hosted engine (SearXNG), from Settings.
+    pub base_url: Option<&'a str>,
+    /// Narrow to scholarly sources where the engine can (Settings).
+    pub scholarly: bool,
 }
 
 impl Context<'_> {
     pub fn get_json(&self, base: &Base, path: &str, query: &[(&str, &str)], headers: &[(&str, &str)], label: &str) -> Result<Json, ProviderError> {
         let url = base.url(path, query).map_err(|e| ProviderError::new(format!("{label}: {e}"), None, false))?;
-        json_of((self.transport)(base, &url, headers, self.cancel), label).map(|(value, _)| value)
+        json_of((self.transport)(base, &url, headers, self.cancel), label).map(|(value, _)| value).map_err(|e| ProviderError { message: redact(&e.message, self.api_key), ..e })
     }
+    pub fn post_json(&self, base: &Base, path: &str, body: &Json, headers: &[(&str, &str)], label: &str) -> Result<Json, ProviderError> {
+        let url = base.url(path, &[]).map_err(|e| ProviderError::new(format!("{label}: {e}"), None, false))?;
+        let bytes = serde_json::to_vec(body).unwrap_or_default();
+        json_of((self.post)(base, &url, headers, &bytes, self.cancel), label).map(|(value, _)| value).map_err(|e| ProviderError { message: redact(&e.message, self.api_key), ..e })
+    }
+}
+
+/// What makes a provider a general web search engine.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Engine {
+    /// It can narrow results to scholarly sources (Exa's publications, Firecrawl's research).
+    pub scholarly: bool,
+    /// It runs at an address the user gives (SearXNG); without one it is off.
+    pub base_url: bool,
+    /// It can also fetch one page as readable HTML (`read_page`).
+    pub reader: bool,
+    /// Its largest page of results.
+    pub max_results: usize,
+    /// The provider's pricing page, for Settings.
+    pub pricing_url: &'static str,
+}
+
+/// One page read by a reader service (Firecrawl's scrape, Jina Reader).
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadPage {
+    pub provider: String,
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub language: Option<String>,
+    /// The page's main content as HTML.
+    pub html: String,
 }
 
 pub struct SearchRequest<'a> {
@@ -64,6 +108,14 @@ pub trait Provider: Send + Sync {
     /// One work by DOI or the provider's own id; none when it has no such work.
     fn lookup(&self, _id: &str, _cx: &Context) -> Result<Option<WebResult>, ProviderError> {
         Err(ProviderError::new(format!("{} cannot look works up", self.label()), None, false))
+    }
+    /// A general web search engine, asked in the user's order (none for a catalogue).
+    fn engine(&self) -> Option<Engine> {
+        None
+    }
+    /// The page at `url` as readable HTML (engines with `reader`).
+    fn read_page(&self, _url: &str, _cx: &Context) -> Result<ReadPage, ProviderError> {
+        Err(ProviderError::new(format!("{} cannot read pages", self.label()), None, false))
     }
 }
 

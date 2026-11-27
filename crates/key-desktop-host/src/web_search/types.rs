@@ -82,6 +82,19 @@ pub struct WebPage {
     pub cursor: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total: Option<i64>,
+    /// The web search engine that answered (the "web" chain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answered_by: Option<String>,
+    /// Engines asked before it that failed, and why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<Vec<EngineFailure>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineFailure {
+    pub provider: String,
+    pub message: String,
 }
 
 /// A merged result: one work, found by one or more providers.

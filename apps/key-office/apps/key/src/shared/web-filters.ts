@@ -4,7 +4,7 @@
 // are shown as not applied while only the web is searched.
 
 /** The kinds of filter web search knows. */
-export type WebFilterKey = "year" | "author" | "title" | "venue" | "doi" | "arxiv" | "pmid" | "pmcid" | "openAccess" | "type" | "citations" | "abstract" | "language" | "retracted";
+export type WebFilterKey = "year" | "author" | "title" | "venue" | "doi" | "arxiv" | "pmid" | "pmcid" | "openAccess" | "type" | "citations" | "abstract" | "language" | "retracted" | "site";
 
 /** A work type, as the library names item types. */
 export type WebWorkType = "article" | "review" | "preprint" | "book" | "chapter" | "conference-paper" | "thesis" | "report" | "dataset";
@@ -35,6 +35,8 @@ export interface WebFilters {
   /** ISO 639-1. */
   language?: string;
   retracted?: boolean;
+  /** Only pages of this site (a host name), for web search engines. */
+  site?: string;
 }
 
 /** A search field token (search-suggest's SearchFilter). */

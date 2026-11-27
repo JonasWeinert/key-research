@@ -338,11 +338,11 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   // No PDF to be had: the reference's web page, saved offline as its file instead.
   const [pdfMissing, setPdfMissing] = useState(false);
   const [savingPage, setSavingPage] = useState(false);
-  const saveWebPage = async () => {
+  const saveWebPage = async (reader?: string) => {
     setError("");
     setSavingPage(true);
     try {
-      const next = await saveSourceWebPage(invoke, workspaceId, sourceId);
+      const next = await saveSourceWebPage(invoke, workspaceId, sourceId, reader);
       setPdfMissing(false);
       setSource(next);
       side?.onChanged(next);
@@ -809,7 +809,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
           </div>
         )}
         {(savingPage || (pdfMissing && !source.filePath && (source.doi || source.url))) && (
-          <SavePageOffer busy={savingPage} onSave={() => void saveWebPage()} />
+          <SavePageOffer busy={savingPage} invoke={invoke} onSave={(reader) => void saveWebPage(reader)} />
         )}
 
         {highlights.length > 0 && (

@@ -10,6 +10,7 @@ import { shellContext, toast } from "./item-actions";
 import { Highlight } from "./search-highlight";
 import { WebAddButton, type WebAdd } from "./WebAddButton";
 import { openWebLink, type WebSearchState } from "./web-search";
+import { EnginePicker } from "./web-engines";
 import "./web-search.css";
 import { FollowButton } from "./feeds-ui";
 
@@ -73,6 +74,7 @@ export const FILTER_NAME: Record<WebFilterKey, string> = {
   abstract: "abstract",
   language: "language",
   retracted: "retraction",
+  site: "site",
 };
 
 /** "Alert me to new results": this search, with its web filters, as an OpenAlex alert in the Inbox. */
@@ -136,7 +138,7 @@ export default function WebResults({
         <span>On the web</span>
         <span className="kx-count">{web.hits.length || (loading.length ? "…" : 0)}</span>
         <span className="kx-web-sources">
-          {web.providers.map((p) => (
+          {web.providers.map((p) => p.info.kind === "chain" && !p.skipped?.length ? <EnginePicker key={p.info.id} web={web} /> : (
             <span key={p.info.id} className="kx-web-source" data-status={p.skipped?.length ? "skipped" : p.status} title={p.error ?? (p.skipped?.length ? `Not asked: it can't filter by ${skipNote(p.skipped)}` : undefined)}>
               {p.info.label}
               {p.status === "loading" && <span className="kx-search-spinner" aria-hidden="true" />}

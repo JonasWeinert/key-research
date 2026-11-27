@@ -27,6 +27,12 @@ export interface KeyedService {
   /** Without a key the service is not asked at all. */
   keyRequired?: boolean;
   validate(key: string, context: { fetch?: Fetch; mailto: string; signal?: AbortSignal }): Promise<Validation>;
+  /** A general web search engine (Settings → Web search engines). */
+  engine?: boolean;
+  /** The provider's pricing page (prices are never written into Key). */
+  pricingUrl?: string;
+  /** Testing the key runs one search, so it uses some of the allowance. */
+  checkUsesQuota?: boolean;
 }
 
 export const secretName = (id: string) => `service:${id}`;
@@ -216,7 +222,184 @@ export const SERVICES: KeyedService[] = [
       return { ok: true, message: "Web of Science Expanded accepted the key" };
     },
   },
+  ...webEngineServices(),
 ];
 
 export const serviceFor =(id: string) => SERVICES.find((s) => s.id === id);
 export const serviceForProvider = (providerId: string) => SERVICES.find((s) => s.webProvider === providerId);
+
+// ── Web search engines (crates/key-desktop-host/src/web_search: tavily.rs, firecrawl.rs …) ──
+// Each check costs as little as the service allows: an account or usage endpoint where there is
+// one (no search is run), else the smallest search (`checkUsesQuota`, which Settings says).
+const engineBase = (variable: string, fallback: string) => () => (process.env[variable] || fallback).replace(/\/$/, "");
+export const tavilyBase = engineBase("KEY_WEB_TAVILY_URL", "https://api.tavily.com");
+export const firecrawlBase = engineBase("KEY_WEB_FIRECRAWL_URL", "https://api.firecrawl.dev");
+export const exaBase = engineBase("KEY_WEB_EXA_URL", "https://api.exa.ai");
+export const braveBase = engineBase("KEY_WEB_BRAVE_URL", "https://api.search.brave.com");
+export const perplexityBase = engineBase("KEY_WEB_PERPLEXITY_URL", "https://api.perplexity.ai");
+export const youBase = engineBase("KEY_WEB_YOU_URL", "https://ydc-index.io");
+export const jinaBase = engineBase("KEY_WEB_JINA_URL", "https://s.jina.ai");
+
+async function post(url: string, body: unknown, context: { fetch?: Fetch; signal?: AbortSignal }, headers: Record<string, string>) {
+  const signal = context.signal ? AbortSignal.any([context.signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000);
+  try {
+    return await (context.fetch ?? fetch)(url, { method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json", ...headers }, body: JSON.stringify(body), signal });
+  } catch {
+    return undefined;
+  }
+}
+
+/** The usual answers, in words: refused, spent, limited, other. */
+function engineAnswer(name: string, response: Response | undefined): Validation | undefined {
+  if (!response) return { ok: false, message: `Couldn't reach ${name}` };
+  if (refused(response.status)) return { ok: false, message: `${name} refused this key` };
+  if (response.status === 402 || response.status === 432 || response.status === 433) return { ok: false, message: `${name} accepted the key, but it has no credits left` };
+  if (response.status === 429) return { ok: true, message: `Key accepted; ${name} is limiting requests right now` };
+  if (!response.ok) return { ok: false, message: `${name} returned HTTP ${response.status}` };
+  return undefined;
+}
+
+const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : undefined);
+
+function webEngineServices(): KeyedService[] {
+  return [
+    {
+      id: "tavily",
+      name: "Tavily",
+      summary: "A web search engine made for research tools. Searches the whole web for pages, reports and articles.",
+      usedFor: "Web search engines, when Tavily is turned on there",
+      keyUrl: "https://app.tavily.com/home",
+      keyUrlLabel: "tavily.com",
+      webProvider: "tavily",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://www.tavily.com/pricing",
+      async validate(key, context) {
+        // The usage endpoint answers what the key has used; it runs no search.
+        const response = await probe(`${tavilyBase()}/usage`, context, { Authorization: `Bearer ${key}` });
+        const failed = engineAnswer("Tavily", response);
+        if (failed) return failed;
+        const body = (await response!.json().catch(() => ({}))) as { key?: { usage?: number; limit?: number | null }; account?: { plan_usage?: number; plan_limit?: number } };
+        const used = num(body.key?.usage) ?? num(body.account?.plan_usage);
+        const limit = num(body.key?.limit) ?? num(body.account?.plan_limit);
+        const left = used !== undefined && limit !== undefined ? Math.max(0, limit - used) : undefined;
+        return { ok: true, message: "Tavily accepted the key", remaining: left === undefined ? undefined : { value: left, label: "credits left this month" } };
+      },
+    },
+    {
+      id: "firecrawl",
+      name: "Firecrawl",
+      summary: "Searches the web and can read a page as clean text, to save pages Key cannot open itself.",
+      usedFor: "Web search engines and saving web pages, when Firecrawl is turned on there",
+      keyUrl: "https://www.firecrawl.dev/app/api-keys",
+      keyUrlLabel: "firecrawl.dev",
+      webProvider: "firecrawl",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://www.firecrawl.dev/pricing",
+      async validate(key, context) {
+        // The credit usage endpoint runs no search or scrape.
+        const response = await probe(`${firecrawlBase()}/v2/team/credit-usage`, context, { Authorization: `Bearer ${key}` });
+        const failed = engineAnswer("Firecrawl", response);
+        if (failed) return failed;
+        const body = (await response!.json().catch(() => ({}))) as { success?: boolean; data?: { remainingCredits?: number } };
+        if (body.success === false) return { ok: false, message: "Firecrawl refused this key" };
+        const left = num(body.data?.remainingCredits);
+        return { ok: true, message: "Firecrawl accepted the key", remaining: left === undefined ? undefined : { value: left, label: "credits left" } };
+      },
+    },
+    {
+      id: "exa",
+      name: "Exa",
+      summary: "A search engine that finds pages by meaning, with a mode for scholarly publications.",
+      usedFor: "Web search engines, when Exa is turned on there",
+      keyUrl: "https://dashboard.exa.ai/api-keys",
+      keyUrlLabel: "exa.ai",
+      webProvider: "exa",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://exa.ai/pricing",
+      checkUsesQuota: true,
+      async validate(key, context) {
+        // Exa has no free account endpoint: the smallest search, one result without contents.
+        const response = await post(`${exaBase()}/search`, { query: "test", numResults: 1, type: "auto" }, context, { "x-api-key": key });
+        return engineAnswer("Exa", response) ?? { ok: true, message: "Exa accepted the key (the check used one search)" };
+      },
+    },
+    {
+      id: "brave",
+      name: "Brave Search",
+      summary: "Brave’s own independent web index, through the Brave Search API.",
+      usedFor: "Web search engines, when Brave Search is turned on there",
+      keyUrl: "https://api-dashboard.search.brave.com/app/keys",
+      keyUrlLabel: "brave.com",
+      webProvider: "brave",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://brave.com/search/api/",
+      checkUsesQuota: true,
+      async validate(key, context) {
+        const params = new URLSearchParams({ q: "test", count: "1" });
+        const response = await probe(`${braveBase()}/res/v1/web/search?${params}`, context, { "X-Subscription-Token": key });
+        const failed = engineAnswer("Brave Search", response);
+        if (failed) return failed;
+        // When Brave sends "per second, per month" pairs, the last is this month's.
+        const left = Number(response!.headers.get("x-ratelimit-remaining")?.split(",").pop()?.trim() ?? NaN);
+        return { ok: true, message: "Brave Search accepted the key (the check used one search)", remaining: Number.isFinite(left) ? { value: left, label: "searches left this month" } : undefined };
+      },
+    },
+    {
+      id: "perplexity",
+      name: "Perplexity Search",
+      summary: "Ranked web results from Perplexity’s search index (its Search API, not its chat answers).",
+      usedFor: "Web search engines, when Perplexity is turned on there",
+      keyUrl: "https://www.perplexity.ai/account/api/keys",
+      keyUrlLabel: "perplexity.ai",
+      webProvider: "perplexity",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://docs.perplexity.ai/getting-started/pricing",
+      checkUsesQuota: true,
+      async validate(key, context) {
+        const response = await post(`${perplexityBase()}/search`, { query: "test", max_results: 1 }, context, { Authorization: `Bearer ${key}` });
+        return engineAnswer("Perplexity", response) ?? { ok: true, message: "Perplexity accepted the key (the check used one search)" };
+      },
+    },
+    {
+      id: "you",
+      name: "You.com",
+      summary: "Web results from You.com’s search index, through its Search API.",
+      usedFor: "Web search engines, when You.com is turned on there",
+      keyUrl: "https://you.com/platform",
+      keyUrlLabel: "you.com",
+      webProvider: "you",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://you.com/docs/administration/billing",
+      checkUsesQuota: true,
+      async validate(key, context) {
+        const response = await post(`${youBase()}/v1/search`, { query: "test", count: 1 }, context, { "X-API-Key": key });
+        return engineAnswer("You.com", response) ?? { ok: true, message: "You.com accepted the key (the check used one search)" };
+      },
+    },
+    {
+      id: "jina",
+      name: "Jina",
+      summary: "Jina Search finds pages on the web; Jina Reader turns a page into clean text, to save pages Key cannot open itself.",
+      usedFor: "Web search engines and saving web pages, when Jina is turned on there",
+      keyUrl: "https://jina.ai/api-dashboard/key-manager",
+      keyUrlLabel: "jina.ai",
+      webProvider: "jina",
+      keyRequired: true,
+      engine: true,
+      pricingUrl: "https://jina.ai/reader/#pricing",
+      checkUsesQuota: true,
+      async validate(key, context) {
+        // Reading a tiny page costs a few tokens, far less than a search.
+        const response = await probe(`${jinaReaderBase()}/https://example.com`, context, { Authorization: `Bearer ${key}` });
+        return engineAnswer("Jina", response) ?? { ok: true, message: "Jina accepted the key (the check read one small page, a few tokens)" };
+      },
+    },
+  ];
+}
+export const jinaReaderBase = engineBase("KEY_WEB_JINA_READER_URL", "https://r.jina.ai");

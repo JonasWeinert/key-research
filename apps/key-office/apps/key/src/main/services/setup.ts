@@ -35,10 +35,15 @@ export function hostKeyRequests(): HostRequest[] {
   return requests;
 }
 
-let pushHosts: (() => void) | undefined;
+let pushHosts: (() => Promise<unknown>) | undefined;
+let webProvidersChanged: (() => void) | undefined;
+/** Called once the hosts have the new keys and web search settings. */
+export function onWebProvidersChanged(listener: () => void) {
+  webProvidersChanged = listener;
+}
 /** Tells running hosts again (the web search settings changed). */
-export function pushHostKeys() {
-  pushHosts?.();
+export function pushHostKeys(): Promise<unknown> {
+  return pushHosts?.() ?? Promise.resolve();
 }
 
 export async function startKeyedServices(options: { registry: () => Registry; appSettings: AppSettingsStore }) {
@@ -69,7 +74,10 @@ export async function startKeyedServices(options: { registry: () => Registry; ap
   }));
   await migratePlaintextKeys(options.appSettings, secrets).catch(() => false);
   const push = (pushHosts = () => {
-    for (const request of hostKeyRequests()) void options.registry().broadcast(request.command, request.args);
+    const sent = Promise.all(hostKeyRequests().map((request) => options.registry().broadcast(request.command, request.args).catch(() => undefined)));
+    // Web search settings or a key changed: views showing engines read them again.
+    void sent.then(() => webProvidersChanged?.());
+    return sent;
   });
   secrets.onChange(push);
   let modes = SERVICES.map((s) => keyed.mode(s.id)).join();

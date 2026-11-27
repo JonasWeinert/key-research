@@ -1,0 +1,22 @@
+{
+  "_synthetic": "Invented for tests, shaped like the documented Firecrawl v2 /search response (docs.firecrawl.dev, checked 2026-11-27). Not a recorded answer.",
+  "success": true,
+  "data": {
+    "web": [
+      {
+        "title": "Denoising Diffusion Probabilistic Models",
+        "description": "We present high quality image synthesis results using diffusion probabilistic models.",
+        "url": "https://arxiv.org/abs/2006.11239",
+        "category": "research"
+      },
+      {
+        "description": "PDF of the paper.",
+        "url": "https://arxiv.org/pdf/2006.11239.pdf",
+        "metadata": { "title": "2006.11239.pdf", "sourceURL": "https://arxiv.org/pdf/2006.11239.pdf", "statusCode": 200 }
+      }
+    ]
+  },
+  "warning": null,
+  "id": "synthetic-0001",
+  "creditsUsed": 2
+}
