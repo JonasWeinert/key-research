@@ -63,7 +63,7 @@ export function AdvancedSynthesis({ props, base, plots }: { props: StageProps; b
   const tabs: [Tab, string][] = [
     ["bias", "Small-study effects"],
     ["metareg", "Meta-regression"],
-    ["dependence", multiple ? "Several estimates ●" : "Several estimates"],
+    ["dependence", multiple && r ? `Several estimates (${r.k} in ${r.studies})` : "Several estimates"],
     ["sensitivity", "Sensitivity"],
   ];
   const tr = (v: number) => (r ? backTransform(v, r.transform) : v);

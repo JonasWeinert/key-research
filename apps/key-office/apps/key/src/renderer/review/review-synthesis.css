@@ -116,7 +116,7 @@
   margin-bottom: 6px;
 }
 .kx-rv-more-figure > svg {
-  max-width: 640px;
+  max-width: 520px;
 }
 .kx-rv-more-caption {
   margin: 4px 0 0;
@@ -220,5 +220,9 @@
   max-width: 180px;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-rv-more-table td.kx-rv-num,
+.kx-rv-more-table th.kx-rv-num {
   white-space: nowrap;
 }

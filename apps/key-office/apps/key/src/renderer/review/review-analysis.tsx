@@ -247,7 +247,7 @@ const ForestFigure = forwardRef<SVGSVGElement, { a: Analysis; input: Input[]; ki
     const columns = (id: string) => {
       const s = byId.get(id);
       if (!s) return [];
-      const f = (v?: number | null) => (v == null ? "–" : String(v));
+      const f = (v?: number | null) => (v == null ? "–" : String(Number(v.toPrecision(4))));
       if (kind === "dichotomous") return [`${f(s.e1)}/${f(s.n1)}`, `${f(s.e2)}/${f(s.n2)}`];
       if (kind === "continuous") return [`${f(s.m1)} (${f(s.sd1)}) ${f(s.n1)}`, `${f(s.m2)} (${f(s.sd2)}) ${f(s.n2)}`];
       return [];

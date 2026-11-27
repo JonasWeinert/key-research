@@ -419,7 +419,7 @@ export const ScatterPlot = forwardRef<SVGSVGElement, XYProps>(function ScatterPl
               {p.label && <title>{p.label}</title>}
             </circle>
             {labelOutliers && p.label && !near && (
-              <text x={x(p.x) + radius(p) + 3} y={y(p.y)} dominantBaseline="central" fontSize={10} style={ink("--kx-text-2")}>
+              <text x={x(p.x) > width * 0.7 ? x(p.x) - radius(p) - 3 : x(p.x) + radius(p) + 3} y={y(p.y)} textAnchor={x(p.x) > width * 0.7 ? "end" : "start"} dominantBaseline="central" fontSize={10} style={ink("--kx-text-2")}>
                 {clip(p.label, 120)}
               </text>
             )}
@@ -451,8 +451,9 @@ export const ContourFunnel = forwardRef<SVGSVGElement, { points: FunnelPoint[]; 
   const maxSe = Math.max(0.01, ...all.map((p) => p.se)) * 1.08;
   const z = [1.645, 1.96, 2.576];
   const reach = z[2] * maxSe;
-  const lo = Math.min(nullValue - reach, ...all.map((p) => p.estimate)),
-    hi = Math.max(nullValue + reach, ...all.map((p) => p.estimate));
+  const extra = adjusted != null && Number.isFinite(adjusted) ? [adjusted] : [];
+  const lo = Math.min(nullValue - reach, ...all.map((p) => p.estimate), ...extra),
+    hi = Math.max(nullValue + reach, ...all.map((p) => p.estimate), ...extra);
   const x = scale([lo, hi], [pad.left, width - pad.right], { ticks: 5 });
   const y = scale([0, maxSe], [pad.top, height - pad.bottom], { ticks: 4, nice: false });
   const wedge = (zz: number) => `${x(nullValue)},${y(0)} ${x(nullValue - zz * maxSe)},${y(maxSe)} ${x(nullValue + zz * maxSe)},${y(maxSe)}`;

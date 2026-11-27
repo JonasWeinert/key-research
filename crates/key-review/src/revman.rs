@@ -250,7 +250,14 @@ pub fn validate(info: &str, arms: &str, results: &str) -> Vec<Problem> {
 impl Reviews {
     /// The RevMan Web import files and a README with the validation.
     pub fn revman_files(&self, review: &str) -> Result<Vec<OutFile>> {
+        Ok(self.revman_build(review)?.0)
+    }
+
+    /// The files, and what was left out on the way (RevMan takes one result per study and outcome).
+    fn revman_build(&self, review: &str) -> Result<(Vec<OutFile>, Vec<Problem>)> {
         self.read(review, |state, conn| {
+            let mut notes: Vec<Problem> = Vec::new();
+            let mut seen: BTreeSet<(String, String)> = BTreeSet::new();
             let included = state.included();
             let ids: Vec<String> = included.iter().map(|r| r.id.clone()).collect();
             let m = metas(conn, review, &ids)?;
@@ -318,6 +325,10 @@ impl Reviews {
                 let name = clean(&if choice.timepoint.is_empty() { choice.outcome.clone() } else { format!("{} - {}", choice.outcome, choice.timepoint) });
                 for d in study_data(&rows, &choice.outcome, Some(&choice.timepoint)) {
                     let Some(study) = sid.get(&d.id).cloned() else { continue };
+                    if !seen.insert((study.clone(), name.clone())) {
+                        notes.push(Problem { file: "Study results".into(), row: 0, study: study.clone(), message: format!("Several estimates for \"{name}\": RevMan takes one result per study and outcome, so only the first was exported (rename the outcome in Key to keep the others)"), severity: "warning".into() });
+                        continue;
+                    }
                     let src = rows.iter().find(|x| x.record == d.id && Some(x.index) == d.row);
                     let g = |k: &str| src.and_then(|x| x.values.get(k)).and_then(|v| v.as_str()).map(clean).filter(|s| !s.is_empty());
                     let (a1, a2) = (g("group1").unwrap_or_else(|| "Intervention".into()), g("group2").unwrap_or_else(|| "Control".into()));
@@ -378,7 +389,8 @@ impl Reviews {
                     ris.push_str(&e);
                 }
             }
-            let problems = validate(&info, &arms_csv, &results);
+            let mut problems = validate(&info, &arms_csv, &results);
+            problems.extend(notes.iter().cloned());
             let mut readme = String::from("RevMan Web import files exported by Key\r\n\r\n1. In RevMan Web, switch on study-centric data management.\r\n2. Studies > Action > Import study references: import references.ris first (NS holds the Study ID), so studies are not created twice.\r\n3. Dashboard > Import study data > Import from CSV: upload study-information.csv, study-arms.csv and study-results.csv.\r\n   Outcome, arm and intervention names must match your review's set-up exactly; rename them in RevMan or in these files before importing.\r\n\r\nThe column layout follows RevMan's published import documentation and data package specification. Cochrane's own Excel templates were not available to check against, so if RevMan reports a column it does not expect, compare with its current template.\r\n\r\n");
             if problems.is_empty() {
                 readme.push_str("Validation: no problems found.\r\n");
@@ -389,20 +401,25 @@ impl Reviews {
                 }
             }
             let bom = |s: String| format!("\u{feff}{s}");
-            Ok(vec![
-                OutFile::text("study-information.csv", bom(info)),
-                OutFile::text("study-arms.csv", bom(arms_csv)),
-                OutFile::text("study-results.csv", bom(results)),
-                OutFile::text("references.ris", ris),
-                OutFile::text("README.txt", readme),
-            ])
+            Ok((
+                vec![
+                    OutFile::text("study-information.csv", bom(info)),
+                    OutFile::text("study-arms.csv", bom(arms_csv)),
+                    OutFile::text("study-results.csv", bom(results)),
+                    OutFile::text("references.ris", ris),
+                    OutFile::text("README.txt", readme),
+                ],
+                notes,
+            ))
         })
     }
 
     pub fn revman_check(&self, review: &str) -> Result<Vec<Problem>> {
-        let files = self.revman_files(review)?;
+        let (files, notes) = self.revman_build(review)?;
         let text = |name: &str| files.iter().find(|f| f.path == name).map(|f| String::from_utf8_lossy(&f.bytes).trim_start_matches('\u{feff}').to_string()).unwrap_or_default();
-        Ok(validate(&text("study-information.csv"), &text("study-arms.csv"), &text("study-results.csv")))
+        let mut out = validate(&text("study-information.csv"), &text("study-arms.csv"), &text("study-results.csv"));
+        out.extend(notes);
+        Ok(out)
     }
 }
 
