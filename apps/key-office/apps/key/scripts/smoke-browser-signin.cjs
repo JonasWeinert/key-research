@@ -5,7 +5,7 @@
 //    created and used, with no notice;
 // 3. Continue in browser + Bring sign-in over copies only the sign-in's cookies from a fixture
 //    Firefox profile (KEY_COOKIE_IMPORT_HOME; never a real profile) and reopens the page.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
 const http = require("node:http");
@@ -96,6 +96,7 @@ function firefoxFixture(home) {
       KEY_SKIP_ONBOARDING: "1",
       KEY_BROWSER_SMOKE: "1",
       KEY_SIGNIN_NOTICE_MS: "800",
+      KEY_SIGNIN_CHROMIUM: "none",
       KEY_COOKIE_IMPORT_HOME: path.join(temp, "home"),
       KEY_USER_DATA: path.join(temp, "profile"),
       KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
@@ -125,8 +126,15 @@ function firefoxFixture(home) {
 
     // 1. Nothing answers: the notice appears, Stop waiting ends the request.
     const pending = page.evaluate(() => window.ceremony("get", "required"));
-    const waiting = await until(signin, "the passkey notice", 10000);
-    assert(waiting.waiting?.site === "localhost" && waiting.waiting.browser === "Firefox", `notice says what waits: ${JSON.stringify(waiting)}`);
+    // No Chromium browser (KEY_SIGNIN_CHROMIUM=none): the card offers to continue in Firefox.
+    const card = (await until(signin, "the passkey card", 10000)).card;
+    assert(card?.site === "localhost" && card.browser === "Firefox" && card.way === "handoff", `the card says what waits: ${JSON.stringify(card)}`);
+    await shell.waitForSelector(".kx-signin-card-layer[data-way=handoff]");
+    await wait(300);
+    await shell.screenshot({ path: path.join(shots, "0-card-handoff.png") });
+    await shell.click(".kx-signin-card button:has-text('Not now')");
+    const waiting = await until(async () => (await signin())?.waiting && (await signin()), "the bar's notice", 10000);
+    assert(waiting.waiting.site === "localhost" && waiting.waiting.browser === "Firefox", `notice says what waits: ${JSON.stringify(waiting)}`);
     await shell.waitForSelector(".key-web-signin[data-waiting]");
     await shell.screenshot({ path: path.join(shots, "1-waiting.png") });
     const started = Date.now();

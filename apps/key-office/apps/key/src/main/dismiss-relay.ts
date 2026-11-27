@@ -51,10 +51,12 @@ export function relayDismiss(contents: WebContents, windowOf: () => BrowserWindo
 /** Dismisses everything in the window when the app goes to the background, as macOS menus
  *  do. (Not on window blur: an open panel or sheet over the window takes focus too, and a
  *  menu that started it, like the workspace switcher's "Add workspace…", must survive it.)
- *  Smoke runs (KEY_SKIP_ONBOARDING) keep them unless KEY_DISMISS_ON_BLUR=1: other test
- *  apps take the foreground mid-step. */
+ *  Smoke runs (KEY_SKIP_ONBOARDING) outside test mode keep them unless KEY_DISMISS_ON_BLUR=1:
+ *  other apps take the foreground mid-step. */
 export function dismissOnBlur(window: BrowserWindow) {
-  if (process.env.KEY_SKIP_ONBOARDING === "1" && process.env.KEY_DISMISS_ON_BLUR !== "1") return;
+  // Test mode (main/test-mode.ts) keeps the app out of the foreground: only the test's own
+  // `__keyTest.resignActive()` sends this, so it stays on there.
+  if (process.env.KEY_SKIP_ONBOARDING === "1" && process.env.KEY_DISMISS_ON_BLUR !== "1" && process.env.KEY_TEST_MODE !== "1") return;
   const resign = () => send(window, undefined, { reason: "blur" });
   app.on("did-resign-active", resign);
   window.once("closed", () => app.off("did-resign-active", resign));

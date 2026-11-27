@@ -3,7 +3,7 @@
 // W closes, Esc cancels, letting go of Ctrl switches. It works with focus in a PDF reader,
 // a note editor (the shell's DOM) and a web page, and "Show all tabs" opens it from the
 // command palette. Keys are sent to each webContents the way the keyboard would.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const http = require("node:http");

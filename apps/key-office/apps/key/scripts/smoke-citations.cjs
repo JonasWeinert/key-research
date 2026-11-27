@@ -4,7 +4,7 @@
 // (⌘⇧A) putting text, HTML and RTF on the clipboard, a style switch changing what is copied,
 // installing a custom .csl file and removing it, a collection's bibliography, and a note's
 // citations and Bibliography block following the chosen style. Screenshots in the temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

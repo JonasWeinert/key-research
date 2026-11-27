@@ -7,7 +7,7 @@
 // workspace in a window of its own; a window already showing a workspace comes forward
 // instead of opening it twice; a tab dragged out of the window tears off; and after a
 // relaunch every window returns on its workspace, frame and layout.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

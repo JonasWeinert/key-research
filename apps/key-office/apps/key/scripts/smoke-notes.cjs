@@ -4,7 +4,7 @@
 // opens in its own tab, and standalone notes come from the sidebar. Both are found by search.
 // Media: a typed YouTube link becomes a playable preview, a pasted image is stored in the
 // workspace's media folder, and both render again after the window reloads.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, readdir, writeFile } = require("node:fs/promises");
 const zlib = require("node:zlib");
 const { tmpdir } = require("node:os");

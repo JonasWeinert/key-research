@@ -3,7 +3,7 @@
 // Pointed at a folder that does not exist, Key still formats citations with its own basic
 // author–date style, and Settings › Citations says the styles were not found. Screenshots in
 // the temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

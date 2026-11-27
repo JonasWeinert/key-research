@@ -3,7 +3,7 @@
 // with a DOI is looked up on import, its page shows topics, citations and references, a
 // name opens a person's popover and page, a suggested merge is accepted there, and the
 // library filters by topic and by citation count.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

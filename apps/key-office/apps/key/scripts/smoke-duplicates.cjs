@@ -9,7 +9,7 @@
 //    banner with the notice link on its page, and Dismiss;
 //  - "Update metadata…" shows old → new per field and applies the ticked ones.
 // Screenshots light and dark go to the printed temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

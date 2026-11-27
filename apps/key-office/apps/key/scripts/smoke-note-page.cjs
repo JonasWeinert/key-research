@@ -1,7 +1,7 @@
 // Run serially: native windows and focus are shared with other GUI checks.
 // A note is a page: it gets an Author and a workspace property from its property block,
 // an icon and a cover from its header, and all of them are still there after a reload.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

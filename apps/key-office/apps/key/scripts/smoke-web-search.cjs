@@ -5,7 +5,7 @@
 // quiet "Couldn’t reach …" with a plain explanation and Retry while the other's results stay; Load more pages on; a work
 // whose DOI is in the library shows "In library"; Add to library makes a reference with its
 // details and fetches the open-access PDF.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

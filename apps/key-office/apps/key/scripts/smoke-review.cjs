@@ -3,7 +3,7 @@
 // screen titles and abstracts with the keyboard (including an undo and a rule suggestion),
 // assess full texts with reasons, extract outcome data, run the meta-analysis and look at the
 // PRISMA diagram and forest plot. Screenshots (light and dark) go to the printed temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

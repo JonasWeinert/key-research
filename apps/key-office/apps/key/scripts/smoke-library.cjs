@@ -4,7 +4,7 @@
 // (definition, bulk apply, table column, inspector editor), the database view (grid, list
 // and table; column show/hide/reorder/resize/pin; multi-level sort), full-text search into
 // the reader preview, trash with undo, and the tag manager.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

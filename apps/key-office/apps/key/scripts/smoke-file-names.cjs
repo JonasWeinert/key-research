@@ -2,7 +2,7 @@
 // linked files in place behind a confirmation (and Undo putting the names back), the
 // selection's Rename files sheet, readable names for a managed file dragged out, and the
 // mirror folder by collection.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, copyFile, appendFile, rm } = require("node:fs/promises");
 const { existsSync } = require("node:fs");
 const { tmpdir, homedir } = require("node:os");

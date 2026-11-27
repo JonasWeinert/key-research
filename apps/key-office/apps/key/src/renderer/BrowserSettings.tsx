@@ -7,18 +7,17 @@ import { hintText } from "./help-content";
 interface SignInInfo {
   defaultBrowser: string;
   touchId: "on" | "unsigned" | "unsupported";
+  /** Chromium browsers on this Mac the sign-in window can use. */
+  installed?: Array<{ id: string; name: string }>;
+  /** What happens now: Key's sign-in window in a browser, or a hand-off to one. */
+  way?: { kind: "window" | "handoff"; browser: string };
 }
-const bridge = () => (window as unknown as { key: { clearBrowsingData?(): Promise<void>; signInInfo?(): Promise<SignInInfo | undefined> } }).key;
+const bridge = () =>
+  (window as unknown as { key: { clearBrowsingData?(): Promise<void>; signInInfo?(): Promise<SignInInfo | undefined>; signInForget?(): Promise<void> } }).key;
 
-const SIGN_IN_BROWSERS: Array<[NonNullable<AppSettings["signInBrowser"]>, string]> = [
-  ["chrome", "Google Chrome"],
+const HANDOFF_BROWSERS: Array<[NonNullable<AppSettings["signInBrowser"]>, string]> = [
   ["safari", "Safari"],
   ["firefox", "Firefox"],
-  ["edge", "Microsoft Edge"],
-  ["arc", "Arc"],
-  ["brave", "Brave"],
-  ["vivaldi", "Vivaldi"],
-  ["chromium", "Chromium"],
 ];
 const TOUCH_ID: Record<SignInInfo["touchId"], string> = {
   on: "On. Passkeys you create in Key’s browser stay on this Mac and open with Touch ID.",
@@ -26,37 +25,72 @@ const TOUCH_ID: Record<SignInInfo["touchId"], string> = {
   unsupported: "Not available on this computer.",
 };
 
-/** Passkey sign-ins: the bar's notice, and the browser a sign-in is finished in. */
+/** Passkey sign-ins: whether Key offers help, the browser of the sign-in window, and
+ * forgetting that window's sign-ins. */
 function SignInSettings({ settings, onSettings }: { settings: AppSettings; onSettings(patch: Partial<AppSettings>): void }) {
   const [info, setInfo] = useState<SignInInfo>();
+  const [forget, setForget] = useState<"idle" | "confirm" | "busy" | "done">("idle");
   useEffect(() => {
     void bridge().signInInfo?.().then(setInfo, () => undefined);
-  }, []);
+  }, [settings.signInBrowser]);
+  useEffect(() => {
+    if (forget !== "confirm" && forget !== "done") return;
+    const timer = setTimeout(() => setForget("idle"), 4000);
+    return () => clearTimeout(timer);
+  }, [forget]);
+  const installed = info?.installed ?? [];
+  const choice = settings.signInBrowser ?? "default";
+  const known = choice === "default" || installed.some((b) => b.id === choice) || HANDOFF_BROWSERS.some(([id]) => id === choice);
+  const status = !info?.way
+    ? undefined
+    : info.way.kind === "window"
+      ? `Sign-ins that need your phone or a saved passkey open in a small ${info.way.browser} window with a profile of Key’s own.`
+      : `No Chrome, Edge or Brave on this Mac: you finish such sign-ins in ${info.way.browser} and bring them over.`;
+  const pressForget = () => {
+    if (forget !== "confirm") return setForget("confirm");
+    setForget("busy");
+    void bridge()
+      .signInForget?.()
+      .then(
+        () => setForget("done"),
+        () => setForget("idle"),
+      );
+  };
   return (
-    <Group title="Sign-in" help="settings.web.signin">
-      <Row label="Say when a sign-in waits for a passkey" detail="The bar offers to continue in your browser, or to stop waiting so the site shows its other ways to sign in.">
+    <Group title="Sign-in" help="settings.web.signin" footer={status}>
+      <Row label="Help when a site asks for a passkey" detail="Key offers a small sign-in window where your phone’s QR code and saved passkeys work.">
         <input
           type="checkbox"
           className="kx-switch"
-          aria-label="Say when a sign-in waits for a passkey"
+          aria-label="Help when a site asks for a passkey"
           checked={settings.signInNotice !== false}
           onChange={(e) => onSettings({ signInNotice: e.target.checked })}
         />
       </Row>
-      <Row label="Finish sign-ins in" detail={hintText("settings.web.signin-browser")}>
+      <Row label="Sign in with" detail={hintText("settings.web.signin-browser")}>
         <select
           className="kx-settings-select"
-          aria-label="Finish sign-ins in"
-          value={settings.signInBrowser ?? "default"}
+          aria-label="Sign in with"
+          value={known ? choice : "default"}
           onChange={(e) => onSettings({ signInBrowser: e.target.value as AppSettings["signInBrowser"] })}
         >
-          <option value="default">{info ? `Default browser (${info.defaultBrowser})` : "Default browser"}</option>
-          {SIGN_IN_BROWSERS.map(([id, name]) => (
+          <option value="default">{info?.way?.kind === "window" && choice === "default" ? `Automatic (${info.way.browser})` : "Automatic"}</option>
+          {installed.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name} window
+            </option>
+          ))}
+          {HANDOFF_BROWSERS.map(([id, name]) => (
             <option key={id} value={id}>
-              {name}
+              {name} (bring sign-in over)
             </option>
           ))}
         </select>
+      </Row>
+      <Row label="Sign-in window" detail={hintText("settings.web.signin-forget")}>
+        <button className="kx-settings-button" disabled={forget === "busy"} onClick={pressForget}>
+          {forget === "confirm" ? "Forget sign-ins" : forget === "busy" ? "Forgetting…" : forget === "done" ? "Forgotten" : "Forget sign-ins…"}
+        </button>
       </Row>
       <Row label="Touch ID passkeys" detail={TOUCH_ID[info?.touchId ?? "unsigned"]} />
     </Group>

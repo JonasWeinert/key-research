@@ -7,7 +7,7 @@ export default defineConfig({
     build: {
       externalizeDeps: false,
       // web-signin runs in browser pages (session.registerPreloadScript in main/browser/sign-in.ts).
-      rollupOptions: { input: { index: resolve(__dirname, "src/preload/index.ts"), "web-signin": resolve(__dirname, "src/preload/web-signin.ts") } },
+      rollupOptions: { input: { index: resolve(__dirname, "src/preload/index.ts"), "web-signin": resolve(__dirname, "src/preload/web-signin.ts"), "test-clipboard": resolve(__dirname, "src/preload/test-clipboard.ts") } },
     },
   },
   renderer: {

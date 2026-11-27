@@ -5,7 +5,7 @@
 // a source page has a small folded map; a note embeds one with the "Relation map" block; and
 // every person, journal, topic and tag link offers the same choice on click and right-click.
 // Screenshots (light and dark) are written to the temp folder printed at the end.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

@@ -1,5 +1,5 @@
 // Run serially: native windows and focus are shared with other GUI checks.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

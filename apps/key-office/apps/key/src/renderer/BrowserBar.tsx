@@ -27,15 +27,28 @@ export interface WebBarState {
     suggest?: { name: string; host: string; reason: string };
     offer?: { name: string; host: string };
   };
-  /** Passkey sign-ins (main/browser/sign-in.ts): a page waiting for one, a sign-in handed to
-   * the person's browser, or one just brought back from it. */
+  /** Passkey sign-ins (main/browser/sign-in.ts): the card over the page (SignInCard), a page
+   * waiting for one, a sign-in page (the sign-in window is at hand), a sign-in handed to
+   * another browser, or one just brought back. */
   signin?: {
-    waiting?: { site: string; kind: "get" | "create"; browser?: string };
+    card?: { stage: "offer" | "open" | "failed"; site: string; way: "window" | "handoff"; browser: string; problem?: string };
+    waiting?: { site: string; kind: "get" | "create"; browser?: string; way?: "window" | "handoff" };
+    offer?: { browser: string };
     handoff?: { browser: string; site: string };
-    imported?: { browser: string; sites: number };
+    imported?: { browser: string; sites: number; names?: string[] };
   };
 }
-type SignInOp = "signin-stop" | "signin-browser" | "signin-import" | "signin-cancel" | "signin-dismiss";
+type SignInOp =
+  | "signin-stop"
+  | "signin-window"
+  | "signin-done"
+  | "signin-focus"
+  | "signin-not-now"
+  | "signin-get-browser"
+  | "signin-browser"
+  | "signin-import"
+  | "signin-cancel"
+  | "signin-dismiss";
 export type WebPageOp = "reload" | "add-article" | "open-article" | "proxy-undo" | "proxy-off" | "proxy-remember" | "proxy-not-now" | "proxy-dismiss" | "proxy-use" | SignInOp;
 
 /** A sign-in that needs a passkey Key's browser cannot offer: what is happening and the way on. */
@@ -56,23 +69,42 @@ function SignInNotice({ signin, onPage }: { signin: NonNullable<WebBarState["sig
         {close("signin-cancel")}
       </span>
     );
-  if (signin.imported)
+  if (signin.imported) {
+    const names = signin.imported.names ?? [];
     return (
-      <span className="key-web-proxy key-web-signin" role="status" data-imported>
+      <span className="key-web-proxy key-web-signin" role="status" data-imported title={names.length ? `Brought over from ${signin.imported.browser} for: ${names.join(", ")}` : undefined}>
         <Icon name="check" size={12} />
-        <span className="key-web-proxy-text">Signed in with your {signin.imported.browser} sign-in</span>
+        <span className="key-web-proxy-text">
+          Signed in — brought over for {names.length ? names.slice(0, 2).join(", ") + (names.length > 2 ? ` and ${names.length - 2} more` : "") : `${signin.imported.sites} sites`}
+        </span>
         {close("signin-dismiss")}
+      </span>
+    );
+  }
+  if (signin.offer && !signin.waiting)
+    return (
+      <span className="key-web-proxy key-web-signin" data-quiet data-offer-window title={hintText("browser.signin.offer")}>
+        <button type="button" onClick={() => onPage?.("signin-window")}>
+          <Icon name="key" size={11} />
+          Sign in with passkey…
+        </button>
       </span>
     );
   const waiting = signin.waiting;
   if (!waiting) return null;
+  const window = waiting.way !== "handoff";
   return (
     <span className="key-web-proxy key-web-signin" role="status" data-waiting title={hintText("browser.signin.waiting")}>
       <Icon name="key" size={12} />
       <span className="key-web-proxy-text">{waiting.kind === "create" ? "This site wants to save a passkey" : `${waiting.site || "This site"} is waiting for a passkey`}</span>
       <FirstUseTip help="tip.passkey" anchor=".key-web-signin[data-waiting]" />
-      <button type="button" data-primary onClick={() => onPage?.("signin-browser")} title={`Open this sign-in in ${waiting.browser ?? "your browser"}, where your phone and saved passkeys work`}>
-        Continue in {waiting.browser ?? "browser"}
+      <button
+        type="button"
+        data-primary
+        onClick={() => onPage?.(window ? "signin-window" : "signin-browser")}
+        title={window ? `Sign in in a small ${waiting.browser ?? "Chrome"} window, where your phone and saved passkeys work` : `Open this sign-in in ${waiting.browser ?? "your browser"}, where your phone and saved passkeys work`}
+      >
+        {window ? `Sign in with ${waiting.browser ?? "Chrome"}…` : `Continue in ${waiting.browser ?? "browser"}`}
       </button>
       <button type="button" onClick={() => onPage?.("signin-stop")} title="Stop waiting: the site then offers its other ways to sign in">
         Stop waiting
