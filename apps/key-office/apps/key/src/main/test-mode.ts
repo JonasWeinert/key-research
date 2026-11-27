@@ -62,6 +62,11 @@ function setFocus(next: BaseWindow | undefined) {
   if (focused === next) return;
   const previous = focused;
   focused = next;
+  // As from the OS: the events come after the call (a window shown as it is created has its
+  // listeners by then).
+  setImmediate(() => focusEvents(previous, next));
+}
+function focusEvents(previous: BaseWindow | undefined, next: BaseWindow | undefined) {
   if (alive(previous)) {
     previous!.emit("blur");
     if (previous instanceof BrowserWindow) app.emit("browser-window-blur", {}, previous);
