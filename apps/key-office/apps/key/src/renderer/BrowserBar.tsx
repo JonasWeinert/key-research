@@ -27,6 +27,8 @@ export interface WebBarState {
     suggest?: { name: string; host: string; reason: string };
     offer?: { name: string; host: string };
   };
+  /** Find PDF opened this tab on a publisher's page: the banner below the bar (FindPdfBanner). */
+  findPdf?: import("./FindPdfBanner").FindPdfBannerState;
   /** Passkey sign-ins (main/browser/sign-in.ts): the card over the page (SignInCard), a page
    * waiting for one, a sign-in page (the sign-in window is at hand), a sign-in handed to
    * another browser, or one just brought back. */

@@ -150,6 +150,8 @@ impl Store {
             }
             chunks.push(chunk);
         }
+        // The PDF's stored structure (reading mode) goes with it.
+        self.carry_structure(hash, &donor, &id)?;
         self.db()?
             .execute(
                 "INSERT OR REPLACE INTO carried_analysis(hash, engine, markdown, page_count, chunks, carried_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",

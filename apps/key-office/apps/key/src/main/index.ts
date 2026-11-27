@@ -49,7 +49,8 @@ import { WebSources } from "./web-sources";
 import { PageActions } from "./browser/page-actions";
 import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browser/temp-pdfs";
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
-import { webPageRect } from "../shared/browser-layout";
+import { FIND_PDF_BANNER_HEIGHT, webPageRect } from "../shared/browser-layout";
+import { FindPdfPages, shortTitle, type FindPdfBanner } from "./find-pdf-pages";
 import { feedsEnvironmentRequest, watchFeedsEnvironment } from "./feeds-environment";
 import { powerStateRequest, watchPowerState } from "./power-state";
 import { forgetReading, reportReading } from "./reading-events";
@@ -113,6 +114,8 @@ type OwnedView = {
   /** Find PDF sent this browser tab (or the tab that led to this PDF) for a library source
    * without a file: a PDF captured from it is attached to that source. */
   pdfFor?: { workspaceId: string; sourceId: string; title?: string };
+  /** The banner over a Find PDF tab: what the publisher's page offers (find-pdf-pages.ts). */
+  findPdf?: FindPdfBanner;
   /** Says once, when the reader opens, that this PDF was just added to (or found in) the library. */
   libraryNotice?: "added" | "exists";
   /** A reader's details-and-notes panel: the source's page, docked beside it in the same tab. */
@@ -462,6 +465,7 @@ function viewSummary(id: string) {
       canGoForward: v.web.canGoForward,
       stalled: v.web.stalled || undefined,
       article: v.web.article && { title: v.web.article.title, doi: v.web.article.doi, inLibrary: !!v.articleState?.sourceId && !v.articleState.possible, possiblyInLibrary: !!v.articleState?.possible, busy: !!v.articleState?.busy },
+      findPdf: v.findPdf && { ...v.findPdf, proxy: v.findPdf.stage === "landed" ? proxyService?.proxyNameFor(v.web.url) : undefined },
     },
     temp: v?.temp ? true : undefined,
   };
@@ -638,7 +642,10 @@ registerNativeKind("web", {
       },
       external: (url) => void systemShell.openExternal(url),
       window: () => record.host?.window,
-      scanned: (scan) => browserPages.scanned(record, scan),
+      scanned: (scan) => {
+        browserPages.scanned(record, scan);
+        if (record.pdfFor && !scan.embeddedPdf) void findPdfLanded(record, scan.challenge);
+      },
       inlinePdf: (url) => browserPages.inlinePdf(record, url),
     });
     // Library proxies apply to browser tabs (and only to them).
@@ -679,6 +686,128 @@ function webView(url: string, title?: string): OwnedView {
     web: { url, title: title ?? "", canGoBack: false, canGoForward: false, loading: true, committed: false },
   };
 }
+// ── Find PDF on a publisher's page: the banner over its tab (renderer FindPdfBanner) ──
+let findPdfPages: FindPdfPages | undefined;
+function findPdfBanner(pdfFor: NonNullable<OwnedView["pdfFor"]>): FindPdfBanner {
+  return { title: shortTitle(pdfFor.title), stage: "looking", links: [], wall: false, abstractOnly: false, snapshot: false };
+}
+/** Every tab of this source's attempt. */
+function findPdfTabs(pdfFor: { workspaceId: string; sourceId: string }) {
+  return [...views.values()].filter((v) => v.kind === "web" && v.pdfFor?.sourceId === pdfFor.sourceId && v.pdfFor.workspaceId === pdfFor.workspaceId && v.findPdf);
+}
+function findPdfChanged(record: OwnedView) {
+  const w = shellOfView(record.id);
+  if (w) tabsChanged(w);
+}
+function findPdfStage(pdfFor: { workspaceId: string; sourceId: string }, stage: FindPdfBanner["stage"]) {
+  for (const v of findPdfTabs(pdfFor)) {
+    v.findPdf = { ...v.findPdf!, stage, busy: undefined, error: undefined, snapshot: false };
+    findPdfChanged(v);
+  }
+}
+/** A page of the attempt loaded: what it offers, and its snapshot (once). */
+async function findPdfLanded(record: OwnedView, challenge?: boolean) {
+  const contents = record.view?.webContents;
+  if (!record.pdfFor || !record.findPdf || !contents || !findPdfPages || challenge) return;
+  if (record.findPdf.stage === "attached" || record.findPdf.stage === "saved") return;
+  const pdfFor = record.pdfFor;
+  // The page did not open (the tab shows its error page): say so, nothing to read there.
+  if (contents.getURL().startsWith("data:")) {
+    record.findPdf = { ...record.findPdf, error: "The publisher’s page didn’t open. Reload it, or try it through your library." };
+    return findPdfChanged(record);
+  }
+  const landing = await findPdfPages.landed(pdfFor, contents).catch(() => undefined);
+  if (!landing || !record.findPdf) return;
+  record.findPdf = {
+    ...record.findPdf,
+    stage: "landed",
+    error: undefined,
+    links: landing.links.slice(0, 3).map((l) => ({ url: l.url, label: l.label })),
+    wall: landing.wall,
+    signIn: landing.signIn,
+    abstractOnly: landing.abstractOnly && !landing.fullText,
+  };
+  findPdfChanged(record);
+  // The snapshot is taken in the background; the banner says so once it is there.
+  void findPdfLandedSnapshot(record);
+}
+async function findPdfLandedSnapshot(v: OwnedView) {
+  if (!v.pdfFor) return;
+  const kept = await findPdfPages?.kept(v.pdfFor.workspaceId, v.pdfFor.sourceId).catch(() => undefined);
+  if (v.findPdf?.stage === "landed" && !!kept !== v.findPdf.snapshot) {
+    v.findPdf = { ...v.findPdf, snapshot: !!kept };
+    findPdfChanged(v);
+  }
+}
+/** The banner's buttons. */
+async function findPdfOp(w: ShellWindow, record: OwnedView, op: string, url?: string) {
+  const contents = record.view?.webContents;
+  const pdfFor = record.pdfFor;
+  if (!pdfFor || !record.findPdf || !contents) throw Error("This tab is not looking for a PDF");
+  if (op === "open" && url && webUrl(url)) await contents.loadURL(String(webUrl(url))).catch(() => undefined);
+  else if (op === "proxy") await proxyService?.op(contents, record.web?.url ?? "", "proxy-use");
+  else if (op === "sign-in") {
+    if (record.findPdf.signIn && webUrl(record.findPdf.signIn)) await contents.loadURL(String(webUrl(record.findPdf.signIn))).catch(() => undefined);
+    else await signInService?.op(contents, "signin-window");
+  } else if (op === "save") {
+    record.findPdf = { ...record.findPdf, busy: "saving", error: undefined };
+    findPdfChanged(record);
+    try {
+      const saved = await findPdfPages!.saveAsFullText(pdfFor, contents);
+      emit("library-changed");
+      for (const v of findPdfTabs(pdfFor)) {
+        v.findPdf = { ...v.findPdf!, stage: "saved", busy: undefined, snapshot: false, abstractOnly: saved.abstractOnly };
+        findPdfChanged(v);
+      }
+    } catch (error) {
+      record.findPdf = { ...record.findPdf, busy: undefined, error: couldNot("save the page", error) };
+      findPdfChanged(record);
+    }
+  } else if (op === "unavailable" || op === "dismiss") {
+    if (op === "unavailable") await findPdfPages?.discard(pdfFor.workspaceId, pdfFor.sourceId);
+    for (const v of op === "unavailable" ? findPdfTabs(pdfFor) : [record]) {
+      v.findPdf = undefined;
+      findPdfChanged(v);
+      const shell = shellOfView(v.id);
+      if (shell) layout(shell);
+    }
+  } else if (op === "source") await openSourcePage(w, { workspaceId: pdfFor.workspaceId, sourceId: pdfFor.sourceId });
+}
+/** Find PDF's scratch pages, as commands the shell calls (SourcePage, the bulk results, the review tool). */
+const FIND_PDF_PAGE_COMMANDS = new Set(["find_pdf_page", "find_pdf_page_save", "find_pdf_page_discard", "saved_page_capture"]);
+async function findPdfPageCommand(command: string, args: any, workspaceId: string) {
+  if (!findPdfPages) throw Error("The browser is not ready yet");
+  const sourceId = args?.sourceId ? String(args.sourceId) : "";
+  if (command === "find_pdf_page") {
+    const kept = sourceId ? await findPdfPages.kept(workspaceId, sourceId) : undefined;
+    return kept ? { kept: true, title: kept.title, url: kept.url, capturedAt: kept.capturedAt, abstractOnly: kept.abstractOnly, fullText: kept.fullText } : { kept: false };
+  }
+  if (command === "find_pdf_page_save") {
+    const saved = await findPdfPages.saveAsFullText({ workspaceId, sourceId });
+    emit("library-changed");
+    findPdfStage({ workspaceId, sourceId }, "saved");
+    return saved;
+  }
+  if (command === "find_pdf_page_discard") return void (await findPdfPages.discard(workspaceId, sourceId));
+  // saved_page_capture: a snapshot for the review tool, no library source. From the attempt's
+  // kept page, an open tab, or a page loaded off screen with the browser's profile.
+  if (sourceId) {
+    const out = await findPdfPages.copyOut(workspaceId, sourceId);
+    if (!out) throw Error("No copy of that page is kept");
+    return { path: out.path, title: out.kept.title, url: out.kept.url, capturedAt: out.kept.capturedAt, meta: out.kept.meta, abstractOnly: out.kept.abstractOnly, fullText: out.kept.fullText };
+  }
+  const view = args?.viewId ? views.get(String(args.viewId)) : undefined;
+  if (view?.kind === "web" && view.view && !view.view.webContents.isDestroyed()) return findPdfPages.captureTo(view.view.webContents);
+  const url = webUrl(args?.url);
+  if (!url || !browserService) throw Error("Give a web address to save");
+  return withLibraryAccess(url, (target) =>
+    browserService.withLoadedPage(target, async (contents) => {
+      const html = String(await contents.executeJavaScript("document.documentElement.outerHTML", false));
+      const landing: any = await registry.invoke("web_landing_page", { html, url: contents.getURL() }, workspaceId).catch(() => undefined);
+      return { value: await findPdfPages!.captureTo(contents, landing), access: { access: "unknown" as const, reason: "", telling: false } };
+    }),
+  );
+}
 /** Every web link in the app comes here: http(s) opens as a browser tab in the focused group
  * (or at `options`), mail and phone links go to the system, anything else is ignored. */
 function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), options: { groupId?: string; index?: number; background?: boolean; referrer?: string; referrerUrl?: string; pdfFor?: OwnedView["pdfFor"] } = {}) {
@@ -694,6 +823,7 @@ function openLink(url: unknown, w: ShellWindow | undefined = focusedShell(), opt
   record.referrer = options.referrer;
   record.referrerUrl = options.referrerUrl;
   record.pdfFor = options.pdfFor;
+  if (record.pdfFor) record.findPdf = findPdfBanner(record.pdfFor);
   add(record, w, { groupId: options.groupId, index: options.index });
   if (previous && findTab(w.state, previous)) {
     w.state = activateWorkspaceTab(w.state, previous);
@@ -764,6 +894,16 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
     const record = await tempPdfView(entry);
     record.pdfFor = from?.pdfFor;
     if (!w || w.closed) return;
+    // Find PDF's page gave the PDF: it is that source's now (the reader then shows the library's copy).
+    if (record.pdfFor) {
+      const pdfFor = record.pdfFor;
+      setTimeout(() => {
+        void addTempToLibrary(record).then(
+          () => findPdfStage(pdfFor, "attached"),
+          (error) => emit("browser-notice", { message: couldNot("attach the PDF to the source", error) }),
+        );
+      }, 0);
+    }
     if (views.has(record.id) && shellOfView(record.id)) return focus(record.id);
     const found = from && findViewTab(w.state, from.id);
     if (from && found && (!from.web?.committed || replace)) {
@@ -826,8 +966,12 @@ async function addTempToLibrary(temp: OwnedView) {
     try {
       const path = join(directory, `${safeFileName(temp.pdfFor.title || temp.title || entry.title).replace(/\.pdf$/i, "")}.pdf`);
       await copyFile(entry.file, path);
-      await registry.invoke("store_attach_file", { id: temp.pdfFor.sourceId, path }, workspaceId);
+      // The scratch library's analysis comes along; a saved page the source had stays beside it.
+      const scratch = await scratchWorkspace().catch(() => undefined);
+      await registry.invoke("store_attach_file", { id: temp.pdfFor.sourceId, path, keepPrevious: true, carryFrom: scratch ? join(scratch.root, ".key") : null }, workspaceId);
       await carryTempWork(entry, workspaceId, temp.pdfFor.sourceId);
+      // The page Find PDF landed on labels the PDF's structure, and its snapshot goes.
+      await findPdfPages?.fold(temp.pdfFor).catch((error) => console.warn("Key: the page could not be folded into the PDF", error));
       emit("library-changed");
       await swapToLibrary(temp, workspaceId, entry.hash, "added");
       return { status: "attached" };
@@ -944,7 +1088,7 @@ function placeViews(w: ShellWindow) {
     if (!record?.view) continue;
     const body = groupBody(rect);
     // A reader with its panel open keeps the left part; the panel is the renderer's.
-    record.view.setBounds(record.panel ? layoutPanel(body, record.panel.ratio).main : record.kind === "web" ? webPageRect(body) : body);
+    record.view.setBounds(record.panel ? layoutPanel(body, record.panel.ratio).main : record.kind === "web" ? webPageRect(body, record.findPdf ? FIND_PDF_BANNER_HEIGHT : 0) : body);
   }
 }
 /** Which native views show where: when it changes, still frames are captured again. */
@@ -2415,6 +2559,9 @@ else
       watchPowerState((command, args) => void registry.broadcast(command, args).catch(() => undefined));
       serveNoteMedia(registry);
       tempPdfs = new TempPdfs(browserCache(), { workspace: scratchWorkspace, invoke: (c, a, id) => registry.invoke(c, a, id) });
+      findPdfPages = new FindPdfPages(join(browserCache(), "find-pdf-pages"), (c, a, id) => registry.invoke(c, a, id), () => {
+        for (const v of views.values()) if (v.findPdf && v.pdfFor) void findPdfLandedSnapshot(v);
+      });
       void tempPdfs.list().catch(() => undefined);
       browserService = new BrowserService((id) => tempPdfs.incomingPath(id), {
         pdf: (contents, file) => void openDownloadedPdf(contents, file),
@@ -2452,6 +2599,8 @@ else
       const cleanupEvery = Math.max(1000, Math.min(60 * 60_000, (Number(process.env.KEY_BROWSER_TEMP_TTL_MS) || DEFAULT_TTL) / 2));
       setTimeout(() => void cleanTempPdfs().catch(() => undefined), Math.min(15_000, cleanupEvery));
       setInterval(() => void cleanTempPdfs().catch(() => undefined), cleanupEvery).unref();
+      setInterval(() => void findPdfPages?.cleanup().catch(() => undefined), 60 * 60_000).unref();
+      setTimeout(() => void findPdfPages?.cleanup().catch(() => undefined), 20_000);
       const linkedFolders = new LinkedFolders((c, a, w) => registry.invoke(c, a, w), () => liveShells().map((w) => w.workspaceId), (v) => emit("linked-folders-changed", v));
       webSources = new WebSources(
         (c, a, w) => registry.invoke(c, a, w),
@@ -2595,6 +2744,7 @@ else
           if (linkedFolders.handles(command)) return linkedFolders.handle(command, args, targetWorkspace, (from ?? focusedShell()).window);
           if (webSearch.handles(command)) return webSearch.handle(command, args, targetWorkspace);
           if (keyedServices?.handles(command)) return keyedServices.handle(command, args);
+          if (FIND_PDF_PAGE_COMMANDS.has(command)) return findPdfPageCommand(command, args, targetWorkspace);
           if (webSources.handles(command)) {
             if (record) throw Error("Saved pages are read by the shell");
             return webSources.handle(command, args, targetWorkspace);
@@ -3284,6 +3434,13 @@ else
             stepHistory(w, String(p.viewId ?? activeViewId(w) ?? ""), Number(p.step) < 0 ? -1 : 1);
             return snapshot(w);
           // A browser tab's bar: reload, and Add to library / In library on an article page.
+          // The Find PDF banner over a publisher's page (renderer FindPdfBanner).
+          case "find-pdf-banner": {
+            const view = views.get(String(p.viewId ?? activeViewId(w) ?? ""));
+            if (view?.kind !== "web") throw Error("Not a browser tab");
+            await findPdfOp(w, view, String(p.op), typeof p.url === "string" ? p.url : undefined);
+            return snapshot(w);
+          }
           case "web-page": {
             const view = views.get(String(p.viewId ?? activeViewId(w) ?? ""));
             if (view?.kind !== "web" || !view.view) throw Error("Not a browser tab");

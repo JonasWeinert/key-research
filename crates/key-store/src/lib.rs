@@ -42,6 +42,7 @@ pub mod priority;
 pub mod selection;
 pub mod inbox_selection;
 pub mod structure;
+pub mod full_text;
 pub use analysis::{CarriedAnalysis, CitationInput, DetectedSection, ReferenceInput, SourceAnalysis, SourceCitation, SourceReference};
 pub use filters::{Filter, Suggestion};
 pub use graph::{
@@ -564,6 +565,7 @@ impl Store {
         reading::ensure_schema(&conn)?;
         fill::ensure_schema(&conn)?;
         structure::ensure_schema(&conn)?;
+        full_text::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
         changes::ensure_schema(&conn)?;
         formula::register(&conn)?;

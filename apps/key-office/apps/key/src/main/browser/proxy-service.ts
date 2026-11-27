@@ -298,6 +298,14 @@ export class ProxyService {
     });
   }
 
+  /** The library proxy that covers `url`'s site, when the page did not come through one. */
+  proxyNameFor(url: string) {
+    const host = hostOf(url);
+    if (!host || this.data.prefs.excluded.includes(host) || findProxied(this.data.proxies, url)) return undefined;
+    const proxy = proxyForHost(this.data.proxies, host);
+    return proxy && proxyHost(proxy) !== host ? proxy.name : undefined;
+  }
+
   /** `url` through the proxy its site goes through, when this network needs it. */
   through(url: string) {
     const { prefs, proxies } = this.data;
