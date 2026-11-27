@@ -715,7 +715,8 @@ impl Indexer {
                 let model = self.layout_model();
                 let steps = if model { 2 } else { 1 };
                 let progress = |phase: &str, done: usize, total: usize| {
-                    let step = if phase == "layout-model" { 2 } else { 1 };
+                    // The layout model runs first (its memory is freed before the pages are read).
+                    let step = if phase == "layout-model" || steps == 1 { 1 } else { 2 };
                     self.set_reading(Some(Job {
                         stage: "analysing".into(),
                         done: done as u64,
