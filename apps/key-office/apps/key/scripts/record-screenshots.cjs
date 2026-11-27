@@ -1062,9 +1062,9 @@ function optimise(file) {
       const protocol = s.protocol;
       protocol.keywords = { include: ["randomi*", "trial"], exclude: ["rats", "editorial", "survey"] };
       protocol.criteria = [
-        { id: "c-rct", kind: "include", label: "Randomised controlled trial", guidance: "Individually or cluster randomised.", stages: ["ta", "ft"], reasonId: "r-design", link: null },
-        { id: "c-year", kind: "include", label: "Published 2000 or later", guidance: "", stages: ["ta"], reasonId: "r-publication", link: { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } },
-        { id: "c-animal", kind: "exclude", label: "Animal studies", guidance: "", stages: ["ta", "ft"], reasonId: "r-population", link: null },
+        { id: "c-rct", element: "design", label: "Randomised controlled trial", reason: "Wrong study design", guidance: "Individually or cluster randomised.", stages: ["ta", "ft"], link: null },
+        { id: "c-year", element: "other", label: "Published 2000 or later", reason: "Published before 2000", guidance: "", stages: ["ta"], link: { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } },
+        { id: "c-humans", element: "population", label: "Studies of people", reason: "Animal studies", guidance: "", stages: ["ta", "ft"], link: null },
       ];
       protocol.forms.push((await call("review_form_templates")).find((f) => f.id === "f-outcomes"));
       await call("review_protocol_save", { reviewId, protocol, note: "", actor: s.team[0].id, rescreen: false });
@@ -1096,14 +1096,14 @@ function optimise(file) {
         await shell.keyboard.press(/rats|Editorial|survey|Cycling/.test(t) ? "e" : /Pilates/.test(t) ? "m" : "i");
         await shell.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), t);
       }
-      // Full text: everything left goes in, but for Pilates (wrong outcome).
+      // Full text: everything left goes in, but for Pilates (it fails criterion 2, studies of people).
       await shell.getByRole("tab", { name: /Full text/ }).click();
       await title.waitFor();
       for (let i = 0; i < 12 && !(await shell.locator(".kx-rv-done").count()); i++) {
         const t = await title.textContent();
         if (/Pilates/.test(t)) {
           await shell.keyboard.press("e");
-          await shell.locator(".kx-rv-reasons[data-picking]").waitFor();
+          await shell.locator(".kx-rv-criteria-pick[data-picking]").waitFor();
           await shell.keyboard.press("2");
         } else await shell.keyboard.press("i");
         await shell.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), t);

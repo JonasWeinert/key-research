@@ -139,7 +139,9 @@ impl Reviews {
 
     /// Saves the protocol: a new version (with `note`) once decisions exist under the current one,
     /// else an amendment. With `rescreen`, decided records the change affects are flagged.
-    pub fn save_protocol(&self, review: &str, protocol: Protocol, note: &str, actor: &str, rescreen: bool, library: &dyn Library) -> Result<ProtocolSaved> {
+    pub fn save_protocol(&self, review: &str, mut protocol: Protocol, note: &str, actor: &str, rescreen: bool, library: &dyn Library) -> Result<ProtocolSaved> {
+        // A protocol in the old shape (criteria plus separate reasons) is read as criteria only.
+        let aliases = protocol.migrate();
         protocol.validate()?;
         let saved = self.write(review, |state, conn, b| {
             let new_version = state.decisions_under(&state.version) > 0;
@@ -148,6 +150,9 @@ impl Reviews {
             }
             let set = b.event("protocol.set", actor, None, json!({ "protocol": protocol, "note": note.trim(), "amend": !new_version }));
             let mut events = vec![set];
+            if !aliases.is_empty() {
+                events.push(b.event("criteria.alias", actor, None, json!({ "aliases": aliases })));
+            }
             let mut flagged = 0;
             if rescreen && new_version {
                 for stage in [Stage::Ta, Stage::Ft] {
