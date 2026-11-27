@@ -454,20 +454,20 @@
   border-left: 3px solid var(--key-ui-border);
   font-style: italic;
 }
-.kx-reading-block[data-kind="list"] {
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="list"] {
   padding-left: 1.7em;
 }
-.kx-reading-block[data-kind="list"][data-level="2"] {
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="list"][data-level="2"] {
   padding-left: 3.3em;
 }
-.kx-reading-block[data-kind="list"][data-level="3"],
-.kx-reading-block[data-kind="list"][data-level="4"] {
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="list"][data-level="3"],
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="list"][data-level="4"] {
   padding-left: 4.9em;
 }
-.kx-reading-text[data-kind="list"] {
+.kx-reading[data-source="web"] .kx-reading-text[data-kind="list"] {
   margin: 0 0 0.4em;
 }
-.kx-reading-block[data-kind="list"]:has(+ .kx-reading-block:not([data-kind="list"])) .kx-reading-text {
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="list"]:has(+ .kx-reading-block:not([data-kind="list"])) .kx-reading-text {
   margin-bottom: 1em;
 }
 .kx-reading-marker {
@@ -480,16 +480,16 @@
   text-align: right;
   user-select: none;
 }
-.kx-reading-block[data-kind="references"] {
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="references"] {
   padding-left: 2.1em;
 }
-.kx-reading-block[data-kind="references"] .kx-reading-marker {
+.kx-reading[data-source="web"] .kx-reading-block[data-kind="references"] .kx-reading-marker {
   margin-left: -2.1em;
   width: 1.7em;
   font-size: 0.84em;
   line-height: 1.5;
 }
-.kx-reading-text[data-kind="references"] {
+.kx-reading[data-source="web"] .kx-reading-text[data-kind="references"] {
   margin-bottom: 0.55em;
 }
 .kx-reading-code {
