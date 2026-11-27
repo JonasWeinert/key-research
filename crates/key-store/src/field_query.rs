@@ -111,6 +111,8 @@ pub const SPECS: &[Spec] = &[
     spec("pagecount", "pageCount", "Number of pages", "files", Number, &["length", "numpages", "pdfpages"], &["pagecount>300"], "Pages in the file"),
     spec("haspdf", "hasPdf", "Has a PDF", "files", Boolean, &[], &["has:pdf", "no:pdf"], "A PDF is attached"),
     spec("hasfile", "hasFile", "Has a file", "files", Boolean, &[], &["has:file"], "Any file is attached"),
+    spec("hasfulltext", "hasFullText", "Has full text", "files", Boolean, &["fulltextavailable"], &["has:fulltext", "no:fulltext"], "A PDF or a saved web page to read"),
+    spec("haswebpage", "hasWebPage", "Has a saved web page", "files", Boolean, &["hassnapshot"], &["has:webpage"], "A snapshot of its web page is kept"),
     spec("fulltext", "fulltext", "Full text", "files", Text, &["text", "content", "body"], &["fulltext:\"odds ratio\""], "The file's text contains the words"),
     // The library
     spec("tag", "tag", "Tag", "library", Text, &["tags", "label"], &["tag:methods", "-tag:draft", "tag:a|b"], "Tagged with it, or a tag under it"),
@@ -670,6 +672,8 @@ fn shortcut(word: &str, value: &str, negate: bool, known: Option<&KnownNames>, t
         _ => match v.as_str() {
             "pdf" | "pdfs" => flag("haspdf"),
             "file" | "files" | "attachment" => flag("hasfile"),
+            "fulltext" | "full-text" | "text" => flag("hasfulltext"),
+            "webpage" | "page" | "snapshot" | "snapshots" => flag("haswebpage"),
             "notes" | "note" => count("notescount"),
             "highlights" | "highlight" | "annotations" => count("highlights"),
             "comments" | "comment" => count("comments"),

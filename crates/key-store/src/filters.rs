@@ -14,7 +14,7 @@ pub struct Filter {
     /// workType | language; more details: volume | issue | pages | edition | series | place | genre | issn |
     /// url | citationKey | publisherName; dates (ms or YYYY[-MM[-DD]], ranges "a..b"): added | modified | read;
     /// numbers: pageCount | notesCount | highlightsCount | commentsCount; yes/no ("true" | "false"):
-    /// starred | hasFile | hasPdf | zotero | duplicate; another source (id, citation key, DOI or title):
+    /// starred | hasFile | hasPdf | hasWebPage | hasFullText | zotero | duplicate; another source (id, citation key, DOI or title):
     /// cites | citedBy | related; and `any`: at least one of the filters in `any` matches.
     pub field: String,
     /// is | contains (default) | exact (a tag without the tags under it) | gt | gte | lt | lte
@@ -195,6 +195,8 @@ fn target_values(value: &str) -> Vec<Value> {
 }
 
 /// Sources whose DOI, or title and year, another source in the library shares.
+/// A source with full text to read: a PDF or a saved web page, its own file or kept beside it.
+pub(crate) const HAS_FULL_TEXT: &str = "((coalesce(s.file_path, '') <> '' AND (s.kind IN ('pdf', 'web') OR s.mime IN ('application/pdf', 'text/html'))) OR EXISTS (SELECT 1 FROM source_full_texts f WHERE f.source_id = s.id))";
 const DUPLICATE: &str = "s.id IN (SELECT x.id FROM sources x WHERE x.trashed_at IS NULL AND (
     (coalesce(x.doi, '') <> '' AND lower(trim(x.doi)) IN (SELECT lower(trim(doi)) FROM sources WHERE trashed_at IS NULL AND coalesce(doi, '') <> '' GROUP BY 1 HAVING count(*) > 1))
     OR (x.title <> '' AND (lower(x.title), coalesce(x.year, 0)) IN (SELECT lower(title), coalesce(year, 0) FROM sources WHERE trashed_at IS NULL AND title <> '' GROUP BY 1, 2 HAVING count(*) > 1))))";
@@ -213,7 +215,11 @@ fn base_condition(filter: &Filter) -> Option<(String, Vec<Value>)> {
     match filter.field.as_str() {
         "starred" => return flag("s.starred = 1"),
         "hasFile" => return flag("coalesce(s.file_path, '') <> ''"),
-        "hasPdf" => return flag("(s.kind = 'pdf' OR s.mime = 'application/pdf')"),
+        "hasPdf" => return flag("(s.kind = 'pdf' OR s.mime = 'application/pdf' OR EXISTS (SELECT 1 FROM source_full_texts f WHERE f.source_id = s.id AND f.kind = 'pdf'))"),
+        // A saved web page (snapshot), as its file or kept beside its PDF (full_text.rs).
+        "hasWebPage" => return flag("((s.kind = 'web' AND coalesce(s.file_path, '') <> '') OR EXISTS (SELECT 1 FROM source_full_texts f WHERE f.source_id = s.id AND f.kind = 'web'))"),
+        // Full text to read: a PDF or a saved web page.
+        "hasFullText" => return flag(HAS_FULL_TEXT),
         "zotero" => return flag("s.origin = 'zotero'"),
         "duplicate" => return flag(DUPLICATE),
         "openAccess" => return flag("(coalesce(s.oa_status, '') NOT IN ('', 'closed') OR coalesce(s.oa_url, '') <> '')"),

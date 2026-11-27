@@ -740,10 +740,20 @@ impl Indexer {
                 self.identify_by_heading(&source, &hash, layout)?;
             }
             // The structure stays for reading mode (reflow.rs); a fresh read without it drops an old one.
+            // A carried-over analysis brings the structure the scratch library stored with it.
+            if let Some((engine, layout)) = if carried.is_some() { self.store.take_carried_structure(&hash)? } else { None } {
+                self.store.set_structure(id, &hash, &engine, &layout)?;
+            }
             if source.kind == "pdf" && carried.is_none() {
                 match &analysed {
                     Some(layout) => self.store.set_structure(id, &hash, &layout.engine, &serde_json::to_string(layout).map_err(|e| e.to_string())?)?,
                     None => self.store.clear_structure(id)?,
+                }
+            }
+            // The publisher's page Find PDF landed on, waiting for this PDF: its structure folds in.
+            if source.kind == "pdf" {
+                if let Err(error) = html_align::apply_html_hint(&self.store, id) {
+                    eprintln!("Key: the web page could not be aligned to the PDF of {id}: {error}");
                 }
             }
             let (body, page_count, engine, markdown) = match (carried, analysed) {

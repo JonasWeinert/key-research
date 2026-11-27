@@ -490,6 +490,67 @@ pub fn align_outline(layout: &Layout, outline: &HtmlOutline) -> (Layout, Alignme
     (out, report)
 }
 
+/// "Ada Example" or "Example, Ada" as a creator.
+fn creator(name: &str) -> serde_json::Value {
+    let name = name.trim();
+    let (family, given) = match name.split_once(',') {
+        Some((family, given)) => (family.trim().to_string(), given.trim().to_string()),
+        None => match name.rsplit_once(' ') {
+            Some((given, family)) => (family.trim().to_string(), given.trim().to_string()),
+            None => (name.to_string(), String::new()),
+        },
+    };
+    if given.is_empty() { serde_json::json!({ "literal": family, "role": "author" }) } else { serde_json::json!({ "family": family, "given": given, "role": "author" }) }
+}
+
+/// Folds the page waiting for this source's PDF (key-store `source_html_hints`) into the PDF's
+/// stored structure, once that structure is there: the alignment is recorded either way, its
+/// labelled layout stored when it holds, the source's missing abstract, DOI and authors filled
+/// from the page (with where they came from), and the page dropped. None: nothing to do yet.
+pub fn apply_html_hint(store: &key_store::Store, source_id: &str) -> crate::Result<Option<Alignment>> {
+    let Some((html, url)) = store.html_hint(source_id)? else { return Ok(None) };
+    let Some(source) = store.source(source_id)? else {
+        store.clear_html_hint(source_id)?;
+        return Ok(None);
+    };
+    let Some(hash) = source.file_hash().map(String::from) else { return Ok(None) };
+    if source.kind != "pdf" {
+        return Ok(None);
+    }
+    let Some(stored) = store.structure(source_id)?.filter(|s| s.file_hash == hash) else { return Ok(None) };
+    let layout: Layout = serde_json::from_str(&stored.layout).map_err(|e| e.to_string())?;
+    let (aligned, mut report) = align(&layout, &html);
+    let mut filled = serde_json::Map::new();
+    if report.accepted {
+        store.set_structure(source_id, &hash, &stored.engine, &serde_json::to_string(&aligned).map_err(|e| e.to_string())?)?;
+        if report.same_article {
+            let mut patch = serde_json::Map::new();
+            let empty = |name: &str| source.field(name).is_none_or(|v| v.trim().is_empty());
+            if let Some(text) = report.meta.abstract_text.clone().filter(|_| empty("abstract")) {
+                patch.insert("abstract".into(), text.into());
+            }
+            if let Some(doi) = report.meta.doi.clone().filter(|_| empty("doi")) {
+                patch.insert("doi".into(), doi.to_lowercase().into());
+            }
+            if source.creators.is_empty() && !report.meta.authors.is_empty() {
+                patch.insert("creators".into(), report.meta.authors.iter().take(100).map(|a| creator(a)).collect::<Vec<_>>().into());
+            }
+            if !patch.is_empty() {
+                for name in patch.keys() {
+                    filled.insert(name.clone(), serde_json::json!({ "from": "html", "url": url }));
+                }
+                store.update_source(source_id, &patch)?;
+            }
+        }
+    }
+    let mut record = serde_json::to_value(&report).map_err(|e| e.to_string())?;
+    record["filled"] = serde_json::Value::Object(filled);
+    store.set_structure_alignment(source_id, &hash, url.as_deref(), report.accepted, report.confidence as f64, &record.to_string())?;
+    store.clear_html_hint(source_id)?;
+    report.labels.truncate(200);
+    Ok(Some(report))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -673,5 +734,28 @@ mod tests {
         assert!(report.meta.abstract_text.is_some());
         // No paragraphs to order by: the layout's order stays.
         assert!(report.reordered_pages.is_empty());
+    }
+
+    #[test]
+    fn folds_a_waiting_page_into_the_stored_structure_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = key_store::Store::open(dir.path()).unwrap();
+        let source = store.insert_source(serde_json::from_value(serde_json::json!({ "kind": "pdf", "title": "Rivers", "fileHash": "h1", "filePath": "/x.pdf" })).unwrap()).unwrap();
+        store.set_html_hint(&source.id, &html(), Some("https://journal.example/rivers")).unwrap();
+        // No structure yet: the page waits.
+        assert!(apply_html_hint(&store, &source.id).unwrap().is_none());
+        assert!(store.html_hint(&source.id).unwrap().is_some());
+        store.set_structure(&source.id, "h1", "layout", &serde_json::to_string(&layout()).unwrap()).unwrap();
+        let report = apply_html_hint(&store, &source.id).unwrap().unwrap();
+        assert!(report.accepted);
+        let stored: Layout = serde_json::from_str(&store.structure(&source.id).unwrap().unwrap().layout).unwrap();
+        assert!(stored.blocks.iter().any(|b| b.origin.as_deref() == Some("html")));
+        let updated = store.source(&source.id).unwrap().unwrap();
+        assert!(updated.field("abstract").unwrap().starts_with("We ask"));
+        assert_eq!(updated.field("doi"), Some("10.5555/rivers.2024"));
+        assert_eq!(updated.creators.len(), 2);
+        let record = store.structure_alignment(&source.id).unwrap().unwrap();
+        assert!(record.accepted && record.report.contains("\"filled\""));
+        assert!(store.html_hint(&source.id).unwrap().is_none());
     }
 }
