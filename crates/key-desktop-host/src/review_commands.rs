@@ -554,6 +554,35 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 reviews.complete_form(&review()?, text(args, "recordId"), text(args, "formId"), &actor()?)?;
                 json!(true)
             }
+            // The form builder's live preview: which fields sample answers show, each rule in
+            // words, and whether the form's logic holds (no circles, no unknown fields).
+            "review_form_preview" => {
+                let form: key_review::model::Form = arg(args, "form")?;
+                let answers: key_review::logic::Answers = args.get("answers").and_then(Json::as_object).map(|o| o.iter().map(|(k, v)| (k.clone(), v.clone())).collect()).unwrap_or_default();
+                let label = |id: &str| form.fields().find(|f| f.id == id).map(|f| f.label.clone()).unwrap_or_else(|| id.to_string());
+                let mut rules = Map::new();
+                for s in &form.sections {
+                    if let Some(w) = &s.show_when {
+                        rules.insert(format!("section:{}", s.id), json!(key_review::logic::describe(w, &label)));
+                    }
+                    for f in &s.fields {
+                        if let Some(w) = &f.show_when {
+                            rules.insert(f.id.clone(), json!(key_review::logic::describe(w, &label)));
+                        }
+                        for c in &f.columns {
+                            if let Some(w) = &c.show_when {
+                                let col_label = |id: &str| f.columns.iter().find(|x| x.id == id).map(|x| x.label.clone()).unwrap_or_else(|| label(id));
+                                rules.insert(format!("{}/{}", f.id, c.id), json!(key_review::logic::describe(w, &col_label)));
+                            }
+                        }
+                    }
+                }
+                json!({
+                    "visible": key_review::logic::visible_fields(&form, &answers),
+                    "shownWhen": rules,
+                    "error": key_review::logic::validate_form(&form).err(),
+                })
+            }
             // A selection in the reader read as numbers ("12.3 (4.5)", "n = 120", "45%", CI).
             "review_parse_selection" => key_review::logic::parse_selection(text(args, "text")),
             // Records: removed and restored by hand, corrected, grouped into studies.

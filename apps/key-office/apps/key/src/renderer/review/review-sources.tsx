@@ -3,7 +3,8 @@
 // a file (dropped or chosen), the library (a collection, a search, or a selection sent from the
 // library), a Database search run (with its strategy and per-database counts) or are typed in.
 // Each import is a batch to inspect or remove. Exact duplicates are removed on import; likely
-// ones wait here for a person to compare.
+// ones wait here for a person to compare. Records is every record in one table (edit, remove,
+// restore, fill missing abstracts); Duplicates lists every duplicate decision (review-records.tsx).
 import { useEffect, useRef, useState } from "react";
 import { EmptyState, Explain, Hint } from "../explain";
 import { GlobalDialog } from "../GlobalDrawer";
@@ -11,6 +12,7 @@ import { Icon } from "../icons";
 import type { Collection } from "../library-api";
 import { plural, type Batch, type ImportReport, type RecordMeta } from "./review-api";
 import { Btn, Confirm, MenuButton, errorText, formatDate, useLoad } from "./review-ui";
+import { DuplicatesView, RecordsTable } from "./review-records";
 import type { StageProps } from "./ReviewPage";
 
 const GROUPS: [Batch["group"], string, string][] = [
@@ -28,7 +30,37 @@ export function reportText(r: ImportReport) {
   return parts.join(" · ");
 }
 
+type SourcesView = "records" | "duplicates" | "imports";
+
 export function Sources(props: StageProps) {
+  const { summary } = props;
+  const [view, setView] = useState<SourcesView>(() => (summary.records ? "records" : "imports"));
+  const tabs: [SourcesView, string, string][] = [
+    ["records", "Records", summary.records ? summary.active.toLocaleString() : ""],
+    ["duplicates", "Duplicates", summary.openPairs ? `${summary.openPairs} to check` : summary.duplicates ? summary.duplicates.toLocaleString() : ""],
+    ["imports", "Imports", summary.batches.filter((b) => !b.removed).length.toLocaleString()],
+  ];
+  return (
+    <div className="kx-rv-sources-page" data-view={view}>
+      <div className="kx-rv-toolbar">
+        <div className="kx-rv-seg" role="radiogroup" aria-label="Sources view">
+          {tabs.map(([id, label, badge]) => (
+            <button key={id} type="button" role="radio" aria-checked={view === id} onClick={() => setView(id)}>
+              {label}
+              {badge && badge !== "0" && <span className="kx-rv-seg-badge">{badge}</span>}
+            </button>
+          ))}
+        </div>
+        {summary.removedByHand > 0 && <span className="kx-rv-muted">{plural(summary.removedByHand, "record")} removed by hand</span>}
+      </div>
+      {view === "records" && <RecordsTable {...props} />}
+      {view === "duplicates" && <DuplicatesView {...props} pairs={summary.openPairs > 0 ? <Duplicates {...props} /> : null} />}
+      {view === "imports" && <Imports {...props} />}
+    </div>
+  );
+}
+
+function Imports(props: StageProps) {
   const { summary, api, viewer, notify, onChanged } = props;
   const [file, setFile] = useState<{ name: string; text: string }>();
   const [library, setLibrary] = useState(false);
@@ -137,7 +169,6 @@ export function Sources(props: StageProps) {
           </ul>
         </section>
       )}
-      {summary.openPairs > 0 && <Duplicates {...props} />}
       <section className="kx-rv-section">
         <div className="kx-rv-section-head">
           <h2>Imports</h2>

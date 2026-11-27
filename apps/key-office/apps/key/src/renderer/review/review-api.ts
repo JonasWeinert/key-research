@@ -5,11 +5,17 @@ import type { Invoke } from "../library-api";
 export type Stage = "ta" | "ft";
 export type Choice = "include" | "exclude" | "maybe";
 
+/** Whether a decision must name the criterion not met: no, the first one, all that apply. */
+export type ReasonRule = "none" | "first" | "all";
 export interface StageRule {
   reviewers: number;
-  reasons: "none" | "one" | "all";
+  /** When excluding. */
+  reasons: ReasonRule;
+  /** When choosing Maybe. */
+  maybeReasons: ReasonRule;
   maybe: boolean;
 }
+export const asks = (rule: StageRule, value: Choice): ReasonRule => (value === "exclude" ? (rule.reasons === ("one" as ReasonRule) ? "first" : rule.reasons) : value === "maybe" ? rule.maybeReasons || "none" : "none");
 export interface Rules {
   ta: StageRule;
   ft: StageRule;
@@ -19,6 +25,22 @@ export interface Rules {
   extractors: number;
   aiAssist: boolean;
   suggestions: boolean;
+  /** After a decision that needs nothing more, go to the next record. */
+  autoAdvance: boolean;
+  /** The default for fields: whether a value's place in the document is needed. */
+  sourceDefault: SourceRule;
+}
+export type SourceRule = "none" | "encouraged" | "required";
+/** When a field or section is shown: conditions on other answers (all or any). */
+export interface ShowWhen {
+  conditions: Condition[];
+  all: boolean;
+}
+export interface FieldCheck {
+  op: string;
+  other?: string | null;
+  value?: unknown;
+  message: string;
 }
 export interface Condition {
   field: string;
@@ -78,12 +100,17 @@ export interface Field {
   unit: string;
   columns: Field[];
   role: string;
+  /** "" (the review's default) | none | encouraged | required */
+  source: "" | SourceRule;
+  showWhen?: ShowWhen | null;
+  checks?: FieldCheck[];
 }
 export interface Section {
   id: string;
   title: string;
   guidance: string;
   fields: Field[];
+  showWhen?: ShowWhen | null;
 }
 export interface Form {
   id: string;
@@ -101,6 +128,8 @@ export interface Protocol {
   labels: string[];
   forms: Form[];
   shortcuts: Record<string, string>;
+  /** label → one-letter key */
+  labelKeys: Record<string, string>;
 }
 export interface Member {
   id: string;
@@ -184,6 +213,14 @@ export interface Summary {
   analyses: unknown[];
   events: number;
   labelsInUse: string[];
+  labelCounts: Record<string, number>;
+  labelKeys: Record<string, string>;
+  removedByHand: number;
+  missingAbstracts: number;
+  filledAbstracts: number;
+  /** Recurring "Other" texts (offered as criteria). */
+  otherReasons: { text: string; count: number }[];
+  fulltexts: { need: number; have: number };
 }
 export interface RecordMeta {
   id: string;
@@ -220,16 +257,33 @@ export interface DecisionInfo {
   reviewerName: string;
   value: Choice;
   reasons: string[];
+  /** "Other": the reason in the reviewer's words. */
+  other?: string;
   note: string;
   version: string;
   versionNumber: number | null;
   evidence: Evidence[];
   auto?: string;
 }
+/** A passage of the full text behind a decision: for include, or the criterion it does not
+ * meet. page is 0-based (-1 on a web page); rects are 0–65535 page coordinates. */
 export interface Evidence {
   quote: string;
   page?: number | null;
   annotationId?: string;
+  kind?: "include" | "notMet" | "met" | "note";
+  criterion?: string;
+  rects?: number[][];
+  text?: string;
+  note?: string;
+}
+/** A full text the review keeps itself (not a library source). */
+export interface FileRef {
+  hash: string;
+  name: string;
+  mime: string;
+  size: number;
+  origin: string;
 }
 export interface Suggestion {
   criterionId: string;
@@ -254,8 +308,13 @@ export interface RecordView {
   earlier: { resolution: DecisionInfo | null; decisions: DecisionInfo[]; mine: DecisionInfo | null } | null;
   notes: { id: string; event: string; reviewer: string; at: number; text: string }[];
   labels: string[];
-  fulltext: { status: string; reason: string; sourceId: string | null; at: number };
+  fulltext: { status: string; reason: string; sourceId: string | null; file: FileRef | null; at: number };
   sourceId: string | null;
+  hasFullText: boolean;
+  removed: string | null;
+  studyOf: string | null;
+  reports: string[];
+  filled: Record<string, string>;
   flagged: boolean;
   suggestions: Suggestion[];
   checks: { criterionId: string; label: string; met: boolean | null; rule: string }[];
@@ -285,6 +344,14 @@ export interface ListRow {
   ai: { value: Choice; score: number | null } | null;
   duplicateOf: string | null;
   batch: string;
+  batchName?: string | null;
+  doi?: string;
+  removed?: string | null;
+  active?: boolean;
+  studyOf?: string | null;
+  filled?: Record<string, string>;
+  hasFullText?: boolean;
+  statuses?: { ta: StatusInfo; ft: StatusInfo } | null;
 }
 export interface ListQuery {
   stage: Stage;
@@ -293,9 +360,68 @@ export interface ListQuery {
   label?: string;
   batch?: string;
   reason?: string;
+  hasAbstract?: "" | "yes" | "no";
+  hasFullText?: "" | "yes" | "no";
+  group?: string;
+  /** "sources": every record, whatever its stage. */
+  scope?: "" | "sources";
   sort?: string;
   offset?: number;
   limit?: number;
+}
+export interface DuplicateGroup {
+  kept: RecordMeta | null;
+  keptBatch: string | null;
+  keptActive: boolean;
+  merged: { record: RecordMeta | null; batch: string | null; auto: boolean; why: string; by: string; at: number }[];
+}
+export interface DroppedFile {
+  name: string;
+  path: string;
+  title?: string;
+  doi?: string;
+  text?: string;
+}
+export interface MatchProposal {
+  file: string;
+  path: string;
+  record: string | null;
+  score: number;
+  level: "confident" | "uncertain" | "unmatched";
+  why: string;
+}
+export interface CsvRow {
+  line: number;
+  record: string;
+  file: string;
+  path: string | null;
+  state: "ok" | "error" | "skipped";
+  message: string;
+}
+export interface FullTextRow {
+  id: string;
+  title: string | null;
+  byline: string | null;
+  doi: string | null;
+  state: "have" | "need" | "notRetrievable";
+  reason: string;
+  file: FileRef | null;
+  sourceId: string | null;
+  status: string;
+}
+export interface Issue {
+  formId: string;
+  fieldId: string;
+  row: number | null;
+  kind: "required" | "quote" | "source" | "check";
+  message: string;
+}
+/** Where a value was taken from in the document. */
+export interface SourcePos {
+  hash?: string;
+  page: number;
+  rects: number[][];
+  text: string;
 }
 export interface ImportReport {
   batchId: string;
@@ -315,6 +441,7 @@ export interface PrismaColumn {
   assessed: number;
   excluded: number;
   excludedReasons: Named[];
+  otherReasons: Named[];
   included: number;
   pending: number;
 }
@@ -343,11 +470,26 @@ export interface Extracted {
   page: number | null;
   sourceId: string | null;
   suggested: boolean;
+  sourcePos?: SourcePos | null;
 }
 export interface ExtractionView {
   forms: Form[];
-  values: Record<string, { mine: Extracted | null; others: { reviewer: string; reviewerName: string; value: unknown; quote: string; page: number | null }[]; othersCount: number; final: Extracted | null; differs: boolean; suggestion: Extracted | null }>;
+  values: Record<
+    string,
+    {
+      mine: Extracted | null;
+      others: { reviewer: string; reviewerName: string; value: unknown; quote: string; page: number | null; sourcePos?: SourcePos | null }[];
+      othersCount: number;
+      final: Extracted | null;
+      differs: boolean;
+      suggestion: Extracted | null;
+      /** Kept but hidden by the answers (Show when). */
+      inactive: boolean;
+      source: SourceRule;
+    }
+  >;
   extractors: number;
+  formState: Record<string, { visible: string[]; issues: Issue[]; completed: boolean; shownWhen: Record<string, string> }>;
 }
 export interface StudyRow {
   id: string;
@@ -428,11 +570,11 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     records: (query: ListQuery, viewer: string) => call<{ rows: ListRow[]; total: number; offset: number }>("review_records", { query, viewer }),
     queue: (stage: Stage, viewer: string, filter = "") => call<string[]>("review_queue", { stage, viewer, filter }),
     record: (recordId: string, stage: Stage, viewer: string) => call<RecordView>("review_record", { recordId, stage, viewer }),
-    decide: (recordIds: string[], stage: Stage, value: Choice, reasons: string[], note: string, actor: string, evidence: Evidence[] = []) =>
-      call<string[]>("review_decide", { recordIds, stage, value, reasons, note, evidence, actor }),
+    decide: (recordIds: string[], stage: Stage, value: Choice, reasons: string[], note: string, actor: string, evidence: Evidence[] = [], other = "") =>
+      call<string[]>("review_decide", { recordIds, stage, value, reasons, other, note, evidence, actor }),
     undo: (actor: string) => call<{ recordId: string; stage: Stage } | null>("review_undo", { actor }),
     retract: (recordId: string, eventId: string, actor: string) => call("review_retract", { recordId, eventId, actor }),
-    resolve: (recordId: string, stage: Stage, value: Choice, reasons: string[], note: string, actor: string) => call("review_resolve", { recordId, stage, value, reasons, note, actor }),
+    resolve: (recordId: string, stage: Stage, value: Choice, reasons: string[], note: string, actor: string, other = "") => call("review_resolve", { recordId, stage, value, reasons, other, note, actor }),
     reopen: (recordId: string, stage: Stage, actor: string) => call("review_reopen", { recordId, stage, actor }),
     note: (recordId: string, text: string, actor: string, noteId?: string) => call("review_note", { recordId, text, noteId, actor }),
     labels: (recordIds: string[], add: string[], remove: string[], actor: string) => call("review_labels", { recordIds, add, remove, actor }),
@@ -446,8 +588,26 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
     prisma: () => call<Prisma>("review_prisma"),
     studies: (viewer: string) => call<{ studies: StudyRow[] }>("review_studies", { viewer }),
     extraction: (recordId: string, viewer: string) => call<ExtractionView>("review_extraction", { recordId, viewer }),
-    extract: (recordId: string, formId: string, fieldId: string, value: unknown, extra: { quote?: string; page?: number | null; sourceId?: string | null; suggested?: boolean; final?: boolean }, actor: string) =>
+    extract: (recordId: string, formId: string, fieldId: string, value: unknown, extra: { quote?: string; page?: number | null; sourceId?: string | null; sourcePos?: SourcePos | null; suggested?: boolean; final?: boolean }, actor: string) =>
       call("review_extract", { recordId, formId, fieldId, value, ...extra, actor }),
+    completeForm: (recordId: string, formId: string, actor: string) => call("review_complete_form", { recordId, formId, actor }),
+    formPreview: (form: Form, answers: Record<string, unknown>) => call<{ visible: string[]; shownWhen: Record<string, string>; error: string | null }>("review_form_preview", { form, answers }),
+    parseSelection: (text: string) => call<{ numbers: number[]; estimate?: number; lower?: number; upper?: number; mean?: number; sd?: number; n?: number; events?: number; total?: number; percent?: number; min?: number; max?: number }>("review_parse_selection", { text }),
+    removeRecords: (recordIds: string[], removed: boolean, reason: string, actor: string) => call("review_records_remove", { recordIds, removed, reason, actor }),
+    editRecord: (recordId: string, fields: Partial<RecordMeta>, actor: string) => call("review_record_edit", { recordId, fields, actor }),
+    linkStudy: (recordId: string, studyOf: string | null, actor: string) => call("review_study_link", { recordId, studyOf, actor }),
+    duplicates: () => call<{ groups: DuplicateGroup[]; pairsToCheck: number }>("review_duplicates"),
+    fillMissing: (actor: string) => call<{ filled: Record<string, number>; stillMissing: number; lookupCandidates: string[] }>("review_fill_missing", { actor }),
+    enrich: (recordId: string, fields: Record<string, unknown>, from: string, actor: string) => call<{ filled: number }>("review_enrich", { recordId, fields, from, actor }),
+    fulltexts: () => call<{ rows: FullTextRow[]; have: number; need: number; notRetrievable: number }>("review_fulltexts"),
+    matchFiles: (files: DroppedFile[]) => call<MatchProposal[]>("review_fulltext_match", { files }),
+    readCsv: (text: string, files: DroppedFile[]) => call<CsvRow[]>("review_fulltext_csv_read", { text, files }),
+    attach: (recordId: string, path: string, name: string, origin: string, actor: string, ownedTemp = false) =>
+      call<{ linked?: string; file?: FileRef; hash: string }>("review_fulltext_attach", { recordId, path, name, origin, ownedTemp, actor }),
+    detach: (recordId: string, actor: string) => call("review_fulltext_detach", { recordId, actor }),
+    fulltextInfo: (recordId: string) => call<{ path: string; mime: string; exists: boolean }>("review_fulltext_info", { recordId }),
+    fulltextBytes: (recordId: string) => call<Uint8Array>("review_fulltext_bytes", { recordId }),
+    toLibrary: (recordId: string, actor: string) => call<{ sourceId: string }>("review_fulltext_to_library", { recordId, actor }),
     outcomes: () => call<{ outcome: string; timepoint: string; kind: string; studies: number }[]>("review_outcomes"),
     analyse: (request: { outcome: string; timepoint?: string; options: { measure: string; method: string; hartungKnapp: boolean; level: number }; subgroups: boolean }) =>
       call<{ analysis: Analysis; input: unknown[]; includedStudies: number }>("review_analyse", { request }),
