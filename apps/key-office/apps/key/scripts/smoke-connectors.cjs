@@ -107,6 +107,7 @@ function host(port) {
       KEY_OPENALEX_FIXTURES: path.join(temp, "openalex"),
       KEY_CONNECTORS_MOCK: `http://127.0.0.1:${port}`,
       KEY_CONNECTORS_DEV_TRUST: "1",
+      KEY_CONNECTORS_NO_AUTO_CHECK: "1",
       KEY_CONNECTORS_UPDATE_URL: "https://connectors.test/bundle",
       KEY_CONNECTORS_DIR: path.join(temp, "connectors"),
     },

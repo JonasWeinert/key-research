@@ -210,6 +210,18 @@ export const HELP = {
   "browser.proxy.signin": hint("Loaded directly, this page asked you to sign in, so Key opened it through your library’s proxy."),
   "browser.proxy.network": hint("On this network, this site needs your library’s proxy, so Key opened it through the proxy."),
   "browser.proxy.suggest": hint("This page asks you to sign in or buy access. Your library’s proxy may let you in."),
+  "settings.web.signin": explain(
+    "Passkeys and sign-ins",
+    [
+      "A passkey replaces a password: your phone, your Mac or a security key proves it is you, with your fingerprint, face or PIN. Many universities now ask for one when you sign in.",
+      "Key’s browser can use a USB or NFC security key. It can’t show the QR code for signing in with your phone, or reach passkeys saved in iCloud Keychain or a password manager: macOS offers those only to web browsers Apple has approved. A signed copy of Key can also keep passkeys on this Mac, with Touch ID.",
+      "When a sign-in waits for a passkey, the bar says so. Continue in your browser opens the page there; once you are signed in, Bring sign-in over copies the cookies of just the sites that sign-in went through. Key lists them and asks first.",
+    ],
+    { privacy: "Only the cookies of the listed sites are read, from a copy of your browser’s cookie file. Nothing is sent anywhere, and nothing in your browser changes." },
+  ),
+  "settings.web.signin-browser": hint("Where Continue in your browser opens the sign-in, and whose cookies Bring sign-in over reads."),
+  "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or continue in your browser."),
+  "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
 
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
   "settings.services.intro": hint("Optional keys that give Key a higher allowance at some scholarly services. Key works without them."),
@@ -396,41 +408,53 @@ export const HELP = {
     ],
     { privacy: "Key asks each website or OpenAlex for its newest items. Nothing about your library is sent." },
   ),
-  "feeds.address": explain(
-    "Finding a feed’s address",
-    [
-      "Paste the address of a journal’s page, a blog or an arXiv listing. If the page links to a feed, Key finds it for you.",
-    ],
-    { example: "https://www.nature.com/nature.rss\nhttps://arxiv.org/rss/cs.CL\nhttps://journals.plos.org/plosone/" },
-  ),
   "feeds.kinds": explain(
     "Kinds of alerts",
     [
-      "Feed: a journal, arXiv listing or blog by its address. Author, Journal, Topic: new works found in OpenAlex. Search alert: new results for a web search. Citation alert: new works that cite a source.",
-      "Start an alert with Follow on a person’s, journal’s or topic’s page, or Alert me on a web search, a source or a collection.",
+      "Journals, people and topics: new works, found in OpenAlex, a free catalogue of scholarly works. Search alerts: new results for words, in OpenAlex or PubMed. Citation alerts: new works that cite your sources.",
+      "Feeds and listings: a journal’s own table of contents, an arXiv listing or a blog, read from the site itself.",
+      "Search for any of them above, or press Follow on a person’s, journal’s or topic’s page.",
     ],
   ),
-  "feeds.interval": hint("How often Key checks, while it is open. Daily suits most journals."),
-  "feeds.intro": hint("New articles from journals, authors, topics and searches you follow arrive in your Inbox."),
+  "feeds.interval": hint("How often Key checks, while it is open. Once a day suits most journals."),
+  "feeds.intro": hint("New articles from journals, people, topics and searches you follow arrive in your Inbox."),
+  "feeds.follow-search": hint("Type a journal’s name, a person, a topic or any words. You can also paste a journal’s or blog’s web address."),
+  "feeds.from-library": explain("Suggestions from your library", ["These are the journals, people and topics your library has the most sources from. Choose one to see what following it would bring."]),
+  "feeds.journal-feed": hint("This journal publishes its own table of contents. It often lists new articles a few days before OpenAlex does."),
+  "feeds.preview-empty": hint("Nothing new in the last year. Following it still works: new items will arrive when there are some."),
+  "feeds.auto-collection": hint("New items also go into this collection on their own, as well as the Inbox. Off unless you choose one."),
+  "feeds.citing": hint("New works that cite sources in a collection, or anywhere in your library."),
+  "feeds.arxiv": hint("arXiv shares new preprints in each subject every weekday."),
+  "feeds.opml": hint("Bring over the journals and blogs you follow in Feedly, NetNewsWire or another reader."),
+  "feeds.when": hint("Key checks only while it is open, not while the Mac is offline or saving power. Nothing goes into your library unless you add it."),
+  "feeds.problem.limited": hint("The site asked Key to slow down. Key waits and tries again on its own; nothing to do."),
+  "feeds.problem.unreachable": hint("Key could not reach the site. Check that you are online; Key tries again later on its own."),
+  "feeds.problem.gone": hint("The site no longer offers this feed. Remove it, and search for the journal by name to follow it again."),
+  "feeds.problem.blocked": hint("The site refused Key. Some publishers block feed readers; follow the journal by name instead."),
+  "feeds.problem.not-a-feed": hint("This address shows a web page, not a feed. Search for the journal by name, or paste its feed’s address."),
+  "feeds.problem.nothing-to-follow": hint("There is nothing to look for yet, for example no sources with an OpenAlex record. Key tries again later."),
+  "feeds.problem.other": hint("The last check failed. Try again; if it keeps failing, remove it and follow it again."),
+  "inbox.saved-by-you": hint("Works you saved from a search, a reference list or a page wait here until you add them to the library or dismiss them."),
   "feeds.opml-what": explain("OPML files", ["OPML is the file feed readers such as Feedly, NetNewsWire or Inoreader use to move a list of feeds. Export one from your old reader and import it here, or export Key’s list to use elsewhere."]),
   "feeds.keeping": hint("Old Inbox items are cleared after this long. Items you saved or added to the library always stay."),
   "inbox.triage": explain(
     "Going through the Inbox",
     [
-      "Each item is a new work from something you follow. Add puts it in your library, Save keeps it here for later, and Dismiss removes it and it will not come back from the same feed.",
-      "You can do it all from the keyboard.",
+      "Each item is a new work from something you follow, or one you saved yourself with Add to Inbox. Add puts it in your library, Save keeps it here for later, and Dismiss removes it and it will not come back from the same feed.",
+      "Select several with x or ⇧-click to act on them at once. You can do it all from the keyboard.",
     ],
-    { steps: ["j or ↓ next, k or ↑ previous", "a add to library, s save, e dismiss", "u read or unread, o open its page beside the Inbox"] },
+    { steps: ["j or ↓ next, k or ↑ previous", "a add to library, s save, e dismiss", "u read or unread, o open its page beside the Inbox", "x select, then a, s, e or u act on every selected item"] },
   ),
   "empty.inbox": empty(
     "Nothing followed yet",
     "The Inbox collects new articles from journals, authors, topics and searches you follow.",
-    "Add a feed by its address, or press Follow on an author’s, journal’s or topic’s page.",
+    "Follow a journal, person or topic by name, or choose Add to Inbox on a search result or reference to keep it for later.",
   ),
   "empty.inbox-caught-up": empty("All caught up", "You have gone through every new item.", "New items appear here when your feeds and alerts bring them."),
-  "empty.inbox-saved": empty("Nothing saved", "Items you keep for later collect here.", "Press s on an item, or choose Save, to keep it."),
+  "empty.inbox-saved": empty("Nothing saved", "Works you save from searches and reference lists, and items you keep, collect here.", "Press s on an item, or Add to Inbox on a search result or reference."),
   "empty.inbox-none": empty("No items yet", "Items your feeds and alerts bring in collect here.", "Press Check now, or wait for the next check while Key is open."),
-  "empty.feeds": empty("Not following anything", "Feeds and alerts you follow are listed here.", "Paste a journal’s, blog’s or arXiv listing’s address above."),
+  "empty.feeds": empty("Not following anything", "Journals, people, topics and searches you follow are listed here.", "Search above for a journal, a person or a topic to follow."),
+  "empty.follow-results": empty("Nothing found", "No journal, person or topic matches these words.", "Try fewer words, or follow them as a search alert below."),
 
   // ── Import, export, duplicates, metadata ────────────────────────────────────────────
   "import.formats": explain(
@@ -518,6 +542,16 @@ export const HELP = {
     { example: "sleep memory 2018-2022\n10.1038/nature12373\n\"a quoted title\"" },
   ),
 
+  "search.filters": explain(
+    "Typing filters",
+    [
+      "Any field can be typed as a filter: the field's name, a colon and a value. Your own properties work by their name; put names with spaces in quotes.",
+      "Compare with > and <, give a range with two dots, leave out matches with a minus, and join choices with |. Empty and any find blank or filled fields.",
+      "Key shows what it read as a chip. Nothing applies until you pick it, and words it does not know stay text.",
+    ],
+    { example: "rating>3 added:last-week\n-tag:draft year:2015..2020\n\"reading status\":done has:pdf" },
+  ),
+
   // ── Empty states: library and reader ────────────────────────────────────────────────
   "empty.library": empty("No sources yet", "Sources are the papers, books, web pages, videos and files you collect, read and cite.", "Drop files here, or use the Add menu to import from Zotero or a reference file, or search the web."),
   "empty.results": empty("No matches", "Nothing in this view matches your search or filters.", "Try fewer words, clear a filter, or search the web for works you do not have."),
@@ -542,9 +576,10 @@ export const HELP = {
   "tip.note-cite": tip("Cite in notes", "Type @ in a note and start typing a title or author to cite a source from your library."),
   "tip.split-tabs": tip("Read side by side", "Drag a tab to the left or right edge of the window to show two things side by side."),
   "tip.map-legend": tip("Filter the map", "Click a kind in the legend, such as People or Topics, to show only that kind. Click it again to show all."),
-  "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss."),
+  "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss. x selects several."),
   "tip.tag-suggestions": tip("Tidy your tags", "Key suggests merging duplicates and nesting related tags. Nothing changes until you apply one."),
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),
+  "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Continue in your browser to use those."),
   "tip.proxies": tip("Library access", "This site can open through your library’s proxy, so you see articles your library pays for."),
 
   // ── Glossary ────────────────────────────────────────────────────────────────────────
@@ -557,6 +592,7 @@ export const HELP = {
   "term.csl": term("Citation style (CSL)", "Rules for how citations and bibliographies look, such as APA or Chicago, written in the Citation Style Language."),
   "term.citekey": term("Citation key", "A short unique name for a reference, such as smith2020sleep, typed in LaTeX or Markdown to cite it."),
   "term.bibtex": term("BibTeX and RIS", "Plain-text files for moving references between apps. BibTeX is used with LaTeX; RIS by EndNote, Mendeley and publishers."),
+  "term.passkey": term("Passkey", "A sign-in without a password: your phone, Mac or security key proves it is you with your fingerprint, face or PIN."),
   "term.proxy": term("Library proxy", "A sign-in service run by your library (EZproxy, OpenAthens) that gives you its journal access off campus."),
   "term.feed": term("Feed (RSS)", "A list a website publishes of its newest articles. Key checks the feeds you follow and fills your Inbox."),
   "term.alert": term("Alert", "Key watching for new works by an author, in a journal or topic, for a search, or citing a source."),

@@ -239,7 +239,7 @@ async function fixturesIn(temp) {
     // 3. Add to library: the article (and its PDF through the proxy) keep the journal's address.
     const [workspace] = await shell.evaluate(() => window.key.workspaces());
     await until(async () => (await activeView())?.web?.article?.doi === "10.5555/key-proxy-smoke", "the article detected");
-    await shell.locator(".key-web-article").click();
+    await shell.locator(".key-web-article", { hasText: "Add to library" }).click();
     await until(async () => (await activeView())?.web?.article?.inLibrary, "the article in the library", 60000);
     const source = await until(async () => {
       const found = await shell.evaluate((id) => window.key.invoke("store_sources", { text: "Proxied smoke article", limit: 5, scope: "all" }, id), workspace.id);

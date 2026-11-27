@@ -633,7 +633,7 @@ function optimise(file) {
       await open(`http://${demo.ARTICLE_HOST}/articles/91`);
       await until(async () => (await activeView())?.web?.proxy?.via, "the page through the proxy");
       await until(async () => (await activeView())?.web?.article?.doi, "the article detected");
-      await shell.locator(".key-web-article").waitFor();
+      await shell.locator(".key-web-article").first().waitFor();
       await wait(1500);
       await one("key-browser");
     });

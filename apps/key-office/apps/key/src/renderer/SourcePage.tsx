@@ -653,14 +653,14 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             </span>
           )}
           {docked ? null : isPdf ? (
-            <button className="kx-page-action" onClick={openReader} title="Read the PDF beside this page">
+            <button className="kx-page-action" onClick={openReader} title="Read the PDF beside this page" aria-label="Read">
               <Icon name="book" size={13} />
-              Read
+              <span className="kx-page-action-label">Read</span>
             </button>
           ) : isSavedPage ? (
-            <button className="kx-page-action" onClick={() => readPage()} title="Read the saved page beside this one">
+            <button className="kx-page-action" onClick={() => readPage()} title="Read the saved page beside this one" aria-label="Read">
               <Icon name="book" size={13} />
-              Read
+              <span className="kx-page-action-label">Read</span>
             </button>
           ) : source.filePath ? (
             <button className="kx-icon-button" title="Open file" aria-label="Open file" onClick={() => void libraryBridge().openPath(source.filePath!)}>

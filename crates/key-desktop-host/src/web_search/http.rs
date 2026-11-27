@@ -160,7 +160,7 @@ fn safe_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> 
 
 /// Content a feed can come as: RSS, Atom, RDF or plain XML, or the page that links to it
 /// (feed discovery). Some servers send feeds as text/plain.
-const FEED_TYPES: &[&str] = &["application/rss+xml", "application/atom+xml", "application/rdf+xml", "application/xml", "text/xml", "text/html", "application/xhtml+xml", "text/plain", "application/x-rss+xml", "application/feed+json"];
+const FEED_TYPES: &[&str] = &["application/rss+xml", "application/atom+xml", "application/rdf+xml", "application/xml", "text/xml", "text/html", "application/xhtml+xml", "text/plain", "application/x-rss+xml", "application/feed+json", "application/json"];
 
 /// One GET of a feed or a page that may link to one, through the safe client: any public
 /// host over HTTP or HTTPS (many journal feeds are still plain HTTP), following redirects to

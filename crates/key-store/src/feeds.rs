@@ -6,7 +6,7 @@
 // feeds/) fetches; this keeps the rows. A dismissed or purged item leaves its keys behind,
 // so a feed that still lists it does not bring it back.
 use crate::matching::{LinkKey, MatchQuery, bare_arxiv, bare_doi, bare_openalex, link_key, title_key};
-use crate::{Result, Store, e, new_id, now_ms};
+use crate::{Result, SourceInput, Store, e, new_id, now_ms};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter, types::Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json, json};
@@ -56,11 +56,16 @@ CREATE INDEX IF NOT EXISTS feed_item_keys_item ON feed_item_keys(item_id);
 ";
 
 pub(crate) fn ensure_schema(db: &Connection) -> Result<()> {
-    db.execute_batch(SCHEMA).map_err(e)
+    db.execute_batch(SCHEMA).map_err(e)?;
+    // Works the user saved themselves remember where they were found.
+    if db.prepare("SELECT origin FROM feed_items LIMIT 0").is_err() {
+        db.execute_batch("ALTER TABLE feed_items ADD COLUMN origin TEXT").map_err(e)?;
+    }
+    Ok(())
 }
 
-/// rss | openalex | author | venue | topic | citing
-pub const KINDS: &[&str] = &["rss", "openalex", "author", "venue", "topic", "citing"];
+/// rss | openalex | author | venue | topic | citing | pubmed
+pub const KINDS: &[&str] = &["rss", "openalex", "author", "venue", "topic", "citing", "pubmed"];
 pub const MIN_INTERVAL: i64 = 15;
 pub const MAX_INTERVAL: i64 = 7 * 24 * 60;
 
@@ -89,6 +94,9 @@ pub struct Subscription {
     pub unread: i64,
     #[serde(default)]
     pub total: i64,
+    /// When it last brought something new.
+    #[serde(default)]
+    pub last_item_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -139,6 +147,71 @@ pub struct FeedItem {
     /// Titles of the subscriptions that brought it.
     pub subscriptions: Vec<String>,
     pub subscription_ids: Vec<String>,
+    /// Saved by the user from somewhere (a web search, a source's references, a page):
+    /// { kind, label, query?, sourceId?, url?, at }. None for what feeds brought.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Json>,
+}
+
+/// What saving a work to the Inbox did.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxSave {
+    /// inbox | library (the library has it, so nothing was stored)
+    pub state: &'static str,
+    pub item_id: Option<String>,
+    pub source_id: Option<String>,
+    /// It was in the Inbox already.
+    pub existed: bool,
+}
+
+/// Where a work stands, for an "Add to Inbox" button.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxState {
+    /// none | inbox | library
+    pub state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_id: Option<String>,
+    pub saved: bool,
+}
+
+/// Something in the library worth following: a journal, person or topic and how many
+/// sources it has there.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryEntity {
+    pub id: String,
+    pub name: String,
+    pub openalex_id: Option<String>,
+    /// An ISSN (journals), an ORCID (people) or the topic's level.
+    pub detail: Option<String>,
+    pub count: i64,
+}
+
+/// A work's fields worth keeping in an item (web hits carry ranking noise).
+fn clean_work(work: &Json) -> Json {
+    let mut out = Map::new();
+    for key in ["title", "authors", "year", "venue", "abstract", "doi", "ids", "landingUrl", "pdfUrl", "type", "published", "openAccess", "citedBy", "url"] {
+        if let Some(v) = work.get(key).filter(|v| !v.is_null()) {
+            out.insert(key.into(), v.clone());
+        }
+    }
+    Json::Object(out)
+}
+
+/// `old` with the blanks filled from `work`.
+fn merge_blanks(old: &str, work: &Json) -> String {
+    let mut merged: Map<String, Json> = serde_json::from_str(old).unwrap_or_default();
+    for (k, v) in work.as_object().into_iter().flatten() {
+        let blank = merged.get(k).is_none_or(|old| old.is_null() || old.as_str() == Some("") || old.as_array().is_some_and(Vec::is_empty));
+        if blank {
+            merged.insert(k.clone(), v.clone());
+        }
+    }
+    Json::Object(merged).to_string()
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -158,6 +231,9 @@ pub struct ItemQuery {
     /// Items read while the list was shown: they stay in the unread view until it is left.
     #[serde(default)]
     pub keep: Vec<String>,
+    /// Only what the user saved themselves (not brought by a feed).
+    #[serde(default)]
+    pub saved_by_you: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -264,12 +340,14 @@ fn read_subscription(r: &rusqlite::Row) -> rusqlite::Result<Subscription> {
         cursor: r.get(13)?,
         unread: r.get(14)?,
         total: r.get(15)?,
+        last_item_at: r.get(16)?,
     })
 }
 
 const SUBSCRIPTION_COLUMNS: &str = "s.id, s.kind, s.title, s.config, s.interval_minutes, s.paused, s.created_at, s.checked_at, s.next_at, s.failures, s.last_error, s.etag, s.last_modified, s.cursor,
   (SELECT count(*) FROM feed_item_subscriptions x JOIN feed_items i ON i.id = x.item_id WHERE x.subscription_id = s.id AND i.read = 0 AND i.dismissed_at IS NULL),
-  (SELECT count(*) FROM feed_item_subscriptions x WHERE x.subscription_id = s.id)";
+  (SELECT count(*) FROM feed_item_subscriptions x WHERE x.subscription_id = s.id),
+  (SELECT max(i.found_at) FROM feed_item_subscriptions x JOIN feed_items i ON i.id = x.item_id WHERE x.subscription_id = s.id)";
 
 /// The default check interval for a kind, in minutes: feeds change more often than catalogues.
 pub fn default_interval(kind: &str) -> i64 {
@@ -285,6 +363,7 @@ pub fn identity(kind: &str, config: &Map<String, Json>) -> String {
     match kind {
         "rss" => format!("rss:{}", pick("url").unwrap_or_default().trim_end_matches('/')),
         "openalex" => format!("openalex:{}|{}", pick("query").unwrap_or_default(), pick("filters").unwrap_or_default()),
+        "pubmed" => format!("pubmed:{}", pick("query").unwrap_or_default()),
         "citing" => format!("citing:{}|{}", pick("collectionId").unwrap_or_default(), pick("sourceId").unwrap_or_default()),
         other => format!("{other}:{}", pick("openalexId").or_else(|| pick("orcid")).or_else(|| pick("issn")).unwrap_or_default()),
     }
@@ -411,10 +490,15 @@ impl Store {
     /// Stores the works a subscription found; those already known (by any key) are linked to
     /// it and filled in, not repeated. Answers how many are new.
     pub fn add_feed_items(&self, subscription_id: &str, works: &[Json]) -> Result<usize> {
+        Ok(self.add_feed_items_ids(subscription_id, works)?.len())
+    }
+
+    /// As `add_feed_items`, answering the new items' ids.
+    pub fn add_feed_items_ids(&self, subscription_id: &str, works: &[Json]) -> Result<Vec<String>> {
         let db = self.feeds_db()?;
         let tx = db.unchecked_transaction().map_err(e)?;
         let now = now_ms();
-        let mut added = 0;
+        let mut added = Vec::new();
         for work in works.iter().take(500) {
             let Some(title) = text(work, "title") else { continue };
             let keys = work_keys(work);
@@ -436,14 +520,7 @@ impl Store {
                 Some(Some(id)) => {
                     // A second source of the same work may know more (a DOI, an abstract).
                     let old: String = tx.query_row("SELECT work FROM feed_items WHERE id = ?1", [&id], |r| r.get(0)).map_err(e)?;
-                    let mut merged: Map<String, Json> = serde_json::from_str(&old).unwrap_or_default();
-                    for (k, v) in work.as_object().into_iter().flatten() {
-                        let blank = merged.get(k).is_none_or(|old| old.is_null() || old.as_str() == Some("") || old.as_array().is_some_and(Vec::is_empty));
-                        if blank {
-                            merged.insert(k.clone(), v.clone());
-                        }
-                    }
-                    tx.execute("UPDATE feed_items SET work = ?2 WHERE id = ?1", params![id, Json::Object(merged).to_string()]).map_err(e)?;
+                    tx.execute("UPDATE feed_items SET work = ?2 WHERE id = ?1", params![id, merge_blanks(&old, work)]).map_err(e)?;
                     id
                 }
                 None => {
@@ -453,7 +530,7 @@ impl Store {
                         params![id, work.to_string(), title, text(work, "published"), now],
                     )
                     .map_err(e)?;
-                    added += 1;
+                    added.push(id.clone());
                     id
                 }
             };
@@ -484,6 +561,9 @@ impl Store {
             conditions.push("EXISTS (SELECT 1 FROM feed_item_subscriptions x WHERE x.item_id = i.id AND x.subscription_id = ?)".into());
             values.push(Value::Text(id.clone()));
         }
+        if query.saved_by_you {
+            conditions.push("i.origin IS NOT NULL".into());
+        }
         if let Some(kind) = &query.kind {
             conditions.push("EXISTS (SELECT 1 FROM feed_item_subscriptions x JOIN feed_subscriptions s ON s.id = x.subscription_id WHERE x.item_id = i.id AND s.kind = ?)".into());
             values.push(Value::Text(kind.clone()));
@@ -501,7 +581,8 @@ impl Store {
             let sql = format!(
                 "SELECT i.id, i.work, i.published, i.found_at, i.read, i.saved, i.dismissed_at, i.source_id,
                    (SELECT group_concat(s.title, char(31)) FROM feed_item_subscriptions x JOIN feed_subscriptions s ON s.id = x.subscription_id WHERE x.item_id = i.id),
-                   (SELECT group_concat(x.subscription_id, char(31)) FROM feed_item_subscriptions x WHERE x.item_id = i.id)
+                   (SELECT group_concat(x.subscription_id, char(31)) FROM feed_item_subscriptions x WHERE x.item_id = i.id),
+                   i.origin
                  FROM feed_items i {clause}
                  ORDER BY coalesce(i.published, '') = '' , i.found_at DESC, i.published DESC, i.rowid DESC LIMIT {limit} OFFSET {}",
                 query.offset
@@ -524,6 +605,7 @@ impl Store {
                         in_library: None,
                         subscriptions: split(r.get(8)?),
                         subscription_ids: split(r.get(9)?),
+                        origin: r.get::<_, Option<String>>(10)?.and_then(|o| serde_json::from_str(&o).ok()),
                     })
                 })
                 .map_err(e)?
@@ -677,10 +759,202 @@ impl Store {
     }
 }
 
+/// The certain library match for each work, by position.
+fn library_hits(store: &Store, works: &[Json]) -> Result<Vec<Option<String>>> {
+    let queries: Vec<MatchQuery> = works.iter().enumerate().map(|(i, w)| match_query(&i.to_string(), w)).collect();
+    let mut out = vec![None; works.len()];
+    for hit in store.match_identifiers(&queries)?.into_iter().filter(|h| h.certain) {
+        if let Ok(i) = hit.key.parse::<usize>() {
+            if out.get(i).is_some_and(Option::is_none) {
+                out[i] = Some(hit.source_id);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The live item a work is already known as, by any of its keys.
+fn known_item(db: &Connection, keys: &[String]) -> Result<Option<String>> {
+    for key in keys {
+        let item = db
+            .query_row("SELECT k.item_id FROM feed_item_keys k JOIN feed_items i ON i.id = k.item_id WHERE k.key = ?1", [key], |r| r.get::<_, String>(0))
+            .optional()
+            .map_err(e)?;
+        if item.is_some() {
+            return Ok(item);
+        }
+    }
+    Ok(None)
+}
+
+fn creator_of(name: &str) -> crate::Creator {
+    let name = name.trim();
+    if let Some((family, given)) = name.split_once(',') {
+        return crate::Creator { family: Some(family.trim().into()), given: Some(given.trim().into()), literal: None, role: "author".into(), person_id: None };
+    }
+    let parts: Vec<&str> = name.split_whitespace().collect();
+    match parts.split_last() {
+        Some((family, given)) if !given.is_empty() => crate::Creator { family: Some((*family).into()), given: Some(given.join(" ")), literal: None, role: "author".into(), person_id: None },
+        _ => crate::Creator { family: None, given: None, literal: Some(name.into()), role: "author".into(), person_id: None },
+    }
+}
+
+impl Store {
+    /// "Add to Inbox": keeps a work not in the library as an item the user saved, with where
+    /// it was found. One the library has is not stored; one the Inbox has is saved, not
+    /// repeated (and comes back if it was dismissed). Saved items are read: not news.
+    pub fn save_to_inbox(&self, work: &Json, origin: &Json) -> Result<InboxSave> {
+        let work = clean_work(work);
+        let title = text(&work, "title").ok_or("This work has no title")?;
+        if let Some(Some(source_id)) = library_hits(self, std::slice::from_ref(&work))?.into_iter().next() {
+            return Ok(InboxSave { state: "library", item_id: None, source_id: Some(source_id), existed: true });
+        }
+        let keys = work_keys(&work);
+        if keys.is_empty() {
+            return Err("This work has no title or identifier to keep it by".into());
+        }
+        let mut origin = origin.as_object().cloned().unwrap_or_default();
+        origin.retain(|_, v| !v.is_null());
+        origin.insert("at".into(), json!(now_ms()));
+        let origin = Json::Object(origin).to_string();
+        let db = self.feeds_db()?;
+        let tx = db.unchecked_transaction().map_err(e)?;
+        let now = now_ms();
+        let (id, existed) = match known_item(&tx, &keys)? {
+            Some(id) => {
+                let (old, saved, dismissed): (String, i64, Option<i64>) =
+                    tx.query_row("SELECT work, saved, dismissed_at FROM feed_items WHERE id = ?1", [&id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(e)?;
+                tx.execute(
+                    "UPDATE feed_items SET work = ?2, saved = 1, read = 1, dismissed_at = NULL, origin = coalesce(origin, ?3) WHERE id = ?1",
+                    params![id, merge_blanks(&old, &work), origin],
+                )
+                .map_err(e)?;
+                (id, saved == 1 && dismissed.is_none())
+            }
+            None => {
+                let id = new_id();
+                tx.execute(
+                    "INSERT INTO feed_items(id, work, title, published, found_at, read, saved, origin) VALUES (?1, ?2, ?3, ?4, ?5, 1, 1, ?6)",
+                    params![id, work.to_string(), title, text(&work, "published"), now, origin],
+                )
+                .map_err(e)?;
+                (id, false)
+            }
+        };
+        for key in &keys {
+            tx.execute("INSERT INTO feed_item_keys(key, item_id, at) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET item_id = coalesce(item_id, excluded.item_id)", params![key, id, now]).map_err(e)?;
+        }
+        tx.commit().map_err(e)?;
+        Ok(InboxSave { state: "inbox", item_id: Some(id), source_id: None, existed })
+    }
+
+    /// Where each work stands: in the library, in the Inbox (not dismissed), or neither.
+    pub fn inbox_states(&self, works: &[Json]) -> Result<Vec<InboxState>> {
+        let works: Vec<Json> = works.iter().take(500).map(clean_work).collect();
+        let library = library_hits(self, &works)?;
+        let db = self.feeds_db()?;
+        let mut out = Vec::with_capacity(works.len());
+        for (work, source_id) in works.iter().zip(library) {
+            if source_id.is_some() {
+                out.push(InboxState { state: "library", item_id: None, source_id, saved: false });
+                continue;
+            }
+            let item = known_item(&db, &work_keys(work))?;
+            let live = match &item {
+                Some(id) => db.query_row("SELECT saved FROM feed_items WHERE id = ?1 AND dismissed_at IS NULL", [id], |r| r.get::<_, i64>(0)).optional().map_err(e)?,
+                None => None,
+            };
+            out.push(match live {
+                Some(saved) => InboxState { state: "inbox", item_id: item, source_id: None, saved: saved == 1 },
+                None => InboxState { state: "none", item_id: None, source_id: None, saved: false },
+            });
+        }
+        Ok(out)
+    }
+
+    /// The journals, people and topics the library has most sources of: what to follow first.
+    pub fn followable_in_library(&self, limit: usize) -> Result<Json> {
+        let db = self.read()?;
+        let run = |sql: &str| -> Result<Vec<LibraryEntity>> {
+            let mut statement = db.prepare(sql).map_err(e)?;
+            let rows = statement
+                .query_map([limit as i64], |r| Ok(LibraryEntity { id: r.get(0)?, name: r.get(1)?, openalex_id: r.get(2)?, detail: r.get(3)?, count: r.get(4)? }))
+                .map_err(e)?;
+            rows.collect::<std::result::Result<Vec<_>, _>>().map_err(e)
+        };
+        let journals = run(
+            "SELECT v.id, v.name, v.openalex_id, v.issn_l, count(*) n FROM sources s JOIN venues v ON v.id = s.venue_id
+             WHERE s.trashed_at IS NULL AND coalesce(v.type, 'journal') NOT IN ('repository', 'ebook platform') GROUP BY v.id HAVING n >= 2 ORDER BY n DESC, v.name LIMIT ?1",
+        )?;
+        let people = run(
+            "SELECT p.id, p.name, p.openalex_id, p.orcid, count(DISTINCT sp.source_id) n FROM source_people sp JOIN people p ON p.id = sp.person_id JOIN sources s ON s.id = sp.source_id
+             WHERE s.trashed_at IS NULL GROUP BY p.id HAVING n >= 2 ORDER BY n DESC, p.name LIMIT ?1",
+        )?;
+        let topics = run(
+            "SELECT t.id, t.name, t.id, t.level, count(DISTINCT st.source_id) n FROM source_topics st JOIN topics t ON t.id = st.topic_id JOIN sources s ON s.id = st.source_id
+             WHERE s.trashed_at IS NULL AND t.level IN ('topic', 'subfield') GROUP BY t.id HAVING n >= 2 ORDER BY n DESC, t.name LIMIT ?1",
+        )?;
+        Ok(json!({ "journals": journals, "people": people, "topics": topics }))
+    }
+
+    /// How many library sources each OpenAlex journal (S…) or author (A…) has.
+    pub fn library_counts_for_openalex(&self, ids: &[String]) -> Result<Map<String, Json>> {
+        let db = self.read()?;
+        let mut out = Map::new();
+        for id in ids.iter().take(50) {
+            let short = id.trim().trim_end_matches('/').rsplit('/').next().unwrap_or("").to_uppercase();
+            let sql = match short.chars().next() {
+                Some('S') => "SELECT count(*) FROM sources s JOIN venues v ON v.id = s.venue_id WHERE s.trashed_at IS NULL AND upper(v.openalex_id) = ?1",
+                Some('A') => "SELECT count(DISTINCT sp.source_id) FROM source_people sp JOIN people p ON p.id = sp.person_id JOIN sources s ON s.id = sp.source_id WHERE s.trashed_at IS NULL AND upper(p.openalex_id) = ?1",
+                _ => continue,
+            };
+            let n: i64 = db.query_row(sql, [&short], |r| r.get(0)).map_err(e)?;
+            if n > 0 {
+                out.insert(short, json!(n));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Adds new items to the library on their own, into a collection (a subscription's
+    /// "also add to …"). Answers how many sources were made.
+    pub fn auto_add_feed_items(&self, item_ids: &[String], collection_id: &str) -> Result<usize> {
+        let mut added = 0;
+        for id in item_ids.iter().take(100) {
+            let work: Option<String> = self.feeds_db()?.query_row("SELECT work FROM feed_items WHERE id = ?1 AND source_id IS NULL", [id], |r| r.get(0)).optional().map_err(e)?;
+            let Some(work) = work.and_then(|w| serde_json::from_str::<Json>(&w).ok()) else { continue };
+            if library_hits(self, std::slice::from_ref(&work))?.first().is_some_and(Option::is_some) {
+                continue;
+            }
+            let mut fields = Map::new();
+            for (from, to) in [("title", "title"), ("doi", "doi"), ("year", "year"), ("venue", "containerTitle"), ("abstract", "abstract"), ("landingUrl", "url")] {
+                if let Some(v) = work.get(from).filter(|v| !v.is_null()) {
+                    fields.insert(to.into(), v.clone());
+                }
+            }
+            if let Some(oa) = work.get("ids").and_then(|i| i.get("openalex")).and_then(Json::as_str).and_then(bare_openalex) {
+                fields.insert("openalexId".into(), json!(oa));
+            }
+            fields.insert("itemType".into(), json!("article"));
+            let creators = work.get("authors").and_then(Json::as_array).into_iter().flatten().filter_map(Json::as_str).take(100).map(creator_of).collect();
+            let source = self.insert_source(SourceInput {
+                kind: "reference".into(),
+                creators,
+                fields,
+                collections: vec![collection_id.to_string()],
+                index_status: Some("skipped".into()),
+                ..Default::default()
+            })?;
+            self.feed_item_added(id, &source.id)?;
+            added += 1;
+        }
+        Ok(added)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SourceInput;
 
     fn store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
@@ -745,6 +1019,56 @@ mod tests {
         assert_eq!(store.purge_feed_items(later).unwrap(), 2, "the dismissed one and the read one; the saved one stays");
         assert_eq!(store.add_feed_items(&s.id, &works).unwrap(), 0);
         assert_eq!(view("all"), 1);
+    }
+
+    #[test]
+    fn saved_works_are_kept_once_with_their_origin_and_are_not_news() {
+        let (_dir, store) = store();
+        let work = json!({ "title": "Sparse attention for long documents", "doi": "10.5/sparse", "year": 2024, "authors": ["Ada Lovelace"], "key": "doi:x", "foundBy": ["openalex"], "rank": 0 });
+        let origin = json!({ "kind": "web-search", "label": "sparse attention", "query": "sparse attention", "sourceId": null });
+        assert_eq!(store.inbox_states(std::slice::from_ref(&work)).unwrap()[0].state, "none");
+        let saved = store.save_to_inbox(&work, &origin).unwrap();
+        assert_eq!((saved.state, saved.existed), ("inbox", false));
+        let again = store.save_to_inbox(&json!({ "title": "Sparse Attention for Long Documents", "doi": "https://doi.org/10.5/SPARSE" }), &json!({ "kind": "page" })).unwrap();
+        assert_eq!((again.item_id.as_deref(), again.existed), (saved.item_id.as_deref(), true));
+        let page = store.feed_items(&ItemQuery { view: Some("saved".into()), ..Default::default() }).unwrap();
+        assert_eq!(page.total, 1);
+        let item = &page.items[0];
+        assert_eq!((item.origin.as_ref().unwrap()["label"].as_str(), item.origin.as_ref().unwrap()["kind"].as_str()), (Some("sparse attention"), Some("web-search")));
+        assert!(item.work.get("foundBy").is_none(), "ranking noise is not kept");
+        assert_eq!((page.unread, store.feed_counts(None).unwrap()["unread"].as_i64()), (0, Some(0)), "saved by you is not unread news");
+        assert_eq!(store.feed_items(&ItemQuery { saved_by_you: true, ..Default::default() }).unwrap().total, 1);
+        let state = &store.inbox_states(std::slice::from_ref(&work)).unwrap()[0];
+        assert_eq!((state.state, state.saved), ("inbox", true));
+        // Dismissed, then saved again: back.
+        store.set_feed_items(std::slice::from_ref(saved.item_id.as_ref().unwrap()), None, None, Some(true)).unwrap();
+        assert_eq!(store.inbox_states(std::slice::from_ref(&work)).unwrap()[0].state, "none");
+        assert!(!store.save_to_inbox(&work, &origin).unwrap().existed);
+        // In the library: not stored.
+        let mut fields = Map::new();
+        fields.insert("title".into(), json!("Sparse attention for long documents"));
+        fields.insert("doi".into(), json!("10.5/sparse"));
+        let source = store.insert_source(SourceInput { kind: "reference".into(), fields, ..Default::default() }).unwrap();
+        let out = store.save_to_inbox(&work, &origin).unwrap();
+        assert_eq!((out.state, out.source_id.as_deref()), ("library", Some(source.id.as_str())));
+        assert_eq!(store.inbox_states(&[work]).unwrap()[0].state, "library");
+    }
+
+    #[test]
+    fn new_items_can_be_added_to_a_collection_on_their_own() {
+        let (_dir, store) = store();
+        let s = subscribe(&store, "venue", json!({ "openalexId": "S1" }));
+        let collection = store.create_collection("Auto", None, None).unwrap();
+        let ids = store.add_feed_items_ids(&s.id, &[json!({ "title": "An automatically added article", "doi": "10.9/auto", "authors": ["Grace Hopper"], "venue": "J" })]).unwrap();
+        assert_eq!(store.auto_add_feed_items(&ids, &collection.id).unwrap(), 1);
+        let item = store.feed_items(&ItemQuery::default()).unwrap().items.remove(0);
+        assert!(item.added && item.read);
+        let source = store.source(item.source_id.as_deref().unwrap()).unwrap().unwrap();
+        assert!(source.collections.contains(&collection.id));
+        assert_eq!(source.creators[0].family.as_deref(), Some("Hopper"));
+        assert_eq!(store.auto_add_feed_items(&ids, &collection.id).unwrap(), 0, "only once");
+        let picks = store.followable_in_library(5).unwrap();
+        assert!(picks["journals"].as_array().unwrap().is_empty(), "one source is not enough to suggest");
     }
 
     #[test]

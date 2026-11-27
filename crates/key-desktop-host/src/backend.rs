@@ -2960,6 +2960,7 @@ impl Host {
             feeds,
             databases: Arc::new(databases::Databases::new(root_for_databases)),
         };
+        host.databases.start_background_checks();
         scholarly_resolver::start_retry_worker(host.search.library().clone());
         Ok(host)
     }
@@ -3118,7 +3119,7 @@ impl Host {
             return tokio::task::block_in_place(|| web_search::dispatch(&self.web, &library, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
-        if command.starts_with("feeds_") {
+        if command.starts_with("feeds_") || command.starts_with("inbox_") {
             return tokio::task::block_in_place(|| feeds::dispatch(&self.feeds, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }

@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("key", {
   readerOpenInLibrary: () => ipcRenderer.invoke("key:reader-open-in-library"),
   readerOpenPage: () => ipcRenderer.invoke("key:reader-open-page"),
   clearBrowsingData: () => ipcRenderer.invoke("key:clear-browsing-data"),
+  signInInfo: () => ipcRenderer.invoke("key:sign-in-info"),
   // Add a work to the library from a source's context (renderer/add-from-source.tsx): the
   // window's shell asks which collections and resolves with the added source, or null.
   addFromSource: (request: { origin: { workspaceId: string; sourceId?: string | null }; work: Record<string, unknown> }) => ipcRenderer.invoke("key:add-from-source", request),
