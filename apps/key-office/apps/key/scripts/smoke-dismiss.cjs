@@ -128,11 +128,11 @@ const assert = require("node:assert/strict");
 
     // The palette (a sheet): Escape and a press on the scrim close it.
     await sidebar.getByRole("button", { name: "Search" }).click();
-    await page.locator(".kx-palette input").waitFor();
+    await page.locator(".kx-palette :is(input, textarea)").waitFor();
     await page.keyboard.press("Escape");
     await gone(page.locator(".kx-palette"), "the palette (Escape)");
     await sidebar.getByRole("button", { name: "Search" }).click();
-    await page.locator(".kx-palette input").waitFor();
+    await page.locator(".kx-palette :is(input, textarea)").waitFor();
     await page.mouse.click(1380, 880);
     await gone(page.locator(".kx-palette"), "the palette (press on the scrim)");
     report.palette = true;

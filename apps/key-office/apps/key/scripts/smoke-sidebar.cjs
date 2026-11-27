@@ -68,7 +68,7 @@ const assert = require("node:assert/strict");
 
     // Search opens Open Quickly; the Library row opens the library.
     await sidebar.getByRole("button", { name: "Search" }).click();
-    await page.locator(".kx-palette input").waitFor();
+    await page.locator(".kx-palette :is(input, textarea)").waitFor();
     await page.keyboard.press("Escape");
     await page.locator(".kx-palette").waitFor({ state: "detached" });
     const library = sidebar.getByRole("tree", { name: "Library" });

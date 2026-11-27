@@ -60,7 +60,7 @@ const assert = require("node:assert/strict");
     // Place the note and the source as cards.
     const add = async (query, title) => {
       await page.getByRole("button", { name: "Add item" }).click();
-      await page.locator(".kx-palette input").fill(query);
+      await page.locator(".kx-palette :is(input, textarea)").fill(query);
       await page.locator(".kx-palette .kx-found-row", { hasText: title }).first().click();
       await page.locator(".key-global-drawer-scrim").waitFor({ state: "detached" });
     };

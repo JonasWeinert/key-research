@@ -130,7 +130,7 @@ async function interactions(app, shell, ws, rate) {
       const find = (items) => items.flatMap((i) => (i.label === "Commands…" ? [i] : i.submenu ? find(i.submenu.items) : []));
       find(Menu.getApplicationMenu().items)[0].click();
     });
-    r.openPaletteMs = await until(shell, () => document.querySelector(".kx-palette input"), null, t);
+    r.openPaletteMs = await until(shell, () => document.querySelector(".kx-palette :is(input, textarea)"), null, t);
     await delay(200);
     await shell.keyboard.press("Escape");
     await shell.waitForFunction(() => !document.querySelector(".kx-palette"));

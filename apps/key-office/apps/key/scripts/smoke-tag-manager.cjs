@@ -194,7 +194,7 @@ const SEED = [
       find(Menu.getApplicationMenu().items)[0].click();
     });
     // Type once the palette's field has focus, and run the command once it is listed.
-    await page.locator(".kx-palette input").first().waitFor();
+    await page.locator(".kx-palette :is(input, textarea)").first().waitFor();
     await page.waitForFunction(() => document.activeElement?.closest(".kx-palette"));
     await page.keyboard.type("Organise tags");
     await page.locator(".kx-palette").getByText("Organise tags", { exact: false }).first().waitFor();

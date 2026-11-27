@@ -141,7 +141,7 @@ const MARGIN = 20;
         // Commands: typing a filter that matches less keeps the frame still.
         await send("command", "palette");
         r = await settled(`Commands at ${tag}`);
-        const input = modal().locator("input").first();
+        const input = modal().locator("input, textarea").first();
         await input.focus();
         for (const text of ["s", "se", "set", "zzzz"]) {
           await input.fill(text);

@@ -215,7 +215,7 @@ const assert = require("node:assert/strict");
         // Content scrolled inside a narrower box of its own (a clamp, a menu) does not count.
         let clipped = false;
         for (let p = d.parentElement; p && p !== el && !clipped; p = p.parentElement) clipped = getComputedStyle(p).overflowX !== "visible" && p.getBoundingClientRect().right <= right;
-        if (!clipped && !d.closest("details:not([open])")) out.push(`${d.tagName.toLowerCase()}.${[...d.classList].join(".")}`);
+        if (!clipped && !d.closest("details:not([open])")) out.push(`${d.tagName.toLowerCase()}.${[...d.classList].join(".")} in .${[...d.parentElement.classList].join(".")}${d.getAttribute("aria-label") ? ` (${d.getAttribute("aria-label")})` : ""}`);
       }
       return { scrollWidth: el.scrollWidth, clientWidth: el.clientWidth, out: out.slice(0, 8) };
     };

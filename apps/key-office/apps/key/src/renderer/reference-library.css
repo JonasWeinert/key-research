@@ -2253,6 +2253,12 @@
 .kx-inspector-page .kx-source-page[data-tight="true"] .kx-page-action-label {
   display: none;
 }
+.kx-inspector-page .kx-source-page[data-tight="true"] .kx-source-page-bar {
+  gap: 2px;
+}
+.kx-inspector-page .kx-source-page[data-tight="true"] .kx-page-action {
+  padding: 0 7px;
+}
 /* The pinned title takes what is left and ellipsizes; it never widens the bar. */
 :is(.kx-inspector-page, .kx-source-page[data-tight="true"]) .kx-source-page-bar > .kx-bar-title {
   flex: 1 1 0;
