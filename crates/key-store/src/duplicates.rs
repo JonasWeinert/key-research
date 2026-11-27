@@ -574,6 +574,92 @@ fn decided_pairs(db: &Connection) -> Result<HashSet<(String, String, String)>> {
     rows.collect::<std::result::Result<_, _>>().map_err(e)
 }
 
+/// Groups of the given sources (`ids_json`, a JSON array) that look like the same work, for
+/// the selection overview: candidates share a match key among themselves (too common an
+/// author or title start is skipped), then `compare_prepared` decides; pairs the user marked
+/// as different works stay apart.
+pub(crate) fn groups_among(db: &Connection, ids_json: &str) -> Result<Vec<Vec<String>>> {
+    let mut blocks: HashMap<(String, String), Vec<String>> = HashMap::new();
+    {
+        let mut statement = db
+            .prepare("SELECT k.kind, k.value, k.source_id FROM (SELECT DISTINCT value AS id FROM json_each(?1)) sel JOIN source_match_keys k ON k.source_id = sel.id")
+            .map_err(e)?;
+        let rows = statement.query_map([ids_json], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))).map_err(e)?;
+        for row in rows {
+            let (kind, value, id) = row.map_err(e)?;
+            blocks.entry((kind, value)).or_default().push(id);
+        }
+    }
+    // A pair is a candidate when it shares an identifier or file, or both the first author
+    // and the title start (one shared block alone is most of a selection by one author).
+    let mut shared: HashMap<(String, String), u8> = HashMap::new();
+    for ((kind, _), members) in &blocks {
+        if members.len() < 2 || (is_block(kind) && members.len() > MAX_BLOCK) {
+            continue;
+        }
+        crate::cancel::check()?;
+        let weight = if is_block(kind) { 1 } else { 2 };
+        for (i, a) in members.iter().enumerate() {
+            for b in &members[i + 1..] {
+                if a != b {
+                    *shared.entry(pair_key(a, b)).or_default() += weight;
+                }
+            }
+        }
+    }
+    let pairs: BTreeSet<(String, String)> = shared.into_iter().filter(|(_, w)| *w >= 2).map(|(pair, _)| pair).collect();
+    if pairs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let involved: BTreeSet<&String> = pairs.iter().flat_map(|(a, b)| [a, b]).collect();
+    let involved_json = serde_json::to_string(&involved).map_err(e)?;
+    let mut works: HashMap<String, Prepared> = HashMap::new();
+    {
+        let mut statement = db
+            .prepare(&format!("{WORK_COLUMNS} WHERE trashed_at IS NULL AND merged_into IS NULL AND id IN (SELECT value FROM json_each(?1))"))
+            .map_err(e)?;
+        for work in statement.query_map([&involved_json], read_work).map_err(e)? {
+            let work = work.map_err(e)?;
+            works.insert(work.id.clone().unwrap_or_default(), prepare(&work));
+        }
+    }
+    let mut distinct: HashSet<(String, String)> = HashSet::new();
+    {
+        let mut statement = db
+            .prepare("SELECT a, b FROM source_pairs WHERE kind = 'distinct' AND a IN (SELECT value FROM json_each(?1)) AND b IN (SELECT value FROM json_each(?1))")
+            .map_err(e)?;
+        for pair in statement.query_map([&involved_json], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(e)? {
+            let (a, b) = pair.map_err(e)?;
+            distinct.insert(pair_key(&a, &b));
+        }
+    }
+    let order: Vec<&String> = works.keys().collect();
+    let index: HashMap<&String, usize> = order.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    let mut find = Find::new(order.len());
+    for (n, (a, b)) in pairs.iter().enumerate() {
+        if n % 2048 == 0 {
+            crate::cancel::check()?;
+        }
+        let (Some(&ia), Some(&ib)) = (index.get(a), index.get(b)) else { continue };
+        if distinct.contains(&(a.clone(), b.clone())) {
+            continue;
+        }
+        if compare_prepared(&works[a], &works[b]).is_some() {
+            find.join(ia, ib);
+        }
+    }
+    let mut groups: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    for (i, id) in order.iter().enumerate() {
+        groups.entry(find.root(i)).or_default().push((*id).clone());
+    }
+    let mut out: Vec<Vec<String>> = groups.into_values().filter(|g| g.len() > 1).map(|mut g| {
+        g.sort();
+        g
+    }).collect();
+    out.sort();
+    Ok(out)
+}
+
 struct Find {
     parent: Vec<usize>,
 }
