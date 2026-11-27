@@ -21,7 +21,6 @@ import { HighlightInfo } from "@key-reader/pdfjs/HighlightInfo";
 import { useStatusItems } from "./status-bar";
 import { useWebReferences } from "./web-reader-references";
 import "./web-page.css";
-import { FirstUseTip } from "./explain";
 import { couldNot } from "../shared/plain-error";
 
 export const HIGHLIGHT_COLORS = ["orange", "green", "blue", "pink", "purple"] as const;
@@ -932,7 +931,6 @@ export function WebPageReader({
             <button type="button" className="kx-web-toolbar-action" aria-label="Cite" title="Copy as a quote with its source" onClick={() => void cite()}>
               <Icon name="quote" size={15} />
             </button>
-            <FirstUseTip help="tip.cite" anchor='.kx-web-toolbar-action[aria-label="Cite"]' side="above" delay={600} />
             <button type="button" className="kx-web-toolbar-action" aria-label="Add comment" title="Add comment" onClick={openComment}>
               <Icon name="note" size={15} />
             </button>

@@ -899,7 +899,6 @@ export const HELP = {
   "empty.dbsearch-results": empty("No search run yet", "Results of a database search show here, without duplicates.", "Build a query, choose databases and press Search."),
 
   // ── First-use tips ──────────────────────────────────────────────────────────────────
-  "tip.cite": tip("Cite what you select", "Cite copies the passage as a quote with its source and page, ready to paste into a note or a document."),
   "tip.citation-hover": tip("Look up a citation", "In the PDF, point at a citation like [12] or (Smith, 2020) to see the work it names, and add it to your library."),
   "tip.note-cite": tip("Cite in notes", "Type @ in a note and start typing a title or author to cite a source from your library."),
   "tip.split-tabs": tip("Read side by side", "Drag a tab to the left or right edge of the window to show two things side by side."),
