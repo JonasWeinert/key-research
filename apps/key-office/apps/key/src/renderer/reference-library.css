@@ -769,6 +769,18 @@
   font: 12.5px/1.45 var(--kx-font);
   text-align: left;
 }
+.kx-creators > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* A name is one unbreakable button: very long ones ellipsize, leaving room for the comma. */
+.kx-creators .kx-filter-link {
+  max-width: calc(100% - 1ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
 .kx-creators svg {
   flex: none;
   margin-top: 2px;
@@ -1035,8 +1047,11 @@
   font: 12px var(--kx-font);
 }
 .kx-chip-add {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   appearance: none;
+  text-overflow: ellipsis;
   color: var(--kx-accent);
   font-weight: 500;
 }
@@ -1743,6 +1758,8 @@
 /* ── A source as a page: title, properties, abstract, then the note ───────── */
 .kx-source-page {
   height: 100%;
+  /* Content fits the width (checked by smoke-library-sources); hidden is only a guard. */
+  overflow-x: hidden;
   overflow-y: auto;
   background: var(--kx-bg);
   color: var(--kx-text);
@@ -1934,6 +1951,7 @@
 }
 /* A highlight reads like the passage in the PDF: the words marked in its colour. */
 .kx-page-highlights li {
+  min-width: 0;
   margin: 0 -8px;
   padding: 5px 8px 3px;
   border-radius: 8px;
@@ -1952,6 +1970,7 @@
 }
 .kx-page-highlights blockquote {
   margin: 0;
+  overflow-wrap: anywhere;
   color: var(--kx-text);
   font-size: 12.5px;
   line-height: 1.45;
@@ -2146,16 +2165,25 @@
 }
 /* In the library's details panel the bar stays one row: the kind gives way, and the close
    button never drops to a second line. */
-.kx-inspector-page .kx-source-page-bar {
+:is(.kx-inspector-page, .kx-source-page[data-tight="true"]) .kx-source-page-bar {
   flex-wrap: nowrap;
 }
-.kx-inspector-page .kx-source-page-bar > .kx-kind-badge {
+:is(.kx-inspector-page, .kx-source-page[data-tight="true"]) .kx-source-page-bar > .kx-kind-badge {
   flex: 0 1 auto;
-  min-width: 0;
+  /* Shrinks to its icon, never to a sliver. */
+  min-width: 28px;
   overflow: hidden;
 }
-.kx-inspector-page .kx-source-page-bar > :not(.kx-kind-badge) {
+:is(.kx-inspector-page, .kx-source-page[data-tight="true"]) .kx-source-page-bar > :not(.kx-kind-badge, .kx-bar-title) {
   flex: none;
+}
+/* At the narrowest the Read button keeps only its icon, so the close button stays in view. */
+.kx-inspector-page .kx-source-page[data-tight="true"] .kx-page-action-label {
+  display: none;
+}
+/* The pinned title takes what is left and ellipsizes; it never widens the bar. */
+:is(.kx-inspector-page, .kx-source-page[data-tight="true"]) .kx-source-page-bar > .kx-bar-title {
+  flex: 1 1 0;
 }
 .kx-docked-actions {
   display: inline-flex;

@@ -1,0 +1,94 @@
+# Database search connectors: check every change (schema, engine, recorded fixtures) and, on
+# main, publish a signed bundle that the app downloads on demand (tools/connectors/README.md).
+# Publishing needs the CONNECTORS_SIGNING_KEY secret and a root key in connectors/trust.json;
+# without them the check still runs and nothing is published.
+name: connectors
+
+on:
+  pull_request:
+    paths: ["connectors/**", "crates/key-connectors/**", "tools/connectors/**", ".github/workflows/connectors*.yml"]
+  push:
+    branches: [main]
+    paths: ["connectors/**", "crates/key-connectors/**", "tools/connectors/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connectors-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: connectors-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Engine tests
+        run: cargo test -p key-connectors --locked
+      - name: Validate specs
+        run: tools/connectors/validate
+      - name: Embedded tests on recorded fixtures
+        run: tools/connectors/test --report fixtures-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fixtures-report
+          path: fixtures-report.json
+          if-no-files-found: ignore
+
+  publish:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      KEY_CONNECTORS_SIGNING_KEY: ${{ secrets.CONNECTORS_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Is signing set up?
+        id: setup
+        run: |
+          if [ -z "$KEY_CONNECTORS_SIGNING_KEY" ]; then echo "No CONNECTORS_SIGNING_KEY secret: not publishing."; echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if ! grep -q '"keyId"' connectors/trust.json; then echo "No root key in connectors/trust.json: not publishing."; echo "ready=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - name: Rust toolchain
+        if: steps.setup.outputs.ready == 'true'
+        run: rustup show
+      - uses: actions/cache@v4
+        if: steps.setup.outputs.ready == 'true'
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: connectors-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Bundle, sign and verify
+        if: steps.setup.outputs.ready == 'true'
+        run: |
+          # The run number only grows, so every published bundle is newer than the last.
+          tools/connectors/bundle --out dist --sequence "$((100000 + GITHUB_RUN_NUMBER))"
+          tools/connectors/sign --dir dist
+          tools/connectors/verify --dir dist
+      - name: Publish to the connectors-dist branch
+        if: steps.setup.outputs.ready == 'true'
+        run: |
+          cd dist
+          git init -q -b connectors-dist
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish connectors bundle $((100000 + GITHUB_RUN_NUMBER)) from ${GITHUB_SHA::8}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" connectors-dist

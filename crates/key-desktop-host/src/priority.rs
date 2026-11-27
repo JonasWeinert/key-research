@@ -13,7 +13,7 @@ const INTERACTIVE: &[&str] = &[
     "store_tag_restore", "store_retag", "store_collection_create", "store_collection_update", "store_collection_reorder", "store_collection_delete",
     "store_membership", "store_note_save", "store_note_meta", "store_note_delete", "store_canvas_save", "store_canvas_delete", "store_ui_get",
     "store_ui_set", "store_undo", "store_redo", "store_add_work", "store_add_published", "store_match_identifiers", "store_source", "store_sources",
-    "store_search", "store_suggest", "store_find", "store_parse_query", "store_facets", "store_tag_index", "store_collections", "store_notes",
+    "store_search", "store_suggest", "store_find", "store_parse_query", "store_filter_fields", "store_facets", "store_tag_index", "store_collections", "store_notes",
     "store_note", "store_canvas", "store_canvases", "store_links", "store_link_targets", "store_highlight_uses", "store_set_reading_status",
     "store_reading_event", "store_enrich", "store_media_save", "store_merge_sources", "store_merge_exact", "store_mark_distinct", "store_journal",
     "store_citation_key_set", "store_citation_key_pin", "store_biblio_copy", "store_cite_render", "store_cite_items", "store_retraction_dismiss",
@@ -22,11 +22,12 @@ const INTERACTIVE: &[&str] = &[
     "library_set_labels", "library_update_metadata", "library_set_property", "library_set_removed", "library_retag", "begin_pdfjs_companion_managed",
     "resolve_search_target", "native_open_buffer", "native_render", "native_text", "native_search", "native_close", "native_hibernate",
     "workspace_save_entry", "workspace_save_record", "workspace_set_project_membership", "workspace_create_project", "workspace_save_attribute",
-    "workspace_rename_attribute", "workspace_delete_attribute", "workspace_apply_property_proposal", "web_add_to_library", "web_library_match",
-    "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set", "store_formula_evaluate", "store_formula_catalog", "store_formula_analyze",
-    "store_formula_preview", "store_formula_print", "store_formula_prompt", "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete",
-    "store_fill_recipe_export", "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status",
-    "store_fill_runs", "store_fill_run", "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
+    "workspace_rename_attribute", "workspace_delete_attribute", "workspace_apply_property_proposal", "web_add_to_library", "web_library_match", "db_add_to_library", "db_translate", "db_search_start", "db_search_cancel", "db_estimate_cancel", "db_saved_save", "db_saved_delete", "db_parse",
+    "web_read_identifiers", "web_filters", "feeds_mark_read", "feeds_set", "inbox_save", "inbox_state",
+    "store_formula_evaluate", "store_formula_catalog", "store_formula_analyze", "store_formula_preview", "store_formula_print", "store_formula_prompt",
+    "store_formula_from_answer", "store_fill_recipes", "store_fill_starters", "store_fill_recipe_save", "store_fill_recipe_delete", "store_fill_recipe_export",
+    "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status", "store_fill_runs", "store_fill_run",
+    "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
@@ -38,15 +39,15 @@ const BACKGROUND: &[&str] = &[
     "store_zotero_sync", "store_zotero_status", "store_zotero_plugin_status", "store_zotero_plugin_sync",
     "store_linked_sync", "store_index_priority", "store_linked_priority", "store_enrich_options", "store_duplicates_summary", "store_key_usage",
     "store_import_zotero", "store_biblio_progress", "store_md_export_status", "store_autoexport_run", "store_file_mirror_run", "store_md_export_run",
-    "store_retractions_seen", "web_key_usage", "web_options", "feeds_refresh", "feeds_counts", "feeds_environment", "feeds_retention", "feeds_purge",
+    "store_retractions_seen", "web_key_usage", "web_options", "db_options", "feeds_refresh", "feeds_counts", "feeds_environment", "feeds_retention", "feeds_purge",
     "workspace_scan_linked_folder", "pdfjs_companion_list", "host_can_suspend", "store_fill_run_next", "store_fill_run_answer", "store_fill_auto_candidates",
 ];
 
 /// Network or long work: never interactive, and bounded in flight by the bridge.
-const SLOW_PREFIXES: &[&str] = &["store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_"];
+const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_"];
 
 /// Exceptions to the prefixes: quick despite their family.
-const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_autoexport_targets"];
+const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_autoexport_targets"];
 
 pub fn is_slow(command: &str) -> bool {
     !QUICK.contains(&command) && SLOW_PREFIXES.iter().any(|p| command.starts_with(p))
@@ -107,7 +108,13 @@ mod tests {
         assert_eq!(resolve("web_search", Some("interactive")), Class::Foreground);
         assert_eq!(resolve("store_sources", Some("background")), Class::Background);
         assert_eq!(resolve("store_sources", Some("nonsense")), Class::Interactive);
+        assert_eq!(resolve("db_estimate", Some("interactive")), Class::Foreground);
+        assert!(is_slow("db_connectors_check") && !is_slow("db_estimate_cancel") && !is_slow("db_results"));
         assert!(is_slow("web_find_pdf") && !is_slow("feeds_mark_read") && !is_slow("store_source"));
+        // Saving a work to the Inbox is a click; finding what to follow asks the network.
+        assert_eq!(resolve("inbox_save", None), Class::Interactive);
+        assert!(is_slow("feeds_suggest") && is_slow("feeds_preview") && !is_slow("inbox_state"));
+        assert_eq!(resolve("feeds_refresh", None), Class::Background);
     }
 
     #[test]

@@ -1,0 +1,339 @@
+{
+  "format": 1,
+  "id": "wos-expanded",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "Web of Science (Expanded API)",
+  "description": "Full Web of Science records, with abstracts, keywords and all authors, through Clarivate's Web of Science Expanded API (institutional licence).",
+  "homepage": "https://www.webofscience.com/",
+  "category": "multidisciplinary",
+  "coverage": "The Web of Science Core Collection editions your institution licenses for API use (Science, Social Sciences, Arts & Humanities Citation Indexes and others).",
+  "terms": "Needs a Web of Science Expanded API key, which Clarivate issues to institutions with an API licence (it is not the Starter key). Clarivate limits it to 2 requests per second and a yearly number of records set by the licence; records are for the licensee's own research and may not be redistributed. Key uses 1 request per second.",
+  "kind": "api",
+  "credentials": [
+    {
+      "id": "apikey",
+      "label": "Web of Science Expanded API key",
+      "required": true,
+      "secret": "clarivate-wos-expanded",
+      "help": "Ask your library whether your institution licenses the Web of Science Expanded API; Clarivate issues the key to the institution.",
+      "url": "https://developer.clarivate.com/apis/wos"
+    }
+  ],
+  "hosts": [
+    "wos-api.clarivate.com"
+  ],
+  "politeness": {
+    "minIntervalMs": 1000,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 100,
+    "quota": {
+      "remainingHeader": "X-REC-AmtPerYear-Remaining"
+    }
+  },
+  "options": [
+    {
+      "id": "db",
+      "label": "Database",
+      "default": "WOS",
+      "choices": [
+        {
+          "value": "WOS",
+          "label": "Web of Science Core Collection"
+        },
+        {
+          "value": "WOK",
+          "label": "All licensed databases"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "keywords",
+      "author",
+      "journal",
+      "affiliation",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": true,
+    "dates": "year",
+    "filters": [
+      "types",
+      "languages"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "pmid",
+      "issn",
+      "keywords",
+      "type",
+      "language"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "ALL={q}",
+      "title": "TI={q}",
+      "title_abstract": "TS={q}",
+      "keywords": "TS={q}",
+      "author": "AU={q}",
+      "journal": "SO={q}",
+      "affiliation": "OG={q}",
+      "identifier": "DO={q}"
+    },
+    "fallback": {
+      "abstract": "title_abstract",
+      "subject": "title_abstract",
+      "fulltext": "all"
+    },
+    "defaultField": "title_abstract",
+    "phrase": "\"{text}\"",
+    "words": "({text})",
+    "wordJoin": " AND ",
+    "perWordField": false,
+    "truncate": "{text}*",
+    "proximity": {
+      "wordJoin": " NEAR/{n} "
+    },
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": "=",
+        "replace": " "
+      },
+      {
+        "find": "(",
+        "replace": " "
+      },
+      {
+        "find": ")",
+        "replace": " "
+      }
+    ],
+    "dates": {
+      "template": "{q} AND PY=({from}-{to})",
+      "from": "{yearFrom}",
+      "to": "{yearTo}",
+      "openFrom": "1900",
+      "openTo": "2100"
+    },
+    "filters": {
+      "types": {
+        "join": " OR ",
+        "template": "{q} AND DT=({v})",
+        "values": {
+          "article": "Article",
+          "review": "Review",
+          "book": "Book",
+          "chapter": "Book Chapter",
+          "conference": "Proceedings Paper"
+        }
+      },
+      "languages": {
+        "join": " OR ",
+        "template": "{q} AND LA=({v})",
+        "values": {
+          "en": "English",
+          "de": "German",
+          "fr": "French",
+          "es": "Spanish",
+          "pt": "Portuguese",
+          "zh": "Chinese"
+        }
+      }
+    },
+    "maxLength": 5000,
+    "chunk": "or-split",
+    "maxChunks": 20
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://wos-api.clarivate.com/api/wos",
+      "params": {
+        "databaseId": "{opt.db}",
+        "usrQuery": "{query}",
+        "count": "{pageSize}",
+        "firstRecord": "{offset}",
+        "optionView": "FR"
+      },
+      "headers": {
+        "X-ApiKey": "{cred.apikey}",
+        "Accept": "application/json"
+      },
+      "format": "json"
+    },
+    "pageSize": 100,
+    "paging": {
+      "style": "offset",
+      "start": 1,
+      "stopWhenFewer": true
+    },
+    "total": "$.QueryResult.RecordsFound",
+    "items": "$.Data.Records.records.REC[#]",
+    "record": {
+      "sourceId": "$.UID",
+      "title": {
+        "path": "$.static_data.summary.titles.title[?type=item].content",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.static_data.summary.names.name[?role=author]",
+        "all": true,
+        "name": {
+          "literal": "$.wos_standard"
+        }
+      },
+      "year": {
+        "path": "$.static_data.summary.pub_info.pubyear",
+        "type": "year"
+      },
+      "date": {
+        "path": "$.static_data.summary.pub_info.sortdate",
+        "type": "date"
+      },
+      "venue": "$.static_data.summary.titles.title[?type=source].content",
+      "publisher": "$.static_data.summary.publishers.publisher[#].names.name[#].display_name",
+      "abstract": {
+        "path": "$.static_data.fullrecord_metadata.abstracts.abstract[#].abstract_text.p[#]",
+        "all": true,
+        "join": " ",
+        "type": "text"
+      },
+      "doi": {
+        "first": [
+          "$.dynamic_data.cluster_related.identifiers.identifier[?type=doi].value",
+          "$.dynamic_data.cluster_related.identifiers.identifier[?type=xref_doi].value"
+        ],
+        "type": "doi"
+      },
+      "pmid": {
+        "path": "$.dynamic_data.cluster_related.identifiers.identifier[?type=pmid].value",
+        "regex": "(\\d+)$"
+      },
+      "issn": {
+        "first": [
+          "$.dynamic_data.cluster_related.identifiers.identifier[?type=issn].value",
+          "$.dynamic_data.cluster_related.identifiers.identifier[?type=eissn].value"
+        ]
+      },
+      "keywords": {
+        "path": "$.static_data.fullrecord_metadata.keywords.keyword[#]",
+        "all": true
+      },
+      "language": {
+        "path": "$.static_data.fullrecord_metadata.languages.language[#].content",
+        "type": "language"
+      },
+      "url": {
+        "path": "$.UID",
+        "template": "https://www.webofscience.com/wos/woscc/full-record/{value}"
+      },
+      "type": {
+        "path": "$.static_data.summary.doctypes.doctype[#]",
+        "map": {
+          "Article": "article",
+          "Review": "article",
+          "Proceedings Paper": "article",
+          "Book": "book",
+          "Book Chapter": "chapter",
+          "Editorial Material": "other",
+          "Meeting Abstract": "other"
+        }
+      },
+      "extras": {
+        "fields": {
+          "keywordsPlus": {
+            "path": "$.static_data.item.keywords_plus.keyword[#]",
+            "all": true,
+            "join": "; "
+          },
+          "subjects": {
+            "path": "$.static_data.fullrecord_metadata.category_info.subjects.subject[?ascatype=extended].content",
+            "all": true,
+            "join": "; "
+          },
+          "countries": {
+            "path": "$.static_data.fullrecord_metadata.addresses.address_name[#].address_spec.country",
+            "all": true,
+            "join": "; "
+          }
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "The Expanded API gives full Web of Science records, including abstracts, all authors and their addresses. It is a separate, paid institutional licence; most researchers will use the Web of Science (Starter) connector instead.",
+    "coverage": "The Core Collection editions your institution licenses for API use, with abstracts for most records since 1991.",
+    "fields": "Same search fields as Web of Science: Topic (TS) for title and abstract, TI title, AU author, SO journal, OG organisation, DO DOI. All fields uses ALL=. Proximity uses NEAR/n.",
+    "limits": [
+      "Only works with an Expanded API key issued to your institution; a Starter key is refused.",
+      "The licence caps how many records a year can be downloaded; Key shows what is left when Clarivate reports it."
+    ],
+    "credentials": "Required: ask your library or research office for a Web of Science Expanded API key, then paste it in Key Settings, Services & API keys, Web of Science Expanded.",
+    "tips": [
+      "If you have both keys, prefer this connector: it returns abstracts, so the screening step has more to go on."
+    ]
+  },
+  "tests": [
+    {
+      "name": "school-feeding-topic",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase",
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2015,
+          "yearTo": 2020
+        }
+      },
+      "minTotal": 1,
+      "minResults": 1,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "venue",
+        "authors",
+        "abstract"
+      ],
+      "fixture": "school-feeding-topic",
+      "pageSize": 5
+    }
+  ]
+}

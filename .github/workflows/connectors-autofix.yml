@@ -1,0 +1,99 @@
+# Proposes a fix for a broken database connector as a pull request, written by a coding agent
+# the owner plugs in. The agent gets a context pack (tools/connectors/fix-context.mjs: the spec,
+# SPEC.md, the failing output, the last good answers, PROMPT.md) and may change only that
+# connector's spec and fixtures. The fix must validate and pass its tests live and on the new
+# fixtures. Nothing is merged or signed here: a person reviews the pull request, and the
+# connectors workflow publishes after the merge.
+#
+# Setup (repository secrets):
+#   CONNECTORS_AGENT_COMMAND  a shell command that runs your agent non-interactively in the
+#                             repository, reading the prompt from "$CONTEXT_DIR/PROMPT.md", e.g.
+#                             claude -p "$(cat "$CONTEXT_DIR/PROMPT.md")" --allowedTools "Read,Edit,Bash(tools/connectors/*)"
+#   CONNECTORS_AGENT_API_KEY  passed to the command as AGENT_API_KEY (and ANTHROPIC_API_KEY,
+#                             OPENAI_API_KEY), for whichever agent you use
+#   KEY_CONNECTOR_*           service keys, as for the health check
+name: connectors-autofix
+
+on:
+  workflow_dispatch:
+    inputs:
+      connector:
+        description: "The connector id to repair"
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ID: ${{ inputs.connector }}
+      CONTEXT_DIR: ${{ github.workspace }}/../connector-fix-context
+      KEY_CONNECTORS_MAILTO: ${{ vars.CONNECTORS_MAILTO }}
+      KEY_CONNECTOR_NCBI: ${{ secrets.KEY_CONNECTOR_NCBI }}
+      KEY_CONNECTOR_ELSEVIER: ${{ secrets.KEY_CONNECTOR_ELSEVIER }}
+      KEY_CONNECTOR_ELSEVIER_INSTTOKEN: ${{ secrets.KEY_CONNECTOR_ELSEVIER_INSTTOKEN }}
+      KEY_CONNECTOR_CLARIVATE_WOS: ${{ secrets.KEY_CONNECTOR_CLARIVATE_WOS }}
+      KEY_CONNECTOR_CLARIVATE_WOS_EXPANDED: ${{ secrets.KEY_CONNECTOR_CLARIVATE_WOS_EXPANDED }}
+      KEY_CONNECTOR_OPENALEX: ${{ secrets.KEY_CONNECTOR_OPENALEX }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the input
+        run: |
+          case "$ID" in (*[!a-z0-9-]*|"") echo "Bad connector id"; exit 1;; esac
+          test -f "connectors/specs/$ID.json"
+      - name: Rust toolchain
+        run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: connectors-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+      - name: Reproduce
+        run: |
+          if tools/connectors/test --live --id "$ID" --report "$RUNNER_TEMP/live.json"; then echo "The connector works live; nothing to fix."; echo "SKIP=1" >> "$GITHUB_ENV"; fi
+      - name: Context pack
+        if: env.SKIP != '1'
+        run: node tools/connectors/fix-context.mjs "$ID" "$RUNNER_TEMP/live.json" "$CONTEXT_DIR"
+      - name: Run the agent
+        if: env.SKIP != '1'
+        env:
+          AGENT_COMMAND: ${{ secrets.CONNECTORS_AGENT_COMMAND }}
+          AGENT_API_KEY: ${{ secrets.CONNECTORS_AGENT_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.CONNECTORS_AGENT_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.CONNECTORS_AGENT_API_KEY }}
+        run: |
+          if [ -z "$AGENT_COMMAND" ]; then echo "No CONNECTORS_AGENT_COMMAND secret: set one to enable auto-fix."; exit 1; fi
+          bash -c "$AGENT_COMMAND"
+      - name: Only the connector may change
+        if: env.SKIP != '1'
+        run: |
+          changed=$(git status --porcelain | awk '{print $2}')
+          for f in $changed; do
+            case "$f" in ("connectors/specs/$ID.json"|connectors/fixtures/"$ID"/*) ;; (*) echo "The agent changed $f; refusing."; exit 1;; esac
+          done
+          test -n "$changed" || { echo "The agent changed nothing."; exit 1; }
+      - name: Validate and test the fix
+        if: env.SKIP != '1'
+        run: |
+          tools/connectors/validate "connectors/specs/$ID.json"
+          tools/connectors/test --record --id "$ID"
+          tools/connectors/test --id "$ID"
+      - name: Open a pull request
+        if: env.SKIP != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="connector-fix/$ID-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add "connectors/specs/$ID.json" "connectors/fixtures/$ID"
+          git commit -m "Repair the $ID connector"
+          git push -u origin "$branch"
+          gh pr create --draft --title "Repair the $ID connector" --body "Proposed by the connectors-autofix workflow after the live check failed. The spec validates and its tests pass live and on the re-recorded fixtures. Review the change before merging; nothing is published until it is merged."

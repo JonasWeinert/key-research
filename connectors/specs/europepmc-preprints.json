@@ -1,0 +1,286 @@
+{
+  "format": 1,
+  "id": "europepmc-preprints",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "Europe PMC preprints",
+  "description": "Preprints indexed by Europe PMC: medRxiv, bioRxiv, Research Square, SSRN (health and social science), Preprints.org, SciELO Preprints, PsyArXiv, OSF and others.",
+  "homepage": "https://europepmc.org/",
+  "category": "preprints",
+  "coverage": "About 1 million preprints, mostly 2018 onwards, with title, abstract and authors; some carry a link to the later journal version.",
+  "terms": "Free, no key. EMBL-EBI asks for reasonable use; Key waits 250 ms between requests. Abstracts may be copyrighted by their publishers.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "www.ebi.ac.uk"
+  ],
+  "politeness": {
+    "minIntervalMs": 250,
+    "retries": 4,
+    "backoffMs": 2000,
+    "maxPages": 50,
+    "mailtoParam": "email"
+  },
+  "capabilities": {
+    "fields": [
+      "all",
+      "title",
+      "title_abstract",
+      "abstract",
+      "keywords",
+      "author",
+      "affiliation",
+      "identifier"
+    ],
+    "phrase": true,
+    "truncation": true,
+    "proximity": true,
+    "dates": "year",
+    "filters": [
+      "languages",
+      "openAccess"
+    ],
+    "maxResults": 100000,
+    "sort": [
+      "relevance",
+      "date"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "venue",
+      "abstract",
+      "doi",
+      "pmid",
+      "pmcid",
+      "keywords",
+      "type",
+      "language"
+    ]
+  },
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}",
+      "title": "TITLE:{q}",
+      "title_abstract": "TITLE_ABS:{q}",
+      "abstract": "ABSTRACT:{q}",
+      "keywords": "KW:{q}",
+      "author": "AUTH:{q}",
+      "affiliation": "AFF:{q}",
+      "identifier": "(EXT_ID:{q} OR DOI:{q})"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " AND ",
+    "perWordField": true,
+    "truncate": "{text}*",
+    "proximity": "\"{text}\"~{n}",
+    "and": " AND ",
+    "or": " OR ",
+    "not": " NOT ",
+    "group": "({q})",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      },
+      {
+        "find": ":",
+        "replace": " "
+      }
+    ],
+    "dates": {
+      "template": "{q} AND (PUB_YEAR:[{from} TO {to}])",
+      "from": "{yearFrom}",
+      "to": "{yearTo}",
+      "openFrom": "1800",
+      "openTo": "3000"
+    },
+    "filters": {
+      "languages": {
+        "join": " OR ",
+        "template": "{q} AND ({v})",
+        "values": {
+          "en": "LANG:eng",
+          "de": "LANG:ger",
+          "fr": "LANG:fre",
+          "es": "LANG:spa",
+          "pt": "LANG:por",
+          "zh": "LANG:chi"
+        }
+      },
+      "openAccess": {
+        "template": "{q} AND (OPEN_ACCESS:y)"
+      }
+    },
+    "maxLength": 30000,
+    "chunk": "or-split",
+    "maxChunks": 20,
+    "fallback": {
+      "subject": "title_abstract",
+      "journal": "all",
+      "fulltext": "title_abstract"
+    }
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "POST",
+      "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/searchPOST",
+      "form": {
+        "query": "SRC:PPR AND ({query})",
+        "format": "json",
+        "resultType": "core",
+        "pageSize": "{pageSize}",
+        "cursorMark": "{cursor}",
+        "synonym": "false"
+      },
+      "format": "json"
+    },
+    "pageSize": 1000,
+    "paging": {
+      "style": "cursor",
+      "firstCursor": "*",
+      "next": "$.nextCursorMark",
+      "stopWhenFewer": true
+    },
+    "total": "$.hitCount",
+    "items": "$.resultList.result[*]",
+    "record": {
+      "sourceId": "$.id",
+      "title": {
+        "path": "$.title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.authorList.author[*]",
+        "all": true,
+        "name": {
+          "family": "$.lastName",
+          "given": "$.firstName",
+          "literal": "$.fullName"
+        }
+      },
+      "year": {
+        "first": [
+          "$.pubYear",
+          "$.bookOrReportDetails.yearOfPublication"
+        ],
+        "type": "year"
+      },
+      "date": {
+        "path": "$.firstPublicationDate",
+        "type": "date"
+      },
+      "venue": {
+        "first": [
+          "$.bookOrReportDetails.publisher",
+          "$.journalInfo.journal.title"
+        ]
+      },
+      "abstract": {
+        "path": "$.abstractText",
+        "type": "text"
+      },
+      "doi": {
+        "path": "$.doi",
+        "type": "doi"
+      },
+      "pmid": "$.pmid",
+      "pmcid": "$.pmcid",
+      "issn": {
+        "first": [
+          "$.journalInfo.journal.issn",
+          "$.journalInfo.journal.essn"
+        ]
+      },
+      "keywords": {
+        "path": "$.keywordList.keyword[*]",
+        "all": true
+      },
+      "language": {
+        "path": "$.language",
+        "type": "language"
+      },
+      "type": {
+        "path": "$.id",
+        "template": "preprint"
+      },
+      "url": {
+        "path": "$.id",
+        "template": "https://europepmc.org/article/PPR/{value}"
+      },
+      "extras": {
+        "fields": {
+          "server": "$.bookOrReportDetails.publisher",
+          "version": "$.versionNumber",
+          "openAccess": "$.isOpenAccess"
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "Searches only the preprints that Europe PMC collects from more than 30 preprint servers, including medRxiv, bioRxiv, Research Square, Preprints.org, SciELO Preprints, PsyArXiv, OSF Preprints and the health and social-science parts of SSRN.",
+    "coverage": "About a million preprints, mostly from 2018 on. Each record names its server (shown as the venue). Preprints have not been peer reviewed; some carry a link to the published version.",
+    "fields": "Title and abstract search the preprint's title and abstract. Preprints have no MeSH subject terms or journal, so those fields are searched as title and abstract (Key tells you when it does this).",
+    "limits": [
+      "Not every preprint server is included: arXiv, SocArXiv and most economics working-paper series are missing; use the working-paper connectors for those.",
+      "The same study may appear as several versions; Key merges them in the results."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Use this next to PubMed or Europe PMC to find studies that are not yet published."
+    ]
+  },
+  "tests": [
+    {
+      "name": "malaria-bed-nets-preprints",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "malaria",
+                "mode": "words",
+                "field": "title_abstract"
+              }
+            ]
+          },
+          {
+            "terms": [
+              {
+                "text": "bed net",
+                "mode": "phrase",
+                "truncate": true,
+                "field": "title_abstract"
+              },
+              {
+                "text": "insecticide-treated nets",
+                "mode": "phrase",
+                "field": "title_abstract"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2019
+        }
+      },
+      "minTotal": 20,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "authors",
+        "year",
+        "abstract"
+      ],
+      "fixture": "malaria-bed-nets-preprints",
+      "pageSize": 10
+    }
+  ]
+}

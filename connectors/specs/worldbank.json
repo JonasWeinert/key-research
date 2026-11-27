@@ -1,0 +1,319 @@
+{
+  "format": 1,
+  "id": "worldbank",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "World Bank Documents & Reports",
+  "description": "The World Bank's open repository: Policy Research Working Papers, economic and sector reports, impact evaluations and other publications.",
+  "homepage": "https://documents.worldbank.org/",
+  "category": "grey-literature",
+  "coverage": "About 400,000 documents from 1946 onwards; under 'Publications & Research' about 60,000 research papers, reports and books, mostly on low- and middle-income countries.",
+  "terms": "Free, documented public API (search.worldbank.org/api/v3/wds), no key. Content is mostly CC BY 3.0 IGO; check each document. Key uses one request per second. The API's search treats words as AND but does not handle nested boolean queries reliably, so Key sends each term on its own and filters the results itself.",
+  "kind": "api",
+  "credentials": [],
+  "hosts": [
+    "search.worldbank.org"
+  ],
+  "politeness": {
+    "minIntervalMs": 1100,
+    "retries": 3,
+    "backoffMs": 3000,
+    "maxPages": 12
+  },
+  "options": [
+    {
+      "id": "majdocty",
+      "label": "Document group",
+      "default": "Publications & Research",
+      "choices": [
+        {
+          "value": "Publications & Research",
+          "label": "Publications and research"
+        },
+        {
+          "value": "",
+          "label": "Everything (also project and procurement documents)"
+        }
+      ]
+    },
+    {
+      "id": "docty",
+      "label": "Document type",
+      "default": "",
+      "choices": [
+        {
+          "value": "",
+          "label": "Any"
+        },
+        {
+          "value": "Policy Research Working Paper",
+          "label": "Policy Research Working Papers"
+        },
+        {
+          "value": "Working Paper",
+          "label": "Working papers"
+        },
+        {
+          "value": "Journal Article",
+          "label": "Journal articles"
+        },
+        {
+          "value": "Report",
+          "label": "Reports"
+        }
+      ]
+    }
+  ],
+  "capabilities": {
+    "fields": [
+      "all"
+    ],
+    "phrase": true,
+    "truncation": false,
+    "proximity": false,
+    "dates": "year",
+    "filters": [],
+    "maxResults": 600,
+    "sort": [
+      "relevance"
+    ],
+    "exportFields": [
+      "title",
+      "authors",
+      "year",
+      "abstract",
+      "doi",
+      "number",
+      "type"
+    ]
+  },
+  "query": {
+    "mode": "terms",
+    "fields": {
+      "all": "{q}"
+    },
+    "fallback": {
+      "title": "all",
+      "title_abstract": "all",
+      "abstract": "all",
+      "keywords": "all",
+      "subject": "all",
+      "author": "all",
+      "journal": "all",
+      "affiliation": "all",
+      "fulltext": "all",
+      "identifier": "all"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "wordJoin": " ",
+    "truncate": "{text}",
+    "and": " ",
+    "or": " ",
+    "not": " ",
+    "group": "{q}",
+    "notStyle": "binary",
+    "escape": [
+      {
+        "find": "\"",
+        "replace": ""
+      }
+    ],
+    "maxLength": 300,
+    "chunk": "none"
+  },
+  "search": {
+    "adapter": "paged",
+    "request": {
+      "method": "GET",
+      "url": "https://search.worldbank.org/api/v3/wds",
+      "params": {
+        "qterm": "{query}",
+        "format": "json",
+        "rows": "{pageSize}",
+        "os": "{offset}",
+        "majdocty": "{opt.majdocty?}",
+        "docty_exact": "{opt.docty?}"
+      },
+      "format": "json"
+    },
+    "pageSize": 50,
+    "paging": {
+      "style": "offset",
+      "start": 0,
+      "stopWhenFewer": true,
+      "stopWhenNoLocalMatch": true
+    },
+    "total": "$.total",
+    "items": "$.documents[*]",
+    "itemsWhere": "$.id",
+    "record": {
+      "sourceId": "$.id",
+      "title": {
+        "path": "$.display_title",
+        "type": "text"
+      },
+      "authors": {
+        "path": "$.authors[*].author",
+        "all": true,
+        "name": {
+          "literal": "$"
+        }
+      },
+      "year": {
+        "path": "$.docdt",
+        "type": "year"
+      },
+      "date": {
+        "path": "$.docdt",
+        "regex": "^(\\d{4}-\\d{2}-\\d{2})",
+        "type": "date"
+      },
+      "abstract": {
+        "path": "$.abstracts[\"cdata!\"]",
+        "type": "text"
+      },
+      "number": "$.repnb",
+      "series": "$.docty",
+      "doi": {
+        "path": "$.repnb",
+        "regex": "^WPS(\\d+)$",
+        "template": "10.1596/1813-9450-{value}",
+        "type": "doi"
+      },
+      "url": {
+        "path": "$.url",
+        "replace": [
+          {
+            "find": "^http:",
+            "with": "https:"
+          }
+        ],
+        "type": "url"
+      },
+      "pdfUrl": {
+        "path": "$.pdfurl",
+        "replace": [
+          {
+            "find": "^http:",
+            "with": "https:"
+          }
+        ],
+        "type": "url"
+      },
+      "publisher": {
+        "path": "$.id",
+        "template": "World Bank"
+      },
+      "language": {
+        "path": "$.lang",
+        "type": "language"
+      },
+      "keywords": {
+        "path": "$.keywd[*].keywd",
+        "all": true
+      },
+      "type": {
+        "path": "$.docty",
+        "map": {
+          "Policy Research Working Paper": "working-paper",
+          "Working Paper": "working-paper",
+          "Working Paper (Numbered Series)": "working-paper",
+          "Journal Article": "article",
+          "Report": "report",
+          "Publication": "book",
+          "Book": "book",
+          "Brief": "report"
+        },
+        "default": "report"
+      },
+      "extras": {
+        "fields": {
+          "country": "$.count",
+          "region": "$.admreg",
+          "documentType": "$.docty",
+          "topics": "$.teratopic"
+        }
+      }
+    }
+  },
+  "guide": {
+    "summary": "The World Bank's Documents & Reports repository holds the Bank's research (including the Policy Research Working Paper series), country and sector studies and impact evaluations. It is a key source for development economics and for grey literature on low- and middle-income countries.",
+    "coverage": "About 400,000 documents since 1946. 'Publications and research' (the default) keeps research papers, reports and books and leaves out project and procurement papers.",
+    "fields": "The World Bank's search reads titles, abstracts, keywords and the full text of documents, with no field choice. Key sends each word or phrase of your search separately and keeps only documents that match the whole search in their title, abstract and keywords. Policy Research Working Papers get their DOI (10.1596/1813-9450-NNNN).",
+    "limits": [
+      "Because the full text is searched, common words return many operational documents; Key stops reading a word's results once a page has nothing that matches your full search.",
+      "The year filter is applied by Key after the search (the API's own date filter is unreliable).",
+      "No wildcards; write out word forms."
+    ],
+    "credentials": "No key needed.",
+    "tips": [
+      "Choose 'Policy Research Working Papers' under Document type for the Bank's main research series."
+    ]
+  },
+  "tests": [
+    {
+      "name": "microfinance-prwp",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "microfinance",
+                "mode": "words",
+                "field": "all"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "docty": "Policy Research Working Paper"
+      },
+      "minTotal": 50,
+      "minResults": 10,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "abstract",
+        "doi",
+        "number"
+      ],
+      "fixture": "microfinance-prwp",
+      "pageSize": 10
+    },
+    {
+      "name": "school-feeding-phrases",
+      "query": {
+        "concepts": [
+          {
+            "terms": [
+              {
+                "text": "school feeding",
+                "mode": "phrase"
+              },
+              {
+                "text": "school meals",
+                "mode": "phrase"
+              }
+            ]
+          }
+        ],
+        "filters": {
+          "yearFrom": 2010
+        }
+      },
+      "minResults": 5,
+      "pages": 1,
+      "fields": [
+        "title",
+        "year",
+        "abstract"
+      ],
+      "fixture": "school-feeding-phrases",
+      "pageSize": 10
+    }
+  ]
+}

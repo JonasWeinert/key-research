@@ -40,6 +40,7 @@ import { deliverDeepLinks, listenForDeepLinks } from "./deep-links";
 import { BrowserService, creatingPage } from "./browser/pages";
 import { browserSession, clearBrowsingData } from "./browser/profile";
 import { createWebTab, type WebTabState } from "./browser/tab";
+import { SignInService, type SignInOp } from "./browser/sign-in";
 import { properUrlOf, ProxyService, withLibraryAccess, type ProxyOp } from "./browser/proxy-service";
 import { simulateNetwork } from "./browser/network";
 import { importProxies } from "./browser/proxy-import";
@@ -425,6 +426,7 @@ function viewKind(v: OwnedView | undefined) {
   if (!v?.contentKey) return v?.kind;
   if (section === "sources") return "library";
   if (section === "note" || section === "canvas" || section === "search" || section === "inbox") return section;
+  if (section === "databases") return "database";
   if (section === "webpage") return "web";
   if (section === "source" || section === "file" || ENTITY_SECTIONS.includes(section ?? "")) return "page";
   return "records";
@@ -446,6 +448,7 @@ function viewSummary(id: string) {
       host: hostLabel(properUrlOf(v.web.url)),
       url: properUrlOf(v.web.url),
       proxy: proxyService?.barState(v.view?.webContents, v.web.url),
+      signin: signInService?.barState(v.view?.webContents),
       loading: v.web.loading,
       canGoBack: v.web.canGoBack,
       canGoForward: v.web.canGoForward,
@@ -621,6 +624,13 @@ registerNativeKind("web", {
       const w = shellOfView(record.id);
       if (w) tabsChanged(w);
     });
+    signInService?.attach(tab.webContents, {
+      changed: () => {
+        const w = shellOfView(record.id);
+        if (w) tabsChanged(w);
+      },
+      window: () => record.host?.window,
+    });
     return tab;
   },
   dispose(record) {
@@ -676,6 +686,7 @@ let tempPdfs: TempPdfs;
 let webSources: WebSources;
 let browserService: BrowserService;
 let proxyService: ProxyService | undefined;
+let signInService: SignInService | undefined;
 let webSearchService: WebSearch | undefined;
 let keyedServices: KeyedServices | undefined;
 /** Embedded PDFs and article pages in browser tabs (see browser/page-actions.ts). */
@@ -1728,7 +1739,7 @@ function savedView(id: string): SavedView | undefined {
   if (!c || c.section === "home") return { type: "home" };
   // A record that was never saved has nothing to reopen.
   if (c.section === "record" && !c.record?.id) return undefined;
-  if (!["sources", "records", "record", "note", "source", "webpage", "canvas", "search", "inbox", "file", ...ENTITY_SECTIONS].includes(c.section)) return undefined;
+  if (!["sources", "records", "record", "note", "source", "webpage", "canvas", "search", "inbox", "databases", "file", ...ENTITY_SECTIONS].includes(c.section)) return undefined;
   return {
     type: "content",
     section: c.section as "sources",
@@ -1797,7 +1808,7 @@ const contentKey = (section: string, workspaceId?: string, projectId?: string, i
     : JSON.stringify([section, workspaceId || null, projectId || null, id ?? null]);
 /** Opens (or focuses) a library list, record, note or source page in `w`. */
 async function openContent(w: ShellWindow, p: any) {
-  if (!["sources", "records", "record", "note", "canvas", "highlights", "search", "inbox", "file", "webpage", ...ENTITY_SECTIONS].includes(p.section))
+  if (!["sources", "records", "record", "note", "canvas", "highlights", "search", "inbox", "databases", "file", "webpage", ...ENTITY_SECTIONS].includes(p.section))
     throw Error("Invalid content view");
   if (p.section === "webpage" && (typeof p.sourceId !== "string" || !p.sourceId))
     throw Error("Choose a saved page");
@@ -1852,6 +1863,8 @@ async function openContent(w: ShellWindow, p: any) {
               ? "Highlights"
               : p.section === "inbox"
                 ? "Inbox"
+              : p.section === "databases"
+                ? "Database search"
               : p.section === "search"
                 ? "Search"
                 : `${p.section === "records" ? "All items" : "Sources"}${scope ? ` · ${scope}` : ""}`,
@@ -2327,6 +2340,9 @@ else
       });
       proxyService = await new ProxyService(join(app.getPath("userData"), "library-proxies.json")).load();
       proxyService.onChange(() => emit("proxies-changed"));
+      // Passkey sign-ins in browser tabs (browser/sign-in.ts).
+      signInService = new SignInService(() => ({ notice: appSettings.get().signInNotice, browser: appSettings.get().signInBrowser }));
+      signInService.install(join(__dirname, "../preload"));
       // Smokes drive the headless API directly.
       if (process.env.KEY_BROWSER_SMOKE)
         Object.assign(globalThis, {
@@ -3040,6 +3056,10 @@ else
         if (open) focus(open.id);
         else openLink(page, w);
       });
+      ipcMain.handle("key:sign-in-info", (event) => {
+        shell(event.sender.id);
+        return signInService?.info();
+      });
       ipcMain.handle("key:clear-browsing-data", async (event) => {
         shell(event.sender.id);
         await clearBrowsingData();
@@ -3168,6 +3188,7 @@ else
             if (p.op === "reload") view.view.webContents.reload();
             else if (p.op === "add-article") await browserPages.addArticle(view);
             else if (String(p.op).startsWith("proxy-")) await proxyService?.op(view.view.webContents, view.web?.url ?? "", p.op as ProxyOp);
+            else if (String(p.op).startsWith("signin-")) await signInService?.op(view.view.webContents, p.op as SignInOp);
             else if (p.op === "open-article" && view.articleState?.sourceId) await openSourcePage(w, { workspaceId: w.workspaceId, sourceId: view.articleState.sourceId });
             return snapshot(w);
           }

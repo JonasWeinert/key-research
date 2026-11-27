@@ -1,0 +1,187 @@
+{
+ "header": {
+  "type": "esummary",
+  "version": "0.3"
+ },
+ "result": {
+  "uids": [
+   "42998329",
+   "42892048",
+   "43022418"
+  ],
+  "42998329": {
+   "uid": "42998329",
+   "pubdate": "2027 Jan",
+   "epubdate": "2026 Nov 7",
+   "source": "Mar Pollut Bull",
+   "authors": [
+    {
+     "name": "Nazurally N",
+     "authtype": "Author"
+    },
+    {
+     "name": "Kalloo T",
+     "authtype": "Author"
+    },
+    {
+     "name": "Sookun B",
+     "authtype": "Author"
+    },
+    {
+     "name": "Khadaroo BH",
+     "authtype": "Author"
+    },
+    {
+     "name": "Oogarah-Hanuman V",
+     "authtype": "Author"
+    },
+    {
+     "name": "Bapoo-Dundoo P",
+     "authtype": "Author"
+    },
+    {
+     "name": "Kawaka J",
+     "authtype": "Author"
+    },
+    {
+     "name": "Maina G",
+     "authtype": "Author"
+    },
+    {
+     "name": "Rinkevich B",
+     "authtype": "Author"
+    }
+   ],
+   "title": "Five-year monitoring of coral nursery performance and reef-associated biodiversity at Pointe aux Feuilles, Mauritius, through the 2025 global bleaching event.",
+   "fulljournalname": "Marine pollution bulletin",
+   "articleids": [
+    {
+     "idtype": "pubmed",
+     "idtypen": 1,
+     "value": "42998329"
+    },
+    {
+     "idtype": "doi",
+     "idtypen": 3,
+     "value": "10.1016/j.marpolbul.2026.120514"
+    },
+    {
+     "idtype": "pii",
+     "idtypen": 4,
+     "value": "S0025-326X(26)01301-9"
+    }
+   ],
+   "sortpubdate": "2027/01/01 00:00"
+  },
+  "42892048": {
+   "uid": "42892048",
+   "pubdate": "2027 Jan",
+   "epubdate": "2026 Oct 17",
+   "source": "Mar Pollut Bull",
+   "authors": [
+    {
+     "name": "Zhou Y",
+     "authtype": "Author"
+    },
+    {
+     "name": "Dou W",
+     "authtype": "Author"
+    },
+    {
+     "name": "Zha Y",
+     "authtype": "Author"
+    },
+    {
+     "name": "Li Z",
+     "authtype": "Author"
+    },
+    {
+     "name": "Song J",
+     "authtype": "Author"
+    },
+    {
+     "name": "Liu X",
+     "authtype": "Author"
+    },
+    {
+     "name": "Zhu W",
+     "authtype": "Author"
+    },
+    {
+     "name": "Li X",
+     "authtype": "Author"
+    }
+   ],
+   "title": "Thermal stress induces dual damages to physiology and reproductive capacity of Galaxea fascicularis during its reproductive stage.",
+   "fulljournalname": "Marine pollution bulletin",
+   "articleids": [
+    {
+     "idtype": "pubmed",
+     "idtypen": 1,
+     "value": "42892048"
+    },
+    {
+     "idtype": "doi",
+     "idtypen": 3,
+     "value": "10.1016/j.marpolbul.2026.120476"
+    },
+    {
+     "idtype": "pii",
+     "idtypen": 4,
+     "value": "S0025-326X(26)01263-4"
+    }
+   ],
+   "sortpubdate": "2027/01/01 00:00"
+  },
+  "43022418": {
+   "uid": "43022418",
+   "pubdate": "2026 Dec",
+   "epubdate": "2026 Oct 28",
+   "source": "Toxicol Rep",
+   "authors": [
+    {
+     "name": "Conway AJ",
+     "authtype": "Author"
+    },
+    {
+     "name": "Heyes A",
+     "authtype": "Author"
+    },
+    {
+     "name": "Mitchelmore CL",
+     "authtype": "Author"
+    }
+   ],
+   "title": "Acute toxicity of copper to Galaxea fascicularis and its utility as a candidate standard coral toxicity test species.",
+   "fulljournalname": "Toxicology reports",
+   "articleids": [
+    {
+     "idtype": "pubmed",
+     "idtypen": 1,
+     "value": "43022418"
+    },
+    {
+     "idtype": "pmc",
+     "idtypen": 8,
+     "value": "PMC13756509"
+    },
+    {
+     "idtype": "pmcid",
+     "idtypen": 5,
+     "value": "pmc-id: PMC13756509;"
+    },
+    {
+     "idtype": "doi",
+     "idtypen": 3,
+     "value": "10.1016/j.toxrep.2026.102363"
+    },
+    {
+     "idtype": "pii",
+     "idtypen": 4,
+     "value": "S2214-7500(26)00165-4"
+    }
+   ],
+   "sortpubdate": "2026/10/28 00:00"
+  }
+ }
+}

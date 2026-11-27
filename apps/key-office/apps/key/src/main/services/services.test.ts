@@ -66,6 +66,34 @@ describe("keyed services", () => {
     expect(await keyed.handle("services_test", { id: "scholar-serpapi" })).toMatchObject({ ok: true, remaining: { value: 240 } });
     expect(usage.usage("scholar-serpapi")).toMatchObject({ validity: "valid", remaining: 240 });
   });
+  it("tells a refused Scopus key from one that needs the institution's network", async () => {
+    let status = 401;
+    let els = "AUTHENTICATION_ERROR - Invalid API Key";
+    const fetch = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toContain("/content/search/scopus?");
+      expect((init.headers as Record<string, string>)["X-ELS-APIKey"]).toBe(KEY);
+      return new Response("{}", { status, headers: { "x-els-status": els, "x-ratelimit-remaining": "19990" } });
+    });
+    const { keyed } = await services(fetch as never);
+    await keyed.handle("services_set_key", { id: "elsevier", key: KEY });
+    expect(await keyed.handle("services_test", { id: "elsevier" })).toMatchObject({ ok: false, message: "Elsevier refused this key" });
+    status = 401;
+    els = "AUTHORIZATION_ERROR - The requestor is not authorized";
+    expect(await keyed.handle("services_test", { id: "elsevier" })).toMatchObject({ ok: true });
+    status = 200;
+    els = "OK";
+    expect(await keyed.handle("services_test", { id: "elsevier" })).toMatchObject({ ok: true, remaining: { value: 19990, label: "requests left this week" } });
+  });
+  it("tests a Web of Science Starter key with one record", async () => {
+    const fetch = vi.fn(async (url: string, init: RequestInit) => {
+      expect(url).toContain("/apis/wos-starter/v1/documents?");
+      expect((init.headers as Record<string, string>)["X-ApiKey"]).toBe(KEY);
+      return json({ metadata: { total: 1, page: 1, limit: 1 }, hits: [] });
+    });
+    const { keyed } = await services(fetch as never);
+    await keyed.handle("services_set_key", { id: "clarivate-wos", key: KEY });
+    expect(await keyed.handle("services_test", { id: "clarivate-wos" })).toMatchObject({ ok: true, message: "Web of Science accepted the key" });
+  });
   it("folds a host's counts into the service", async () => {
     const { keyed, usage } = await services();
     keyed.recordHost("openalex", { requests: 3, failures: 1, lastError: "OpenAlex is limiting requests with this key", remaining: 12 });

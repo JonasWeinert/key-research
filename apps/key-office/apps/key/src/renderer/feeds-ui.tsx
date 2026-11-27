@@ -8,7 +8,7 @@ import { Icon, type IconName } from "./icons";
 import { toast } from "./item-actions";
 import type { Invoke } from "./library-api";
 
-export type FeedKind = "rss" | "openalex" | "author" | "venue" | "topic" | "citing";
+export type FeedKind = "rss" | "openalex" | "author" | "venue" | "topic" | "citing" | "pubmed";
 export interface Subscription {
   id: string;
   kind: FeedKind;
@@ -23,6 +23,10 @@ export interface Subscription {
   lastError?: string | null;
   unread: number;
   total: number;
+  /** When it last brought something new. */
+  lastItemAt?: number | null;
+  /** What a failure means: limited | unreachable | gone | blocked | not-a-feed | nothing-to-follow | other. */
+  problem?: string | null;
 }
 /** A work as web search describes it. */
 export interface FeedWork {
@@ -51,6 +55,8 @@ export interface FeedItem {
   inLibrary?: string | null;
   subscriptions: string[];
   subscriptionIds: string[];
+  /** Saved by the user from somewhere (not brought by a feed). */
+  origin?: { kind: string; label?: string | null; query?: string | null; sourceId?: string | null; url?: string | null; at?: number } | null;
 }
 export interface ItemPage {
   items: FeedItem[];
@@ -67,7 +73,19 @@ export const KIND_LABEL: Record<FeedKind, string> = {
   venue: "Journal",
   topic: "Topic",
   citing: "Citation alert",
+  pubmed: "PubMed search",
 };
+/** Headings for the list of what is followed, grouped by kind. */
+export const KIND_GROUP: Record<FeedKind, string> = {
+  venue: "Journals",
+  author: "People",
+  topic: "Topics",
+  openalex: "Search alerts",
+  pubmed: "PubMed searches",
+  citing: "Citation alerts",
+  rss: "Feeds and listings",
+};
+export const KIND_ORDER: FeedKind[] = ["venue", "author", "topic", "openalex", "pubmed", "citing", "rss"];
 export const FEED_KIND_ICON: Record<FeedKind, IconName> = {
   rss: "feed",
   openalex: "search",
@@ -75,7 +93,27 @@ export const FEED_KIND_ICON: Record<FeedKind, IconName> = {
   venue: "journal",
   topic: "topic",
   citing: "quote",
+  pubmed: "search",
 };
+
+/** Why an item is in the Inbox, in a sentence. */
+export function whyHere(item: FeedItem, subscriptions: Subscription[]) {
+  if (item.origin) return `You saved it from ${item.origin.label || "elsewhere in Key"}${item.origin.at ? ` on ${new Date(item.origin.at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}.`;
+  const subs = item.subscriptionIds.map((id) => subscriptions.find((s) => s.id === id)).filter((s): s is Subscription => !!s);
+  if (!subs.length) return item.subscriptions.length ? `It came from ${item.subscriptions.join(", ")}.` : "";
+  const first = subs[0];
+  const reason: Record<FeedKind, string> = {
+    venue: `It is new in ${first.title}, a journal you follow`,
+    author: `It is new work by ${first.title}, whom you follow`,
+    topic: `It is new in the topic ${first.title}, which you follow`,
+    openalex: `It is a new result for your search alert “${first.title}”`,
+    pubmed: `It is a new result for your ${first.title}`,
+    citing: `It cites works in ${first.title.replace(/^Citing /, "")}`,
+    rss: `It is new in the feed ${first.title}`,
+  };
+  const more = subs.length > 1 ? `; ${subs.length - 1} more of what you follow found it too` : "";
+  return `${reason[first.kind]}${more}.`;
+}
 
 /** Something about feeds changed (a follow, triage): counts and lists read again. */
 export const feedsChanged = () => window.dispatchEvent(new Event("key:feeds-changed"));
@@ -222,8 +260,24 @@ export function FollowButton({
 
 /** "3 hours", "1 day": a check interval. */
 export function intervalLabel(minutes: number) {
-  if (minutes % 1440 === 0) return minutes === 1440 ? "Daily" : minutes === 10080 ? "Weekly" : `Every ${minutes / 1440} days`;
-  if (minutes % 60 === 0) return minutes === 60 ? "Hourly" : `Every ${minutes / 60} hours`;
+  if (minutes % 1440 === 0) return minutes === 1440 ? "Once a day" : minutes === 10080 ? "Once a week" : `Every ${minutes / 1440} days`;
+  if (minutes % 60 === 0) return minutes === 60 ? "Every hour" : `Every ${minutes / 60} hours`;
   return `Every ${minutes} minutes`;
+}
+/** "about once a day": a check interval in a sentence. */
+export const intervalPhrase = (minutes: number) => `about ${intervalLabel(minutes).toLowerCase()}`;
+/** The interval a new subscription starts with: feeds change more often than catalogues. */
+export const defaultInterval = (kind: FeedKind) => (kind === "rss" ? 180 : 720);
+
+/** "About 4 new items a week": how often something posts, from a preview. */
+export function cadence(preview: { perWeek?: number | null; perYear?: number | null; count?: number; items: unknown[] }, noun = "articles") {
+  const week = preview.perWeek;
+  if (week == null) return preview.items.length ? "" : `No new ${noun} in the last year`;
+  if (week >= 1.5) return `About ${Math.round(week)} new ${noun} a week`;
+  if (week >= 0.6) return `About one new item a week`;
+  const month = week * 52 / 12;
+  if (month >= 1.5) return `About ${Math.round(month)} new ${noun} a month`;
+  const year = preview.perYear ?? Math.round(week * 52);
+  return year ? `About ${year} new ${noun} a year` : `No new ${noun} in the last year`;
 }
 export const INTERVALS = [60, 180, 360, 720, 1440, 10080];

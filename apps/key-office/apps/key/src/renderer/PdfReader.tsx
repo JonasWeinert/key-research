@@ -251,6 +251,7 @@ export default function PdfReader() {
         workspaceId && bridge().addFromSource
           ? async (work) => bridge().addFromSource!({ origin: { workspaceId, sourceId: await sourceId().catch(() => null) }, work: { ...work } })
           : undefined,
+      origin: async () => ({ sourceId: await sourceId(), kind: "reader" }),
     });
   }, [document]);
   // A highlight's info card: the notes and canvases that use it, each opening there.

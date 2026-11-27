@@ -89,6 +89,7 @@ export function useWebReferences({
         open: (id) => void bridge().tabAction("open-source-page", { workspaceId, sourceId: id }),
         collections: () => invoke<Source | null>("store_source", { id: sourceId }, workspaceId).then((s) => s?.collections ?? []),
         addFrom: (work) => addFromSource(invoke, { workspaceId, sourceId }, work),
+        origin: async () => ({ sourceId, kind: "page" }),
       }),
     [invoke, workspaceId, sourceId],
   );

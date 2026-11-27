@@ -31,6 +31,8 @@ mod reference_worker;
 mod web_search;
 #[path = "feeds/mod.rs"]
 mod feeds;
+#[path = "databases.rs"]
+mod databases;
 #[path = "models_commands.rs"]
 mod models_commands;
 use crate::ipc;
@@ -2928,6 +2930,8 @@ pub struct Host {
     web: Arc<web_search::WebSearch>,
     /// Feeds and alerts behind the Inbox (feeds/).
     feeds: feeds::Feeds,
+    /// Database search through declarative connectors (databases.rs).
+    databases: Arc<databases::Databases>,
 }
 impl Host {
     pub fn new(root: PathBuf) -> Result<Self, String> {
@@ -2938,6 +2942,7 @@ impl Host {
         let library = library_store::Library::open(&root, native.clone(), search.library().clone())?;
         let web: Arc<web_search::WebSearch> = Arc::default();
         let feeds = feeds::Feeds::new(library.store.clone(), web.clone());
+        let root_for_databases = root.clone();
         feeds.start();
         let host = Self {
             root,
@@ -2955,7 +2960,9 @@ impl Host {
             sessions: Arc::default(),
             web,
             feeds,
+            databases: Arc::new(databases::Databases::new(root_for_databases)),
         };
+        host.databases.start_background_checks();
         scholarly_resolver::start_retry_worker(host.search.library().clone());
         Ok(host)
     }
@@ -3076,6 +3083,14 @@ impl Host {
                 self.web.cancel(&id);
                 json_output(true)
             })),
+            "db_search_cancel" => Some(arg::<String>(args, "runId").and_then(|id| {
+                self.databases.cancel_run(&id);
+                json_output(true)
+            })),
+            "db_estimate_cancel" => Some(arg::<String>(args, "requestId").and_then(|id| {
+                self.databases.cancel_estimate(&id);
+                json_output(true)
+            })),
             "library_prioritize" => {
                 Some(arg(args, "hash").and_then(|hash| json_output(library_prioritize(hash))))
             }
@@ -3106,8 +3121,13 @@ impl Host {
             return tokio::task::block_in_place(|| web_search::dispatch(&self.web, &library, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
-        if command.starts_with("feeds_") {
+        if command.starts_with("feeds_") || command.starts_with("inbox_") {
             return tokio::task::block_in_place(|| feeds::dispatch(&self.feeds, command, args))
+                .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
+        }
+        if command.starts_with("db_") {
+            let library = web_search::StoreLibrary { library: &self.library, root: &self.root };
+            return tokio::task::block_in_place(|| self.databases.dispatch(&self.web, &library, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
         if let Some(result) = self.library_dispatch(command, args).await {

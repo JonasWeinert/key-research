@@ -1,0 +1,27 @@
+[package]
+name = "key-connectors"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Declarative, signed connectors for scholarly database search: spec format, query translation, request plans, extraction, bundles"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+url.workspace = true
+regex = "1.13"
+quick-xml = "0.38"
+base64 = "0.22"
+unicode-normalization = "0.1.25"
+# BSD-3-Clause; already in the host's dependency tree.
+ed25519-dalek = { version = "2.2", features = ["std", "zeroize", "fast"] }
+key-store = { path = "../key-store" }
+key-safe-http = { path = "../key-safe-http" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "key-connectors"
+path = "src/bin/key-connectors.rs"

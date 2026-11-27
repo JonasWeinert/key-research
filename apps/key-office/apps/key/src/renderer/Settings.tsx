@@ -235,7 +235,7 @@ export default function Settings({
       {section === "web" && (
         <>
           <WebSearchSettings invoke={invoke} settings={settings} onSettings={onSettings} />
-          <BrowserSettings />
+          <BrowserSettings settings={settings} onSettings={onSettings} />
         </>
       )}
       {section === "services" && <ServiceKeys invoke={invoke} />}

@@ -40,13 +40,19 @@ export interface AppSettings {
   citationLocale: string
   /** What Key shows when it opens: the workspaces window, last time's windows, or the last workspace. */
   openAtLaunch: OpenAtLaunch
+  /** Say in the browser bar when a page waits for a passkey Key's browser cannot offer. */
+  signInNotice: boolean
+  /** The browser passkey sign-ins are finished in: the system's default, or one Key can read. */
+  signInBrowser: SignInBrowser
 }
+export type SignInBrowser = 'default' | 'chrome' | 'edge' | 'brave' | 'arc' | 'vivaldi' | 'chromium' | 'firefox' | 'safari'
+const SIGN_IN_BROWSERS: SignInBrowser[] = ['default', 'chrome', 'edge', 'brave', 'arc', 'vivaldi', 'chromium', 'firefox', 'safari']
 export type OpenAtLaunch = 'workspaces' | 'restore' | 'last'
 export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces' }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default' }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -91,6 +97,8 @@ function sanitize(input: AppSettings): AppSettings {
     findPdfOnAdd: input.findPdfOnAdd === true,
     citationStyle: typeof input.citationStyle === 'string' && /^[A-Za-z0-9._-]{1,200}$/.test(input.citationStyle) ? input.citationStyle : 'apa',
     openAtLaunch: (['workspaces', 'restore', 'last'] as const).includes(input.openAtLaunch) ? input.openAtLaunch : 'workspaces',
+    signInNotice: input.signInNotice !== false,
+    signInBrowser: SIGN_IN_BROWSERS.includes(input.signInBrowser) ? input.signInBrowser : 'default',
     citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
   }
 }

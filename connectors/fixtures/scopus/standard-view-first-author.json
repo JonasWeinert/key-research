@@ -1,0 +1,19 @@
+{
+  "recorded": "2026-11-26",
+  "note": "Synthetic answer in the documented response shape (no key was available when this connector was written). Replace with a real recording: see the connector's guide and connectors/README.",
+  "synthetic": true,
+  "exchanges": [
+    {
+      "method": "GET",
+      "url": "https://api.elsevier.com/content/search/scopus?count=5&cursor=*&date=1800-2100&query=TITLE%28%22group+lending%22%29&view=STANDARD",
+      "status": 200,
+      "headers": {
+        "content-type": "application/json;charset=UTF-8",
+        "x-ratelimit-limit": "20000",
+        "x-ratelimit-remaining": "19990",
+        "x-els-status": "OK"
+      },
+      "body": "{\"search-results\": {\"opensearch:totalResults\": \"2\", \"opensearch:startIndex\": \"0\", \"opensearch:itemsPerPage\": \"2\", \"opensearch:Query\": {\"@role\": \"request\", \"@searchTerms\": \"\", \"@startPage\": \"0\"}, \"cursor\": {\"@current\": \"*\", \"@next\": \"AoJ4synthetic\"}, \"link\": [], \"entry\": [{\"@_fa\": \"true\", \"link\": [{\"@_fa\": \"true\", \"@ref\": \"self\", \"@href\": \"https://api.elsevier.com/content/abstract/scopus_id/85000000001\"}, {\"@_fa\": \"true\", \"@ref\": \"scopus\", \"@href\": \"https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=85000000001&origin=inward\"}], \"prism:url\": \"https://api.elsevier.com/content/abstract/scopus_id/85000000001\", \"dc:identifier\": \"SCOPUS_ID:85000000001\", \"eid\": \"2-s2.0-85000000001\", \"dc:title\": \"Microfinance and household welfare: a randomised evaluation\", \"dc:creator\": \"Example A.\", \"prism:publicationName\": \"Journal of Example Economics\", \"prism:issn\": \"05550555\", \"prism:volume\": \"12\", \"prism:pageRange\": \"1-20\", \"prism:coverDate\": \"2018-03-01\", \"prism:coverDisplayDate\": \"March 2018\", \"prism:doi\": \"10.5555/example.2018.1\", \"citedby-count\": \"3\", \"affiliation\": [{\"@_fa\": \"true\", \"affilname\": \"Example University\", \"affiliation-city\": \"Example City\", \"affiliation-country\": \"Kenya\"}], \"prism:aggregationType\": \"Journal\", \"subtype\": \"ar\", \"subtypeDescription\": \"Article\", \"source-id\": \"55555\", \"openaccess\": \"0\", \"openaccessFlag\": false}, {\"@_fa\": \"true\", \"link\": [{\"@_fa\": \"true\", \"@ref\": \"self\", \"@href\": \"https://api.elsevier.com/content/abstract/scopus_id/85000000002\"}, {\"@_fa\": \"true\", \"@ref\": \"scopus\", \"@href\": \"https://www.scopus.com/inward/record.uri?partnerID=HzOxMe3b&scp=85000000002&origin=inward\"}], \"prism:url\": \"https://api.elsevier.com/content/abstract/scopus_id/85000000002\", \"dc:identifier\": \"SCOPUS_ID:85000000002\", \"eid\": \"2-s2.0-85000000002\", \"dc:title\": \"Group lending, repayment and random assignment of loan officers\", \"dc:creator\": \"Example A.\", \"prism:publicationName\": \"Journal of Example Economics\", \"prism:issn\": \"05550555\", \"prism:volume\": \"12\", \"prism:pageRange\": \"1-20\", \"prism:coverDate\": \"2016-03-01\", \"prism:coverDisplayDate\": \"March 2016\", \"prism:doi\": \"10.5555/example.2016.2\", \"citedby-count\": \"3\", \"affiliation\": [{\"@_fa\": \"true\", \"affilname\": \"Example University\", \"affiliation-city\": \"Example City\", \"affiliation-country\": \"Kenya\"}], \"prism:aggregationType\": \"Journal\", \"subtype\": \"ar\", \"subtypeDescription\": \"Article\", \"source-id\": \"55555\", \"openaccess\": \"0\", \"openaccessFlag\": false}]}}"
+    }
+  ]
+}

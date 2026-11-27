@@ -1,0 +1,121 @@
+{
+  "$schema": "../schema/connector-1.schema.json",
+  "format": 1,
+  "id": "pubmed",
+  "version": "1.0.0",
+  "minEngine": "1.0.0",
+  "name": "PubMed",
+  "description": "Biomedical and life-science literature from MEDLINE, PubMed Central and online books, searched through NCBI's E-utilities.",
+  "homepage": "https://pubmed.ncbi.nlm.nih.gov/",
+  "category": "biomedical",
+  "coverage": "More than 36 million citations, mostly 1946 onwards; MeSH indexing for MEDLINE journals.",
+  "terms": "Free to use. NCBI asks for at most 3 requests per second without an API key and 10 with one, and for a tool name and contact address. Abstracts may be copyrighted by their publishers.",
+  "kind": "api",
+  "guide": {
+    "summary": "The main database for medicine, public health, nursing and the life sciences.",
+    "coverage": "Journal articles from MEDLINE and PubMed Central, some books and preprints. Most records have abstracts; MEDLINE records are indexed with MeSH subject headings.",
+    "fields": "Title/abstract searches the title and abstract; Subject searches MeSH headings (and their narrower terms); Keywords searches the author keywords.",
+    "limits": ["One query returns at most 10,000 records; very large result sets need narrower years.", "Proximity search works in title/abstract only."],
+    "credentials": "An NCBI API key is optional. It lets Key ask faster. Create one under Account settings at ncbi.nlm.nih.gov.",
+    "tips": ["Use Subject with a MeSH heading for indexed concepts and Title/abstract for newer or unindexed wording."]
+  },
+  "credentials": [
+    { "id": "api_key", "label": "NCBI API key", "required": false, "secret": "ncbi", "help": "Optional. Raises the limit from 3 to 10 requests per second.", "url": "https://account.ncbi.nlm.nih.gov/settings/" }
+  ],
+  "hosts": ["eutils.ncbi.nlm.nih.gov"],
+  "politeness": { "minIntervalMs": 400, "minIntervalMsWithKey": 120, "retries": 4, "backoffMs": 2000, "maxPages": 60, "maxResponseBytes": 33554432 },
+  "capabilities": {
+    "fields": ["all", "title", "title_abstract", "abstract", "author", "journal", "keywords", "subject", "affiliation"],
+    "phrase": true, "truncation": true, "proximity": true, "dates": "year",
+    "filters": ["types", "languages"],
+    "maxResults": 10000,
+    "sort": ["relevance", "date"],
+    "exportFields": ["title", "authors", "year", "date", "venue", "abstract", "doi", "pmid", "pmcid", "keywords", "language", "type"]
+  },
+  "options": [
+    { "id": "pageSize", "label": "Records per request", "default": "200", "choices": [ { "value": "200", "label": "200" }, { "value": "10", "label": "10" } ] }
+  ],
+  "query": {
+    "mode": "native",
+    "fields": {
+      "all": "{q}[All Fields]", "title": "{q}[ti]", "title_abstract": "{q}[tiab]", "abstract": "{q}[ab]", "author": "{q}[au]",
+      "journal": "{q}[ta]", "keywords": "{q}[ot]", "subject": "{q}[mh]", "affiliation": "{q}[ad]"
+    },
+    "defaultField": "all",
+    "phrase": "\"{text}\"",
+    "words": "{text}",
+    "truncate": "{text}*",
+    "proximity": "\"{text}\"[tiab:~{n}]",
+    "and": " AND ", "or": " OR ", "not": " NOT ", "group": "({q})",
+    "escape": [ { "find": "\"", "with": "" }, { "find": "[", "with": " " }, { "find": "]", "with": " " } ],
+    "dates": { "template": "{q} AND ({from}:{to}[dp])", "from": "{yearFrom}", "to": "{yearTo}", "openFrom": "1800", "openTo": "3000" },
+    "filters": {
+      "types": { "join": " OR ", "template": "{q} AND ({v})", "values": { "article": "journal article[pt]", "review": "review[pt]", "trial": "randomized controlled trial[pt]", "preprint": "preprint[pt]", "book": "book[pt]" } },
+      "languages": { "join": " OR ", "template": "{q} AND ({v})", "values": { "en": "english[la]", "de": "german[la]", "fr": "french[la]", "es": "spanish[la]", "pt": "portuguese[la]", "it": "italian[la]", "zh": "chinese[la]", "ja": "japanese[la]" } }
+    },
+    "maxLength": 3500,
+    "chunk": "or-split",
+    "maxChunks": 20
+  },
+  "search": {
+    "adapter": "ncbi-history",
+    "request": {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+      "params": { "db": "pubmed", "term": "{query}", "usehistory": "y", "retmode": "json", "retmax": "0", "tool": "key", "email": "{mailto?}", "api_key": "{cred.api_key?}" },
+      "format": "json"
+    },
+    "pageSize": "{opt.pageSize}",
+    "total": "$.esearchresult.count",
+    "detail": {
+      "request": {
+        "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+        "params": { "db": "pubmed", "query_key": "{queryKey}", "WebEnv": "{webenv}", "retstart": "{offset}", "retmax": "{pageSize}", "retmode": "xml", "tool": "key", "email": "{mailto?}", "api_key": "{cred.api_key?}" },
+        "format": "xml"
+      },
+      "items": "//PubmedArticle",
+      "record": {
+        "sourceId": "MedlineCitation/PMID",
+        "pmid": "MedlineCitation/PMID",
+        "title": { "path": "MedlineCitation/Article/ArticleTitle", "type": "text" },
+        "authors": { "path": "MedlineCitation/Article/AuthorList/Author", "all": true, "name": { "family": "LastName", "given": "ForeName", "literal": "CollectiveName" } },
+        "year": { "first": ["MedlineCitation/Article/Journal/JournalIssue/PubDate/Year", "MedlineCitation/Article/Journal/JournalIssue/PubDate/MedlineDate", "MedlineCitation/Article/ArticleDate/Year"], "type": "year" },
+        "date": { "first": ["MedlineCitation/Article/ArticleDate", "MedlineCitation/Article/Journal/JournalIssue/PubDate"], "type": "date" },
+        "venue": { "path": "MedlineCitation/Article/Journal/Title", "type": "text" },
+        "issn": "MedlineCitation/Article/Journal/ISSN",
+        "abstract": { "path": "MedlineCitation/Article/Abstract/AbstractText", "all": true, "join": " ", "type": "text" },
+        "doi": { "first": ["PubmedData/ArticleIdList/ArticleId[@IdType='doi']", "MedlineCitation/Article/ELocationID[@EIdType='doi']"], "type": "doi" },
+        "pmcid": "PubmedData/ArticleIdList/ArticleId[@IdType='pmc']",
+        "url": { "path": "MedlineCitation/PMID", "template": "https://pubmed.ncbi.nlm.nih.gov/{value}/" },
+        "type": { "path": "MedlineCitation/Article/PublicationTypeList/PublicationType", "regex": "^(Preprint)$", "map": { "Preprint": "preprint" }, "default": "article" },
+        "language": { "path": "MedlineCitation/Article/Language", "type": "language" },
+        "keywords": { "path": "MedlineCitation/KeywordList/Keyword", "all": true, "type": "text" },
+        "extras": { "fields": {
+          "mesh": { "path": "MedlineCitation/MeshHeadingList/MeshHeading/DescriptorName", "all": true },
+          "publicationTypes": { "path": "MedlineCitation/Article/PublicationTypeList/PublicationType", "all": true }
+        } }
+      }
+    }
+  },
+  "lookup": {
+    "request": {
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+      "params": { "db": "pubmed", "id": "{id}", "retmode": "xml", "tool": "key", "email": "{mailto?}", "api_key": "{cred.api_key?}" },
+      "format": "xml"
+    },
+    "items": "//PubmedArticle"
+  },
+  "tests": [
+    {
+      "name": "phrase-in-title-abstract",
+      "query": { "concepts": [ { "terms": [ { "text": "vaccine hesitancy", "mode": "phrase", "field": "title_abstract" } ] }, { "terms": [ { "text": "nurses", "field": "title_abstract" } ] } ], "filters": { "yearFrom": 2021, "yearTo": 2021 } },
+      "native": "\"vaccine hesitancy\"[tiab] AND nurses[tiab] AND (2021:2021[dp])",
+      "options": { "pageSize": "10" },
+      "minTotal": 50,
+      "minResults": 10,
+      "pages": 1,
+      "fields": ["title", "authors", "year", "pmid", "venue"],
+      "mustFind": [ { "sourceId": "35136476" } ],
+      "fixture": "phrase-in-title-abstract"
+    }
+  ]
+}

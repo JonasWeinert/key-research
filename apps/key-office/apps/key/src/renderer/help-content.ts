@@ -210,6 +210,18 @@ export const HELP = {
   "browser.proxy.signin": hint("Loaded directly, this page asked you to sign in, so Key opened it through your library’s proxy."),
   "browser.proxy.network": hint("On this network, this site needs your library’s proxy, so Key opened it through the proxy."),
   "browser.proxy.suggest": hint("This page asks you to sign in or buy access. Your library’s proxy may let you in."),
+  "settings.web.signin": explain(
+    "Passkeys and sign-ins",
+    [
+      "A passkey replaces a password: your phone, your Mac or a security key proves it is you, with your fingerprint, face or PIN. Many universities now ask for one when you sign in.",
+      "Key’s browser can use a USB or NFC security key. It can’t show the QR code for signing in with your phone, or reach passkeys saved in iCloud Keychain or a password manager: macOS offers those only to web browsers Apple has approved. A signed copy of Key can also keep passkeys on this Mac, with Touch ID.",
+      "When a sign-in waits for a passkey, the bar says so. Continue in your browser opens the page there; once you are signed in, Bring sign-in over copies the cookies of just the sites that sign-in went through. Key lists them and asks first.",
+    ],
+    { privacy: "Only the cookies of the listed sites are read, from a copy of your browser’s cookie file. Nothing is sent anywhere, and nothing in your browser changes." },
+  ),
+  "settings.web.signin-browser": hint("Where Continue in your browser opens the sign-in, and whose cookies Bring sign-in over reads."),
+  "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or continue in your browser."),
+  "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
 
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
   "settings.services.intro": hint("Optional keys that give Key a higher allowance at some scholarly services. Key works without them."),
@@ -248,6 +260,55 @@ export const HELP = {
     {
       steps: ["Open the Semantic Scholar API page.", "Fill in the key request form; approval usually takes a few days by email.", "Paste the key here and press Save."],
       links: [{ label: "Request a key at semanticscholar.org", url: "https://www.semanticscholar.org/product/api#api-key-form" }],
+    },
+  ),
+  "settings.services.ncbi": explain(
+    "A PubMed (NCBI) key",
+    ["PubMed is free and works without a key. A free NCBI key lets Key send 10 requests a second instead of 3, so large PubMed searches finish sooner."],
+    {
+      steps: ["Sign in at ncbi.nlm.nih.gov (a free NCBI account, or your institution's login).", "Open Account settings and find API Key Management.", "Create a key, paste it here and press Save."],
+      links: [{ label: "Get a key at ncbi.nlm.nih.gov", url: "https://account.ncbi.nlm.nih.gov/settings/" }],
+    },
+  ),
+  "settings.services.elsevier": explain(
+    "A Scopus key",
+    [
+      "Scopus is Elsevier's subscription database. With a free Elsevier API key, Key can search it for you, but only if your institution subscribes to Scopus: from the institution's network, or anywhere with an institutional token.",
+      "Each key may make 20,000 search requests a week. A large search with abstracts uses one request per 25 records.",
+    ],
+    {
+      steps: ["Open dev.elsevier.com and sign in with your institutional e-mail address.", "Choose My API Key, then Create API Key, give it a label and accept the API terms.", "Copy the key, paste it here and press Save. Testing it uses one request."],
+      links: [{ label: "Get a key at dev.elsevier.com", url: "https://dev.elsevier.com/apikey/manage" }],
+      privacy: "Your search goes to Elsevier with your key.",
+    },
+  ),
+  "settings.services.elsevier-insttoken": explain(
+    "A Scopus institutional token",
+    ["An institutional token lets your Scopus key work outside your institution's network. Only your library can request one from Elsevier, and it must be kept private. You do not need it on campus."],
+    {
+      steps: ["Ask your library whether they can give you an Elsevier institutional token for API use.", "Paste it here and press Save. Key sends it with your Scopus key on the next search."],
+      links: [{ label: "Elsevier API support", url: "https://dev.elsevier.com/support.html" }],
+    },
+  ),
+  "settings.services.clarivate-wos": explain(
+    "A Web of Science key",
+    [
+      "Key searches Web of Science through Clarivate's Web of Science Starter API. It returns titles, authors, journals and DOIs, but no abstracts.",
+      "The free trial plan allows 50 requests a day (about 2,500 records). If your institution subscribes to Web of Science, choose the institutional plan for 5,000 a day.",
+    ],
+    {
+      steps: ["Open developer.clarivate.com and create an account.", "Open Web of Science Starter API and subscribe to a plan.", "Register an application, copy its API key, paste it here and press Save. Testing it uses one request."],
+      links: [{ label: "Get a key at developer.clarivate.com", url: "https://developer.clarivate.com/apis/wos-starter" }],
+      privacy: "Your search goes to Clarivate with your key.",
+    },
+  ),
+  "settings.services.clarivate-wos-expanded": explain(
+    "A Web of Science Expanded key",
+    ["The Expanded API returns full Web of Science records with abstracts. Clarivate issues its keys to institutions with an API licence, so ask your library or research office; a Starter key does not work here."],
+    {
+      steps: ["Ask your library whether your institution licenses the Web of Science Expanded API.", "Paste the key they give you here and press Save."],
+      links: [{ label: "About the Expanded API", url: "https://developer.clarivate.com/apis/wos" }],
+      privacy: "Your search goes to Clarivate with your key.",
     },
   ),
 
@@ -439,41 +500,53 @@ export const HELP = {
     ],
     { privacy: "Key asks each website or OpenAlex for its newest items. Nothing about your library is sent." },
   ),
-  "feeds.address": explain(
-    "Finding a feed’s address",
-    [
-      "Paste the address of a journal’s page, a blog or an arXiv listing. If the page links to a feed, Key finds it for you.",
-    ],
-    { example: "https://www.nature.com/nature.rss\nhttps://arxiv.org/rss/cs.CL\nhttps://journals.plos.org/plosone/" },
-  ),
   "feeds.kinds": explain(
     "Kinds of alerts",
     [
-      "Feed: a journal, arXiv listing or blog by its address. Author, Journal, Topic: new works found in OpenAlex. Search alert: new results for a web search. Citation alert: new works that cite a source.",
-      "Start an alert with Follow on a person’s, journal’s or topic’s page, or Alert me on a web search, a source or a collection.",
+      "Journals, people and topics: new works, found in OpenAlex, a free catalogue of scholarly works. Search alerts: new results for words, in OpenAlex or PubMed. Citation alerts: new works that cite your sources.",
+      "Feeds and listings: a journal’s own table of contents, an arXiv listing or a blog, read from the site itself.",
+      "Search for any of them above, or press Follow on a person’s, journal’s or topic’s page.",
     ],
   ),
-  "feeds.interval": hint("How often Key checks, while it is open. Daily suits most journals."),
-  "feeds.intro": hint("New articles from journals, authors, topics and searches you follow arrive in your Inbox."),
+  "feeds.interval": hint("How often Key checks, while it is open. Once a day suits most journals."),
+  "feeds.intro": hint("New articles from journals, people, topics and searches you follow arrive in your Inbox."),
+  "feeds.follow-search": hint("Type a journal’s name, a person, a topic or any words. You can also paste a journal’s or blog’s web address."),
+  "feeds.from-library": explain("Suggestions from your library", ["These are the journals, people and topics your library has the most sources from. Choose one to see what following it would bring."]),
+  "feeds.journal-feed": hint("This journal publishes its own table of contents. It often lists new articles a few days before OpenAlex does."),
+  "feeds.preview-empty": hint("Nothing new in the last year. Following it still works: new items will arrive when there are some."),
+  "feeds.auto-collection": hint("New items also go into this collection on their own, as well as the Inbox. Off unless you choose one."),
+  "feeds.citing": hint("New works that cite sources in a collection, or anywhere in your library."),
+  "feeds.arxiv": hint("arXiv shares new preprints in each subject every weekday."),
+  "feeds.opml": hint("Bring over the journals and blogs you follow in Feedly, NetNewsWire or another reader."),
+  "feeds.when": hint("Key checks only while it is open, not while the Mac is offline or saving power. Nothing goes into your library unless you add it."),
+  "feeds.problem.limited": hint("The site asked Key to slow down. Key waits and tries again on its own; nothing to do."),
+  "feeds.problem.unreachable": hint("Key could not reach the site. Check that you are online; Key tries again later on its own."),
+  "feeds.problem.gone": hint("The site no longer offers this feed. Remove it, and search for the journal by name to follow it again."),
+  "feeds.problem.blocked": hint("The site refused Key. Some publishers block feed readers; follow the journal by name instead."),
+  "feeds.problem.not-a-feed": hint("This address shows a web page, not a feed. Search for the journal by name, or paste its feed’s address."),
+  "feeds.problem.nothing-to-follow": hint("There is nothing to look for yet, for example no sources with an OpenAlex record. Key tries again later."),
+  "feeds.problem.other": hint("The last check failed. Try again; if it keeps failing, remove it and follow it again."),
+  "inbox.saved-by-you": hint("Works you saved from a search, a reference list or a page wait here until you add them to the library or dismiss them."),
   "feeds.opml-what": explain("OPML files", ["OPML is the file feed readers such as Feedly, NetNewsWire or Inoreader use to move a list of feeds. Export one from your old reader and import it here, or export Key’s list to use elsewhere."]),
   "feeds.keeping": hint("Old Inbox items are cleared after this long. Items you saved or added to the library always stay."),
   "inbox.triage": explain(
     "Going through the Inbox",
     [
-      "Each item is a new work from something you follow. Add puts it in your library, Save keeps it here for later, and Dismiss removes it and it will not come back from the same feed.",
-      "You can do it all from the keyboard.",
+      "Each item is a new work from something you follow, or one you saved yourself with Add to Inbox. Add puts it in your library, Save keeps it here for later, and Dismiss removes it and it will not come back from the same feed.",
+      "Select several with x or ⇧-click to act on them at once. You can do it all from the keyboard.",
     ],
-    { steps: ["j or ↓ next, k or ↑ previous", "a add to library, s save, e dismiss", "u read or unread, o open its page beside the Inbox"] },
+    { steps: ["j or ↓ next, k or ↑ previous", "a add to library, s save, e dismiss", "u read or unread, o open its page beside the Inbox", "x select, then a, s, e or u act on every selected item"] },
   ),
   "empty.inbox": empty(
     "Nothing followed yet",
     "The Inbox collects new articles from journals, authors, topics and searches you follow.",
-    "Add a feed by its address, or press Follow on an author’s, journal’s or topic’s page.",
+    "Follow a journal, person or topic by name, or choose Add to Inbox on a search result or reference to keep it for later.",
   ),
   "empty.inbox-caught-up": empty("All caught up", "You have gone through every new item.", "New items appear here when your feeds and alerts bring them."),
-  "empty.inbox-saved": empty("Nothing saved", "Items you keep for later collect here.", "Press s on an item, or choose Save, to keep it."),
+  "empty.inbox-saved": empty("Nothing saved", "Works you save from searches and reference lists, and items you keep, collect here.", "Press s on an item, or Add to Inbox on a search result or reference."),
   "empty.inbox-none": empty("No items yet", "Items your feeds and alerts bring in collect here.", "Press Check now, or wait for the next check while Key is open."),
-  "empty.feeds": empty("Not following anything", "Feeds and alerts you follow are listed here.", "Paste a journal’s, blog’s or arXiv listing’s address above."),
+  "empty.feeds": empty("Not following anything", "Journals, people, topics and searches you follow are listed here.", "Search above for a journal, a person or a topic to follow."),
+  "empty.follow-results": empty("Nothing found", "No journal, person or topic matches these words.", "Try fewer words, or follow them as a search alert below."),
 
   // ── Import, export, duplicates, metadata ────────────────────────────────────────────
   "import.formats": explain(
@@ -561,6 +634,16 @@ export const HELP = {
     { example: "sleep memory 2018-2022\n10.1038/nature12373\n\"a quoted title\"" },
   ),
 
+  "search.filters": explain(
+    "Typing filters",
+    [
+      "Any field can be typed as a filter: the field's name, a colon and a value. Your own properties work by their name; put names with spaces in quotes.",
+      "Compare with > and <, give a range with two dots, leave out matches with a minus, and join choices with |. Empty and any find blank or filled fields.",
+      "Key shows what it read as a chip. Nothing applies until you pick it, and words it does not know stay text.",
+    ],
+    { example: "rating>3 added:last-week\n-tag:draft year:2015..2020\n\"reading status\":done has:pdf" },
+  ),
+
   // ── Empty states: library and reader ────────────────────────────────────────────────
   "empty.library": empty("No sources yet", "Sources are the papers, books, web pages, videos and files you collect, read and cite.", "Drop files here, or use the Add menu to import from Zotero or a reference file, or search the web."),
   "empty.results": empty("No matches", "Nothing in this view matches your search or filters.", "Try fewer words, clear a filter, or search the web for works you do not have."),
@@ -579,15 +662,67 @@ export const HELP = {
     { privacy: "Downloading is a plain file download. Nothing about you or your library is sent, and the models never send anything." },
   ),
 
+  // ── Database search ─────────────────────────────────────────────────────────────────
+  "dbsearch.intro": hint("Search PubMed, Scopus, OpenAlex and other databases at once, with one query built from blocks."),
+  "dbsearch.concepts": explain(
+    "Concepts and synonyms",
+    [
+      "Split your question into its main ideas, such as who (teenagers), what (mindfulness) and the outcome (anxiety). Each idea is a concept: a card here.",
+      "In a card, list every word authors use for that idea: synonyms, spellings, older terms. A work needs only one of them (OR). Across cards, a work must match every concept (AND).",
+      "The count on each card is how many works that concept finds alone. The narrowest one limits the search most: add synonyms there to find more.",
+    ],
+    { example: "(teenager* or adolescen*) and (mindfulness or meditation) and (anxiety or depress*)", steps: ["Type a word in a card and press Return", "Paste a list to add one term per line", "Drag a term to another card, or use ⌥← and ⌥→"] },
+  ),
+  "dbsearch.term": explain(
+    "Phrase, endings and fields",
+    [
+      "Phrase finds the words together and in order (“social capital”); All words finds them anywhere in the field.",
+      "Any ending, written child*, also finds child, children and childhood. This is called truncation. Use it on the word stem, not on very short words.",
+      "Search in decides where the words must appear. Title and abstract is the usual choice. Subject headings are labels indexers give each article, such as MeSH in PubMed: they find works whatever words the authors used.",
+      "Near finds a phrase's words a few words apart (“school … attendance”), where the database supports it.",
+    ],
+  ),
+  "dbsearch.exclude": explain("Leaving works out", ["Works that match any term here are removed from every database's results, for example protocols or animal studies.", "Use it sparingly: a word in an abstract can remove a relevant study."]),
+  "dbsearch.translation": explain(
+    "How each database runs the query",
+    [
+      "Each database has its own way of writing a search. Key writes your blocks in each one's syntax, shown here so you can check it, copy it into a protocol, or edit it by hand (marked Customised).",
+      "Counts differ between databases because each covers different journals, and some search abstracts or subject headings that others lack. A warning says when a database cannot do something you asked, and what Key does instead.",
+      "Counts are estimates asked a moment after you stop typing.",
+    ],
+  ),
+  "dbsearch.databases": explain(
+    "Choosing databases",
+    [
+      "A systematic search uses several databases, because none covers everything: PubMed for medicine, Scopus or Web of Science across fields, working-paper series for economics.",
+      "Scopus and Web of Science need an API key from your institution, added in Key Settings › Services & API keys. Manual databases have no API: Key writes the query and opens their search page for you.",
+      "Save a set you use often, and make it this library's default.",
+    ],
+  ),
+  "dbsearch.progress": explain("While a search runs", ["Key asks each database in turn, a page at a time. Some limit how often they may be asked, so Key pauses between requests: this is normal and keeps your access working.", "Works found by more than one database are merged, so you screen each work once. Stop keeps what has arrived; Resume carries on."]),
+  "dbsearch.provenance": explain("Where it was found", ["Each database that returned this work, with its id there, its position in that database's results and when it was fetched. This is the record a systematic review keeps."]),
+  "dbsearch.report": explain(
+    "The search report",
+    [
+      "A systematic review reports every database searched, the date, the exact query and how many records each gave. The PRISMA flow diagram starts from these numbers, and duplicates removed is its next box.",
+      "Export it as Markdown for your methods section, CSV for a spreadsheet of the works, or JSON for the full log.",
+    ],
+  ),
+  "dbsearch.saved": explain("Saved searches", ["A saved search keeps the query and databases. Run it again later to see what is new since the last run, for example before you submit a review."]),
+  "dbsearch.sample": hint("Showing sample data: this build's library has no database search engine yet. Counts and works are made up."),
+  "empty.dbsearch-saved": empty("No saved searches", "Saved searches keep a query and its databases, to run again later.", "Build a query and choose Save search."),
+  "empty.dbsearch-results": empty("No search run yet", "Results of a database search show here, without duplicates.", "Build a query, choose databases and press Search."),
+
   // ── First-use tips ──────────────────────────────────────────────────────────────────
   "tip.cite": tip("Cite what you select", "Cite copies the passage as a quote with its source and page, ready to paste into a note or a document."),
   "tip.citation-hover": tip("Look up a citation", "In the PDF, point at a citation like [12] or (Smith, 2020) to see the work it names, and add it to your library."),
   "tip.note-cite": tip("Cite in notes", "Type @ in a note and start typing a title or author to cite a source from your library."),
   "tip.split-tabs": tip("Read side by side", "Drag a tab to the left or right edge of the window to show two things side by side."),
   "tip.map-legend": tip("Filter the map", "Click a kind in the legend, such as People or Topics, to show only that kind. Click it again to show all."),
-  "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss."),
+  "tip.inbox-keys": tip("Triage with the keyboard", "Press j and k to move, a to add, s to save and e to dismiss. x selects several."),
   "tip.tag-suggestions": tip("Tidy your tags", "Key suggests merging duplicates and nesting related tags. Nothing changes until you apply one."),
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),
+  "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Continue in your browser to use those."),
   "tip.proxies": tip("Library access", "This site can open through your library’s proxy, so you see articles your library pays for."),
 
   // ── Glossary ────────────────────────────────────────────────────────────────────────
@@ -600,6 +735,7 @@ export const HELP = {
   "term.csl": term("Citation style (CSL)", "Rules for how citations and bibliographies look, such as APA or Chicago, written in the Citation Style Language."),
   "term.citekey": term("Citation key", "A short unique name for a reference, such as smith2020sleep, typed in LaTeX or Markdown to cite it."),
   "term.bibtex": term("BibTeX and RIS", "Plain-text files for moving references between apps. BibTeX is used with LaTeX; RIS by EndNote, Mendeley and publishers."),
+  "term.passkey": term("Passkey", "A sign-in without a password: your phone, Mac or security key proves it is you with your fingerprint, face or PIN."),
   "term.proxy": term("Library proxy", "A sign-in service run by your library (EZproxy, OpenAthens) that gives you its journal access off campus."),
   "term.feed": term("Feed (RSS)", "A list a website publishes of its newest articles. Key checks the feeds you follow and fills your Inbox."),
   "term.alert": term("Alert", "Key watching for new works by an author, in a journal or topic, for a search, or citing a source."),
@@ -615,6 +751,10 @@ export const HELP = {
   "term.preprint": term("Preprint", "A version of a paper shared before peer review, for example on arXiv. It may change before it is published."),
   "term.open-access": term("Open access", "A work anyone can read for free, legally. Find PDF looks for these copies."),
   "term.markdown": term("Markdown and Obsidian vault", "Markdown is plain text with light formatting. An Obsidian vault is a folder of such files."),
+  "term.boolean": term("Boolean search", "Combining terms with AND (all must match), OR (any may match) and NOT (leave out). The query builder writes these for you."),
+  "term.truncation": term("Truncation", "An asterisk at the end of a word stem, child*, finds every ending: child, children, childhood."),
+  "term.mesh": term("MeSH", "Medical Subject Headings: the labels PubMed's indexers give each article, so a search finds it whatever words its authors used."),
+  "term.grey-literature": term("Grey literature", "Reports, working papers, theses and registrations published outside journals. Reviews search it to avoid publication bias."),
   "term.mirror": term("Mirror folder", "A Finder folder showing your PDFs by collection, using hard links so it takes no extra space."),
 } satisfies Record<string, HelpEntry>;
 

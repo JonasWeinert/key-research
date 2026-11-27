@@ -36,6 +36,28 @@ Workspaces and their SQLite databases live outside the application bundle.
 
 PDF imports and text extraction use Key's Rust PDFium backend.
 
+## Passkeys in the browser (signing)
+
+Electron serves WebAuthn without a browser's passkey dialog (`main/browser/sign-in.ts`).
+What works depends on the signature:
+
+- Unsigned or ad-hoc (today): USB/NFC security keys only. Pages waiting for any other
+  passkey get the bar's notice (Stop waiting, Continue in your browser, Bring sign-in over).
+- Developer ID with a provisioning profile that grants keychain sharing: add
+  `keychain-access-groups` = `<TEAM_ID>.dev.key.workspace.webauthn` to the app's entitlements
+  (and embed the profile). Key reads its own entitlements at launch and calls
+  `app.configureWebAuthn({ touchID })`, so pages can create and use Touch ID passkeys kept on
+  this Mac (not synced; usable only in Key). `KEY_WEBAUTHN_KEYCHAIN_GROUP` overrides the group,
+  `KEY_WEBAUTHN_TOUCHID=0` turns it off. Do not add the entitlement to an unsigned build: macOS
+  refuses to launch an app claiming it without a profile.
+- Not reachable from Electron 43: the phone QR code (hybrid) and iCloud Keychain or password
+  manager passkeys for arbitrary sites. Chromium draws hybrid in Chrome's own UI layer, which
+  Electron lacks; Electron 45's `platformPasskeys` and any AuthenticationServices helper
+  serve only sites listed in Key's associated domains, unless Apple grants the
+  `com.apple.developer.web-browser.public-key-credential` entitlement, which it issues to
+  web browsers. `NSBluetoothAlwaysUsageDescription` is deliberately not set: without the QR
+  code, Bluetooth gives Electron nothing to connect to and would only add a permission prompt.
+
 ## Vendored third-party code
 
 Vendored crates are pristine upstream plus an ordered patch series, recorded in

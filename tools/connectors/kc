@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Builds and runs the connector maintenance tool (crates/key-connectors, bin key-connectors).
+# Set KEY_CONNECTORS_BIN to use a binary that is already built.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT"
+BIN="${KEY_CONNECTORS_BIN:-}"
+if [ -z "$BIN" ]; then
+  cargo build --quiet -p key-connectors --bin key-connectors
+  BIN="${CARGO_TARGET_DIR:-$ROOT/target}/debug/key-connectors"
+fi
+exec "$BIN" "$@"
