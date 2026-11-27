@@ -88,7 +88,7 @@ const assert = require("node:assert/strict");
     );
     report.inspector = true;
 
-    // Collections: create from the sidebar, then file both sources with the bulk bar.
+    // Collections: create from the sidebar, then file both sources from the selection panel.
     await newCollection();
     await page.getByPlaceholder("Collection name").fill("Thesis");
     await page.getByPlaceholder("Collection name").press("Enter");
@@ -96,9 +96,9 @@ const assert = require("node:assert/strict");
     await page.locator(".key-sidebar .kx-library-row .kx-tree-label").click();
     await page.locator(".kx-row").nth(0).click();
     await page.locator(".kx-row").nth(1).click({ modifiers: ["Shift"] });
-    const bulk = page.getByRole("toolbar", { name: "Selected sources" });
+    const bulk = page.getByLabel("2 sources selected", { exact: true });
     const thesis = (await call("store_collections")).find((c) => c.name === "Thesis");
-    await bulk.getByRole("combobox", { name: "Add selection to collection" }).selectOption(thesis.id);
+    await bulk.getByRole("combobox", { name: "Add all to collection" }).selectOption(thesis.id);
     await page.waitForFunction(
       async ({ ws }) => (await window.key.invoke("store_collections", {}, ws)).find((c) => c.name === "Thesis")?.sourceCount === 2,
       { ws: ws.id },
@@ -146,7 +146,7 @@ const assert = require("node:assert/strict");
     report.collections = true;
 
     // Typed property: define a select property and apply it to the selection.
-    await bulk.getByRole("combobox", { name: "Set a property on the selection" }).selectOption("__new");
+    await bulk.getByRole("button", { name: "New property…", exact: true }).click();
     const sheet = page.getByRole("dialog", { name: "New property", exact: true });
     await sheet.getByRole("textbox", { name: "Property name", exact: true }).fill("Status");
     await sheet.locator(".key-property-types button", { hasText: "Select" }).click();
@@ -361,6 +361,49 @@ const assert = require("node:assert/strict");
     assert.equal(await page.locator(".kx-token").count(), 0);
     await page.waitForFunction(() => document.querySelectorAll(".kx-row").length === 2);
     report.tokens = true;
+
+    // A query and tokens that no longer fit on one line wrap: the field grows downwards (never
+    // sideways), the header's title and Add stay where they were, and it shrinks back when emptied.
+    {
+      const measure = () =>
+        page.evaluate(() => {
+          const root = document.querySelector(".kx-library:not([hidden])");
+          const r = (q) => root.querySelector(q).getBoundingClientRect();
+          const field = root.querySelector(".kx-search-field");
+          return { kids: [...field.children].map((c) => [c.className, Math.round(c.getBoundingClientRect().width), c.scrollWidth]).concat([["field", field.clientWidth, field.scrollWidth]]), field: r(".kx-search-field").height, sideways: field.scrollWidth - field.clientWidth, add: r(".kx-add").top, title: r(".kx-page-title h1").top, main: r(".kx-library-main").right, right: r(".kx-search").right };
+        });
+      const size = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getSize());
+      await search.click();
+      await search.pressSequentially("pal", { delay: 40 });
+      await page.locator(".kx-suggest-item", { hasText: "Marco Palma" }).click();
+      await page.locator(".kx-token", { hasText: "Marco Palma" }).waitFor();
+      const long = "interaction effects of shared reading on comprehension in primary school classrooms across several countries";
+      for (const width of [1500, 1100, 860]) {
+        await app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0].setSize(w, 760), width);
+        await search.fill("");
+        await page.waitForTimeout(300);
+        const before = await measure();
+        await search.fill(long);
+        await page.waitForTimeout(300);
+        const after = await measure();
+        await page.screenshot({ path: path.join(temp, `search-wrap-${width}.png`) });
+        assert(after.field > before.field + 10, `the field grows at ${width}px (${before.field} → ${after.field})`);
+        assert(after.field <= 5 * 22 + 12, `at most five lines, then it scrolls (${after.field})`);
+        assert(after.sideways <= 0, `no sideways scroll at ${width}px: ${JSON.stringify(after.kids)}`);
+        assert.equal(Math.round(after.add), Math.round(before.add), `Add stays put at ${width}px`);
+        assert.equal(Math.round(after.title), Math.round(before.title), `the title stays put at ${width}px`);
+        assert(after.right <= after.main + 1, `the field stays inside the list at ${width}px`);
+        await search.fill("");
+        await page.waitForTimeout(200);
+        assert((await measure()).field <= before.field + 1, `it shrinks back at ${width}px`);
+      }
+      await search.press("Backspace");
+      await page.locator(".kx-token").waitFor({ state: "detached" });
+      await search.press("Escape");
+      await app.evaluate(({ BrowserWindow }, [w, h]) => BrowserWindow.getAllWindows()[0].setSize(w, h), size);
+      await page.waitForTimeout(300);
+      report.searchWraps = true;
+    }
 
     // Trash with undo.
     await page.locator(".kx-row").first().click({ position: { x: 24, y: 20 } });

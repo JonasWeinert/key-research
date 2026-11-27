@@ -3,6 +3,7 @@ import { useEffect, useId, useState } from "react";
 import { formulaEvaluator, useFormulaPreview, type FormulaEval } from "./formula";
 import PropertyEditor, { type PropertyDraft } from "./PropertyEditor";
 import "./record-properties.css";
+import { couldNot } from "../shared/plain-error";
 
 type Definition = {
   name: string;
@@ -68,7 +69,7 @@ export function RecordProperties({
         })
         .catch((reason) => {
           if (active)
-            setError(`Could not load property definitions: ${String(reason)}`);
+            setError(couldNot("load this workspace’s properties", reason));
         });
     };
     load();

@@ -7,6 +7,11 @@ export interface WebFocus {
   sourceId: string;
   annotationId?: string;
   text?: string;
+  /** Shorter texts to look for when `text` is not on the page as written (a search hit's
+   *  snippet, then its matched words). */
+  fallback?: string[];
+  /** Keep the passage lit until the reader is clicked (a search hit), not for a moment. */
+  keep?: boolean;
 }
 const pending = new Map<string, WebFocus>();
 export const WEB_FOCUS_EVENT = "key:web-page-focus";
@@ -43,9 +48,24 @@ export function webPanelStatusItems(panelTab: string | undefined) {
 export const toggleWebPanel = (readerViewId: string, tab: string) => bridge().tabAction("web-panel", { viewId: readerViewId, tab });
 
 export function openWebPage(workspaceId: string, sourceId: string, focus?: Omit<WebFocus, "sourceId">, title?: string, where: Record<string, unknown> = {}) {
-  if (focus?.annotationId || focus?.text) {
+  if (focus?.annotationId || focus?.text || focus?.fallback?.length) {
     pending.set(sourceId, { sourceId, ...focus });
     window.dispatchEvent(new CustomEvent(WEB_FOCUS_EVENT, { detail: sourceId }));
   }
   return bridge().tabAction("open-content", { section: "webpage", workspaceId, sourceId, title: title || "Web page", ...where });
+}
+
+/** A search hit in a saved page: its reader opens at the matching passage, lit up. */
+export function openWebSearchHit(
+  workspaceId: string,
+  hit: { id: string; title?: string; passageText?: string; snippet?: string },
+  where: Record<string, unknown> = {},
+) {
+  const snippet = hit.snippet?.replace(/\[\[|\]\]/g, "").replace(/^\s*…\s*|\s*…\s*$/g, "").trim();
+  const matched = [...(hit.snippet ?? "").matchAll(/\[\[(.+?)\]\]/g)].map((m) => m[1]);
+  // The snippet's longest stretch without an ellipsis is still a passage on the page.
+  const pieces = (snippet ?? "").split("…").map((p) => p.trim()).filter((p) => p.length > 12).sort((a, b) => b.length - a.length);
+  const texts = [hit.passageText?.trim(), snippet, ...pieces, ...matched].filter((t): t is string => !!t);
+  const [text, ...fallback] = [...new Set(texts)];
+  return openWebPage(workspaceId, hit.id, { text, fallback, keep: true }, hit.title, where);
 }

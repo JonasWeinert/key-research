@@ -142,6 +142,8 @@ export interface PlannedChange {
   items: number;
   /** For a select property: items holding more than one of its tags. */
   multiple?: number;
+  /** How the tags will look once applied. */
+  predicted?: TagDelta;
 }
 
 export type ManagerPlan =
@@ -163,40 +165,60 @@ export interface ApplyResult {
   tree?: Record<string, TagMeta>;
 }
 
-/** The index as it will look once the host has applied `operations`, so the tree can move
- *  at once; the host's answer replaces it. Display only: renames and removals carry over
- *  to items, tree entries are set or cleared, and the rest waits for the host. */
-export function applyLocally(index: TagIndex, operations: TagOperation[]): TagIndex {
-  let { tags, items } = index;
+/** The host's prediction of a change (key-store `tag_plan::predict`): the items whose tags
+ *  change and the tree entries it sets. */
+export interface TagDelta {
+  items: { id: string; remove: string[]; add: string[] }[];
+  tree: Record<string, TagMeta | null>;
+}
+
+/** The index with the host's predictions applied, so the tree can move at once; the host's
+ *  index after applying replaces it. Only bookkeeping: what changes is the host's call. */
+export function applyPrediction(index: TagIndex, deltas: TagDelta[]): TagIndex {
   const tree = { ...(index.tree ?? {}) };
-  for (const op of operations) {
-    for (const [name, meta] of Object.entries(op.tree)) {
+  const edits = new Map<string, { remove: Set<string>; add: string[] }>();
+  for (const delta of deltas) {
+    for (const [name, meta] of Object.entries(delta.tree ?? {})) {
       if (meta) tree[name] = meta;
       else delete tree[name];
     }
-    const to = new Map(op.replace.map((r) => [key(r.from), r.to]));
-    if (op.property?.removeTags) op.property.values.forEach(([t]) => to.set(key(t), []));
-    if (!to.size) continue;
-    const at = new Map<string, number>();
-    const next: { name: string; count: number }[] = [];
-    const remap = tags.map((t) =>
-      (to.get(key(t.name)) ?? [t.name]).map((name) => {
-        let i = at.get(key(name));
+    for (const e of delta.items ?? []) {
+      const edit = edits.get(e.id) ?? { remove: new Set<string>(), add: [] };
+      e.remove.forEach((t) => edit.remove.add(t));
+      edit.add.push(...e.add);
+      edits.set(e.id, edit);
+    }
+  }
+  if (!edits.size) return { ...index, tree };
+  // Names keep their place; new ones go last and ones no item holds any more drop out.
+  const names = index.tags.map((t) => t.name);
+  const at = new Map(names.map((n, i) => [n, i]));
+  const items = index.items.map((item) => {
+    const edit = edits.get(item.id);
+    if (!edit) return item;
+    const own = item.tags.map((t) => names[t]).filter((n) => !edit.remove.has(n));
+    for (const name of edit.add) if (!own.includes(name)) own.push(name);
+    return {
+      ...item,
+      tags: own.map((name) => {
+        let i = at.get(name);
         if (i === undefined) {
-          i = next.length;
-          at.set(key(name), i);
-          next.push({ name, count: 0 });
+          i = names.length;
+          names.push(name);
+          at.set(name, i);
         }
         return i;
       }),
-    );
-    items = items.map((item) => ({ ...item, tags: [...new Set(item.tags.flatMap((t) => remap[t] ?? []))] }));
-    items.forEach((item) => item.tags.forEach((t) => next[t].count++));
-    // Tags no item holds any more drop out (indexes shift, so remap once more).
-    const keep = next.map((t, i) => [t, i] as const).filter(([t]) => t.count > 0);
-    const shift = new Map(keep.map(([, i], j) => [i, j]));
-    tags = keep.map(([t]) => t);
-    items = items.map((item) => ({ ...item, tags: item.tags.map((t) => shift.get(t)!).filter((t) => t !== undefined) }));
-  }
-  return { ...index, tags, items, tree };
+    };
+  });
+  const counts = names.map(() => 0);
+  items.forEach((item) => item.tags.forEach((t) => counts[t]++));
+  const shift = new Map<number, number>();
+  const tags: { name: string; count: number }[] = [];
+  names.forEach((name, i) => {
+    if (!counts[i]) return;
+    shift.set(i, tags.length);
+    tags.push({ name, count: counts[i] });
+  });
+  return { ...index, tags, items: items.map((item) => ({ ...item, tags: item.tags.map((t) => shift.get(t)!) })), tree };
 }

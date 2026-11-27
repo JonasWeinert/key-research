@@ -167,7 +167,7 @@ export function DatabasePicker({ workspaceId, connectors, selected, onChange, on
                   const state = connectorState(c);
                   const checked = selected.includes(c.id);
                   return (
-                    <label key={c.id} className="kx-db-option" data-checked={checked || undefined} title={c.updatedAt ? `Connector ${c.version}, updated ${new Date(c.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : undefined}>
+                    <label key={c.id} className="kx-db-option" data-connector={c.id} data-checked={checked || undefined} title={c.updatedAt ? `Connector ${c.version}, updated ${new Date(c.updatedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}` : undefined}>
                       <input type="checkbox" checked={checked} onChange={() => toggle(c.id)} />
                       <span className="kx-db-option-text">
                         <span className="kx-db-option-name">

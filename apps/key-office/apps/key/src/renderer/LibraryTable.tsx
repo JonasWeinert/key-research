@@ -242,14 +242,14 @@ export default function LibraryTable({
               }
             >
               <Button type="button" className="key-table-column-grip" aria-label={`Reorder ${c.label} column`} onPointerDown={e=>columnDrag.startReorder(c.id,e)} onPointerCancel={columnDrag.cancelReorder} onKeyDown={e=>{if(e.key==='Escape')columnDrag.cancelReorder();if(e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const next=[...columns],from=next.indexOf(c),to=from+(e.key==='ArrowLeft'?-1:1);if(to>=0&&to<next.length){[next[from],next[to]]=[next[to],next[from]];setColumns(next);}}}}>⠿</Button>
-              {c.id.startsWith('property:') && onProperty ? <Button className="key-property-name-link" aria-label={`Configure ${c.label} property`} onClick={()=>onProperty(c)}>{c.type==='formula'?'ƒ ':''}{c.pinned?'⌖ ':''}{c.label}</Button> : <span role={['title','year'].includes(c.id)?'button':undefined} tabIndex={['title','year'].includes(c.id)?0:undefined} onClick={()=>{if(['title','year'].includes(c.id))onSort(c.id);}} onKeyDown={e=>{if(e.key==='Enter'&&['title','year'].includes(c.id))onSort(c.id);}}
+              {c.id.startsWith('property:') && onProperty ? <Button className="key-property-name-link" aria-label={`Configure ${c.label} property`} onClick={()=>onProperty(c)}>{c.type==='formula'&&<Icon name="function" size={11} className="kx-db-head-icon" />}{c.pinned?'⌖ ':''}{c.label}</Button> : <span role={['title','year'].includes(c.id)?'button':undefined} tabIndex={['title','year'].includes(c.id)?0:undefined} onClick={()=>{if(['title','year'].includes(c.id))onSort(c.id);}} onKeyDown={e=>{if(e.key==='Enter'&&['title','year'].includes(c.id))onSort(c.id);}}
                 title={
                   c.formula
                     ? `Derived display: ${c.formula}. Save the attribute to refresh stored filter values.`
                     : c.label
                 }
               >
-                {c.type === "formula" ? "ƒ " : ""}
+                {c.type === "formula" && <Icon name="function" size={11} className="kx-db-head-icon" />}
                 {c.pinned && c.id !== "title" ? "⌖ " : ""}
                 {c.label}
               </span>}

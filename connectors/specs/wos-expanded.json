@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "wos-expanded",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "Web of Science (Expanded API)",
   "description": "Full Web of Science records, with abstracts, keywords and all authors, through Clarivate's Web of Science Expanded API (institutional licence).",
   "homepage": "https://www.webofscience.com/",
@@ -50,6 +50,7 @@
     }
   ],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",

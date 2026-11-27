@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "worldbank",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "World Bank Documents & Reports",
   "description": "The World Bank's open repository: Policy Research Working Papers, economic and sector reports, impact evaluations and other publications.",
   "homepage": "https://documents.worldbank.org/",
@@ -65,6 +65,7 @@
     }
   ],
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": [
       "all"
     ],

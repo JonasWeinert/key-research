@@ -67,8 +67,8 @@ export const BarChart = forwardRef<SVGSVGElement, { items: BarItem[]; width?: nu
 // ── Histogram ────────────────────────────────────────────────────────────────────────
 
 /** Vertical bars over equal-width bins of `values` (or ready `bins`). */
-export const Histogram = forwardRef<SVGSVGElement, { values?: number[]; bins?: { from: number; to: number; count: number }[]; binCount?: number; width?: number; height?: number; label: string; tone?: Tone }>(function Histogram(
-  { values = [], bins, binCount, width = 320, height = 120, label, tone = "accent" },
+export const Histogram = forwardRef<SVGSVGElement, { values?: number[]; bins?: { from: number; to: number; count: number }[]; binCount?: number; width?: number; height?: number; label: string; tone?: Tone; /** How bin edges read (years: as they are). */ binFormat?: (v: number) => string }>(function Histogram(
+  { values = [], bins, binCount, width = 320, height = 120, label, tone = "accent", binFormat = formatTick },
   ref,
 ) {
   const data = bins ?? binValues(values, binCount);
@@ -88,16 +88,16 @@ export const Histogram = forwardRef<SVGSVGElement, { values?: number[]; bins?: {
       ))}
       {data.map((b, i) => (
         <rect key={i} x={pad.left + i * barWidth + 1} y={y(b.count)} width={Math.max(1, barWidth - 2)} height={Math.max(0, y(0) - y(b.count))} rx={2} style={ink(TONE[tone])}>
-          <title>{`${formatTick(b.from)}–${formatTick(b.to)}: ${b.count}`}</title>
+          <title>{`${b.from === b.to ? binFormat(b.from) : `${binFormat(b.from)}–${binFormat(b.to)}`}: ${b.count}`}</title>
         </rect>
       ))}
       {data.length > 0 && (
         <>
           <text x={pad.left} y={height - 6} fontSize={10} style={ink("--kx-text-3")}>
-            {formatTick(data[0].from)}
+            {binFormat(data[0].from)}
           </text>
           <text x={width - pad.right} y={height - 6} textAnchor="end" fontSize={10} style={ink("--kx-text-3")}>
-            {formatTick(data[data.length - 1].to)}
+            {binFormat(data[data.length - 1].to)}
           </text>
         </>
       )}

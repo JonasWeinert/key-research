@@ -1,0 +1,344 @@
+/* The library's "N sources selected" panel (SelectionPanel.tsx): the details panel's width,
+   sticky bar and background, never wider than the panel. Tokens only (native.css). */
+.kx-selection {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--kx-bg-sunken);
+  animation: kx-selection-in 160ms var(--kx-ease);
+}
+@keyframes kx-selection-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.kx-inspector-page > .kx-source-page {
+  animation: kx-selection-in 160ms var(--kx-ease);
+}
+
+/* The bar: like the source page's in the panel, sticky, with a border once scrolled. */
+.kx-selection-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 10px 18px 8px;
+  border-bottom: 1px solid transparent;
+  background: var(--kx-bg-sunken);
+  color: var(--kx-text-muted);
+  font-size: 12px;
+  transition: border-color 140ms var(--kx-ease), background 140ms var(--kx-ease);
+}
+.kx-selection-bar[data-pinned="true"] {
+  border-bottom-color: var(--kx-line);
+  background: color-mix(in srgb, var(--kx-bg-sunken) 86%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
+}
+.kx-selection-bar > * {
+  flex: none;
+}
+.kx-selection-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px 0 8px;
+  border-radius: 6px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent);
+  font: 600 11.5px var(--kx-font);
+  font-variant-numeric: tabular-nums;
+}
+.kx-selection-bar > .kx-selection-bar-title {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kx-text);
+  font: 600 13px/1.3 var(--kx-font);
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kx-selection-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 10px 18px 40px;
+}
+.kx-selection-head h2 {
+  margin: 0;
+  font: 700 22px/1.2 var(--kx-font-display);
+  letter-spacing: -0.02em;
+}
+.kx-selection-head p {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Progress and the result of the last action, with Undo where it can be undone. */
+.kx-selection-notice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  margin-top: -6px;
+  padding: 6px 8px 6px 10px;
+  border-radius: 8px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+  color: var(--kx-text);
+  font-size: 12.5px;
+}
+.kx-selection-notice > svg {
+  flex: none;
+  color: var(--kx-green);
+}
+.kx-selection-notice[data-tone="error"] > svg {
+  color: var(--kx-red);
+}
+.kx-selection-notice .kx-search-spinner {
+  position: static;
+  flex: none;
+}
+.kx-selection-notice > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-selection-notice > button {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--kx-fill);
+  color: var(--kx-accent);
+  font: 500 12px var(--kx-font);
+}
+.kx-selection-notice > button:hover {
+  background: var(--kx-fill-2);
+}
+.kx-selection-notice > .kx-selection-notice-close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+
+.kx-selection-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.kx-selection-section h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 0 2px;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.kx-selection-section h3 > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kx-text-3);
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kx-selection-loading {
+  display: grid;
+  gap: 8px;
+}
+
+/* What they have and lack, as small tiles. */
+.kx-selection-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 6px;
+}
+.kx-selection-fact {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 6px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 10px 8px;
+  border-radius: 8px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+}
+.kx-selection-fact > svg {
+  color: var(--kx-text-3);
+}
+.kx-selection-fact > strong {
+  font: 650 15px/1.2 var(--kx-font);
+  font-variant-numeric: tabular-nums;
+}
+.kx-selection-fact > span {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kx-selection-fact[data-tone="muted"] > strong {
+  color: var(--kx-text-3);
+}
+.kx-selection-fact[data-tone="warn"] > svg,
+.kx-selection-fact[data-tone="warn"] > strong {
+  color: var(--kx-red);
+}
+.kx-selection-dupes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px 7px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-amber) 14%, var(--kx-bg));
+  color: var(--kx-text);
+  font-size: 12.5px;
+}
+.kx-selection-dupes > svg {
+  flex: none;
+  color: var(--kx-amber);
+}
+.kx-selection-dupes > span {
+  flex: 1;
+  min-width: 0;
+}
+.kx-selection-dupes > button {
+  flex: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+  color: var(--kx-text);
+  font: 500 12px var(--kx-font);
+}
+.kx-selection-chart {
+  min-width: 0;
+  padding: 8px 10px 6px;
+  border-radius: 8px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+}
+.kx-selection-chart > h3 {
+  margin-bottom: 4px;
+}
+.kx-selection-chart > svg {
+  display: block;
+  max-width: 100%;
+}
+.kx-selection-more {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+
+.kx-selection .kx-chips {
+  min-width: 0;
+}
+.kx-selection .kx-chip-input {
+  min-width: 100px;
+}
+.kx-selection-fields {
+  margin: 0 0 0 -6px;
+}
+.kx-selection .kx-page-properties .kx-field-row {
+  grid-template-columns: minmax(90px, 36%) minmax(0, 1fr);
+}
+.kx-selection .kx-field-row[data-mixed] > input::placeholder {
+  color: var(--kx-text-3);
+  font-style: italic;
+}
+
+/* Actions as quiet buttons that wrap. */
+.kx-selection-actions h3:not(:first-child) {
+  margin-top: 6px;
+}
+.kx-selection-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+.kx-selection-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--kx-bg);
+  box-shadow: var(--kx-shadow-card);
+  color: var(--kx-text);
+  font: 12.5px var(--kx-font);
+}
+.kx-selection-button > svg {
+  flex: none;
+  color: var(--kx-text-2);
+}
+.kx-selection-button > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kx-selection-button:hover:not(:disabled) {
+  background: var(--kx-fill);
+}
+.kx-selection-button:disabled {
+  color: var(--kx-text-3);
+}
+.kx-selection-button[data-danger] {
+  color: var(--kx-red);
+}
+.kx-selection-button[data-danger] > svg {
+  color: inherit;
+}
+.kx-selection-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--kx-line);
+}
+.kx-selection-hint {
+  margin-left: auto;
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-selection-overview {
+  transition: opacity 120ms var(--kx-ease);
+}
+.kx-selection-overview[data-stale] {
+  opacity: 0.55;
+}

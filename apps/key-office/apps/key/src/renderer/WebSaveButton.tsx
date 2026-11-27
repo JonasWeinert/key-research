@@ -5,6 +5,7 @@ import { shellContext, toast } from "./item-actions";
 import { openWebPage } from "./web-page-open";
 import "./web-page.css";
 import "./web-reader-panel.css";
+import { couldNot } from "../shared/plain-error";
 
 /** The browser bar's "Save to library": saves the page offline as a source; on a page that
  * is saved already it says so, and opens the saved copy. */
@@ -35,7 +36,7 @@ export function WebSaveButton({ viewId, url, loading, doi }: { viewId: string; u
       setFound({ id: saved.id, saved: true });
       toast(into ? `Saved the page to “${found!.into}”` : "Saved to your library");
     } catch (error) {
-      toast(`Could not save the page: ${String(error).replace(/^Error: /, "")}`);
+      toast(couldNot("save the page", error));
     } finally {
       setBusy(false);
     }

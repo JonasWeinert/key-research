@@ -2,8 +2,8 @@
   "$schema": "../schema/connector-1.schema.json",
   "format": 1,
   "id": "crossref-series",
-  "version": "1.0.1",
-  "minEngine": "1.0.0",
+  "version": "1.0.2",
+  "minEngine": "1.1.0",
   "name": "Working-paper series (Crossref)",
   "description": "Working papers and reports that institutions register with Crossref, found by DOI prefix: useful for series whose own websites cannot be searched.",
   "homepage": "https://www.crossref.org/documentation/retrieve-metadata/rest-api/",
@@ -22,6 +22,7 @@
   "hosts": ["api.crossref.org"],
   "politeness": { "minIntervalMs": 1000, "retries": 4, "backoffMs": 3000, "maxPages": 20 },
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": ["all"],
     "phrase": false, "truncation": false, "proximity": false, "dates": "year",
     "filters": [],

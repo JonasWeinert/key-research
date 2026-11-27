@@ -1,0 +1,339 @@
+/* Database search: the Boolean builder (operators, nested groups, selection), the text mode,
+   split plans and the strategy sheet. Tokens only (apps/key-office/CLAUDE.md). */
+
+.kx-db-joiner {
+  flex: none;
+  align-self: center;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font: 600 10px/18px var(--kx-font);
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+.kx-db-joiner:not([data-static]):hover,
+.kx-db-joiner[aria-expanded="true"] {
+  color: var(--kx-text);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+.kx-db-joiner:focus-visible {
+  outline: 2px solid var(--kx-accent);
+  outline-offset: 1px;
+}
+.kx-db-joiner[data-joiner="and"] {
+  background: var(--kx-accent-soft);
+  color: var(--kx-accent-text);
+}
+.kx-db-joiner[data-joiner="not"] {
+  background: color-mix(in srgb, var(--kx-red) 12%, transparent);
+  color: color-mix(in srgb, var(--kx-red) 75%, var(--kx-text));
+}
+.kx-db-joiner-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.kx-db-joiner-choice b {
+  font-size: 12px;
+  font-weight: 600;
+}
+.kx-db-joiner-choice small {
+  color: var(--kx-text-3);
+  font-size: 11px;
+}
+.kx-db-joiner-menu button:is(:hover, :focus-visible) small {
+  color: inherit;
+}
+.kx-db-joiner-menu button {
+  height: auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.kx-db-menu-note {
+  padding: 4px 10px 6px;
+  color: var(--kx-text-3);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.kx-db-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 3px 3px 3px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-text) 4%, transparent);
+  box-shadow: inset 0 0 0 0.5px var(--kx-line-strong);
+}
+.kx-db-group > .kx-db-terms {
+  display: contents;
+}
+.kx-db-group[data-not] {
+  background: color-mix(in srgb, var(--kx-red) 7%, transparent);
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--kx-red) 40%, transparent);
+}
+.kx-db-group[data-drop],
+.kx-db-group[data-selected],
+.kx-db-concept[data-selected],
+.kx-db-chip[data-selected] {
+  box-shadow: inset 0 0 0 1.5px var(--kx-accent);
+}
+.kx-db-group-add {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--kx-text-3);
+}
+.kx-db-group-add:hover {
+  background: var(--kx-fill);
+  color: var(--kx-text);
+}
+.kx-db-group .kx-db-term-input[data-inline] {
+  flex: 0 1 120px;
+}
+.kx-db-group .kx-db-term-input input {
+  height: 22px;
+}
+.kx-db-icon-button[data-compact] {
+  width: 18px;
+  height: 18px;
+}
+
+.kx-db-concept[data-not] {
+  background: color-mix(in srgb, var(--kx-red) 5%, var(--kx-bg-raised));
+  box-shadow: var(--kx-shadow-sm), inset 0 0 0 0.5px color-mix(in srgb, var(--kx-red) 35%, transparent);
+}
+.kx-db-concept[data-single] {
+  flex: 0 1 auto;
+  align-self: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 8px;
+}
+/* The textarea draws its own focus ring. */
+.kx-db-text-input:focus-visible {
+  outline: none;
+}
+/* Plan badges wrap under a long database name instead of squeezing it. */
+.kx-db-how-row {
+  flex-wrap: wrap;
+}
+.kx-db-how-name {
+  white-space: nowrap;
+}
+.kx-db-grip {
+  flex: none;
+  color: var(--kx-text-3);
+  opacity: 0;
+  transition: opacity 120ms var(--kx-ease);
+}
+.kx-db-concept:hover .kx-db-grip {
+  opacity: 1;
+}
+.kx-db-concept-head[draggable="true"] .kx-db-concept-name {
+  cursor: text;
+}
+.kx-db-drop-mark[data-tall] {
+  align-self: stretch;
+  height: auto;
+  min-height: 40px;
+}
+.kx-db-add-stack {
+  display: flex;
+  flex: 0 0 120px;
+  flex-direction: column;
+  gap: 6px;
+}
+.kx-db-add-stack .kx-db-add-concept {
+  flex: 1 1 auto;
+  min-height: 39px;
+}
+.kx-db-add-concept[data-not]:hover {
+  border-color: color-mix(in srgb, var(--kx-red) 60%, transparent);
+  color: color-mix(in srgb, var(--kx-red) 75%, var(--kx-text));
+}
+.kx-db-selection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 4px 6px 4px 10px;
+  border-radius: 8px;
+  background: var(--kx-accent-soft);
+  color: var(--kx-text);
+  font-size: 12px;
+}
+
+/* ── Text mode ── */
+.kx-db-text-mode {
+  margin-bottom: 10px;
+}
+.kx-db-text-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-sm), inset 0 0 0 0.5px var(--kx-line);
+  color: var(--kx-text);
+  font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  resize: vertical;
+  outline: none;
+}
+.kx-db-text-input:focus {
+  box-shadow: var(--kx-shadow-sm), inset 0 0 0 1.5px var(--kx-accent);
+}
+.kx-db-text-input[aria-invalid] {
+  box-shadow: var(--kx-shadow-sm), inset 0 0 0 1.5px color-mix(in srgb, var(--kx-red) 70%, transparent);
+}
+.kx-db-text-status {
+  min-height: 20px;
+  margin-top: 5px;
+  font-size: 12px;
+}
+.kx-db-text-problem,
+.kx-db-text-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.kx-db-text-problem > svg {
+  color: var(--kx-red);
+}
+.kx-db-text-note > svg {
+  color: var(--kx-text-3);
+}
+.kx-db-text-snippet {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--kx-bg-sunken);
+  font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre;
+}
+.kx-db-text-snippet mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--kx-red) 22%, transparent);
+  color: inherit;
+  text-decoration: underline wavy color-mix(in srgb, var(--kx-red) 80%, transparent);
+  text-underline-offset: 3px;
+}
+.kx-db-text-note .kx-db-text-snippet mark {
+  background: color-mix(in srgb, var(--kx-amber) 22%, transparent);
+  text-decoration: none;
+}
+
+/* ── Plans: split queries, reconstruction, decisions ── */
+.kx-db-how-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.kx-db-how-parts > .kx-db-how-native {
+  margin-top: 0;
+}
+.kx-db-how-part-n {
+  flex: none;
+  width: 14px;
+  padding-top: 6px;
+  color: var(--kx-text-3);
+  font: 500 11px var(--kx-font);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.kx-db-how-part-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-left: 16px;
+  font-size: 11.5px;
+}
+.kx-db-plan {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.kx-db-plan summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--kx-text-2);
+  list-style: none;
+  cursor: default;
+}
+.kx-db-plan summary::-webkit-details-marker {
+  display: none;
+}
+.kx-db-plan summary svg {
+  transition: transform 120ms var(--kx-ease);
+}
+.kx-db-plan[open] summary svg {
+  transform: rotate(90deg);
+}
+.kx-db-plan ol,
+.kx-db-plan ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  color: var(--kx-text-2);
+  line-height: 1.4;
+}
+.kx-db-plan li + li {
+  margin-top: 2px;
+}
+.kx-db-plan-label {
+  margin: 6px 0 0;
+  color: color-mix(in srgb, var(--kx-amber) 70%, var(--kx-text));
+  font-weight: 500;
+}
+.kx-db-decision {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--kx-amber) 12%, transparent);
+  font-size: 12px;
+}
+.kx-db-decision > svg {
+  margin-top: 1px;
+  color: color-mix(in srgb, var(--kx-amber) 80%, var(--kx-text));
+}
+.kx-db-decision p {
+  margin: 0;
+  line-height: 1.4;
+}
+.kx-db-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+/* ── Strategy sheet ── */
+.kx-db-strategy-text {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--kx-bg-sunken);
+  color: var(--kx-text);
+  font: 11.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}

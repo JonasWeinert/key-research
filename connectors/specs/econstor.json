@@ -2,8 +2,8 @@
   "$schema": "../schema/connector-1.schema.json",
   "format": 1,
   "id": "econstor",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "EconStor",
   "description": "The open-access repository of the ZBW Leibniz Information Centre for Economics: working papers, articles and reports from hundreds of series.",
   "homepage": "https://www.econstor.eu/",
@@ -22,6 +22,7 @@
   "hosts": ["www.econstor.eu"],
   "politeness": { "minIntervalMs": 2000, "retries": 4, "backoffMs": 5000, "maxPages": 100 },
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": ["all", "title", "title_abstract", "abstract", "keywords", "author", "journal"],
     "phrase": true, "truncation": true, "proximity": true, "dates": "year",
     "filters": ["types", "languages"],

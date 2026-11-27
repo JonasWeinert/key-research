@@ -46,6 +46,8 @@ pub fn detect_document(
         let height = page.height().value;
         // 200 DPI, matching the Java main-app detector. The model itself is
         // 800x800; this preserves small text/rules before downsampling.
+        // Measured against 100 DPI: it saves about 30 MB of the helper's peak but changes the
+        // blocks found on 2 of 5 test papers, so the resolution stays.
         let bitmap =
             page.render_with_config(&PdfRenderConfig::new().scale_page_by_factor(200.0 / 72.0))?;
         let rgba = bitmap.as_rgba_bytes();

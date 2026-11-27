@@ -1,0 +1,128 @@
+/* Web search engines: the "via …" picker in web results and the ordered list in Settings. */
+.kx-engine-picker {
+  position: relative;
+  display: inline-flex;
+}
+.kx-engine-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+.kx-engine-button:hover,
+.kx-engine-button[aria-expanded="true"] {
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+}
+.kx-engine-button[data-fallback] > svg:first-child {
+  color: var(--kx-amber);
+}
+.kx-engine-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  min-width: 200px;
+}
+.kx-engine-menu > button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.kx-engine-check {
+  display: inline-flex;
+  width: 12px;
+}
+.kx-engine-failed {
+  max-width: 260px;
+  white-space: normal;
+}
+
+/* Settings: the ordered engine list. */
+.kx-engine-row {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.kx-engine-row[data-dragging] {
+  opacity: 0.5;
+}
+.kx-engine-row[data-drop="before"] {
+  box-shadow: inset 0 2px 0 var(--kx-accent);
+}
+.kx-engine-row[data-drop="after"] {
+  box-shadow: inset 0 -2px 0 var(--kx-accent);
+}
+.kx-engine-grip {
+  display: inline-flex;
+  color: var(--kx-text-3);
+  cursor: grab;
+}
+.kx-engine-grip:focus-visible {
+  outline: 2px solid var(--kx-accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.kx-engine-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.kx-engine-text > small {
+  color: var(--kx-text-2);
+  font-size: 11px;
+}
+.kx-engine-rank {
+  color: var(--kx-text-3);
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+.kx-engine-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.kx-engine-filter {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--kx-fill);
+  color: var(--kx-text-2);
+  font-size: 10.5px;
+  line-height: 15px;
+}
+.kx-engine-filter[data-on="false"] {
+  background: transparent;
+  color: var(--kx-text-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--kx-text-3);
+}
+.kx-engine-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.kx-engine-url {
+  width: 220px;
+}
+.kx-engine-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--kx-accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: default;
+}
+.kx-engine-link:hover {
+  text-decoration: underline;
+}

@@ -31,10 +31,9 @@ function Panel({
   useStableModalSize(ref, modal);
   useEffect(() => {
     if (present)
-      ref.current
-        ?.querySelector<HTMLElement>(
-          "button:not(:disabled),input:not(:disabled)",
-        )
+      // A field that asks for it first (a search field is a text area), else the first control.
+      (ref.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+        ref.current?.querySelector<HTMLElement>("button:not(:disabled),input:not(:disabled)"))
         ?.focus();
   }, [present]);
   return (

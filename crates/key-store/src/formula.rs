@@ -4,10 +4,10 @@
 // length, tokens, nesting and output; regular expressions use the linear-time `regex` crate.
 //
 // A formula is parsed once into a tree (cached per text), type-checked for the editor and
-// evaluated lazily (`if`, `and`, `coalesce` only evaluate what they need). The library
-// evaluates it for the table, the details, sorting, filtering and grouping (as the SQL
-// function `key_formula_value`, see formula_scope.rs), batch edits and exports, so every place
-// agrees on one value. The catalog of fields, functions and templates is formula_catalog.rs.
+// evaluated lazily (`if`, `and`, `coalesce` only evaluate what they need). Every source's
+// value is stored and kept up to date incrementally (formula_values.rs), and the table, the
+// details, sorting, filtering, grouping, batch edits and exports all read that one value.
+// The catalog of fields, functions and templates is formula_catalog.rs.
 use crate::Result;
 use crate::formula_catalog::{FUNCTIONS, FnSpec, function};
 use serde::Serialize;
@@ -16,7 +16,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-pub use crate::formula_scope::{FormulaCache, context, decorate, definitions, property_sql, register, result_type, source_context, values_for};
+pub use crate::formula_scope::{context, definitions, property_sql, register, result_type, source_context, values_for};
+pub use crate::formula_values::{RecalcStats, decorate};
 pub(crate) use crate::formula_scope::{evaluate_on, rename_reference};
 
 const MAX_CHARS: usize = 4096;
@@ -1248,6 +1249,35 @@ fn collect_functions(node: &Node, out: &mut Vec<String>) {
 /// The names a formula refers to (for dependency order and cycle checks).
 pub(crate) fn references(source: &str) -> Vec<String> {
     tokenize(source).map(|tokens| tokens.into_iter().filter_map(|t| if let Tok::Ref(n) = t.tok { Some(n) } else { None }).collect()).unwrap_or_default()
+}
+
+/// What a formula reads, for the stored values' dependency graph (formula_values.rs): the
+/// names it refers to (`first_author()` reads `{First author}`), and whether it depends on
+/// the day (`today()`, `days_since`, `days_until`). `None` when it does not parse.
+pub(crate) fn dependencies(source: &str) -> Option<(Vec<String>, bool)> {
+    fn walk(node: &Node, names: &mut Vec<String>, volatile: &mut bool) {
+        match &node.kind {
+            Kind::Ref(name) => names.push(name.clone()),
+            Kind::Call(spec, args) => {
+                match spec.name {
+                    "today" | "days_since" | "days_until" => *volatile = true,
+                    "first_author" if args.is_empty() => names.push("first author".into()),
+                    _ => {}
+                }
+                args.iter().for_each(|a| walk(a, names, volatile));
+            }
+            Kind::Unary(_, a) => walk(a, names, volatile),
+            Kind::Binary(_, a, b) => {
+                walk(a, names, volatile);
+                walk(b, names, volatile);
+            }
+            Kind::Lit(_) => {}
+        }
+    }
+    let node = parse(source).ok()?;
+    let (mut names, mut volatile) = (Vec::new(), false);
+    walk(&node, &mut names, &mut volatile);
+    Some((names, volatile))
 }
 
 /// The result type a formula has with the given field and property types.

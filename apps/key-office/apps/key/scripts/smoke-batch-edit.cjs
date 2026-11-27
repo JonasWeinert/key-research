@@ -1,5 +1,7 @@
 // Batch edit and the operations journal: with several sources selected, the details panel
-// is an "N sources" editor (mixed fields read "Multiple"); setting a field, adding a tag and
+// is the "N sources selected" panel: an overview from the host (counts, years, authors,
+// duplicates among them) and every bulk control, each action once, no horizontal scroll
+// (mixed fields read "Mixed"); setting a field, starring all, adding a tag and
 // taking a partial tag off apply to all; ⌘Z undoes the last operation with an "Undo: …"
 // toast and ⇧⌘Z redoes it; trash is undoable the same way. Screenshots light and dark go to
 // the printed temp folder.
@@ -29,7 +31,7 @@ const assert = require("node:assert/strict");
     const seed = [
       ["Poverty traps and growth", 2006, "Journal of Growth", ["growth", "theory"]],
       ["Nudges in public health", 2015, "Health Policy", ["policy"]],
-      ["Microfinance experiments", 2015, "Journal of Growth", ["growth"]],
+      ["Poverty traps and growth.", 2006, "Journal of Growth", ["growth"]],
       ["Cash transfers in Kenya", 2016, "", []],
     ];
     const ids = [];
@@ -39,18 +41,53 @@ const assert = require("node:assert/strict");
 
     await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), ws.id);
     await page.getByRole("heading", { name: "All sources", exact: true }).waitFor();
-    const row = (title) => page.locator(".kx-row", { hasText: title });
+    const row = (title) => page.locator(".kx-row").filter({ has: page.locator("strong").getByText(title, { exact: true }) });
     await row(seed[0][0]).click();
     await row(seed[1][0]).click({ modifiers: ["Meta"] });
     await row(seed[2][0]).click({ modifiers: ["Meta"] });
-    const editor = page.getByLabel("3 sources", { exact: true });
+    const editor = page.getByLabel("3 sources selected", { exact: true });
     await editor.waitFor();
-    await editor.getByRole("heading", { name: "3 sources" }).waitFor();
-    // Mixed values read "Multiple"; the same value shows.
-    assert.equal(await editor.locator(".kx-field-row", { hasText: "Published in" }).locator("input").getAttribute("placeholder"), "Multiple");
-    assert.equal(await editor.locator(".kx-field-row", { hasText: "Year" }).locator("input").getAttribute("placeholder"), "Multiple");
+    await editor.getByRole("heading", { name: "3 sources selected" }).waitFor();
+    // The overview: facts, the years, and the copy of the first source found among them.
+    await editor.locator(".kx-selection-overview:not([data-stale]) .kx-selection-fact", { hasText: "Missing DOI" }).waitFor();
+    assert.equal(await editor.locator(".kx-selection-fact", { hasText: "Missing DOI" }).locator("strong").textContent(), "3");
+    assert.match(await editor.locator(".kx-selection-chart", { hasText: "Years" }).textContent(), /2006–2015/);
+    await editor.locator(".kx-selection-dupes", { hasText: "2 of these look like the same work" }).waitFor();
+    report.duplicates = true;
+    // Mixed values read "Mixed"; the same value shows.
+    assert.equal(await editor.locator(".kx-field-row", { hasText: "Published in" }).locator("input").getAttribute("placeholder"), "Mixed");
+    assert.equal(await editor.locator(".kx-field-row", { hasText: "Year" }).locator("input").getAttribute("placeholder"), "Mixed");
+    // Every action shows once (registered ones included), and the panel never scrolls sideways.
+    const labels = await editor.locator(".kx-selection-button").allTextContents();
+    assert.deepEqual(labels.filter((l, i) => labels.indexOf(l) !== i), [], `actions twice: ${labels}`);
+    for (const label of ["Find PDFs (3)", "Refresh metadata…", "Look up", "Copy references", "Export…", "Send to Inbox", "Move to Trash"]) assert.ok(labels.includes(label), label);
+    assert.equal(await page.locator(".kx-bulk-bar").count(), 0, "one place for bulk controls");
+    const overflow = () => editor.evaluate((el) => el.scrollWidth - el.clientWidth);
+    assert.ok((await overflow()) <= 0, "no horizontal scroll");
+    report.actions = labels.length;
     await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(temp, "batch-light.png") });
+    // Narrow: details float over the list, still nothing sideways.
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(760, 840));
+    await page.waitForTimeout(400);
+    assert.ok((await overflow()) <= 0, "no horizontal scroll when narrow");
+    await page.screenshot({ path: path.join(temp, "batch-narrow.png") });
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1320, 840));
+    await page.waitForTimeout(300);
+    // Scrolled: the bar stays at the top with its title.
+    await editor.evaluate((el) => (el.scrollTop = 400));
+    await editor.locator('.kx-selection-bar[data-pinned="true"]').waitFor();
+    await page.screenshot({ path: path.join(temp, "batch-scrolled.png") });
+    await editor.evaluate((el) => (el.scrollTop = 0));
+
+    // Star all, with an inline result and Undo.
+    await editor.getByRole("button", { name: "Star all" }).click();
+    await editor.locator(".kx-selection-notice", { hasText: "Star 3 sources" }).waitFor();
+    await page.waitForFunction(async ({ ids, id }) => (await Promise.all(ids.map((s) => window.key.invoke("store_source", { id: s }, id)))).every((s) => s.starred), { ids: ids.slice(0, 3), id: ws.id });
+    await editor.getByRole("button", { name: "Unstar all" }).waitFor();
+    await editor.locator(".kx-selection-notice").getByRole("button", { name: "Undo" }).click();
+    await page.waitForFunction(async ({ id, s }) => !(await window.key.invoke("store_source", { id: s }, id)).starred, { id: ws.id, s: ids[0] });
+    report.star = true;
 
     // Set a field on all three.
     const publisher = editor.locator(".kx-field-row", { hasText: "Publisher" }).locator("input");
@@ -69,6 +106,7 @@ const assert = require("node:assert/strict");
     await tagInput.fill("to read");
     await tagInput.press("Enter");
     await page.waitForFunction(async ({ id, s }) => (await window.key.invoke("store_source", { id: s }, id)).tags.includes("to read"), { id: ws.id, s: ids[1] });
+    await editor.locator(".kx-tri-chip:not([data-partial])", { hasText: "to read" }).waitFor();
     const growth = editor.locator(".kx-tri-chip", { hasText: "growth" });
     assert.equal(await growth.getAttribute("data-partial"), "true");
     await growth.getByRole("button", { name: "Remove growth from all" }).click();

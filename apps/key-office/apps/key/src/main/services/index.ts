@@ -110,6 +110,11 @@ export class KeyedServices {
         this.deps.openExternal?.(service.keyUrl);
         return true;
       }
+      case "services_open_pricing": {
+        const service = this.service(args?.id);
+        if (service.pricingUrl) this.deps.openExternal?.(service.pricingUrl);
+        return !!service.pricingUrl;
+      }
       default:
         throw Error(`Unknown command ${command}`);
     }
@@ -133,6 +138,9 @@ export class KeyedServices {
         usedFor: s.usedFor,
         keyUrlLabel: s.keyUrlLabel,
         keyRequired: !!s.keyRequired,
+        engine: !!s.engine,
+        hasPricing: !!s.pricingUrl,
+        checkUsesQuota: !!s.checkUsesQuota,
         key: this.deps.secrets.info(secretName(s.id)),
         mode: this.mode(s.id),
         usage: this.deps.usage.usage(s.id),
@@ -163,6 +171,6 @@ export async function migratePlaintextKeys(settings: AppSettingsStore, secrets: 
 /** The app settings as the renderer may see them: without any key. */
 export function publicSettings(settings: AppSettings): AppSettings {
   const webProviders: AppSettings["webProviders"] = {};
-  for (const [id, entry] of Object.entries(settings.webProviders ?? {})) webProviders[id] = { enabled: entry.enabled };
+  for (const [id, entry] of Object.entries(settings.webProviders ?? {})) webProviders[id] = { enabled: entry.enabled, ...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}) };
   return { ...settings, openalexApiKey: "", webProviders };
 }

@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "openalex",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "OpenAlex",
   "description": "An open catalogue of the world's research: journal articles, preprints, working papers, reports, books and datasets in every field.",
   "homepage": "https://openalex.org/",
@@ -65,6 +65,7 @@
     }
   ],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "title_abstract",
       "title",

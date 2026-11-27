@@ -13,8 +13,8 @@ import { inboxCollection } from "./item-links";
 // ── The neutral query ────────────────────────────────────────────────────────────────
 
 /** Where a term is looked for. Connectors list the scopes they can search. */
-export type TermField = "all" | "title" | "title_abstract" | "abstract" | "keywords" | "subject" | "fulltext" | "author" | "journal" | "affiliation" | "identifier";
-export const TERM_FIELDS: TermField[] = ["title_abstract", "title", "abstract", "keywords", "subject", "fulltext", "all", "author", "journal", "affiliation", "identifier"];
+export type TermField = "all" | "title" | "title_abstract" | "abstract" | "keywords" | "subject" | "fulltext" | "author" | "journal" | "affiliation" | "identifier" | "year" | "type" | "language";
+export const TERM_FIELDS: TermField[] = ["title_abstract", "title", "abstract", "keywords", "subject", "fulltext", "all", "author", "journal", "affiliation", "identifier", "year", "type", "language"];
 export const FIELD_LABEL: Record<TermField, string> = {
   all: "Anywhere",
   title: "Title",
@@ -27,6 +27,9 @@ export const FIELD_LABEL: Record<TermField, string> = {
   journal: "Journal",
   affiliation: "Affiliation",
   identifier: "Identifier",
+  year: "Year",
+  type: "Document type",
+  language: "Language",
 };
 
 export interface QueryTerm {
@@ -58,12 +61,39 @@ export interface QueryFilters {
   openAccess?: boolean | null;
 }
 
-/** Every concept must match (AND); none of the excluded terms may (NOT). */
-export interface DbQuery {
-  concepts: Concept[];
-  exclude: QueryTerm[];
-  filters: QueryFilters;
+/** A term in the Boolean tree; `not` leaves out what it finds. */
+export interface QTerm extends QueryTerm {
+  type: "term";
+  not?: boolean;
 }
+/** A group: its items combined with AND or OR; `not` negates the whole group. */
+export interface QGroup {
+  type: "group";
+  id: string;
+  op: "and" | "or";
+  items: QNode[];
+  not?: boolean;
+  /** A name for the idea it stands for ("Population"). */
+  label?: string;
+}
+export type QNode = QTerm | QGroup;
+
+/** The search: a Boolean tree (crates/key-connectors boolean.rs) and limits. `concepts` and
+ *  `exclude` are the older form (an AND of OR groups), still read from saved searches. */
+export interface DbQuery {
+  expr: QGroup;
+  filters: QueryFilters;
+  concepts?: Concept[];
+  exclude?: QueryTerm[];
+}
+
+/** A problem in the text mode, at characters start..end. */
+export interface TextProblem {
+  message: string;
+  start: number;
+  end: number;
+}
+export type ParsedText = { ok: true; tree: QGroup; text: string; notes: TextProblem[] } | { ok: false; error: TextProblem };
 
 export const DOC_TYPES: [string, string][] = [
   ["article", "Journal article"],
@@ -168,6 +198,21 @@ export interface Translation {
   maxLength?: number;
   /** Manual connectors: their own search page with the query filled in. */
   manualUrl?: string;
+  strategy?: Strategy;
+}
+
+/** How a search is run on one database (crates/key-connectors plan.rs). */
+export interface Strategy {
+  original: string;
+  /** single: one query; split: one per AND-combination; terms: one term at a time; harvest. */
+  kind: "single" | "split" | "terms" | "harvest" | "typed" | "";
+  subqueries: { native: string; neutral: string; verified: string[]; exact: boolean }[];
+  /** Key checks the full search on the records returned. */
+  postFilter: boolean;
+  keepUnknown?: boolean;
+  steps: string[];
+  approximate: string[];
+  decision?: { kind: "tooMany" | "tooBroad" | "nothing"; message: string; queries: number };
 }
 
 export interface Estimate {
@@ -192,6 +237,12 @@ export interface Progress {
   chunks: number;
   hasMore: boolean;
   requests: number;
+  warnings?: string[];
+  /** Ruled out by Key's check of the full search; kept though not fully checkable; found again by a later query. */
+  rejected?: number;
+  unverified?: number;
+  repeats?: number;
+  strategy?: Strategy;
 }
 
 /** One work found, in the web-search result shape (inbox_save takes it as is). */
@@ -302,7 +353,8 @@ export interface DbSearchApi {
   /** Cancelled with `cancelEstimate(requestId)` when the query changes. */
   estimate(query: DbQuery, connectors: string[], requestId: string): Promise<Estimate[]>;
   cancelEstimate(requestId: string): Promise<void>;
-  start(request: { query: DbQuery; connectors: string[]; overrides: Record<string, string>; label?: string; savedId?: string }): Promise<{ runId: string }>;
+  /** `allow`: databases whose plan asked for an OK (many queries) that the user gave. */
+  start(request: { query: DbQuery; connectors: string[]; overrides: Record<string, string>; label?: string; savedId?: string; allow?: string[] }): Promise<{ runId: string }>;
   results(runId: string, options: { dedupe: boolean; offset: number; limit: number; connector?: string }): Promise<RunPage>;
   cancel(runId: string): Promise<void>;
   /** Fetches further pages for the databases that have more (also carries on a cancelled run). */
@@ -310,6 +362,11 @@ export interface DbSearchApi {
   record(runId: string, key: string): Promise<{ record: DbRecord; versions: DbRecord[] }>;
   addToLibrary(runId: string, keys: string[], options: { collectionId?: string; tag?: string }): Promise<AddResult>;
   parse(text: string, dialect: "auto" | "pubmed" | "scopus" | "wos"): Promise<ParsedQuery>;
+  /** The text mode: Key's Boolean syntax into a tree, or the problem and where it is. */
+  parseText(text: string): Promise<ParsedText>;
+  formatTree(tree: QGroup): Promise<string>;
+  /** The search strategy of a run, or of a search not run yet (the plan only). */
+  strategy(from: { runId: string } | { query: DbQuery; connectors: string[]; overrides?: Record<string, string>; label?: string }, format: "markdown" | "text" | "json" | "csv"): Promise<ReportFile>;
   /** MeSH headings, where the host offers them; empty otherwise. */
   suggest(text: string, connectors: string[]): Promise<TermSuggestion[]>;
   saved(): Promise<SavedSearch[]>;
@@ -339,6 +396,10 @@ function hostApi(invoke: Invoke, workspaceId: string): DbSearchApi {
     record: (runId, key) => call("db_record", { runId, key }),
     addToLibrary: (runId, keys, { collectionId, tag }) => call("db_add_to_library", { runId, keys, collectionId, tag }),
     parse: (text, dialect) => call("db_parse", { text, dialect }),
+    // Untagged words are the builder's usual field, title and abstract.
+    parseText: (text) => call("db_query_parse", { text, defaultField: "title_abstract" }),
+    formatTree: (tree) => call<{ text: string }>("db_query_format", { tree, defaultField: "title_abstract" }).then((r) => r.text),
+    strategy: (from, format) => call("db_strategy", { ...from, format }),
     suggest: (text, connectors) => call<TermSuggestion[]>("db_suggest_terms", { text, connectors }).catch(() => []),
     saved: () => call("db_saved_list"),
     save: (search) => call("db_saved_save", search),

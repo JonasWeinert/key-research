@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TagIndex } from "./tag-analysis";
-import { applyLocally, buildTree, sortTree } from "./tag-plan";
+import { applyPrediction, buildTree, sortTree } from "./tag-plan";
 
 const index: TagIndex = {
   tags: [
@@ -17,23 +17,41 @@ const index: TagIndex = {
   tree: { ML: { parent: "Methods" } },
 };
 
-describe("applyLocally", () => {
-  it("merges names on items and clears tree entries", () => {
-    const next = applyLocally(index, [{ replace: [{ from: "ML", to: ["Machine learning"] }], tree: { ML: null, "Machine learning": { parent: "Methods" } } }]);
+describe("applyPrediction", () => {
+  it("applies the host's item edits and tree entries", () => {
+    const next = applyPrediction(index, [
+      {
+        items: [
+          { id: "a", remove: ["ML"], add: ["Machine learning"] },
+          { id: "b", remove: ["ML"], add: [] },
+        ],
+        tree: { ML: null, "Machine learning": { parent: "Methods" } },
+      },
+    ]);
     expect(next.tags).toEqual([
       { name: "Machine learning", count: 2 },
       { name: "Methods", count: 2 },
     ]);
-    expect(next.items.map((i) => i.tags.map((t) => next.tags[t].name))).toEqual([["Machine learning", "Methods"], ["Machine learning"], ["Methods"]]);
+    expect(next.items.map((i) => i.tags.map((t) => next.tags[t].name))).toEqual([["Methods", "Machine learning"], ["Machine learning"], ["Methods"]]);
     expect(next.tree).toEqual({ "Machine learning": { parent: "Methods" } });
   });
 
-  it("only moves the tree for a nest, and drops removed tags", () => {
-    const nested = applyLocally(index, [{ replace: [], tree: { "Machine learning": { parent: "Methods" } } }]);
+  it("only moves the tree when no item changes, and composes predictions", () => {
+    const nested = applyPrediction(index, [{ items: [], tree: { "Machine learning": { parent: "Methods" } } }]);
     expect(nested.tags).toBe(index.tags);
     expect(buildTree(nested).nodes.get("machine learning")?.parent).toBe("Methods");
-    const removed = applyLocally(index, [{ replace: [{ from: "Methods", to: [] }], tree: {} }]);
-    expect(removed.tags.map((t) => t.name)).toEqual(["ML", "Machine learning"]);
+    const both = applyPrediction(index, [
+      { items: [{ id: "a", remove: ["Methods"], add: [] }, { id: "c", remove: ["Methods"], add: [] }], tree: {} },
+      { items: [{ id: "b", remove: ["Machine learning"], add: [] }], tree: {} },
+    ]);
+    expect(both.tags.map((t) => t.name)).toEqual(["ML"]);
+  });
+  it("builds children and totals from the tree", () => {
+    const tree = buildTree(index);
+    expect(tree.nodes.get("methods")?.children.map((c) => c.name)).toEqual(["ML"]);
+    // Items a and b hold ML; a and c hold Methods: three distinct items under Methods.
+    expect(tree.nodes.get("methods")?.total).toBe(3);
+    expect(tree.nodes.get("ml")?.total).toBe(tree.nodes.get("ml")?.count);
   });
 
   it("sorts names naturally", () => {

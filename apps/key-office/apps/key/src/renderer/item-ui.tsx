@@ -28,6 +28,7 @@ import { EntityPopover, entityChoices, isEntityKind, type EntityRef } from "./en
 import type { MapKind, MapNode } from "./library-api";
 import { noteSources } from "./note-sources";
 import { currentTheme, highlightColor } from "./canvas/canvas-colors";
+import { selectionActionsFor } from "./selection-actions";
 import "./item-ui.css";
 
 /** Marks an element as showing `item`: hover previews it, right-click offers its actions. */
@@ -387,11 +388,20 @@ export function itemMenuEntries(items: { item: ItemLink; title: string }[], extr
           ...sourceFileEntries(items, workspaceId),
         ]
       : []),
+    ...registeredEntries(items, workspaceId),
     "-",
     { label: "Send to canvas or note…", icon: "canvas", shortcut: "⌘⇧S", run: () => sendTo(asDragged) },
     { label: "Show in inspector", icon: "panelRight", shortcut: "⌘⇧I", run: () => showInInspector(asDragged) },
     ...trashEntries(items),
   ];
+}
+
+/** Actions other features register for selected sources (selection-actions.ts). */
+function registeredEntries(items: { item: ItemLink; title: string }[], workspaceId?: string): (MenuEntry | "-")[] {
+  if (!workspaceId || items.some(({ item }) => item.kind !== "source" || item.anchor)) return [];
+  const ctx = { workspaceId, sourceIds: items.map(({ item }) => item.id) };
+  const found = selectionActionsFor(ctx);
+  return found.length ? ["-", ...found.map((a): MenuEntry => ({ label: a.label, icon: a.icon, run: () => void a.run(ctx) }))] : [];
 }
 
 /** Export highlights and rename files, for whole sources. */

@@ -90,7 +90,7 @@ What the visual query builder may offer for this connector (and what the engine 
 }
 ```
 
-`boolean` says what the query language can combine: `and`, `or`, `not` and how deep brackets
+`boolean` (engine 1.1.0) says what the query language can combine: `and`, `or`, `not` and how deep brackets
 may go (`nesting`: 1 = one flat group such as `a AND b AND c`). Left out, it follows
 `query.mode` (native: everything; terms and harvest: nothing). Key plans each search from it
 (`crates/key-connectors/src/plan.rs`): what the service can do is sent; what it cannot is relaxed

@@ -122,6 +122,19 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
       await app.evaluate(({ BrowserWindow }, s) => BrowserWindow.getAllWindows()[0].setSize(s[0], s[1]), size);
       await shot(launcher, `list-${mode}-${size[0]}`);
     }
+    // What a workspace is, and what Remove from list and Move… do, one click away.
+    for (const [help, name] of [["launcher.remove", "removing"], ["launcher.workspaces", "workspaces"]]) {
+      for (const mode of ["light", "dark"]) {
+        await theme(app, mode);
+        await launcher.locator(`[data-help="${help}"]`).first().click();
+        const pop = launcher.getByRole("dialog").last();
+        await pop.waitFor();
+        assert.ok(/stays on this Mac|holds a library/.test(await pop.innerText()), `the ${help} explainer`);
+        await shot(launcher, `explain-${name}-${mode}`);
+        await launcher.keyboard.press("Escape");
+        await pop.waitFor({ state: "detached" });
+      }
+    }
     await theme(app, "system");
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(860, 540));
 

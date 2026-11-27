@@ -138,12 +138,13 @@ and `inbox_state { works }` (owned by the Inbox module); `DbRecord` is a valid `
   are the older form (still read). Fields: `all`, `title`, `abstract`, `title_abstract`,
   `keywords`, `subject`, `author`, `journal`, `affiliation`, `fulltext`, `identifier`, `year`
   (text `2015-2024`), `type`, `language`.
-- `db_query_parse { text }` -> `{ ok: true, tree, text /* canonical */, notes: {message, start,
+- `db_query_parse { text, defaultField? }` (untagged words go to `defaultField`, default `all`; the app
+  sends `title_abstract`) -> `{ ok: true, tree, text /* canonical */, notes: {message, start,
   end}[] }` or `{ ok: false, error: { message, start, end } }` (character offsets of the problem).
   Syntax: `(health OR doctor) AND ((AI OR ML) NOT regression)`, `"exact phrase"`, `word*`,
   `"hand washing"~3`, field tags `title:`, `abstract:`, `tiab:`, `keywords:`, `mesh:`, `author:`,
   `journal:`, `year:`, `type:`, `lang:` (or a suffix `word[ti]`); AND binds before OR.
-- `db_query_format { tree }` -> `{ text }`.
+- `db_query_format { tree, defaultField? }` -> `{ text }` (terms in `defaultField` written without a tag).
 - `db_translate` entries carry `strategy`: `{ original, kind: "single" | "split" | "terms" |
   "harvest", subqueries: { native, neutral, verified, exact }[], postFilter, keepUnknown, steps:
   string[], approximate: string[], decision?: { kind: "tooMany" | "nothing", message, queries } }`.

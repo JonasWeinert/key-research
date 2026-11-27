@@ -82,7 +82,7 @@ function stateOf(invoke: Invoke, workspaceId: string, work: InboxWork): Promise<
     }, 40);
   });
 }
-onFeedsChanged(() => states.clear());
+if (typeof window !== "undefined") onFeedsChanged(() => states.clear());
 
 export function useInboxState(invoke: Invoke, workspaceId: string | undefined, work: InboxWork | null | undefined) {
   const [state, setState] = useState<StateAnswer>();

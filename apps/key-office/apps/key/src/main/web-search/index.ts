@@ -10,9 +10,11 @@ type Invoke = (command: string, args: Record<string, unknown>, workspaceId: stri
 /** What a host is told about web search: the polite `mailto`, providers turned on or off,
  *  and each service's key with how it is used. */
 export function webOptions(settings: AppSettings, keys: Record<string, { key?: string; mode: string }>) {
-  const providers: Record<string, { enabled?: boolean }> = {};
-  for (const [id, entry] of Object.entries(settings.webProviders ?? {})) providers[id] = { enabled: entry.enabled };
-  return { mailto: settings.openalexMailto ?? "", providers, keys };
+  const providers: Record<string, { enabled?: boolean; baseUrl?: string }> = {};
+  for (const [id, entry] of Object.entries(settings.webProviders ?? {})) providers[id] = { enabled: entry.enabled, ...(entry.baseUrl ? { baseUrl: entry.baseUrl } : {}) };
+  // The engines' order, fallback and scholarly narrowing (the host's "web" chain).
+  const engines = settings.webEngines ?? { order: [], fallback: "next", scholarly: false };
+  return { mailto: settings.openalexMailto ?? "", providers, keys, engines };
 }
 
 export class WebSearch {

@@ -323,6 +323,105 @@ export const HELP = {
     },
   ),
 
+  // ── Settings: Web search engines (WebSearchSettings.tsx) and their keys ────────────
+  "settings.web.engines-intro": hint("Optional search engines for the whole web, beyond scholarly catalogues. Each needs its own key, and none is on until you turn it on."),
+  "settings.web.engines": explain(
+    "Web search engines",
+    [
+      "Scholarly catalogues find papers. A web search engine finds everything else too: reports, policy documents, news, blog posts and project pages. Key can use engines such as Tavily, Firecrawl, Exa or Brave Search with a key from each.",
+      "Key asks one engine at a time, in the order shown. If it fails or its key runs out of credits, the next one that is on is asked, unless you choose Stop. In a search you can pick another engine for that search.",
+      "An engine that cannot apply a filter you set, such as a language, is passed over for one that can.",
+    ],
+    { privacy: "Your search words go only to the engines you turn on here, and only when you search the web. Turning an engine off stops every request to it." },
+  ),
+  "settings.services.tavily": explain(
+    "A Tavily key",
+    ["Tavily is a search engine built for research and AI tools. It searches the whole web and answers with the most relevant pages. It has a free monthly allowance; larger plans cost money. Each basic search uses one credit."],
+    {
+      steps: ["Open tavily.com and sign up (an e-mail address is enough).", "Your key is shown on the dashboard's home page; copy it.", "Paste it here and press Save. Testing it reads your usage and runs no search.", "Turn Tavily on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at tavily.com", url: "https://app.tavily.com/home" },
+        { label: "Tavily pricing", url: "https://www.tavily.com/pricing" },
+      ],
+      privacy: "Your search words go to Tavily with your key, only while Tavily is on.",
+    },
+  ),
+  "settings.services.firecrawl": explain(
+    "A Firecrawl key",
+    [
+      "Firecrawl searches the web and can read a web page as clean text. Key uses the second to save a page into your library when its own browser cannot open it, or when you choose Firecrawl for it.",
+      "It has a free allowance of credits; more costs money. A search or a saved page uses credits.",
+    ],
+    {
+      steps: ["Open firecrawl.dev and sign up.", "Open API Keys in your dashboard and copy the key.", "Paste it here and press Save. Testing it reads your credits and runs no search.", "Turn Firecrawl on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at firecrawl.dev", url: "https://www.firecrawl.dev/app/api-keys" },
+        { label: "Firecrawl pricing", url: "https://www.firecrawl.dev/pricing" },
+      ],
+      privacy: "Your search words, or the address of a page you save, go to Firecrawl with your key.",
+    },
+  ),
+  "settings.services.exa": explain(
+    "An Exa key",
+    ["Exa finds pages by what they mean rather than by matching words, and can keep to scholarly publications. New accounts get some free credit; after that it is paid per search."],
+    {
+      steps: ["Open exa.ai and sign up.", "Open API Keys in the dashboard and create a key.", "Paste it here and press Save. Testing it runs one small search, which uses a little credit.", "Turn Exa on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at exa.ai", url: "https://dashboard.exa.ai/api-keys" },
+        { label: "Exa pricing", url: "https://exa.ai/pricing" },
+      ],
+      privacy: "Your search words go to Exa with your key, only while Exa is on.",
+    },
+  ),
+  "settings.services.brave": explain(
+    "A Brave Search key",
+    ["The Brave Search API searches Brave's own index of the web, independent of Google and Bing. Brave offers a plan with a small free allowance; you choose a plan when you create the key."],
+    {
+      steps: ["Open the Brave Search API dashboard and sign up.", "Choose a plan (a card may be asked for, even for the free one).", "Open API Keys, copy the key, paste it here and press Save. Testing it runs one search."],
+      links: [
+        { label: "Get a key at brave.com", url: "https://api-dashboard.search.brave.com/app/keys" },
+        { label: "Brave Search API plans", url: "https://brave.com/search/api/" },
+      ],
+      privacy: "Your search words go to Brave with your key, only while Brave Search is on.",
+    },
+  ),
+  "settings.services.perplexity": explain(
+    "A Perplexity key",
+    ["Perplexity's Search API answers with ranked web pages, not a written answer. It is paid per request from credit you add to your API account."],
+    {
+      steps: ["Open perplexity.ai, sign in and open API in your account settings.", "Add credit and create an API key.", "Paste it here and press Save. Testing it runs one search."],
+      links: [
+        { label: "Get a key at perplexity.ai", url: "https://www.perplexity.ai/account/api/keys" },
+        { label: "Perplexity pricing", url: "https://docs.perplexity.ai/getting-started/pricing" },
+      ],
+      privacy: "Your search words go to Perplexity with your key, only while it is on.",
+    },
+  ),
+  "settings.services.you": explain(
+    "A You.com key",
+    ["You.com's Search API answers with web pages from its own index. New accounts usually get some free credit; after that it is paid."],
+    {
+      steps: ["Open you.com/platform and sign up.", "Create an API key and copy it.", "Paste it here and press Save. Testing it runs one search."],
+      links: [
+        { label: "Get a key at you.com", url: "https://you.com/platform" },
+        { label: "You.com billing", url: "https://you.com/docs/administration/billing" },
+      ],
+      privacy: "Your search words go to You.com with your key, only while it is on.",
+    },
+  ),
+  "settings.services.jina": explain(
+    "A Jina key",
+    ["Jina Search finds pages on the web, and Jina Reader turns a page into clean text, which Key can use to save a page it cannot open itself. A new key comes with free tokens; a search uses far more of them than reading a page."],
+    {
+      steps: ["Open jina.ai; a key with free tokens is shown on the Reader page.", "Copy it, paste it here and press Save. Testing it reads one small page, a few tokens.", "Turn Jina on under Web & browser › Web search engines."],
+      links: [
+        { label: "Get a key at jina.ai", url: "https://jina.ai/api-dashboard/key-manager" },
+        { label: "Jina pricing", url: "https://jina.ai/reader/#pricing" },
+      ],
+      privacy: "Your search words, or the address of a page you save, go to Jina with your key.",
+    },
+  ),
+
   // ── Settings: AI ─────────────────────────────────────────────────────────────────────
   "settings.ai.intro": hint("Three steps: choose a provider, connect it, pick a model. Key uses it only for tasks you start, such as Fill with AI."),
   "settings.ai.provider": explain(
@@ -715,13 +814,13 @@ export const HELP = {
   // ── Database search ─────────────────────────────────────────────────────────────────
   "dbsearch.intro": hint("Search PubMed, Scopus, OpenAlex and other databases at once, with one query built from blocks."),
   "dbsearch.concepts": explain(
-    "Concepts and synonyms",
+    "Building a search",
     [
-      "Split your question into its main ideas, such as who (teenagers), what (mindfulness) and the outcome (anxiety). Each idea is a concept: a card here.",
-      "In a card, list every word authors use for that idea: synonyms, spellings, older terms. A work needs only one of them (OR). Across cards, a work must match every concept (AND).",
-      "The count on each card is how many works that concept finds alone. The narrowest one limits the search most: add synonyms there to find more.",
+      "Split your question into its main ideas, such as who (teenagers), what (mindfulness) and the outcome (anxiety). Each idea is a card: list every word authors use for it. A work needs one of them (OR), and must match every card (AND).",
+      "The word between two items is a button: click it to choose AND (both), OR (either) or NOT (leave out). Groups can sit inside groups, like brackets: (health OR doctor) AND ((AI OR machine learning) NOT regression).",
+      "The count on a card is what it finds alone. The narrowest card limits the search most: add synonyms there.",
     ],
-    { example: "(teenager* or adolescen*) and (mindfulness or meditation) and (anxiety or depress*)", steps: ["Type a word in a card and press Return", "Paste a list to add one term per line", "Drag a term to another card, or use ⌥← and ⌥→"] },
+    { example: "(teenager* OR adolescen*) AND (mindfulness OR meditation) NOT protocol", steps: ["Type a word and press Return or a comma", "Click AND / OR / NOT to change it", "⌘-click items, then Group, to bracket them", "Drag terms and groups between groups", "Text shows the same search as a line you can type"] },
   ),
   "dbsearch.term": explain(
     "Phrase, endings and fields",
@@ -760,6 +859,23 @@ export const HELP = {
   ),
   "dbsearch.saved": explain("Saved searches", ["A saved search keeps the query and databases. Run it again later to see what is new since the last run, for example before you submit a review."]),
   "dbsearch.sample": hint("Showing sample data: this build's library has no database search engine yet. Counts and works are made up."),
+  "dbsearch.syntax": explain(
+    "Writing a search as text",
+    [
+      "AND needs both words, OR either, NOT leaves out what follows. Brackets group: (health OR doctor) AND (AI OR ML). Without brackets AND goes first, so add them when you mix the two.",
+      "Quotes keep words together: \"machine learning\". A star finds every ending: nurs* finds nurse, nurses, nursing. Words written side by side must all appear.",
+      "Say where to look with a tag before a word or bracket: title:, abstract:, tiab: (title or abstract), keywords:, mesh: (subject headings), author:, journal:, year:2015-2024, type:review, lang:en.",
+    ],
+    { example: "tiab:(\"vaccine hesitancy\" OR vaccin*) AND (nurse* OR doctor*) NOT title:protocol" },
+  ),
+  "dbsearch.strategy": explain(
+    "The search strategy",
+    [
+      "Reviews report the exact search run in each database, with the date and how many records it gave. This is that record, ready for a methods section or a PRISMA appendix.",
+      "Some databases cannot run every search: no OR, no brackets, one word at a time. Key then sends several simpler queries, combines what they return and keeps only the works that match the whole search. The strategy lists those queries in order and says how the result was put together.",
+      "Approximate means Key could not check a part, for example words in abstracts a database does not return. The JSON file can be imported to run the same search again.",
+    ],
+  ),
   "empty.dbsearch-saved": empty("No saved searches", "Saved searches keep a query and its databases, to run again later.", "Build a query and choose Save search."),
   "empty.dbsearch-results": empty("No search run yet", "Results of a database search show here, without duplicates.", "Build a query, choose databases and press Search."),
 
@@ -774,6 +890,7 @@ export const HELP = {
   "tip.find-pdf": tip("Find the PDF", "Find PDF looks for a free legal copy, and opens the publisher’s page through your library if there is none."),
   "tip.passkey": tip("Passkeys in Key’s browser", "Key’s browser can use a security key, but not your phone or saved passkeys. Continue in your browser to use those."),
   "tip.proxies": tip("Library access", "This site can open through your library’s proxy, so you see articles your library pays for."),
+  "tip.reading-mode": tip("Read as text", "Reading mode shows this PDF as clean text in your font and size. Highlights you make there are kept on the PDF."),
 
   // ── Glossary ────────────────────────────────────────────────────────────────────────
   "term.api-key": term("API key", "A code a service gives you so the requests an app makes for you count under your own allowance. Optional in Key."),
@@ -806,6 +923,40 @@ export const HELP = {
   "term.mesh": term("MeSH", "Medical Subject Headings: the labels PubMed's indexers give each article, so a search finds it whatever words its authors used."),
   "term.grey-literature": term("Grey literature", "Reports, working papers, theses and registrations published outside journals. Reviews search it to avoid publication bias."),
   "term.mirror": term("Mirror folder", "A Finder folder showing your PDFs by collection, using hard links so it takes no extra space."),
+
+  // ── Workspaces window and the notes list ───────────────────────────────────────────────
+  "launcher.workspaces": explain(
+    "What is a workspace?",
+    [
+      "A workspace is one folder on this Mac that holds a library: its sources and their files, notes, highlights, collections and search index. Each workspace opens in its own window and knows nothing of the others.",
+      "Use one for everything, or one per project, course or team. This list is only Key’s list of the workspaces it knows about; the folders themselves live wherever you put them.",
+    ],
+    { steps: ["Double-click a workspace, or press Return, to open it.", "Press ⌘Return to open it in a new window.", "Right-click a workspace to rename it, change its look, show it in Finder, move it or remove it from this list."] },
+  ),
+  "launcher.remove": explain(
+    "What does Remove from list do?",
+    [
+      "It takes the workspace off this list and nothing else. Its folder, with every source, file, note and highlight in it, stays on this Mac exactly as it is.",
+      "To use it again, choose Open folder as workspace and pick the folder. To delete a workspace for good, remove it from the list, then move its folder to the Bin in Finder.",
+    ],
+  ),
+  "launcher.move": explain(
+    "Moving a workspace",
+    [
+      "Move… moves the workspace’s whole folder to another place on this Mac, for example to a synced or external drive, and Key follows it there. Close the workspace’s window first.",
+      "If you moved or renamed the folder in Finder yourself, the workspace shows as missing: choose Locate… and pick the folder where it is now.",
+    ],
+  ),
+  "launcher.opening": hint("What Key shows when you start it. Workspaces you open later always open in their own windows."),
+  "settings.indexing.battery": explain(
+    "Indexing on battery",
+    [
+      "Indexing reads every source once so search can find it. It is the heaviest work Key does, and on a laptop it uses battery.",
+      "By default Key waits while the battery is below 30% or Low Power Mode is on, and carries on once the Mac is plugged in. A source you open, select or scroll to is always indexed straight away, and search keeps working on what is already indexed.",
+      "While it waits, the status bar says Indexing paused on battery; click it and choose Continue anyway to index now, until the Mac is plugged in again.",
+    ],
+  ),
+  "empty.notes-list": empty("No notes yet", "Notes, canvases and pages you write in this workspace are listed here, in folders you arrange.", "Create one with New note, or link a folder of Markdown files with +."),
   // ── Systematic reviews (review/review-help.ts) ───────────────────────────────────────
   ...REVIEW_HELP,
 } satisfies Record<string, HelpEntry>;

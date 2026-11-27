@@ -105,7 +105,7 @@ const assert = require("node:assert/strict");
 
     // Open Quickly: a note found by its text, in the Notes group, with its passage in the preview.
     await command("quick-open");
-    await page.locator(".kx-palette input").fill("Zebrafish");
+    await page.locator(".kx-palette :is(input, textarea)").fill("Zebrafish");
     const notes = page.locator(".kx-spot .kx-spot-group[data-group=note]");
     await notes.locator(".kx-spot-row", { hasText: "Beta" }).waitFor();
     await shot(page, "2-open-quickly");
@@ -156,7 +156,7 @@ const assert = require("node:assert/strict");
     await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), ws.id);
     await page.locator(".kx-row", { hasText: "Interaction study" }).first().click();
     await command("send-to");
-    await page.locator(".kx-palette input").fill("Board");
+    await page.locator(".kx-palette :is(input, textarea)").fill("Board");
     await page.locator(".kx-palette .kx-found-row", { hasText: "Board" }).first().click();
     await page.locator(".kx-toast", { hasText: "Board" }).waitFor();
     await until(async () => (await call("store_canvas", { id: board.id }))?.doc?.nodes?.some((n) => n.ref?.id === source.id), "the source card to save");

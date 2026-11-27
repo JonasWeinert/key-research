@@ -105,7 +105,7 @@ export function NoteLibraryPanel({
   workspaceId: string;
   editor: RefObject<NoteEditorHandle | null>;
   onClose: () => void;
-  searchRef: RefObject<HTMLInputElement | null>;
+  searchRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   const [state, setState] = useState<FindState>(START);
   const browsing = !state.text.trim() && !state.filters.length && state.kinds.length === 1 && state.kinds[0] === "source";

@@ -1,0 +1,20 @@
+{
+  "_synthetic": "Invented for tests, shaped like the documented You.com POST /v1/search response (you.com/docs, checked 2026-11-27). Not a recorded answer.",
+  "results": {
+    "web": [
+      {
+        "url": "https://energy.ec.europa.eu/energiewende",
+        "title": "The German energy transition",
+        "description": "An overview of the Energiewende.",
+        "page_age": "2014-06-01T00:00:00",
+        "favicon_url": "https://energy.ec.europa.eu/favicon.ico"
+      },
+      {
+        "url": "https://example.org/energy",
+        "title": "Energy policy notes",
+        "snippets": ["Second snippet.", "Third snippet."]
+      }
+    ]
+  },
+  "metadata": { "search_uuid": "synthetic-0001", "query": "energiewende", "latency": 0.4 }
+}

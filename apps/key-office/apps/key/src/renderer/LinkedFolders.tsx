@@ -124,7 +124,7 @@ export default function LinkedFolders({ invoke, workspaceId }: { invoke?: Invoke
           {folders.map((folder) => {
             const expanded = open.has(folder.id);
             const status = folder.missing
-              ? "Offline"
+              ? "Not connected"
               : folder.indexed && folder.pendingFiles > 0
                 ? `Indexing ${folder.pendingFiles}`
                 : folder.tracked
@@ -153,7 +153,7 @@ export default function LinkedFolders({ invoke, workspaceId }: { invoke?: Invoke
                     </span>
                     <span>{folder.name}</span>
                     {folder.indexed && <Icon name="search" size={10} className="kx-linked-badge" aria-label="Searchable" />}
-                    <small>{status}</small>
+                    <small title={folder.missing ? "Key cannot find this folder. If it is on an external or network drive, connect it and Key picks it up again; if it moved, use Locate in its menu." : undefined}>{status}</small>
                   </button>
                   <span className="kx-tree-actions">
                     <button

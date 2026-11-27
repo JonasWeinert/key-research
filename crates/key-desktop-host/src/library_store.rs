@@ -114,6 +114,7 @@ impl Library {
         openalex.set_backfill_gate(move || !gate.is_paused() && !gate.is_busy());
         super::biblio_commands::start_watcher(store.clone());
         super::export_commands::start_watcher(store.clone());
+        super::formula_worker::start(store.clone());
         let idle = indexer.clone();
         let hygiene = super::hygiene::Hygiene::start(store.clone(), openalex.clone(), move || !idle.is_paused() && !idle.is_busy());
         Ok(Self { store, indexer, references, openalex, hygiene, zotero: Default::default(), zotero_progress: Default::default() })
@@ -173,6 +174,8 @@ impl Library {
             "store_sources" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.list_sources(&q)?)),
             "store_summary" => self.store.summary().and_then(|(sources, notes)| json_output(serde_json::json!({ "sources": sources, "notes": notes }))),
             "store_facets" => self.parse::<ListQuery>(args).and_then(|q| json_output(self.store.facets(&q)?)),
+            // The library's "N sources selected" panel: counts, shared values and duplicates.
+            "store_selection_overview" => arg::<Vec<String>>(args, "ids").and_then(|ids| json_output(self.store.selection_overview(&ids)?)),
             // A source merged into another answers as the one it became.
             "store_source" => arg::<String>(args, "id").and_then(|id| json_output(self.store.source(&self.store.resolve_source_id(&id)?)?)),
             // "Already in library": which of these works the library has, and how it knows.
@@ -351,6 +354,8 @@ impl Library {
                     "backfill": self.store.backfill_status()?,
                     "vectors": self.store.vector_count()?,
                     "counts": counts,
+                    // Bulk indexing held on battery (power.rs).
+                    "power": super::power::status(self),
                 }))
             })(),
             // The renderer reports what the user is working with, so indexing follows them.
@@ -573,7 +578,8 @@ impl Library {
                     .or_else(|| super::cite_check::dispatch(self, command, args))
                     .or_else(|| super::biblio_commands::dispatch(self, command, args, root))
                     .or_else(|| super::export_commands::dispatch(self, command, args, root))
-                    .or_else(|| super::workspace_settings::dispatch(self, command, args));
+                    .or_else(|| super::workspace_settings::dispatch(self, command, args))
+                    .or_else(|| super::power::dispatch(self, command, args));
             }
         };
         Some(result)

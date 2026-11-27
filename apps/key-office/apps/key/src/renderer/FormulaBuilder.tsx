@@ -1,9 +1,12 @@
-// The formula builder: start from a template or a building block, compose blocks (each a
-// pill with its own picker), or write the formula as text with highlighting, completion and
-// plain-language errors; a live preview shows the result on real sources. The host parses,
-// checks, prints and evaluates (store_formula_*); this view only edits the tree it returns.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Icon } from "./icons";
+// The formula builder: an empty formula opens on a gallery of examples (reachable again
+// from Examples); the sidebar is only a reference to insert from (the source's properties
+// and the functions, searchable, each described when pointed at); the middle edits the
+// formula as blocks (each a pill with its own picker) or as text with highlighting,
+// completion and plain-language errors where they are; the preview shows the result on
+// real sources. The host parses, checks, prints and evaluates (store_formula_*).
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
+import { Icon, type IconName } from "./icons";
 import type { Invoke } from "./library-api";
 import { Explain, Hint } from "./explain";
 import { FormulaValue, displaysFor } from "./formula-display";
@@ -348,8 +351,8 @@ function BlockView({ block, path, ctx, removable }: { block: Block; path: number
 }
 
 /** The formula as text, highlighted underneath a transparent textarea, with completion. */
-function TextEditor({ value, analysis, catalog, onChange }: { value: string; analysis?: Analysis; catalog: Catalog; onChange: (value: string) => void }) {
-  const area = useRef<HTMLTextAreaElement>(null);
+function TextEditor({ value, analysis, catalog, onChange, areaRef }: { value: string; analysis?: Analysis; catalog: Catalog; onChange: (value: string) => void; areaRef: RefObject<HTMLTextAreaElement | null> }) {
+  const area = areaRef;
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -451,36 +454,224 @@ function TextEditor({ value, analysis, catalog, onChange }: { value: string; ana
   );
 }
 
-function FunctionReference({ catalog, onInsert }: { catalog: Catalog; onInsert: (text: string) => void }) {
+type ReferenceItem =
+  | { kind: "field"; key: string; name: string; type: string; summary?: string; group: string; own: boolean }
+  | { kind: "function"; key: string; fn: CatalogFunction };
+
+const TYPE_ICON: Record<string, IconName> = { number: "hash", boolean: "check", date: "clock", list: "list", text: "text" };
+const fieldType = (type: string) => type.replace(/^formula:/, "");
+
+/** The insertable reference: the source's fields and properties, and the functions by
+ * category, searchable; the selected (hovered or focused) item is described underneath. */
+function Reference({ catalog, onInsert }: { catalog: Catalog; onInsert: (text: string, item: ReferenceItem) => void }) {
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<ReferenceItem>();
+  const list = useRef<HTMLDivElement>(null);
+  // Always opens at the top (a focused item further down used to scroll it).
+  useLayoutEffect(() => {
+    if (list.current) list.current.scrollTop = 0;
+  }, []);
   const q = query.trim().toLowerCase();
+  const fieldGroups = useMemo(() => {
+    const items: ReferenceItem[] = [
+      ...catalog.properties.map((f) => ({ kind: "field" as const, key: `p:${f.name}`, name: f.name, type: f.type, summary: f.kind === "formula" ? "One of your formula properties." : "One of your properties.", group: "properties", own: true })),
+      ...catalog.fields.map((f) => ({ kind: "field" as const, key: `f:${f.name}`, name: f.name, type: f.type, summary: f.summary, group: f.group, own: false })),
+    ].filter((f) => !q || f.name.toLowerCase().includes(q) || (f.summary ?? "").toLowerCase().includes(q));
+    const groups = new Map<string, ReferenceItem[]>();
+    for (const item of items) if (item.kind === "field") groups.set(item.group, [...(groups.get(item.group) ?? []), item]);
+    return [...groups.entries()];
+  }, [catalog, q]);
+  const functionGroups = useMemo(
+    () =>
+      Object.entries(CATEGORY_LABEL)
+        .map(([category, label]) => [
+          label,
+          catalog.functions
+            .filter((f) => f.category === category && (!q || f.name.includes(q) || f.label.toLowerCase().includes(q) || f.summary.toLowerCase().includes(q)))
+            .map((fn): ReferenceItem => ({ kind: "function", key: `fn:${fn.name}`, fn })),
+        ] as const)
+        .filter(([, items]) => items.length),
+    [catalog, q],
+  );
+  const textOf = (item: ReferenceItem) => (item.kind === "field" ? `{${item.name}}` : item.fn.example);
+  const row = (item: ReferenceItem) => (
+    <button
+      key={item.key}
+      type="button"
+      className="kx-fb-ref"
+      data-ref={item.kind === "field" ? item.name : item.fn.name}
+      aria-current={selected?.key === item.key || undefined}
+      title={item.kind === "field" ? `Insert {${item.name}}` : `Insert ${item.fn.example}`}
+      onMouseEnter={() => setSelected(item)}
+      onFocus={() => setSelected(item)}
+      onClick={() => onInsert(textOf(item), item)}
+    >
+      {item.kind === "field" ? (
+        <>
+          <Icon name={item.type.startsWith("formula") ? "function" : (TYPE_ICON[item.type] ?? "text")} size={12} />
+          <span>{item.name}</span>
+        </>
+      ) : (
+        <>
+          <span>{item.fn.label}</span>
+          <code>{item.fn.name}</code>
+        </>
+      )}
+    </button>
+  );
+  const empty = !fieldGroups.length && !functionGroups.length;
   return (
-    <div className="kx-fb-reference" aria-label="Function reference">
+    <aside className="kx-fb-side" aria-label="Formula reference">
       <label className="kx-fb-search">
-        <Icon name="search" size={11} />
-        <input placeholder="Find a function" aria-label="Find a function" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Icon name="search" size={12} />
+        <input type="search" placeholder="Search" aria-label="Search properties and functions" value={query} onChange={(e) => setQuery(e.target.value)} />
       </label>
-      {Object.entries(CATEGORY_LABEL).map(([category, label]) => {
-        const list = catalog.functions.filter((f) => f.category === category && (!q || f.name.includes(q) || f.label.toLowerCase().includes(q) || f.summary.toLowerCase().includes(q)));
-        if (!list.length) return null;
-        return (
-          <section key={category}>
-            <h4>{label}</h4>
-            {list.map((f) => (
-              <div key={f.name} className="kx-fb-ref-item">
-                <strong>
-                  {f.label} <code>{f.name}({f.params.join(", ")})</code>
-                </strong>
-                <small>{f.summary}</small>
-                <button type="button" className="kx-fb-example" title="Insert this example" onClick={() => onInsert(f.example)}>
-                  <code>{f.example}</code>
-                </button>
+      <div className="kx-fb-side-list" ref={list}>
+        {fieldGroups.length > 0 && (
+          <section aria-label="Properties">
+            <h3>Properties</h3>
+            {fieldGroups.map(([group, items]) => (
+              <div key={group} className="kx-fb-ref-group">
+                <h4>{GROUP_LABEL[group] ?? group}</h4>
+                {items.map(row)}
               </div>
             ))}
           </section>
-        );
-      })}
-    </div>
+        )}
+        {functionGroups.length > 0 && (
+          <section aria-label="Functions">
+            <h3>Functions</h3>
+            {functionGroups.map(([label, items]) => (
+              <div key={label} className="kx-fb-ref-group">
+                <h4>{label}</h4>
+                {items.map(row)}
+              </div>
+            ))}
+          </section>
+        )}
+        {empty && <p className="kx-fb-side-empty">Nothing matches “{query}”.</p>}
+      </div>
+      <div className="kx-fb-detail" aria-live="polite">
+        {selected ? (
+          selected.kind === "field" ? (
+            <>
+              <strong>
+                {selected.name} <span className="kx-fb-type">{TYPE_LABEL[fieldType(selected.type)] ?? "Any"}</span>
+              </strong>
+              {selected.summary && <small>{selected.summary}</small>}
+              <code>{`{${selected.name}}`}</code>
+            </>
+          ) : (
+            <>
+              <strong>
+                {selected.fn.label} <span className="kx-fb-type">{TYPE_LABEL[selected.fn.result] ?? "Any"}</span>
+              </strong>
+              <small>{selected.fn.summary}</small>
+              <code>
+                {selected.fn.name}({selected.fn.params.join(", ")})
+              </code>
+              <small className="kx-fb-detail-example">
+                Example: <code>{selected.fn.example}</code>
+              </small>
+            </>
+          )
+        ) : (
+          <small>Point at an item to see what it does. Click to insert it into the formula.</small>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/** Ready-made formulas to start from, and (with an AI model set up) drafting from words. */
+function Gallery({
+  catalog,
+  ai,
+  invoke,
+  workspaceId,
+  hasFormula,
+  onPick,
+  onClose,
+}: {
+  catalog: Catalog;
+  ai?: { configured: boolean };
+  invoke: Invoke;
+  workspaceId?: string;
+  hasFormula: boolean;
+  onPick: (formula: string, display?: string) => void;
+  onClose: () => void;
+}) {
+  const [describe, setDescribe] = useState("");
+  const [draft, setDraft] = useState<{ formula: string; explanation: string; error?: string }>();
+  const [drafting, setDrafting] = useState(false);
+  const draftFromWords = async () => {
+    setDrafting(true);
+    setDraft(undefined);
+    try {
+      const r = await invoke<{ formula: string; explanation: string; analysis: Analysis }>("ai_describe_formula", { description: describe }, workspaceId);
+      setDraft({ formula: r.formula, explanation: r.explanation, error: r.analysis.ok ? undefined : r.analysis.error?.message });
+    } catch (e) {
+      setDraft({ formula: "", explanation: "", error: errorText(e) });
+    } finally {
+      setDrafting(false);
+    }
+  };
+  return (
+    <section className="kx-fb-gallery" aria-label="Start from an example">
+      <header>
+        <div>
+          <h3>Start from an example</h3>
+          <small>Pick one and adjust it, or start from scratch with the properties and functions on the left.</small>
+        </div>
+        <button type="button" className="kx-settings-button" onClick={onClose}>
+          {hasFormula ? "Back to formula" : "Start from scratch"}
+        </button>
+      </header>
+      <div className="kx-fb-templates">
+        {catalog.templates.map((t) => (
+          <button key={t.id} type="button" className="kx-fb-template" data-template={t.id} onClick={() => onPick(t.formula, t.display)}>
+            <strong>{t.name}</strong>
+            <small>{t.summary}</small>
+            <code>{t.formula}</code>
+          </button>
+        ))}
+      </div>
+      <div className="kx-fb-describe">
+        <h4>
+          <Icon name="sparkle" size={12} /> Describe it in words <Explain help="formula.describe" />
+        </h4>
+        {ai?.configured ? (
+          <>
+            <div className="kx-fb-describe-row">
+              <input
+                aria-label="Describe the formula"
+                placeholder="Days since I added it, or “High” when it has more than 100 citations"
+                value={describe}
+                onChange={(e) => setDescribe(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && describe.trim() && !drafting && void draftFromWords()}
+              />
+              <button type="button" className="kx-settings-button" disabled={!describe.trim() || drafting} onClick={() => void draftFromWords()}>
+                {drafting ? "Drafting…" : "Draft"}
+              </button>
+            </div>
+            {draft && (
+              <div className="kx-fb-draft" data-error={draft.error ? true : undefined}>
+                {draft.formula && <code>{draft.formula}</code>}
+                {draft.explanation && <small>{draft.explanation}</small>}
+                {draft.error && <small className="kx-fb-draft-error">{draft.error}</small>}
+                {draft.formula && (
+                  <button type="button" className="kx-settings-button" onClick={() => onPick(draft.formula)}>
+                    Use this
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <small>Set up the AI assistant in Key Settings to draft a formula from a sentence.</small>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -508,16 +699,14 @@ export default function FormulaBuilder({
   const [catalog, setCatalog] = useState<Catalog>();
   const [formula, setFormula] = useState(initialFormula);
   const [mode, setMode] = useState<"blocks" | "text">("blocks");
+  const [gallery, setGallery] = useState(!initialFormula.trim());
   const [analysis, setAnalysis] = useState<Analysis>();
   const [rows, setRows] = useState<PreviewRow[]>([]);
   const [display, setDisplay] = useState(initialDisplay ?? "");
-  const [showReference, setShowReference] = useState(false);
-  const [describe, setDescribe] = useState("");
-  const [draft, setDraft] = useState<{ formula: string; explanation: string; error?: string }>();
-  const [drafting, setDrafting] = useState(false);
   const [ai, setAi] = useState<{ configured: boolean; providerName?: string; local?: boolean }>();
   const [error, setError] = useState("");
   const tree = useRef<Block>(undefined);
+  const area = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     void invoke<Catalog>("store_formula_catalog", {}, workspaceId).then(setCatalog).catch((e) => setError(errorText(e)));
@@ -560,31 +749,36 @@ export default function FormulaBuilder({
       .catch((e) => setError(errorText(e)));
   };
   const start = (text: string, display?: string) => {
+    tree.current = undefined;
     setFormula(text);
     if (display) setDisplay(display);
     setError("");
+    setGallery(false);
   };
-  // A block goes into the first empty slot of the formula, or starts it.
+  // From the reference: at the caret in Text, else into the first empty slot of the blocks
+  // (or as the start of the formula).
   const insert = async (text: string) => {
+    setGallery(false);
     if (!formula.trim()) return start(text);
-    if (mode === "text") return setFormula(`${formula}${/\s$/.test(formula) ? "" : " "}${text}`);
+    if (mode === "text") {
+      const el = area.current;
+      const chars = [...formula];
+      const [from, to] = el ? [[...formula.slice(0, el.selectionStart)].length, [...formula.slice(0, el.selectionEnd)].length] : [chars.length, chars.length];
+      const next = chars.slice(0, from).join("") + text + chars.slice(to).join("");
+      setFormula(next);
+      const caret = from + [...text].length;
+      requestAnimationFrame(() => {
+        area.current?.focus();
+        const at = [...next].slice(0, caret).join("").length;
+        area.current?.setSelectionRange(at, at);
+      });
+      return;
+    }
     const root = tree.current;
     const slot = root ? firstEmpty(root) : undefined;
     if (!slot || !root) return start(text);
     const piece = await invoke<Analysis>("store_formula_analyze", { formula: text }, workspaceId).catch(() => undefined);
     if (piece?.blocks && tree.current) setBlocks(setAt(tree.current, slot, piece.blocks));
-  };
-  const draftFromWords = async () => {
-    setDrafting(true);
-    setDraft(undefined);
-    try {
-      const r = await invoke<{ formula: string; explanation: string; analysis: Analysis }>("ai_describe_formula", { description: describe }, workspaceId);
-      setDraft({ formula: r.formula, explanation: r.explanation, error: r.analysis.ok ? undefined : r.analysis.error?.message });
-    } catch (e) {
-      setDraft({ formula: "", explanation: "", error: errorText(e) });
-    } finally {
-      setDrafting(false);
-    }
   };
 
   if (!catalog)
@@ -599,174 +793,125 @@ export default function FormulaBuilder({
     replace: (path, next) => tree.current && setBlocks(setAt(tree.current, path, next)),
     remove: (path) => tree.current && setBlocks(removeAt(tree.current, path)),
   };
-  const groups = [...new Set(catalog.blocks.map((b) => b.group))];
   const problem = analysis?.error;
+  const problems = (
+    <>
+      {problem && (
+        <div className="kx-fb-problem" role="alert">
+          <Icon name="warning" size={13} />
+          <div>
+            <strong>{problem.message}</strong>
+            {problem.hint && <small>{problem.hint}</small>}
+          </div>
+        </div>
+      )}
+      {!problem &&
+        analysis?.warnings.map((w) => (
+          <div key={`${w.start}-${w.message}`} className="kx-fb-problem" data-level="warning">
+            <Icon name="info" size={13} />
+            <div>
+              <strong>{w.message}</strong>
+              {w.hint && <small>{w.hint}</small>}
+            </div>
+          </div>
+        ))}
+      {error && <p className="key-property-error">{error}</p>}
+    </>
+  );
   return (
     <div className="kx-fb" data-modal-view="formula-builder">
       <header className="kx-fb-head">
-        <div>
+        <div className="kx-fb-title">
           <h2>
             {name ? `Formula for “${name}”` : "Formula"} <Explain help="formula.builder" />
           </h2>
-          <small>Worked out for every source, kept up to date, sortable and filterable.</small>
+          <small>Worked out for every source and kept up to date.</small>
         </div>
-        <div className="kx-segmented" role="group" aria-label="Edit as">
-          <button type="button" aria-pressed={mode === "blocks"} onClick={() => setMode("blocks")}>
-            Blocks
-          </button>
-          <button type="button" aria-pressed={mode === "text"} onClick={() => setMode("text")}>
-            Text
-          </button>
-        </div>
+        <button type="button" className="kx-settings-button" aria-pressed={gallery} onClick={() => setGallery((g) => !g)}>
+          <Icon name="sparkle" size={12} /> Examples
+        </button>
+        <SegmentedTabs
+          label="Edit as"
+          size="small"
+          className="kx-fb-modes"
+          value={mode}
+          onChange={(m) => {
+            setMode(m);
+            setGallery(false);
+          }}
+          tabs={[
+            { id: "blocks", label: "Blocks" },
+            { id: "text", label: "Text" },
+          ]}
+        />
         <button type="button" className="kx-sheet-close" aria-label="Close formula builder" onClick={onCancel}>
           <Icon name="close" size={10} />
         </button>
       </header>
       <div className="kx-fb-body">
-        <aside className="kx-fb-palette" aria-label="Building blocks">
-          <section className="kx-fb-describe">
-            <h4>
-              Describe it in words <Explain help="formula.describe" />
-            </h4>
-            <textarea
-              aria-label="Describe the formula"
-              rows={2}
-              placeholder="Days since I added it, or “High” when it has more than 100 citations"
-              value={describe}
-              disabled={!ai?.configured}
-              onChange={(e) => setDescribe(e.target.value)}
-            />
-            {ai?.configured ? (
-              <button type="button" className="kx-settings-button" disabled={!describe.trim() || drafting} onClick={() => void draftFromWords()}>
-                <Icon name="sparkle" size={11} /> {drafting ? "Drafting…" : "Draft a formula"}
-              </button>
-            ) : (
-              <small>Set up the AI assistant in Key Settings to draft formulas from a description.</small>
-            )}
-            {draft && (
-              <div className="kx-fb-draft" data-error={draft.error ? true : undefined}>
-                {draft.formula && <code>{draft.formula}</code>}
-                {draft.explanation && <small>{draft.explanation}</small>}
-                {draft.error && <small className="kx-fb-draft-error">{draft.error}</small>}
-                {draft.formula && (
-                  <button type="button" className="kx-settings-button" onClick={() => start(draft.formula)}>
-                    Use this
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
-          <section>
-            <h4>Start from</h4>
-            <div className="kx-fb-templates">
-              {catalog.templates.map((t) => (
-                <button key={t.id} type="button" className="kx-fb-template" data-template={t.id} title={t.summary} onClick={() => start(t.formula, t.display)}>
-                  <strong>{t.name}</strong>
-                  <small>{t.summary}</small>
-                </button>
-              ))}
-            </div>
-          </section>
-          {groups.map((group) => (
-            <section key={group}>
-              <h4>{group}</h4>
-              <div className="kx-fb-blocks">
-                {catalog.blocks
-                  .filter((b) => b.group === group)
-                  .map((b) => (
-                    <button key={b.label} type="button" className="kx-fb-chip" data-block={b.label} title={b.summary} onClick={() => void insert(b.formula)}>
-                      {b.label}
-                    </button>
-                  ))}
-              </div>
-            </section>
-          ))}
-        </aside>
+        <Reference catalog={catalog} onInsert={(text) => void insert(text)} />
         <main className="kx-fb-main">
-          <section className="kx-fb-editor" aria-label={mode === "blocks" ? "Formula blocks" : "Formula text"}>
-            {mode === "blocks" ? (
-              !formula.trim() ? (
-                <div className="kx-fb-empty">
-                  <Icon name="function" size={20} />
-                  <strong>Pick a template or a block to start</strong>
-                  <small>Each block has a menu to change it, or to wrap it in another block such as “If … then … otherwise”.</small>
-                </div>
-              ) : analysis?.blocks ? (
-                <div className="kx-fb-tree">
-                  <BlockView block={analysis.blocks} path={[]} ctx={ctx} />
-                </div>
-              ) : problem ? (
-                <div className="kx-fb-empty">
-                  <Icon name="warning" size={18} />
-                  <strong>The text has a problem, so it cannot show as blocks</strong>
-                  <small>Switch to Text to fix it, or start again from a template.</small>
-                </div>
-              ) : (
-                <p className="kx-fb-loading">Reading…</p>
-              )
-            ) : (
-              <>
-                <TextEditor value={formula} analysis={analysis} catalog={catalog} onChange={setFormula} />
-                <div className="kx-fb-text-tools">
-                  <button type="button" className="kx-settings-button" aria-pressed={showReference} onClick={() => setShowReference((s) => !s)}>
-                    <Icon name="book" size={11} /> Functions
-                  </button>
-                  <Hint help="formula.text" />
-                </div>
-              </>
-            )}
-            {problem && (
-              <div className="kx-fb-problem" role="alert">
-                <Icon name="warning" size={13} />
-                <div>
-                  <strong>{problem.message}</strong>
-                  {problem.hint && <small>{problem.hint}</small>}
-                </div>
-              </div>
-            )}
-            {!problem &&
-              analysis?.warnings.map((w) => (
-                <div key={`${w.start}-${w.message}`} className="kx-fb-problem" data-level="warning">
-                  <Icon name="info" size={13} />
-                  <div>
-                    <strong>{w.message}</strong>
-                    {w.hint && <small>{w.hint}</small>}
-                  </div>
-                </div>
-              ))}
-            {error && <p className="key-property-error">{error}</p>}
-          </section>
-          {showReference && mode === "text" && <FunctionReference catalog={catalog} onInsert={(text) => setFormula(formula.trim() ? `${formula} ${text}` : text)} />}
-          <section className="kx-fb-preview" aria-label="Preview">
-            <header>
-              <h4>Preview</h4>
-              {analysis?.ok && <span className="kx-fb-type" data-type={resultType}>{TYPE_LABEL[resultType] ?? "Mixed"}</span>}
-              <span className="kx-spacer" />
-              {displays.length > 1 && (
-                <div className="kx-segmented" role="group" aria-label="Show as">
-                  {displays.map((d) => (
-                    <button key={d.id} type="button" aria-pressed={shownDisplay === d.id} onClick={() => setDisplay(d.id)}>
-                      {d.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </header>
-            {rows.length ? (
-              <table className="kx-fb-rows">
-                <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id}>
-                      <td title={row.title}>{row.title || "Untitled"}</td>
-                      <td>{row.error ? <span className="kx-fv-error" title={row.hint}>{row.error}</span> : <FormulaValue value={row.value} resultType={resultType} display={shownDisplay} />}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <small className="kx-fb-hint">{formula.trim() ? "No sources to preview yet." : "The result on a few of your sources shows here."}</small>
-            )}
-          </section>
+          {gallery ? (
+            <Gallery catalog={catalog} ai={ai} invoke={invoke} workspaceId={workspaceId} hasFormula={!!formula.trim()} onPick={start} onClose={() => setGallery(false)} />
+          ) : (
+            <>
+              <section className="kx-fb-editor" aria-label={mode === "blocks" ? "Formula blocks" : "Formula text"}>
+                {mode === "blocks" ? (
+                  !formula.trim() ? (
+                    <div className="kx-fb-empty">
+                      <Icon name="function" size={20} />
+                      <strong>Click a property or function on the left to start</strong>
+                      <small>Each block then has a menu to change it, or to wrap it in another one such as “If … then … otherwise”.</small>
+                    </div>
+                  ) : analysis?.blocks ? (
+                    <div className="kx-fb-tree">
+                      <BlockView block={analysis.blocks} path={[]} ctx={ctx} />
+                    </div>
+                  ) : problem ? (
+                    <div className="kx-fb-empty" data-problem>
+                      <Icon name="warning" size={18} />
+                      <strong>This formula has a problem, so it cannot show as blocks</strong>
+                      <small>Switch to Text to fix it where it is marked, or pick an example.</small>
+                    </div>
+                  ) : (
+                    <p className="kx-fb-loading">Reading…</p>
+                  )
+                ) : (
+                  <TextEditor value={formula} analysis={analysis} catalog={catalog} onChange={setFormula} areaRef={area} />
+                )}
+                {problems}
+                {mode === "text" && !problem && <Hint help="formula.text" />}
+              </section>
+              <section className="kx-fb-preview" aria-label="Preview">
+                <header>
+                  <h4>Preview on your sources</h4>
+                  {analysis?.ok && (
+                    <span className="kx-fb-type" data-type={resultType}>
+                      {TYPE_LABEL[resultType] ?? "Mixed"}
+                    </span>
+                  )}
+                  <span className="kx-spacer" />
+                  {displays.length > 1 && (
+                    <SegmentedTabs label="Show as" size="small" className="kx-fb-shows" value={shownDisplay} onChange={setDisplay} tabs={displays.map((d) => ({ id: d.id, label: d.label }))} />
+                  )}
+                </header>
+                {rows.length ? (
+                  <table className="kx-fb-rows">
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr key={row.id}>
+                          <td title={row.title}>{row.title || "Untitled"}</td>
+                          <td>{row.error ? <span className="kx-fv-error" title={row.hint}>{row.error}</span> : <FormulaValue value={row.value} resultType={resultType} display={shownDisplay} />}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <small className="kx-fb-hint">{formula.trim() ? "No sources to preview yet." : "The result on a few of your sources shows here."}</small>
+                )}
+              </section>
+            </>
+          )}
         </main>
       </div>
       <footer className="kx-fb-foot">
@@ -784,4 +929,4 @@ export default function FormulaBuilder({
   );
 }
 
-const TYPE_LABEL: Record<string, string> = { number: "Number", text: "Text", boolean: "Yes / no", date: "Date", list: "List", select: "Label" };
+const TYPE_LABEL: Record<string, string> = { number: "Number", text: "Text", boolean: "Yes / no", date: "Date", list: "List", select: "Label", any: "Any", item: "Any", branches: "Any" };

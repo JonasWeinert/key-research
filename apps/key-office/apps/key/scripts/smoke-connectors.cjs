@@ -42,12 +42,12 @@ for (const id of fs.readdirSync(fixturesDir)) {
   }
 }
 
-// ── Bundles: v5 (EconStor bumped to 1.0.1), and a tampered v6.
+// ── Bundles: v5 (EconStor bumped to 1.1.0), and a tampered v6.
 const specsCopy = path.join(temp, "specs");
 fs.mkdirSync(specsCopy);
 for (const f of fs.readdirSync(path.join(repo, "connectors/specs"))) {
   let text = fs.readFileSync(path.join(repo, "connectors/specs", f), "utf8");
-  if (f === "econstor.json") text = text.replace('"version": "1.0.0"', '"version": "1.0.1"').replace('"name": "EconStor"', '"name": "EconStor (updated)"');
+  if (f === "econstor.json") text = text.replace(/"version": "[0-9.]+"/, '"version": "1.1.0"').replace('"name": "EconStor"', '"name": "EconStor (updated)"');
   fs.writeFileSync(path.join(specsCopy, f), text);
 }
 const tool = (...args) => execFileSync(toolBin, args, { cwd: repo, encoding: "utf8" });
@@ -56,13 +56,13 @@ tool("dev-bundle", "--specs", specsCopy, "--out", good, "--sequence", "5");
 // v6 really changes EconStor (so it is downloaded, not copied from the active bundle), then the
 // file is altered after signing.
 const econstorCopy = path.join(specsCopy, "econstor.json");
-fs.writeFileSync(econstorCopy, fs.readFileSync(econstorCopy, "utf8").replace('"version": "1.0.1"', '"version": "1.0.2"'));
+fs.writeFileSync(econstorCopy, fs.readFileSync(econstorCopy, "utf8").replace('"version": "1.1.0"', '"version": "1.1.1"'));
 const tampered = path.join(temp, "bundle-tampered");
 tool("dev-bundle", "--specs", specsCopy, "--out", tampered, "--sequence", "6");
 const evil = path.join(tampered, "specs/econstor.json");
 fs.writeFileSync(evil, fs.readFileSync(evil, "utf8").replace("EconStor (updated)", "EconStor (tampered)"));
 // v7 unsigned (no index.sig): what the publish workflow makes while signing is postponed.
-fs.writeFileSync(econstorCopy, fs.readFileSync(econstorCopy, "utf8").replace('"version": "1.0.2"', '"version": "1.0.3"').replace("EconStor (updated)", "EconStor (unsigned)"));
+fs.writeFileSync(econstorCopy, fs.readFileSync(econstorCopy, "utf8").replace('"version": "1.1.1"', '"version": "1.1.2"').replace("EconStor (updated)", "EconStor (unsigned)"));
 const unsignedBundle = path.join(temp, "bundle-unsigned");
 tool("bundle", "--specs", specsCopy, "--out", unsignedBundle, "--sequence", "7");
 let serving = good;
@@ -175,7 +175,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(check.state === "updated" && check.sequence === 5, `a newer signed bundle is accepted (${JSON.stringify(check)})`);
     list = await h.invoke("db_connectors");
     const econstor = list.find((c) => c.id === "econstor");
-    ok(econstor.version === "1.0.1" && econstor.origin === "update" && econstor.name === "EconStor (updated)", "the updated connector is active");
+    ok(econstor.version === "1.1.0" && econstor.origin === "update" && econstor.name === "EconStor (updated)", "the updated connector is active");
 
     serving = tampered;
     check = await h.invoke("db_connectors_check", { force: true });
@@ -228,7 +228,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(savedList[0].lastCount > 0 && savedList[0].newCount === 0, "the saved search remembers its last run");
 
     const parsed = await h.invoke("db_parse", { text: '("school meals"[tiab] OR lunch*[ti]) AND attendance[tiab]', dialect: "auto" });
-    ok(parsed.query?.concepts?.length === 2, "a pasted PubMed string becomes blocks");
+    ok(parsed.query?.expr?.items?.length === 2 && parsed.query.expr.items[0].op === "or", "a pasted PubMed string becomes blocks");
+    const text = await h.invoke("db_query_parse", { text: "(health OR doctor) AND ((AI OR ML) NOT regression)" });
+    ok(text.ok && text.text === "(health OR doctor) AND (AI OR ML) NOT regression", "the text syntax reads nested logic");
+    const bad = await h.invoke("db_query_parse", { text: "(health OR doctor" });
+    ok(!bad.ok && bad.error.start === 0 && /never closed/.test(bad.error.message), "an unbalanced bracket is reported where it is");
     const problem = await h.invoke("db_report_problem", { connector: "econstor", error: "EconStor answered 500" });
     ok(problem.url.startsWith("https://github.com/") && problem.url.includes("connector%3Aeconstor"), "Report problem builds an issue link");
     ok(updateRequests > 0, "updates came from the configured address only");

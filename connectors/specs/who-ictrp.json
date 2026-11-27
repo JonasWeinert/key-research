@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "who-ictrp",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "WHO ICTRP",
   "description": "The World Health Organization's International Clinical Trials Registry Platform: one search across national and regional trial registries.",
   "homepage": "https://trialsearch.who.int/",
@@ -13,6 +13,7 @@
   "credentials": [],
   "hosts": [],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all"
     ],

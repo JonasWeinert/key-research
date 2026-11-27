@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "3ie-dep",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "3ie Development Evidence Portal",
   "description": "3ie's portal of impact evaluations and systematic reviews of development programmes in low- and middle-income countries.",
   "homepage": "https://developmentevidence.3ieimpact.org/",
@@ -21,6 +21,7 @@
     "maxPages": 100
   },
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all"
     ],

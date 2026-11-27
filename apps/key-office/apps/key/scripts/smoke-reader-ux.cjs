@@ -459,6 +459,32 @@ const want = (name) => !only.length || only.includes(name);
         () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: document.querySelector(".pdfjs-scroll").scrollTop, page: document.querySelector(".pdfjs-page").offsetHeight })))),
       );
       if (kept.top > kept.page / 2) throw Error(`Closing the panel undid a scroll to the top (${kept.top})`);
+      // A reader at the very top stays at the top when its width changes (the panel closes
+      // and the pages grow wider and taller).
+      await pdf.mouse.move(600, 20);
+      await pdf.getByRole("button", { name: "References", exact: true }).click();
+      await panel.waitFor({ timeout: 15000 });
+      await pdf.waitForTimeout(600);
+      await pdf.evaluate(() => document.querySelector(".pdfjs-scroll").scrollTo({ top: 0, behavior: "instant" }));
+      await pdf.waitForTimeout(300);
+      const narrow = await pdf.evaluate(() => {
+        const s = document.querySelector(".pdfjs-scroll");
+        window.__widening = { width: s.clientWidth, top: null };
+        const observer = new ResizeObserver(() => {
+          if (s.clientWidth === window.__widening.width) return;
+          observer.disconnect();
+          requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => (window.__widening.top = s.scrollTop))));
+        });
+        observer.observe(s);
+        return s.clientWidth;
+      });
+      await panel.getByRole("button", { name: "Hide details and references" }).click();
+      await panel.waitFor({ state: "detached", timeout: 5000 });
+      await pdf.waitForFunction(() => window.__widening.top !== null, undefined, { timeout: 5000 });
+      await pdf.waitForTimeout(400);
+      const atTop = await pdf.evaluate(() => ({ first: window.__widening.top, settled: document.querySelector(".pdfjs-scroll").scrollTop, width: document.querySelector(".pdfjs-scroll").clientWidth }));
+      if (atTop.first > 1 || atTop.settled > 1) throw Error(`A width change at the top moved the reader down (${atTop.first}, then ${atTop.settled}; ${narrow} → ${atTop.width} px wide)`);
+      result.keepsTopOnResize = atTop;
       result.panel = { rows };
     }
 

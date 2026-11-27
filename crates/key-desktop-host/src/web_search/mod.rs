@@ -8,17 +8,26 @@
 // made with a key are counted; the app reads and clears the counts with `web_key_usage` and
 // shows them in Settings. Nothing here goes to the network unless the user searches the web
 // or adds a work.
+pub mod brave;
+pub mod engines;
+pub mod exa;
 pub mod filters;
+pub mod firecrawl;
 pub mod find_pdf;
 pub mod http;
 pub mod identifiers;
+pub mod jina;
 pub mod library;
 pub mod merge;
 pub mod openalex;
+pub mod perplexity;
 pub mod provider;
 pub mod scholar_serpapi;
+pub mod searxng;
 pub mod semantic_scholar;
+pub mod tavily;
 pub mod types;
+pub mod you;
 
 use crate::ipc::{Output, arg, json_output};
 use filters::{FilterToken, LOCAL, WebFilters};
@@ -37,9 +46,26 @@ const DEFAULT_MAILTO: &str = "key-app@users.noreply.github.com";
 
 /// The web search providers, in the order their results interleave. Google Scholar (via
 /// SerpApi) comes last: off by default, and the fallback when the others fail.
+/// General web search engines follow (provider.rs `engine()`): asked as one "web" chain in
+/// the user's order, not side by side.
 pub fn providers() -> Vec<Arc<dyn Provider>> {
-    vec![Arc::new(openalex::OpenAlex), Arc::new(semantic_scholar::SemanticScholar), Arc::new(scholar_serpapi::ScholarSerpApi)]
+    vec![
+        Arc::new(openalex::OpenAlex),
+        Arc::new(semantic_scholar::SemanticScholar),
+        Arc::new(scholar_serpapi::ScholarSerpApi),
+        Arc::new(tavily::Tavily),
+        Arc::new(firecrawl::Firecrawl),
+        Arc::new(exa::Exa),
+        Arc::new(brave::Brave),
+        Arc::new(perplexity::Perplexity),
+        Arc::new(you::You),
+        Arc::new(jina::Jina),
+        Arc::new(searxng::SearXng),
+    ]
 }
+
+/// The provider id of the chain of web search engines.
+pub const CHAIN: &str = "web";
 
 #[derive(Clone, Debug, Default)]
 struct Key {
@@ -54,6 +80,14 @@ struct Options {
     enabled: HashMap<String, bool>,
     /// By service id.
     keys: HashMap<String, Key>,
+    /// A self-hosted engine's address (SearXNG), by provider id.
+    base_urls: HashMap<String, String>,
+    /// The engines in the user's order of preference (those left out follow in their own order).
+    order: Vec<String>,
+    /// When an engine fails or runs out of credits: false stops there, else the next is asked.
+    stop_on_failure: bool,
+    /// Narrow engines to scholarly sources where they can.
+    scholarly: bool,
 }
 
 #[derive(Default)]
@@ -82,6 +116,7 @@ pub struct WebSearch {
     fallbacks: Mutex<HashMap<String, Arc<Flight>>>,
     usage: Mutex<HashMap<String, Usage>>,
     transport: Box<Transport>,
+    post: Box<http::PostTransport>,
     sleep: Box<Sleep>,
 }
 
@@ -101,8 +136,15 @@ impl WebSearch {
             fallbacks: Default::default(),
             usage: Default::default(),
             transport,
+            post: Box::new(|base, url, headers, body, cancel| http::send_post(base, url, headers, body, cancel)),
             sleep,
         }
+    }
+
+    #[cfg(test)]
+    fn with_post(mut self, post: Box<http::PostTransport>) -> Self {
+        self.post = post;
+        self
     }
 
     fn options(&self) -> Options {
@@ -117,6 +159,22 @@ impl WebSearch {
         }
         if let Some(providers) = args.get("providers").and_then(Json::as_object) {
             options.enabled = providers.iter().filter_map(|(id, entry)| Some((id.clone(), entry.get("enabled")?.as_bool()?))).collect();
+            options.base_urls = providers
+                .iter()
+                .filter_map(|(id, entry)| Some((id.clone(), entry.get("baseUrl")?.as_str()?.trim().trim_end_matches('/').to_string())))
+                .filter(|(_, url)| url.starts_with("https://") || url.starts_with("http://"))
+                .collect();
+        }
+        if let Some(engines) = args.get("engines") {
+            if let Some(order) = engines.get("order").and_then(Json::as_array) {
+                options.order = order.iter().filter_map(Json::as_str).map(String::from).collect();
+            }
+            if let Some(fallback) = engines.get("fallback").and_then(Json::as_str) {
+                options.stop_on_failure = fallback == "stop";
+            }
+            if let Some(scholarly) = engines.get("scholarly").and_then(Json::as_bool) {
+                options.scholarly = scholarly;
+            }
         }
         if let Some(keys) = args.get("keys").and_then(Json::as_object) {
             for (service, entry) in keys {
@@ -144,6 +202,13 @@ impl WebSearch {
         let caps = p.capabilities();
         if caps.key_required && self.key_of(p).is_none() {
             return false;
+        }
+        if p.engine().is_some_and(|e| e.base_url) && !self.options().base_urls.contains_key(p.id()) {
+            return false;
+        }
+        // An engine is asked only when the user turned it on: a key alone is not enough.
+        if p.engine().is_some() {
+            return self.options().enabled.get(p.id()).copied().unwrap_or(caps.enabled_by_default);
         }
         match self.options().enabled.get(p.id()) {
             Some(on) => *on,
@@ -184,7 +249,9 @@ impl WebSearch {
         let caps = p.capabilities();
         let key = self.key_of(p);
         let mailto = self.mailto();
-        let run = |key: Option<&str>| task(&Context { api_key: key, mailto: &mailto, cancel, transport: &*self.transport });
+        let options = self.options();
+        let base_url = options.base_urls.get(p.id()).map(String::as_str);
+        let run = |key: Option<&str>| task(&Context { api_key: key, mailto: &mailto, cancel, transport: &*self.transport, post: &*self.post, base_url, scholarly: options.scholarly });
         let Some(service) = caps.service else { return run(key.as_deref()) };
         let always = caps.key_required || self.always(service);
         http::with_key_fallback(key.as_deref(), always, cancel, &|outcome| self.record(service, outcome), &run)
@@ -201,26 +268,162 @@ impl WebSearch {
     }
 
     pub fn providers_info(&self) -> Json {
-        Json::Array(
-            self.providers
-                .iter()
-                .map(|p| {
-                    let caps = p.capabilities();
-                    json!({
-                        "id": p.id(),
-                        "label": p.label(),
-                        "icon": p.icon(),
-                        // Keys are set under Services & API keys for every provider with a service.
-                        "apiKey": caps.api_key && caps.service.is_none(),
-                        "keyRequired": caps.key_required,
-                        "keyHelp": caps.key_help,
-                        "enabled": self.enabled(&**p),
-                        "lookup": p.has_lookup(),
-                        "filters": Self::applicable(&**p),
-                    })
-                })
-                .collect(),
-        )
+        let options = self.options();
+        let mut list: Vec<Json> = self
+            .providers
+            .iter()
+            .map(|p| {
+                let caps = p.capabilities();
+                let mut info = json!({
+                    "id": p.id(),
+                    "label": p.label(),
+                    "icon": p.icon(),
+                    // Keys are set under Services & API keys for every provider with a service.
+                    "apiKey": caps.api_key && caps.service.is_none(),
+                    "keyRequired": caps.key_required,
+                    "keyHelp": caps.key_help,
+                    "enabled": self.enabled(&**p),
+                    "lookup": p.has_lookup(),
+                    "filters": Self::applicable(&**p),
+                    "kind": if p.engine().is_some() { "engine" } else { "catalogue" },
+                });
+                if let Some(engine) = p.engine() {
+                    info["engine"] = json!({
+                        "service": caps.service,
+                        "hasKey": caps.service.is_none() || self.key_of(&**p).is_some(),
+                        "turnedOn": options.enabled.get(p.id()).copied().unwrap_or(caps.enabled_by_default),
+                        "scholarly": engine.scholarly,
+                        "reader": engine.reader,
+                        "needsBaseUrl": engine.base_url,
+                        "baseUrl": options.base_urls.get(p.id()),
+                        "maxResults": engine.max_results,
+                        "pricingUrl": engine.pricing_url,
+                        // What it applies in its own request (`filters` adds those checked on any result).
+                        "ownFilters": caps.filters,
+                    });
+                }
+                info
+            })
+            .collect();
+        let engines = self.engines_in_order();
+        let on: Vec<&Arc<dyn Provider>> = engines.iter().filter(|p| self.enabled(&***p)).collect();
+        let mut filters: Vec<&str> = Vec::new();
+        for p in &on {
+            for key in Self::applicable(&***p) {
+                if !filters.contains(&key) {
+                    filters.push(key);
+                }
+            }
+        }
+        list.push(json!({
+            "id": CHAIN,
+            "label": "Web",
+            "icon": "globe",
+            "apiKey": false,
+            "keyRequired": false,
+            "enabled": !on.is_empty(),
+            "lookup": false,
+            "filters": filters,
+            "kind": "chain",
+            "chain": {
+                "order": engines.iter().map(|p| p.id()).collect::<Vec<_>>(),
+                "on": on.iter().map(|p| p.id()).collect::<Vec<_>>(),
+                "fallback": if options.stop_on_failure { "stop" } else { "next" },
+                "scholarly": options.scholarly,
+            },
+        }));
+        Json::Array(list)
+    }
+
+    /// Every engine, in the user's order (those the order leaves out follow in their own).
+    fn engines_in_order(&self) -> Vec<Arc<dyn Provider>> {
+        let order = self.options().order;
+        let mut engines: Vec<Arc<dyn Provider>> = self.providers.iter().filter(|p| p.engine().is_some()).cloned().collect();
+        engines.sort_by_key(|p| order.iter().position(|id| id == p.id()).unwrap_or(usize::MAX));
+        engines
+    }
+
+    /// The "web" chain: the engines that are on, in the user's order (`pick` first), each asked
+    /// only when the one before failed; results say which one answered. A further page goes to
+    /// the engine that answered the first.
+    fn chain(&self, query: &str, limit: usize, cursor: Option<&str>, filters: &WebFilters, request_id: Option<&str>, pick: Option<&str>) -> Result<WebPage, String> {
+        let mut engines: Vec<Arc<dyn Provider>> = self.engines_in_order().into_iter().filter(|p| self.enabled(&**p)).collect();
+        if engines.is_empty() {
+            return Err("No web search engine is turned on (Settings → Web search engines)".into());
+        }
+        if let Some(pick) = pick.filter(|p| !p.is_empty()) {
+            let at = engines.iter().position(|p| p.id() == pick).ok_or_else(|| format!("{pick} is not turned on as a web search engine"))?;
+            let picked = engines.remove(at);
+            engines.insert(0, picked);
+        }
+        if let Some((id, inner)) = cursor.and_then(|c| c.split_once('|')) {
+            let mut page = self.search(id, query, limit, Some(inner), filters, request_id)?;
+            page.cursor = page.cursor.map(|c| format!("{id}|{c}"));
+            page.answered_by = Some(id.to_string());
+            return Ok(page);
+        }
+        let first = engines[0].id();
+        let mut failed: Vec<types::EngineFailure> = Vec::new();
+        let mut skipped: Vec<String> = Vec::new();
+        for p in &engines {
+            match self.search(p.id(), query, limit, None, filters, request_id) {
+                // It cannot apply a filter: another engine may.
+                Ok(page) if page.results.is_empty() && page.skipped.is_some() => {
+                    for key in page.skipped.unwrap_or_default() {
+                        if !skipped.contains(&key) {
+                            skipped.push(key);
+                        }
+                    }
+                }
+                Ok(mut page) => {
+                    if p.id() != first {
+                        for r in &mut page.results {
+                            r.fallback_for = Some(first.to_string());
+                        }
+                    }
+                    page.cursor = page.cursor.map(|c| format!("{}|{c}", p.id()));
+                    page.answered_by = Some(p.id().to_string());
+                    page.failed = Some(failed).filter(|f| !f.is_empty());
+                    return Ok(page);
+                }
+                Err(message) if message == "Cancelled" => return Err(message),
+                Err(message) => {
+                    failed.push(types::EngineFailure { provider: p.id().to_string(), message: message.clone() });
+                    if self.options().stop_on_failure {
+                        break;
+                    }
+                }
+            }
+        }
+        if failed.is_empty() {
+            return Ok(WebPage { skipped: Some(skipped), ..Default::default() });
+        }
+        Err(failed.iter().map(|f| f.message.as_str()).collect::<Vec<_>>().join("; "))
+    }
+
+    /// One page as readable HTML from a reader service the user turned on (Firecrawl's
+    /// scrape …), `pick` first; the next is asked when one fails.
+    pub fn read_page(&self, url: &str, pick: Option<&str>) -> Result<provider::ReadPage, String> {
+        let parsed = url::Url::parse(url.trim()).map_err(|_| "This is not a web address".to_string())?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err("Only web pages can be read".into());
+        }
+        let mut readers: Vec<Arc<dyn Provider>> = self.engines_in_order().into_iter().filter(|p| p.engine().is_some_and(|e| e.reader) && self.enabled(&**p)).collect();
+        if let Some(pick) = pick.filter(|p| !p.is_empty()) {
+            readers.sort_by_key(|p| p.id() != pick);
+        }
+        if readers.is_empty() {
+            return Err("No page reader is turned on (Firecrawl or Jina under Web search engines)".into());
+        }
+        let cancel = CancellationToken::active();
+        let mut errors = Vec::new();
+        for p in readers {
+            match self.keyed(&*p, &cancel, &|cx| http::with_retry(Retry::lookup(), &cancel, &*self.sleep, || p.read_page(parsed.as_str(), cx))) {
+                Ok(page) => return Ok(page),
+                Err(error) => errors.push(error.message),
+            }
+        }
+        Err(errors.join("; "))
     }
 
     /// Search tokens as web filters: those some provider that is on applies, the kind of each
@@ -246,6 +449,15 @@ impl WebSearch {
     }
 
     pub fn search(&self, id: &str, query: &str, limit: usize, cursor: Option<&str>, filters: &WebFilters, request_id: Option<&str>) -> Result<WebPage, String> {
+        self.search_with(id, query, limit, cursor, filters, request_id, None)
+    }
+
+    /// `engine` picks the web search engine asked first (the "web" chain only).
+    #[allow(clippy::too_many_arguments)]
+    pub fn search_with(&self, id: &str, query: &str, limit: usize, cursor: Option<&str>, filters: &WebFilters, request_id: Option<&str>, engine: Option<&str>) -> Result<WebPage, String> {
+        if id == CHAIN {
+            return self.chain(query, limit, cursor, filters, request_id, engine);
+        }
         let p = self.provider(id)?;
         if !self.enabled(&*p) {
             return Err(format!("{} is turned off in Settings", p.label()));
@@ -276,14 +488,16 @@ impl WebSearch {
         }
         let words = if short { "" } else { q };
         let request = SearchRequest { limit, cursor, filters };
+        // An engine's query never goes to a catalogue's keyed fallback (the chain has its own).
+        let engine = p.engine().is_some();
         let result = (|| {
             let mut page = match self.ask(&*p, words, &request, &cancel) {
                 Ok(page) => page,
-                Err(error) if cancel.is_cancelled() || error.cancelled => return Err(error),
+                Err(error) if cancel.is_cancelled() || error.cancelled || engine => return Err(error),
                 Err(error) => self.fallback(id, words, &request, &cancel).ok_or(error)?,
             };
             // Nothing found: a keyed Scholar search may know the work.
-            if page.results.is_empty() {
+            if page.results.is_empty() && !engine {
                 if let Some(fallback) = self.fallback(id, words, &request, &cancel) {
                     page = fallback;
                 }
@@ -316,7 +530,8 @@ impl WebSearch {
         }
         let spare = self.providers.iter().find(|p| {
             let caps = p.capabilities();
-            p.id() != failed && caps.key_required && caps.service.is_some() && self.key_of(&***p).is_some() && !self.enabled(&***p)
+            // Never a web search engine: those are asked only when the user turned them on.
+            p.engine().is_none() && p.id() != failed && caps.key_required && caps.service.is_some() && self.key_of(&***p).is_some() && !self.enabled(&***p)
         })?;
         let key = json!([spare.id(), q.to_lowercase(), request.limit, request.filters]).to_string();
         let page = match self.cache.get(&key) {
@@ -464,7 +679,15 @@ pub fn dispatch(web: &WebSearch, library: &dyn Library, command: &str, args: &Js
             });
             let filters = arg::<Option<WebFilters>>(args, "filters")?.unwrap_or_default();
             let request_id: Option<String> = arg(args, "requestId")?;
-            json_output(web.search(&provider, &query, limit, cursor.as_deref(), &filters, request_id.as_deref())?)
+            let engine: Option<String> = arg(args, "engine")?;
+            json_output(web.search_with(&provider, &query, limit, cursor.as_deref(), &filters, request_id.as_deref(), engine.as_deref())?)
+        })(),
+        // One page as readable HTML from a reader the user turned on (saving a web page when
+        // Key's own capture fails, or when the user picks the reader).
+        "web_read_page" => (|| {
+            let url: String = arg(args, "url")?;
+            let provider: Option<String> = arg(args, "provider")?;
+            json_output(web.read_page(&url, provider.as_deref())?)
         })(),
         "web_lookup" => (|| json_output(web.lookup(&arg::<String>(args, "provider")?, &arg::<String>(args, "id")?)?))(),
         "web_merge" => arg::<Vec<merge::ProviderList>>(args, "lists").and_then(|lists| json_output(merge::merge(&lists))),
@@ -555,6 +778,17 @@ pub(crate) mod tests {
             "openalex-search.json" => include_str!("fixtures/openalex-search.json"),
             "s2-search.json" => include_str!("fixtures/s2-search.json"),
             "serpapi-scholar.json" => include_str!("fixtures/serpapi-scholar.json"),
+            // Synthetic answers shaped like each engine's documented response (see each file's `_synthetic`).
+            "tavily-search.json" => include_str!("fixtures/tavily-search.json"),
+            "firecrawl-search.json" => include_str!("fixtures/firecrawl-search.json"),
+            "firecrawl-scrape.json" => include_str!("fixtures/firecrawl-scrape.json"),
+            "exa-search.json" => include_str!("fixtures/exa-search.json"),
+            "brave-search.json" => include_str!("fixtures/brave-search.json"),
+            "perplexity-search.json" => include_str!("fixtures/perplexity-search.json"),
+            "you-search.json" => include_str!("fixtures/you-search.json"),
+            "jina-search.json" => include_str!("fixtures/jina-search.json"),
+            "jina-read.json" => include_str!("fixtures/jina-read.json"),
+            "searxng-search.json" => include_str!("fixtures/searxng-search.json"),
             other => panic!("no fixture {other}"),
         };
         serde_json::from_str(text).unwrap()
@@ -567,30 +801,43 @@ pub(crate) mod tests {
         answers: VecDeque<(u16, String)>,
         pub urls: Vec<Url>,
         headers: Vec<Vec<(String, String)>>,
+        /// POST bodies, as JSON (Null for a GET).
+        pub bodies: Vec<Json>,
     }
 
     /// Recorded answers, in order or by route, and what each request carried.
     pub struct Recorded {
         calls: Arc<Mutex<Calls>>,
         transport: Box<Transport>,
+        post: Box<http::PostTransport>,
         cancel: CancellationToken,
     }
 
     impl Recorded {
         fn make(answers: Vec<(u16, String)>, route: Option<Box<Route>>) -> Self {
             let calls = Arc::new(Mutex::new(Calls { answers: answers.into(), ..Default::default() }));
-            let inner = calls.clone();
-            let transport: Box<Transport> = Box::new(move |_base, url, headers, _cancel| {
-                let mut calls = inner.lock().unwrap();
-                calls.urls.push(url.clone());
-                calls.headers.push(headers.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect());
-                let (status, body) = match &route {
-                    Some(route) => route(url),
-                    None => calls.answers.pop_front().expect("an answer for every request"),
-                };
-                Ok(http::Response { status, headers: Vec::new(), body: body.into_bytes() })
-            });
-            Self { calls, transport, cancel: CancellationToken::active() }
+            let route: Arc<Option<Box<Route>>> = Arc::new(route);
+            let answer = {
+                let inner = calls.clone();
+                move |url: &Url, headers: &[(&str, &str)], body: Option<&[u8]>| {
+                    let mut calls = inner.lock().unwrap();
+                    calls.urls.push(url.clone());
+                    calls.headers.push(headers.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect());
+                    calls.bodies.push(body.and_then(|b| serde_json::from_slice(b).ok()).unwrap_or(Json::Null));
+                    let (status, body) = match &*route {
+                        Some(route) => route(url),
+                        None => calls.answers.pop_front().expect("an answer for every request"),
+                    };
+                    Ok(http::Response { status, headers: Vec::new(), body: body.into_bytes() })
+                }
+            };
+            let get = answer.clone();
+            let transport: Box<Transport> = Box::new(move |_base, url, headers, _cancel| get(url, headers, None));
+            let post: Box<http::PostTransport> = Box::new(move |_base, url, headers, body, _cancel| answer(url, headers, Some(body)));
+            Self { calls, transport, post, cancel: CancellationToken::active() }
+        }
+        pub fn bodies(&self) -> Vec<Json> {
+            self.calls.lock().unwrap().bodies.clone()
         }
         pub fn new(answers: Vec<(u16, String)>) -> Self {
             Self::make(answers, None)
@@ -599,7 +846,10 @@ pub(crate) mod tests {
             Self::make(Vec::new(), Some(Box::new(route)))
         }
         pub fn context<'a>(&'a self, api_key: Option<&'a str>, mailto: &'a str) -> Context<'a> {
-            Context { api_key, mailto, cancel: &self.cancel, transport: &*self.transport }
+            Context { api_key, mailto, cancel: &self.cancel, transport: &*self.transport, post: &*self.post, base_url: None, scholarly: false }
+        }
+        pub fn context_at<'a>(&'a self, api_key: Option<&'a str>, base_url: &'a str, scholarly: bool) -> Context<'a> {
+            Context { base_url: Some(base_url), scholarly, ..self.context(api_key, "") }
         }
         pub fn urls(&self) -> Vec<Url> {
             self.calls.lock().unwrap().urls.clone()
@@ -613,7 +863,7 @@ pub(crate) mod tests {
         /// A web search that sends everything here and never sleeps.
         pub fn search(self) -> (Arc<Mutex<Calls>>, WebSearch) {
             let calls = self.calls.clone();
-            (calls, WebSearch::with(providers(), self.transport, Box::new(|_, cancel| !cancel.is_cancelled())))
+            (calls, WebSearch::with(providers(), self.transport, Box::new(|_, cancel| !cancel.is_cancelled())).with_post(self.post))
         }
     }
 
@@ -631,9 +881,11 @@ pub(crate) mod tests {
         web.set_options(&json!({ "providers": { "openalex": { "enabled": false } } }));
         assert!(web.search("openalex", "other", 3, None, &none, None).unwrap_err().contains("turned off"));
         let info = web.providers_info();
-        let on: Vec<(String, bool)> = info.as_array().unwrap().iter().map(|p| (p["id"].as_str().unwrap().to_string(), p["enabled"].as_bool().unwrap())).collect();
+        let on: Vec<(String, bool)> = info.as_array().unwrap().iter().filter(|p| p["kind"] == "catalogue").map(|p| (p["id"].as_str().unwrap().to_string(), p["enabled"].as_bool().unwrap())).collect();
         // Google Scholar needs a SerpApi key: off without one.
         assert_eq!(on, [("openalex".to_string(), false), ("s2".into(), true), ("scholar".into(), false)]);
+        let chain = info.as_array().unwrap().iter().find(|p| p["id"] == CHAIN).unwrap();
+        assert_eq!(chain["enabled"], false, "no engine is on until the user turns one on");
         let filters = |id: &str| info.as_array().unwrap().iter().find(|p| p["id"] == id).unwrap()["filters"].clone();
         assert!(filters("openalex").as_array().unwrap().contains(&json!("retracted")));
         assert!(!filters("s2").as_array().unwrap().contains(&json!("retracted")));
@@ -655,6 +907,30 @@ pub(crate) mod tests {
         let page = web.search("s2", "x y", 10, None, &WebFilters { language: Some("de".into()), ..Default::default() }, None).unwrap();
         assert_eq!(page, WebPage { skipped: Some(vec!["language".into()]), ..Default::default() });
         assert!(calls.lock().unwrap().urls.is_empty());
+    }
+
+    #[test]
+    fn openalex_applies_everything_but_venues_itself() {
+        let (calls, web) = Recorded::routed(|_| (200, fixture("openalex-search.json").to_string())).search();
+        let filters = WebFilters { venue: Some("Nature".into()), authors: Some(vec!["Jumper".into()]), language: Some("de".into()), ..Default::default() };
+        let page = web.search("openalex", "protein", 10, None, &filters, None).unwrap();
+        assert_eq!(page.skipped, None);
+        // The venue is checked here, on the results.
+        assert_eq!(page.results.iter().map(|r| r.venue.as_deref().unwrap_or_default()).collect::<Vec<_>>(), ["Nature"]);
+        let q = Recorded::query(&calls.lock().unwrap().urls[0]);
+        assert_eq!(q["filter"], "raw_author_name.search:Jumper,language:de");
+        assert_eq!(q["per-page"], "20", "asked for more, since some are left out");
+    }
+
+    #[test]
+    fn semantic_scholar_cannot_tell_languages_or_retractions() {
+        let web = WebSearch::default();
+        let info = web.providers_info();
+        let filters = |id: &str| info.as_array().unwrap().iter().find(|p| p["id"] == id).unwrap()["filters"].as_array().unwrap().clone();
+        assert!(!filters("s2").contains(&json!("language")));
+        assert!(!filters("s2").contains(&json!("retracted")));
+        assert!(filters("s2").contains(&json!("author")), "checked on its results");
+        assert!(filters("openalex").contains(&json!("language")));
     }
 
     #[test]
@@ -749,5 +1025,147 @@ pub(crate) mod tests {
         assert_eq!(added["source"]["creators"][0]["family"], "Lovelace");
         assert_eq!(added["source"]["collections"], json!(["c1"]));
         assert_eq!(add_to_library(&web, &shelf, fresh, None, false).unwrap()["existed"], true);
+    }
+
+    /// Engines' answers by host: `spent` hosts answer 432 (Tavily's "over the plan's limit").
+    fn engines_route(spent: &'static [&'static str]) -> impl Fn(&Url) -> (u16, String) + Send + Sync + 'static {
+        move |url: &Url| {
+            let host = url.host_str().unwrap_or("");
+            if spent.contains(&host) {
+                return (432, r#"{"detail":{"error":"limit"}}"#.into());
+            }
+            match (host, url.path()) {
+                ("api.tavily.com", _) => (200, fixture("tavily-search.json").to_string()),
+                ("api.firecrawl.dev", "/v2/scrape") => (200, fixture("firecrawl-scrape.json").to_string()),
+                ("api.firecrawl.dev", _) => (200, fixture("firecrawl-search.json").to_string()),
+                _ => (500, "{}".into()),
+            }
+        }
+    }
+
+    fn keyed_engines(web: &WebSearch, order: &[&str], fallback: &str) {
+        web.set_options(&json!({
+            "providers": { "tavily": { "enabled": true }, "firecrawl": { "enabled": true } },
+            "keys": { "tavily": { "key": "tvly-test-1", "mode": "fallback" }, "firecrawl": { "key": "fc-test-1", "mode": "fallback" }, "scholar-serpapi": { "key": "serp-1", "mode": "fallback" } },
+            "engines": { "order": order, "fallback": fallback },
+        }));
+    }
+
+    fn hosts(calls: &Arc<Mutex<Calls>>) -> Vec<String> {
+        calls.lock().unwrap().urls.iter().map(|u| u.host_str().unwrap_or("").to_string()).collect()
+    }
+
+    #[test]
+    fn the_web_chain_asks_the_first_engine_and_falls_back_to_the_next_when_it_runs_out() {
+        let (calls, web) = Recorded::routed(engines_route(&["api.tavily.com"])).search();
+        keyed_engines(&web, &["tavily", "firecrawl"], "next");
+        let page = web.search(CHAIN, "diffusion", 10, None, &WebFilters::default(), None).unwrap();
+        assert_eq!(page.answered_by.as_deref(), Some("firecrawl"));
+        assert_eq!((page.results[0].provider.as_str(), page.results[0].fallback_for.as_deref()), ("firecrawl", Some("tavily")));
+        let failed = page.failed.unwrap();
+        assert_eq!((failed[0].provider.as_str(), failed[0].message.as_str()), ("tavily", "Tavily: this key has no credits left"));
+        // Out of credits is not retried; nothing went to a catalogue or SerpApi.
+        assert_eq!(hosts(&calls), ["api.tavily.com", "api.firecrawl.dev"]);
+        let usage = web.take_usage();
+        assert_eq!((usage["tavily"]["failures"].as_u64(), usage["firecrawl"]["requests"].as_u64()), (Some(1), Some(1)));
+    }
+
+    #[test]
+    fn the_web_chain_can_stop_at_the_first_failure_and_follows_the_users_order() {
+        let (calls, web) = Recorded::routed(engines_route(&["api.tavily.com"])).search();
+        keyed_engines(&web, &["tavily", "firecrawl"], "stop");
+        let error = web.search(CHAIN, "diffusion", 10, None, &WebFilters::default(), None).unwrap_err();
+        assert!(error.contains("no credits left"), "{error}");
+        assert_eq!(hosts(&calls), ["api.tavily.com"]);
+        // Firecrawl first: Tavily is never asked.
+        let (calls, web) = Recorded::routed(engines_route(&[])).search();
+        keyed_engines(&web, &["firecrawl", "tavily"], "next");
+        assert_eq!(web.search(CHAIN, "x y", 10, None, &WebFilters::default(), None).unwrap().answered_by.as_deref(), Some("firecrawl"));
+        assert_eq!(hosts(&calls), ["api.firecrawl.dev"]);
+        let info = web.providers_info();
+        let chain = info.as_array().unwrap().iter().find(|p| p["id"] == CHAIN).unwrap();
+        assert_eq!(chain["chain"]["on"], json!(["firecrawl", "tavily"]));
+        assert_eq!(chain["chain"]["order"][0], "firecrawl");
+    }
+
+    #[test]
+    fn the_user_can_pick_the_engine_for_a_query() {
+        let (calls, web) = Recorded::routed(engines_route(&[])).search();
+        keyed_engines(&web, &["tavily", "firecrawl"], "next");
+        let page = web.search_with(CHAIN, "x y", 10, None, &WebFilters::default(), None, Some("firecrawl")).unwrap();
+        assert_eq!((page.answered_by.as_deref(), page.results[0].fallback_for.as_deref()), (Some("firecrawl"), None));
+        assert_eq!(hosts(&calls), ["api.firecrawl.dev"]);
+        assert!(web.search_with(CHAIN, "x y", 10, None, &WebFilters::default(), None, Some("exa")).unwrap_err().contains("not turned on"));
+    }
+
+    #[test]
+    fn an_engine_with_a_key_that_is_not_turned_on_is_never_asked() {
+        let (calls, web) = Recorded::routed(engines_route(&[])).search();
+        web.set_options(&json!({ "keys": { "tavily": { "key": "tvly-test-1", "mode": "always" } } }));
+        assert!(web.search(CHAIN, "x y", 10, None, &WebFilters::default(), None).unwrap_err().contains("No web search engine"));
+        assert!(web.search("tavily", "x y", 10, None, &WebFilters::default(), None).unwrap_err().contains("turned off"));
+        // A catalogue failing does not send its query to an engine either.
+        web.search("s2", "x y", 10, None, &WebFilters::default(), None).unwrap_err();
+        assert!(!hosts(&calls).iter().any(|h| h == "api.tavily.com"));
+    }
+
+    #[test]
+    fn an_engine_that_cannot_apply_a_filter_is_passed_over_for_one_that_can() {
+        let (calls, web) = Recorded::routed(engines_route(&[])).search();
+        keyed_engines(&web, &["firecrawl", "tavily"], "next");
+        let german = WebFilters { language: Some("de".into()), ..Default::default() };
+        let page = web.search(CHAIN, "klima", 10, None, &german, None).unwrap();
+        assert_eq!(page.answered_by.as_deref(), Some("tavily"));
+        assert_eq!(hosts(&calls), ["api.tavily.com"]);
+        assert_eq!(calls.lock().unwrap().bodies[0]["language"], "de");
+        // Neither can tell retractions: nobody is asked, and the chain says so.
+        let retracted = WebFilters { retracted: Some(true), ..Default::default() };
+        assert_eq!(web.search(CHAIN, "klima", 10, None, &retracted, None).unwrap().skipped, Some(vec!["retracted".to_string()]));
+        // A site filter: catalogues are left out, engines apply it.
+        let site = WebFilters { site: Some("nature.com".into()), ..Default::default() };
+        assert_eq!(web.search("s2", "klima", 10, None, &site, None).unwrap().skipped, Some(vec!["site".to_string()]));
+    }
+
+    #[test]
+    fn a_rate_limited_engine_is_retried_before_falling_back() {
+        let (calls, web) = Recorded::new(vec![(429, "{}".into()), (200, fixture("tavily-search.json").to_string())]).search();
+        keyed_engines(&web, &["tavily", "firecrawl"], "next");
+        let page = web.search(CHAIN, "alphafold", 10, None, &WebFilters::default(), None).unwrap();
+        assert_eq!((page.answered_by.as_deref(), page.failed), (Some("tavily"), None));
+        assert_eq!(hosts(&calls), ["api.tavily.com", "api.tavily.com"]);
+    }
+
+    #[test]
+    fn reads_a_page_with_a_reader_that_is_on() {
+        let (calls, web) = Recorded::routed(engines_route(&[])).search();
+        assert!(web.read_page("https://example.org/post", None).unwrap_err().contains("No page reader"));
+        keyed_engines(&web, &["tavily", "firecrawl"], "next");
+        let page = web.read_page("https://example.org/post", None).unwrap();
+        assert_eq!((page.provider.as_str(), page.title.as_deref()), ("firecrawl", Some("A post")));
+        assert_eq!(calls.lock().unwrap().bodies[0]["url"], "https://example.org/post");
+        assert!(web.read_page("file:///etc/passwd", None).is_err());
+        // Keys never show in what the host answers.
+        assert!(!web.providers_info().to_string().contains("fc-test-1"));
+    }
+
+    #[test]
+    fn searxng_is_on_only_with_its_address_and_needs_no_key() {
+        let (calls, web) = Recorded::routed(|_| (200, fixture("searxng-search.json").to_string())).search();
+        web.set_options(&json!({ "providers": { "searxng": { "enabled": true } } }));
+        assert!(web.search(CHAIN, "klima", 10, None, &WebFilters::default(), None).unwrap_err().contains("No web search engine"));
+        web.set_options(&json!({ "providers": { "searxng": { "enabled": true, "baseUrl": "https://search.example.org/" } }, "engines": { "scholarly": true } }));
+        let page = web.search(CHAIN, "klima", 10, None, &WebFilters::default(), None).unwrap();
+        assert_eq!((page.answered_by.as_deref(), page.cursor.as_deref()), (Some("searxng"), Some("searxng|1")));
+        assert_eq!(Recorded::query(&calls.lock().unwrap().urls[0])["categories"], "science");
+        // The next page goes to the engine that answered.
+        web.search(CHAIN, "klima", 10, page.cursor.as_deref(), &WebFilters::default(), None).unwrap();
+        assert_eq!(Recorded::query(&calls.lock().unwrap().urls[1])["pageno"], "2");
+        let info = web.providers_info();
+        let searx = info.as_array().unwrap().iter().find(|p| p["id"] == "searxng").unwrap();
+        assert_eq!((searx["engine"]["needsBaseUrl"].as_bool(), searx["engine"]["baseUrl"].as_str()), (Some(true), Some("https://search.example.org")));
+        // Years are checked on its results (it cannot ask for them).
+        let years = WebFilters { year_from: Some(2022), year_to: Some(2022), ..Default::default() };
+        let page = web.search(CHAIN, "klima", 10, None, &years, None).unwrap();
+        assert_eq!(page.results.iter().map(|r| r.year).collect::<Vec<_>>(), [Some(2022)]);
     }
 }

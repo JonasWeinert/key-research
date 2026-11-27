@@ -1,4 +1,5 @@
 // What the workspaces window reads and asks of main (main/launcher.ts).
+import { plainError } from "../../shared/plain-error";
 export interface LauncherWorkspace {
   id: string;
   name: string;
@@ -30,7 +31,7 @@ type Bridge = {
 export const key = () => (window as unknown as { key: Bridge }).key;
 export const launcher = <T = unknown,>(action: string, payload?: unknown) => key().launcher<T>(action, payload);
 /** An IPC error without Electron's "Error invoking remote method …" wrapping. */
-export const message = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+export const message = (e: unknown) => plainError(e);
 export const tilde = (path: string) => path.replace(/^\/Users\/[^/]+/, "~");
 /** A path for a field that cuts it short at the start (CSS direction: rtl), kept left to right. */
 export const ltr = (text: string) => `\u200e${text}\u200e`;

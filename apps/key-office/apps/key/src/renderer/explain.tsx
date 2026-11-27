@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { useDismiss } from "@key-reader/ui/dismiss";
 import { Icon, type IconName } from "./icons";
 import { HELP, type EmptyEntry, type EmptyId, type ExplainEntry, type ExplainId, type HintEntry, type HintId, type TermEntry, type TipEntry, type TipId } from "./help-content";
+import "./menu.css";
 import "./explain.css";
 
 type Shell = { tabAction?: (action: string, payload?: unknown) => Promise<unknown>; automation?: boolean };

@@ -33,7 +33,7 @@ pub fn merge(lists: &[ProviderList]) -> Vec<WebHit> {
     for list in lists {
         for (rank, result) in list.results.iter().enumerate() {
             // A fallback provider can answer in the place of the one asked (Google Scholar).
-            let provider = if result.fallback_for.is_some() { result.provider.clone() } else { list.provider.clone() };
+            let provider = if result.fallback_for.is_some() || list.provider == "web" { result.provider.clone() } else { list.provider.clone() };
             let title = title_key(&result.title);
             let arxiv = result.ids.arxiv.as_ref().map(|a| a.to_lowercase());
             let mut at = result.doi.as_ref().and_then(|d| by_doi.get(d).copied());
@@ -182,6 +182,9 @@ mod tests {
             list("b", vec![result("1", "Review", |r| (r.doi, r.year) = (Some("10.1/b".into()), Some(2020))), result("3", "Same name", |r| r.year = Some(2020))]),
         ]);
         assert_eq!(merged.len(), 4);
+        // Titles that differ only in case, a year apart, are the same work.
+        let near = merge(&[list("a", vec![result("1", "X", |r| r.year = Some(2001))]), list("b", vec![result("2", "x", |r| r.year = Some(2002))])]);
+        assert_eq!((near.len(), near[0].found_by.clone()), (1, vec!["a".to_string(), "b".to_string()]));
     }
 
     #[test]

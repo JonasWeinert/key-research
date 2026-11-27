@@ -77,6 +77,77 @@ pub struct PlannedChange {
     /// first value and keep the other tags).
     #[serde(skip_serializing_if = "is_zero")]
     pub multiple: usize,
+    /// How the tags will look once applied, so the manager can move its tree at once (the
+    /// host's index after applying replaces it).
+    pub predicted: TagDelta,
+}
+
+/// One item's tags before and after a change.
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct ItemEdit {
+    pub id: String,
+    pub remove: Vec<String>,
+    pub add: Vec<String>,
+}
+
+/// What a tag operation changes in the index: the items whose tags change and the tree
+/// entries it sets (`null` removes one). Deltas of plans on different tags compose.
+#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+pub struct TagDelta {
+    pub items: Vec<ItemEdit>,
+    pub tree: Map<String, Json>,
+}
+
+fn same(a: &str, b: &str) -> bool {
+    a.trim().to_lowercase() == b.trim().to_lowercase()
+}
+
+/// The operation applied to the index the way the store applies it to sources
+/// (`tag_ops::apply_in`). Property values a source already holds are not in the index:
+/// the prediction takes the first value each source holds, as a source without one does.
+pub fn predict(index: &TagIndex, op: &TagOperation) -> TagDelta {
+    let replace: HashMap<String, &Vec<String>> = op.replace.iter().map(|r| (r.from.trim().to_lowercase(), &r.to)).collect();
+    let values: Vec<(String, &Json)> = op.property.iter().flat_map(|p| p.values.iter().map(|(t, v)| (t.trim().to_lowercase(), v))).collect();
+    let remove_tags = op.property.as_ref().is_some_and(|p| p.remove_tags);
+    let mut items = Vec::new();
+    for item in &index.items {
+        let tags: Vec<&str> = item.tags.iter().filter_map(|&t| index.tags.get(t)).map(|t| t.name.as_str()).collect();
+        let watched = tags.iter().any(|t| {
+            let k = t.trim().to_lowercase();
+            replace.contains_key(&k) || values.iter().any(|(v, _)| *v == k)
+        });
+        if !watched {
+            continue;
+        }
+        let held: Vec<&(String, &Json)> = values.iter().filter(|(t, _)| tags.iter().any(|x| x.trim().to_lowercase() == *t)).collect();
+        let stored: HashSet<&str> = match held.first() {
+            Some((_, first)) => held.iter().filter(|(_, v)| *v == *first).map(|(t, _)| t.as_str()).collect(),
+            None => HashSet::new(),
+        };
+        let mut next: Vec<String> = Vec::new();
+        let mut push = |tag: &str| {
+            let tag = tag.trim();
+            if !tag.is_empty() && !next.iter().any(|t| same(t, tag)) {
+                next.push(tag.to_string());
+            }
+        };
+        for tag in &tags {
+            let k = tag.trim().to_lowercase();
+            if remove_tags && stored.contains(k.as_str()) {
+                continue;
+            }
+            match replace.get(&k) {
+                Some(to) => to.iter().for_each(|t| push(t)),
+                None => push(tag),
+            }
+        }
+        let remove: Vec<String> = tags.iter().filter(|t| !next.iter().any(|n| n == *t)).map(|t| t.to_string()).collect();
+        let add: Vec<String> = next.iter().filter(|n| !tags.contains(&n.as_str())).cloned().collect();
+        if !remove.is_empty() || !add.is_empty() {
+            items.push(ItemEdit { id: item.id.clone(), remove, add });
+        }
+    }
+    TagDelta { items, tree: op.tree.clone() }
 }
 
 fn is_zero(n: &usize) -> bool {
@@ -209,8 +280,14 @@ impl<'a> PlanContext<'a> {
         self.meta_key(name).and_then(|k| self.index.tree.get(&k)).and_then(Json::as_object).cloned().unwrap_or_default()
     }
 
-    /// Turns a plan into the store operation, its label and its preview.
+    /// Turns a plan into the store operation, its label, its preview and its prediction.
     pub fn plan(&self, plan: &TagPlan) -> Result<PlannedChange> {
+        let mut change = self.plan_operation(plan)?;
+        change.predicted = predict(self.index, &change.operation);
+        Ok(change)
+    }
+
+    fn plan_operation(&self, plan: &TagPlan) -> Result<PlannedChange> {
         let mut op = TagOperation::default();
         let mut lines: Vec<Line> = Vec::new();
         let set_meta = |op: &mut TagOperation, name: &str, next: Option<Map<String, Json>>| {
@@ -295,7 +372,7 @@ impl<'a> PlanContext<'a> {
                     format!("Merge {} into {}", plural(sources.len(), "tag"), quote(&target))
                 };
                 let items = self.items_of(&sources);
-                Ok(PlannedChange { operation: op, label, lines, items, multiple: 0 })
+                Ok(PlannedChange { operation: op, label, lines, items, multiple: 0, predicted: TagDelta::default() })
             }
             TagPlan::Delete { tags } => {
                 if tags.is_empty() {
@@ -313,7 +390,7 @@ impl<'a> PlanContext<'a> {
                     lines.push(Line { before: t.clone(), after: String::new(), detail: Some(detail) });
                 }
                 reparent(&mut op, tags, &|removed| field(&self.meta_of(removed), "parent"));
-                Ok(PlannedChange { operation: op, label: format!("Remove {}", one_or_many(tags)), lines, items: self.items_of(tags), multiple: 0 })
+                Ok(PlannedChange { operation: op, label: format!("Remove {}", one_or_many(tags)), lines, items: self.items_of(tags), multiple: 0, predicted: TagDelta::default() })
             }
             TagPlan::Nest { parent, children, rename_parent } => {
                 let parent = self.existing_name(parent);
@@ -369,7 +446,7 @@ impl<'a> PlanContext<'a> {
                 }
                 let what = if nested == 1 { quote(&lines[renames].before) } else { plural(nested, "tag") };
                 let label = if renames > 0 { format!("Nest {what} under {}, renamed from {}", quote(&target), quote(&parent)) } else { format!("Nest {what} under {}", quote(&target)) };
-                Ok(PlannedChange { operation: op, label, lines, items: moved, multiple: 0 })
+                Ok(PlannedChange { operation: op, label, lines, items: moved, multiple: 0, predicted: TagDelta::default() })
             }
             TagPlan::Unnest { tags } => {
                 for t in tags {
@@ -379,7 +456,7 @@ impl<'a> PlanContext<'a> {
                     set_meta(&mut op, t, keep.then_some(next));
                     lines.push(Line { before: t.clone(), after: t.clone(), detail: Some("to the top level".into()) });
                 }
-                Ok(PlannedChange { operation: op, label: format!("Move {} to the top level", one_or_many(tags)), lines, items: 0, multiple: 0 })
+                Ok(PlannedChange { operation: op, label: format!("Move {} to the top level", one_or_many(tags)), lines, items: 0, multiple: 0, predicted: TagDelta::default() })
             }
             TagPlan::Color { tags, color } => {
                 for t in tags {
@@ -388,7 +465,7 @@ impl<'a> PlanContext<'a> {
                     set_meta(&mut op, t, Some(next));
                 }
                 let label = if color.as_deref().is_some_and(|c| !c.is_empty()) { "Change colour" } else { "Remove colour" };
-                Ok(PlannedChange { operation: op, label: label.into(), lines, items: 0, multiple: 0 })
+                Ok(PlannedChange { operation: op, label: label.into(), lines, items: 0, multiple: 0, predicted: TagDelta::default() })
             }
             TagPlan::Hierarchy { splits } => {
                 let splits: Vec<Split> = splits
@@ -442,7 +519,7 @@ impl<'a> PlanContext<'a> {
                 }
                 let renamed: Vec<String> = splits.iter().filter(|s| op.replace.iter().any(|r| r.from == s.tag)).map(|s| s.tag.clone()).collect();
                 let items = self.items_of(&renamed);
-                Ok(PlannedChange { operation: op, label: format!("Nest {} by their names", plural(splits.len(), "tag")), lines, items, multiple: 0 })
+                Ok(PlannedChange { operation: op, label: format!("Nest {} by their names", plural(splits.len(), "tag")), lines, items, multiple: 0, predicted: TagDelta::default() })
             }
             TagPlan::Property { name, property_type, values, remove_tags } => {
                 let name = name.trim().to_string();
@@ -485,7 +562,7 @@ impl<'a> PlanContext<'a> {
                     values,
                     remove_tags: *remove_tags,
                 });
-                Ok(PlannedChange { operation: op, label, lines, items: self.items_of(&tags), multiple })
+                Ok(PlannedChange { operation: op, label, lines, items: self.items_of(&tags), multiple, predicted: TagDelta::default() })
             }
         }
     }

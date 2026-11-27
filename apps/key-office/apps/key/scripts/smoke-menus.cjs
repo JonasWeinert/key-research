@@ -92,7 +92,7 @@ const assert = require("node:assert/strict");
         "search-palette",
         async () => {
           await sidebar.getByRole("button", { name: "Search" }).click();
-          await page.locator(".kx-palette input").fill("dra");
+          await page.locator(".kx-palette :is(input, textarea)").fill("dra");
           await page.waitForTimeout(500);
           return page.locator(".key-modal");
         },
@@ -108,7 +108,7 @@ const assert = require("node:assert/strict");
       [
         "library-suggest",
         async () => {
-          const field = page.locator(".kx-search-field input").first();
+          const field = page.locator(".kx-search-field :is(input, textarea)").first();
           await field.click();
           await field.fill("inter");
           return page.locator(".kx-suggest");

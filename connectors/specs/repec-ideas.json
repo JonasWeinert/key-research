@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "repec-ideas",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "RePEc (IDEAS and EconPapers)",
   "description": "The RePEc index of economics working papers, articles, books and software from about 2,000 publishers and series.",
   "homepage": "https://ideas.repec.org/",
@@ -13,6 +13,7 @@
   "credentials": [],
   "hosts": [],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",

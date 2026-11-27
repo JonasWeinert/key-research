@@ -120,6 +120,7 @@ pub fn parse_page(body: &Json) -> WebPage {
         cursor: text(&body["meta"]["next_cursor"]),
         total: body["meta"]["count"].as_i64(),
         skipped: None,
+        ..Default::default()
     }
 }
 
@@ -269,7 +270,7 @@ mod tests {
         assert_eq!(page.cursor.as_deref(), body["meta"]["next_cursor"].as_str());
         assert_eq!(page.total, Some(3));
         let [attention, bert, alphafold] = page.results.as_slice() else { panic!("three works") };
-        assert_eq!(attention.provider_id, "W2963403868");
+        assert_eq!((attention.provider.as_str(), attention.provider_id.as_str()), ("openalex", "W2963403868"));
         assert_eq!(attention.title, "Attention Is All You Need");
         assert_eq!(attention.authors, ["Ashish Vaswani", "Noam Shazeer", "Niki Parmar"]);
         assert_eq!((attention.year, attention.venue.as_deref(), attention.doi.as_deref()), (Some(2017), Some("arXiv (Cornell University)"), None));

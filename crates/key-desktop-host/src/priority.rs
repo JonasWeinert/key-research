@@ -29,6 +29,10 @@ const INTERACTIVE: &[&str] = &[
     "store_fill_recipe_import", "store_fill_validate", "store_fill_estimate", "store_fill_run_create", "store_fill_run_status", "store_fill_runs", "store_fill_run",
     "store_fill_run_passages", "store_fill_review", "store_fill_run_undo", "store_fill_run_delete",
     "store_fill_cell", "store_fill_cell_use_answer", "store_fill_cell_keep", "store_fill_again_ids", "store_fill_source_cells",
+    "store_selection_overview",
+    // Reading mode: a highlight made in the text (store_reflow_document is a foreground read).
+    "store_reflow_locate",
+    "store_power_continue",
     // Systematic reviews (review_commands.rs): screening keystrokes and the reads behind them.
     "review_get", "review_stamp", "review_record", "review_queue", "review_records", "review_decide", "review_undo", "review_retract", "review_resolve", "review_reopen",
     "review_note", "review_labels", "review_flags_clear", "review_fulltext", "review_extract", "review_extraction", "review_pair_resolve", "review_create",
@@ -37,7 +41,7 @@ const INTERACTIVE: &[&str] = &[
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
 /// not starved by bulk work, or progress would look frozen.
-const VISIBLE: &[&str] = &["store_status", "store_zotero_progress", "pdfjs_companion_snapshot"];
+const VISIBLE: &[&str] = &["store_status", "store_zotero_progress", "pdfjs_companion_snapshot", "store_formula_status"];
 
 /// Nobody waits on these: timers, syncs, bulk imports and maintenance.
 const BACKGROUND: &[&str] = &[
@@ -47,10 +51,11 @@ const BACKGROUND: &[&str] = &[
     "store_retractions_seen", "web_key_usage", "web_options", "db_options", "feeds_refresh", "feeds_counts", "feeds_environment", "feeds_retention", "feeds_purge",
     "workspace_scan_linked_folder", "pdfjs_companion_list", "host_can_suspend", "store_fill_run_next", "store_fill_run_answer", "store_fill_auto_candidates",
     "store_fill_sync",
+    "store_power_state", "store_power_status",
 ];
 
 /// Network or long work: never interactive, and bounded in flight by the bridge.
-const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "review_import", "review_link_library", "review_db_runs"];
+const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "web_read_page", "review_import", "review_link_library", "review_db_runs"];
 
 /// Exceptions to the prefixes: quick despite their family.
 const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_md_export_restore", "store_autoexport_targets"];

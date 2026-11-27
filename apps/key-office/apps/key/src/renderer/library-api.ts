@@ -10,6 +10,8 @@ export interface Source extends CitableSource {
   properties: Record<string, unknown>;
   /** Formula properties' values, computed by the host: a value or `{ error }`. */
   formulaValues?: Record<string, unknown>;
+  /** In a grouped list: the value of the field it is grouped by. */
+  groupValue?: unknown;
   collections: string[];
   starred: boolean;
   indexStatus: string;
@@ -234,6 +236,8 @@ export interface SourcePage {
   total: number;
   nextOffset: number | null;
   counts: Counts;
+  /** With `group`: every group of the view in order, with its size. */
+  groups?: { value: unknown; count: number }[];
 }
 export interface Facet {
   value: string;
@@ -346,6 +350,8 @@ export interface ReferencesActivity {
 }
 export interface IndexActivity {
   paused: boolean;
+  /** Bulk indexing held back by the power policy (on battery, Low Power Mode). */
+  held?: boolean;
   reading?: IndexJob | null;
   embedding?: IndexJob | null;
   upNext: IndexJob[];
@@ -355,6 +361,8 @@ export interface IndexActivity {
   vectorsPending: number;
 }
 export interface LibraryStatus {
+  /** The power policy (key-desktop-host power.rs). */
+  power?: { held: "battery" | "low-power" | null; mode: string; continued: boolean };
   model: { state: string; received: number; total: number; error?: string | null };
   busy: boolean;
   vectors: number;
@@ -385,7 +393,9 @@ export interface AppSettings {
   openalexMailto: string;
   openalexApiKey: string;
   /** Web search providers by id: turned off, or given an API key. */
-  webProviders: Record<string, { enabled?: boolean; apiKey?: string }>;
+  webProviders: Record<string, { enabled?: boolean; apiKey?: string; baseUrl?: string }>;
+  /** Web search engines: their order, what happens when one fails, scholarly narrowing. */
+  webEngines?: { order: string[]; fallback: "next" | "stop"; scholarly: boolean };
   /** A work added from another source's context: ask, use the origin's collections, or the library only. */
   addFromSource: "ask" | "origin" | "library";
   /** Find PDF for references as they are added (off by default). */

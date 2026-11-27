@@ -28,7 +28,7 @@ pub mod time;
 pub mod xml;
 
 /// The engine's own version: specs say the oldest engine they work with (`minEngine`).
-pub const ENGINE_VERSION: &str = "1.0.0";
+pub const ENGINE_VERSION: &str = "1.1.0";
 /// The spec format this engine reads.
 pub const SPEC_FORMAT: u64 = 1;
 

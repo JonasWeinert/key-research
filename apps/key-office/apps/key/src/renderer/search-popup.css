@@ -38,10 +38,21 @@
 .kx-spot-field .kx-search > svg {
   left: 11px;
 }
+.kx-spot-field .kx-search {
+  --kx-search-line: 36px;
+}
+.kx-spot-field .kx-search-field {
+  max-height: calc(4 * 28px + 8px);
+}
 .kx-spot-field .kx-search-input,
 .kx-spot-field .kx-search-input:focus {
-  height: 28px;
+  min-height: 28px;
+  padding: 4px 0;
   font-size: 16px;
+  line-height: 20px;
+}
+.kx-spot-field .kx-search-input[data-empty] {
+  height: 28px;
 }
 .kx-spot-chips {
   display: flex;

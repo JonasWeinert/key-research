@@ -121,6 +121,63 @@ struct ServerInfo {
     port: u16,
     pid: u32,
     accelerator: Option<String>,
+    /// The llama-server process itself (`pid` is its watchdog shell).
+    #[serde(default)]
+    server_pid: Option<u32>,
+}
+
+/// What the shared server is working on, so bulk work runs at background priority and a
+/// person's search never waits behind it: the server is put in the background while only
+/// bulk batches are in flight and back in the foreground while a query is (macOS
+/// `PRIO_DARWIN_BG`: lower CPU and GPU priority and throttled disk I/O, reversible).
+#[derive(Default)]
+struct Lanes {
+    bulk: usize,
+    waiting: usize,
+    background: bool,
+}
+
+/// Puts a process in the background or back (macOS); elsewhere does nothing.
+pub fn set_process_background(pid: u32, background: bool) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe extern "C" {
+            fn setpriority(which: i32, who: u32, prio: i32) -> i32;
+        }
+        const PRIO_DARWIN_PROCESS: i32 = 4;
+        const PRIO_DARWIN_BG: i32 = 0x1000;
+        // SAFETY: plain system call on a process id; no pointers.
+        unsafe { setpriority(PRIO_DARWIN_PROCESS, pid, if background { PRIO_DARWIN_BG } else { 0 }) == 0 }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (pid, background);
+        false
+    }
+}
+
+/// Lowers a process's CPU priority (Unix nice; raising it again needs privileges).
+pub fn set_process_nice(pid: u32, nice: i32) -> bool {
+    #[cfg(unix)]
+    {
+        unsafe extern "C" {
+            fn setpriority(which: i32, who: u32, prio: i32) -> i32;
+        }
+        const PRIO_PROCESS: i32 = 0;
+        // SAFETY: plain system call on a process id; no pointers.
+        unsafe { setpriority(PRIO_PROCESS, pid, nice) == 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (pid, nice);
+        false
+    }
+}
+
+/// The child process a watchdog shell started (the server itself).
+fn child_of(shell: u32) -> Option<u32> {
+    let output = Command::new("pgrep").args(["-P", &shell.to_string()]).output().ok()?;
+    String::from_utf8_lossy(&output.stdout).lines().filter_map(|l| l.trim().parse().ok()).next()
 }
 
 /// `llama-server` next to the host binary (`llama/llama-server`), or `KEY_LLAMA_SERVER`.
@@ -139,6 +196,33 @@ pub struct Embedder {
     client: reqwest::blocking::Client,
     port: Mutex<Option<u16>>,
     child: Mutex<Option<Child>>,
+    /// The server's process, for its priority.
+    server_pid: Mutex<Option<u32>>,
+    lanes: Mutex<Lanes>,
+    /// Bulk work may lower the server's priority (`KEY_EMBED_BACKGROUND=0` turns it off).
+    lower: bool,
+    /// Bulk work runs on a second server (`KEY_EMBED_BULK_SERVER=0` turns it off).
+    second: bool,
+    bulk: Mutex<Option<BulkServer>>,
+}
+
+struct BulkServer {
+    port: u16,
+    child: Child,
+    /// The server under its watchdog shell.
+    pid: Option<u32>,
+    used: Instant,
+}
+
+impl BulkServer {
+    fn stop(mut self) {
+        // The server first (the shell's trap does not run when the shell is killed).
+        if let Some(pid) = self.pid {
+            let _ = Command::new("kill").arg(pid.to_string()).status();
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
 }
 
 impl Embedder {
@@ -153,13 +237,26 @@ impl Embedder {
             .timeout(Duration::from_secs(300))
             .build()
             .map_err(|e| e.to_string())?;
-        let embedder = Self { dir: dir.clone(), client, port: Mutex::new(None), child: Mutex::new(None) };
+        let lower = std::env::var("KEY_EMBED_BACKGROUND").map_or(true, |v| v != "0");
+        let second = std::env::var("KEY_EMBED_BULK_SERVER").map_or(true, |v| v != "0");
+        let embedder = Self { dir: dir.clone(), client, port: Mutex::new(None), child: Mutex::new(None), server_pid: Mutex::new(None), lanes: Mutex::default(), lower, second, bulk: Mutex::new(None) };
         embedder.port()?;
         Ok(embedder)
     }
 
-    /// Document embeddings with the model's corpus prefix (`title: … | text: …`).
+    /// Document embeddings with the model's corpus prefix (`title: … | text: …`), as work
+    /// someone is waiting for (an opened document).
     pub fn embed_documents(&self, items: &[(&str, &str)]) -> Result<Vec<Vec<f32>>> {
+        self.embed_documents_as(items, false)
+    }
+
+    /// The same as bulk work (indexing in the background, back-fill): the server runs at
+    /// background priority while only bulk batches are in flight.
+    pub fn embed_bulk(&self, items: &[(&str, &str)]) -> Result<Vec<Vec<f32>>> {
+        self.embed_documents_as(items, true)
+    }
+
+    fn embed_documents_as(&self, items: &[(&str, &str)], bulk: bool) -> Result<Vec<Vec<f32>>> {
         let inputs: Vec<String> = items
             .iter()
             .map(|(title, text)| {
@@ -169,14 +266,122 @@ impl Embedder {
             .collect();
         let mut out = Vec::with_capacity(inputs.len());
         for batch in inputs.chunks(BATCH) {
+            // Bulk work goes to a second server of its own, at background priority, so a
+            // query never queues behind a bulk batch; the shared one if that cannot start.
+            if bulk && self.second {
+                if let Some(vectors) = self.bulk_port().and_then(|port| self.request_at(port, batch).ok()) {
+                    out.extend(vectors);
+                    continue;
+                }
+            }
+            let _lane = self.enter(bulk);
             out.extend(self.run(batch)?);
         }
         Ok(out)
     }
 
+    /// The bulk server's port, started on first need and stopped after a minute unused.
+    fn bulk_port(&self) -> Option<u16> {
+        let mut slot = self.bulk.lock().ok()?;
+        if let Some(server) = slot.as_mut() {
+            if server.child.try_wait().ok().flatten().is_none() {
+                server.used = Instant::now();
+                return Some(server.port);
+            }
+            *slot = None;
+        }
+        let binary = server_binary()?;
+        let port = TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).ok()?.port();
+        let child = match self.launch(&binary, port, "bulk-server.log", 8) {
+            Ok(child) => child,
+            Err(error) => {
+                eprintln!("Key embedding: the bulk server did not start ({error})");
+                return None;
+            }
+        };
+        let pid = if cfg!(unix) { child_of(child.id()) } else { Some(child.id()) };
+        // Lower CPU priority (nice 10), not the background band: that throttles its GPU work
+        // and disk reads so much bulk indexing slows several times over (priority_bench).
+        if let Some(pid) = pid.filter(|_| self.lower) {
+            match std::env::var("KEY_EMBED_BULK_PRIORITY").as_deref() {
+                Ok("background") => {
+                    set_process_background(pid, true);
+                }
+                Ok("normal") => {}
+                _ => {
+                    set_process_nice(pid, 10);
+                }
+            }
+        }
+        if let Ok(mut pids) = SPAWNED.lock() {
+            pids.push(child.id());
+        }
+        *slot = Some(BulkServer { port, child, pid, used: Instant::now() });
+        Some(port)
+    }
+
+    /// Stops the bulk server once it has been idle for `idle` (the indexer calls this as it
+    /// goes idle; a minute is the default).
+    pub fn stop_bulk_server_if_idle(&self, idle: Duration) -> bool {
+        let Ok(mut slot) = self.bulk.lock() else { return false };
+        if slot.as_ref().is_some_and(|s| s.used.elapsed() >= idle) {
+            if let Some(server) = slot.take() {
+                server.stop();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Whether the bulk server is running (tests, benchmarks).
+    pub fn has_bulk_server(&self) -> bool {
+        self.bulk.lock().map(|s| s.is_some()).unwrap_or(false)
+    }
+
+    /// Counts a request in for its lane and sets the server's priority to match; the
+    /// returned guard counts it out again.
+    fn enter(&self, bulk: bool) -> LaneGuard<'_> {
+        if let Ok(mut lanes) = self.lanes.lock() {
+            if bulk {
+                lanes.bulk += 1;
+            } else {
+                lanes.waiting += 1;
+            }
+            self.settle(&mut lanes);
+        }
+        LaneGuard { embedder: self, bulk }
+    }
+
+    fn settle(&self, lanes: &mut Lanes) {
+        let background = self.lower && lanes.bulk > 0 && lanes.waiting == 0;
+        if background == lanes.background {
+            return;
+        }
+        let Some(pid) = self.server_process() else { return };
+        if set_process_background(pid, background) {
+            lanes.background = background;
+        }
+    }
+
+    /// Whether the server runs at background priority now (tests, benchmarks).
+    pub fn is_background(&self) -> bool {
+        self.lanes.lock().map(|l| l.background).unwrap_or(false)
+    }
+
+    /// The llama-server process, found once per server.
+    pub fn server_process(&self) -> Option<u32> {
+        let mut slot = self.server_pid.lock().ok()?;
+        if slot.is_none_or(|pid| !process_alive(pid)) {
+            let info = fs::read(self.dir.server_file()).ok().and_then(|b| serde_json::from_slice::<ServerInfo>(&b).ok())?;
+            *slot = info.server_pid.filter(|&pid| process_alive(pid)).or_else(|| child_of(info.pid)).or(Some(info.pid));
+        }
+        *slot
+    }
+
     /// A search query embedding with the retrieval task prefix.
     pub fn embed_query(&self, query: &str) -> Result<Vec<f32>> {
         let input = format!("task: search result | query: {}", clip(query.trim()));
+        let _lane = self.enter(false);
         self.run(std::slice::from_ref(&input))?.pop().ok_or_else(|| "No embedding returned".into())
     }
 
@@ -192,6 +397,11 @@ impl Embedder {
     }
 
     fn request(&self, inputs: &[String]) -> Result<Vec<Vec<f32>>> {
+        let port = self.port()?;
+        self.request_at(port, inputs)
+    }
+
+    fn request_at(&self, port: u16, inputs: &[String]) -> Result<Vec<Vec<f32>>> {
         #[derive(Deserialize)]
         struct Item {
             embedding: Vec<f32>,
@@ -201,7 +411,6 @@ impl Embedder {
         struct Response {
             data: Vec<Item>,
         }
-        let port = self.port()?;
         let body = serde_json::to_vec(&serde_json::json!({ "input": inputs })).map_err(|e| e.to_string())?;
         let response = self
             .client
@@ -286,13 +495,63 @@ impl Embedder {
     fn spawn(&self) -> Result<u16> {
         let binary = server_binary().ok_or("llama-server is not bundled with this build")?;
         let port = TcpListener::bind("127.0.0.1:0").and_then(|l| l.local_addr()).map_err(|e| e.to_string())?.port();
-        let log_path = self.dir.path().join("server.log");
+        let child = self.launch(&binary, port, "server.log", 8)?;
+        if let Ok(mut pids) = SPAWNED.lock() {
+            pids.push(child.id());
+        }
+        let accelerator = Some(accelerator(&binary));
+        let server_pid = if cfg!(unix) { child_of(child.id()) } else { Some(child.id()) };
+        let info = ServerInfo { port, pid: child.id(), accelerator, server_pid };
+        if let Ok(mut slot) = self.server_pid.lock() {
+            *slot = server_pid;
+        }
+        let _ = fs::write(self.dir.server_file(), serde_json::to_vec(&info).unwrap_or_default());
+        if let Ok(mut slot) = self.child.lock() {
+            if let Some(mut old) = slot.replace(child) {
+                let _ = old.kill();
+            }
+        }
+        Ok(port)
+    }
+}
+
+struct LaneGuard<'a> {
+    embedder: &'a Embedder,
+    bulk: bool,
+}
+
+impl Drop for LaneGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut lanes) = self.embedder.lanes.lock() {
+            if self.bulk {
+                lanes.bulk = lanes.bulk.saturating_sub(1);
+            } else {
+                lanes.waiting = lanes.waiting.saturating_sub(1);
+            }
+            // Idle, the server goes back to normal priority, ready for the next query.
+            if lanes.bulk == 0 && lanes.background {
+                lanes.background = false;
+                if let Some(pid) = self.embedder.server_process() {
+                    set_process_background(pid, false);
+                }
+            } else {
+                self.embedder.settle(&mut lanes);
+            }
+        }
+    }
+}
+
+impl Embedder {
+    /// Starts a llama-server on `port` and waits until it answers.
+    fn launch(&self, binary: &Path, port: u16, log_name: &str, parallel: usize) -> Result<Child> {
+        let log_path = self.dir.path().join(log_name);
         let log = fs::File::create(&log_path).map_err(|e| e.to_string())?;
         let mut arguments: Vec<String> = vec!["--model".into(), self.dir.model().to_string_lossy().into_owned()];
+        let parallel = parallel.to_string();
         arguments.extend(
             ["--embedding", "--pooling", "mean", "--host", "127.0.0.1", "--port", &port.to_string()]
                 .into_iter()
-                .chain(["--n-gpu-layers", "999", "--ctx-size", "32768", "--batch-size", "8192", "--ubatch-size", "8192", "--parallel", "8"])
+                .chain(["--n-gpu-layers", "999", "--ctx-size", &(4096 * parallel.parse::<usize>().unwrap_or(8)).to_string(), "--batch-size", "8192", "--ubatch-size", "8192", "--parallel", &parallel])
                 .map(String::from),
         );
         let mut command = if cfg!(unix) {
@@ -303,12 +562,12 @@ impl Embedder {
                 .arg("-c")
                 .arg(r#"server="$1"; shift; "$server" "$@" & child=$!; trap 'kill $child 2>/dev/null' EXIT TERM INT; while kill -0 "$KEY_HOST_PID" 2>/dev/null && kill -0 $child 2>/dev/null; do sleep 2; done"#)
                 .arg("key-llama-watchdog")
-                .arg(&binary)
+                .arg(binary)
                 .args(&arguments)
                 .env("KEY_HOST_PID", std::process::id().to_string());
             command
         } else {
-            let mut command = Command::new(&binary);
+            let mut command = Command::new(binary);
             command.args(&arguments);
             command
         };
@@ -317,9 +576,6 @@ impl Embedder {
             command.current_dir(dir);
         }
         let mut child = command.spawn().map_err(|e| format!("Could not start llama-server: {e}"))?;
-        if let Ok(mut pids) = SPAWNED.lock() {
-            pids.push(child.id());
-        }
         let started = Instant::now();
         while !self.healthy(port) {
             if let Ok(Some(status)) = child.try_wait() {
@@ -331,20 +587,17 @@ impl Embedder {
             }
             std::thread::sleep(Duration::from_millis(150));
         }
-        let accelerator = Some(accelerator(&binary));
-        let info = ServerInfo { port, pid: child.id(), accelerator };
-        let _ = fs::write(self.dir.server_file(), serde_json::to_vec(&info).unwrap_or_default());
-        if let Ok(mut slot) = self.child.lock() {
-            if let Some(mut old) = slot.replace(child) {
-                let _ = old.kill();
-            }
-        }
-        Ok(port)
+        Ok(child)
     }
 }
 
 impl Drop for Embedder {
     fn drop(&mut self) {
+        if let Ok(mut slot) = self.bulk.lock() {
+            if let Some(server) = slot.take() {
+                server.stop();
+            }
+        }
         if let Ok(mut slot) = self.child.lock() {
             if let Some(mut child) = slot.take() {
                 let _ = child.kill();

@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "crossref",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "Crossref",
   "description": "Metadata for everything that has a DOI: journal articles, books, reports, working papers and preprints from more than 20,000 publishers.",
   "homepage": "https://www.crossref.org/",
@@ -64,6 +64,7 @@
     }
   ],
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": [
       "all",
       "title",

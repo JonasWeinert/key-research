@@ -1212,14 +1212,16 @@ impl Databases {
             "db_run" => arg::<String>(args, "runId").and_then(|id| self.report_by_id(&id)).and_then(|r| json_output(serde_json::to_value(&r).unwrap_or(Json::Null))),
             "db_query_parse" => (|| {
                 let text: String = arg(args, "text")?;
-                json_output(match key_connectors::boolean::parse(&text) {
+                let default = arg::<Option<String>>(args, "defaultField")?.unwrap_or_else(|| "all".into());
+                json_output(match key_connectors::boolean::parse_in(&text, &default) {
                     Ok(parsed) => json!({ "ok": true, "tree": parsed.tree, "text": parsed.text, "notes": parsed.notes }),
                     Err(error) => json!({ "ok": false, "error": error }),
                 })
             })(),
             "db_query_format" => (|| {
                 let tree: key_connectors::Node = arg(args, "tree")?;
-                json_output(json!({ "text": key_connectors::boolean::format(&tree) }))
+                let default = arg::<Option<String>>(args, "defaultField")?.unwrap_or_else(|| "all".into());
+                json_output(json!({ "text": key_connectors::boolean::format_in(&tree, &default) }))
             })(),
             "db_runs" => self.runs_list(args).and_then(json_output),
             "db_report_problem" => self.report_problem(args).and_then(json_output),

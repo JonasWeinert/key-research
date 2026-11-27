@@ -703,6 +703,16 @@ mod tests {
         assert_eq!((r.title.as_deref(), r.doi.as_deref(), r.year, r.authors.clone()), (Some("Income and health"), Some("10.1000/xyz"), Some(2018), vec!["Jane Roe".to_string()]));
         let input = &reference_inputs(&meta)[0];
         assert_eq!(input.metadata.as_ref().unwrap()["doi"], "10.1000/xyz");
+        assert_eq!(input.metadata.as_ref().unwrap()["source"], "page");
+        assert_eq!(scan.references.len(), 2);
+    }
+
+    #[test]
+    fn reads_a_bare_references_list_without_a_heading() {
+        // What the renderer's page script was last checked on: the list's class alone marks it.
+        let scan = detect_web_references(r#"<ol class="references"><li id="r1">Someone. A reference title long enough. 2001.</li><li id="r2">Another. A second reference title. 2002.</li></ol>"#, None);
+        assert_eq!(scan.method, "list");
+        assert_eq!(scan.references.iter().map(|r| r.anchor.as_deref().unwrap_or_default()).collect::<Vec<_>>(), ["r1", "r2"]);
     }
 
     #[test]

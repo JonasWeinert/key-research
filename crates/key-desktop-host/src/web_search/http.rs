@@ -7,7 +7,7 @@
 // (KEY_WEB_OPENALEX_URL, KEY_WEB_S2_URL, KEY_WEB_SERPAPI_URL), for tests and smokes. Only then,
 // and only for a loopback address, does a request leave the safe client: a plain HTTP/1.0
 // GET to that port.
-use key_safe_http::{CancellationToken, ContentTypePolicy, ContentTypeRule, ExactHostAllowlist, HttpError, HttpLimits, HttpPolicy, HttpRequest, RateLimit, SafeHttpClient, SchemePolicy};
+use key_safe_http::{CancellationToken, ContentTypePolicy, ContentTypeRule, ExactHostAllowlist, HttpError, HttpLimits, HttpMethod, HttpPolicy, HttpRequest, RateLimit, SafeHttpClient, SchemePolicy};
 use serde_json::Value as Json;
 use std::{
     collections::HashMap,
@@ -82,6 +82,9 @@ pub enum SendError {
 /// Sends one GET (`send`, or a test's recorded answers).
 pub type Transport = dyn Fn(&Base, &Url, &[(&str, &str)], &CancellationToken) -> Result<Response, SendError> + Send + Sync;
 
+/// Sends one POST with a JSON body (web search engines such as Tavily, Exa, Firecrawl).
+pub type PostTransport = dyn Fn(&Base, &Url, &[(&str, &str)], &[u8], &CancellationToken) -> Result<Response, SendError> + Send + Sync;
+
 /// One GET, through the safe client (or to a test's loopback mock).
 pub fn send(base: &Base, url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> Result<Response, SendError> {
     if cancel.is_cancelled() {
@@ -91,6 +94,17 @@ pub fn send(base: &Base, url: &Url, headers: &[(&str, &str)], cancel: &Cancellat
         return loopback_get(url, headers, cancel);
     }
     safe_get(url, headers, cancel)
+}
+
+/// One POST of a JSON body, through the safe client (or to a test's loopback mock).
+pub fn send_post(base: &Base, url: &Url, headers: &[(&str, &str)], body: &[u8], cancel: &CancellationToken) -> Result<Response, SendError> {
+    if cancel.is_cancelled() {
+        return Err(SendError::Cancelled);
+    }
+    if base.overridden && is_loopback(url) {
+        return loopback_request("POST", url, headers, Some(body), cancel);
+    }
+    safe_request(HttpMethod::Post, url, headers, Some(body), cancel)
 }
 
 pub(crate) fn is_loopback(url: &Url) -> bool {
@@ -103,6 +117,10 @@ pub(crate) fn is_loopback(url: &Url) -> bool {
 }
 
 fn safe_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> Result<Response, SendError> {
+    safe_request(HttpMethod::Get, url, headers, None, cancel)
+}
+
+fn safe_request(method: HttpMethod, url: &Url, headers: &[(&str, &str)], body: Option<&[u8]>, cancel: &CancellationToken) -> Result<Response, SendError> {
     let failed = |e: HttpError| match e {
         HttpError::Cancelled => SendError::Cancelled,
         HttpError::Timeout(_) => SendError::Timeout,
@@ -139,9 +157,12 @@ fn safe_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> 
             .with_limits(limits.clone())
             .map_err(failed)?;
         let default_accept = if accept.is_empty() { "application/json" } else { accept.as_str() };
-        let mut request = HttpRequest::get(url.as_str()).and_then(|r| r.with_header("accept", default_accept)).and_then(|r| r.with_header("user-agent", USER_AGENT)).map_err(failed)?;
+        let mut request = HttpRequest::new(method, url.as_str()).and_then(|r| r.with_header("accept", default_accept)).and_then(|r| r.with_header("user-agent", USER_AGENT)).map_err(failed)?;
         for (name, value) in headers.iter().filter(|(n, _)| !n.eq_ignore_ascii_case("accept")) {
             request = request.with_header(*name, *value).map_err(failed)?;
+        }
+        if let Some(body) = body {
+            request = request.with_header("content-type", "application/json").and_then(|r| r.with_body(body.to_vec())).map_err(failed)?;
         }
         match SafeHttpClient::new(policy).execute(request, cancel) {
             Ok(response) => break response,
@@ -209,6 +230,11 @@ const FEED_AGENT: &str = "Key/0.1 (feed reader; +https://github.com/key-app)";
 
 /// A plain HTTP/1.0 GET to a loopback mock (tests and smokes only).
 pub(crate) fn loopback_get(url: &Url, headers: &[(&str, &str)], cancel: &CancellationToken) -> Result<Response, SendError> {
+    loopback_request("GET", url, headers, None, cancel)
+}
+
+/// A plain HTTP/1.0 request to a loopback mock (tests and smokes only), with a JSON body for a POST.
+pub(crate) fn loopback_request(method: &str, url: &Url, headers: &[(&str, &str)], body: Option<&[u8]>, cancel: &CancellationToken) -> Result<Response, SendError> {
     let failed = |e: std::io::Error| match e.kind() {
         std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => SendError::Timeout,
         _ => SendError::Failed(format!("Couldn't reach {}: {e}", url.host_str().unwrap_or(""))),
@@ -225,12 +251,18 @@ pub(crate) fn loopback_get(url: &Url, headers: &[(&str, &str)], cancel: &Cancell
     if let Some(query) = url.query() {
         path = format!("{path}?{query}");
     }
-    let mut head = format!("GET {path} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\nUser-Agent: {USER_AGENT}\r\n", url.host_str().unwrap_or(""));
+    let mut head = format!("{method} {path} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\nUser-Agent: {USER_AGENT}\r\n", url.host_str().unwrap_or(""));
     for (name, value) in headers {
         head.push_str(&format!("{name}: {value}\r\n"));
     }
+    if let Some(body) = body {
+        head.push_str(&format!("Content-Type: application/json\r\nContent-Length: {}\r\n", body.len()));
+    }
     head.push_str("\r\n");
     stream.write_all(head.as_bytes()).map_err(failed)?;
+    if let Some(body) = body {
+        stream.write_all(body).map_err(failed)?;
+    }
     let started = Instant::now();
     let mut raw = Vec::new();
     let mut chunk = [0u8; 16 * 1024];
@@ -343,6 +375,8 @@ pub fn json_of(answer: Result<Response, SendError>, label: &str) -> Result<(Json
         429 => ProviderError { retry_after, ..ProviderError::new(format!("{label} is limiting requests"), Some(429), true) },
         500.. => ProviderError { retry_after, ..ProviderError::new(format!("{label} is not answering (HTTP {status})"), Some(status), true) },
         401 | 403 => ProviderError::new(format!("{label} refused the API key"), Some(status), false),
+        // Out of credits or over the plan's limit (Tavily also answers 432 and 433).
+        402 | 432 | 433 => ProviderError::new(format!("{label}: this key has no credits left"), Some(402), false),
         _ => ProviderError::new(format!("{label} returned HTTP {status}"), Some(status), false),
     })
 }

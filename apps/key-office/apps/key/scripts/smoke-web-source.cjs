@@ -417,6 +417,34 @@ async function serve() {
     await shell.locator(".kx-page-highlights").getByRole("button", { name: "Show on page" }).first().waitFor();
     await shell.screenshot({ path: path.join(shots, "9-source-page.png") });
 
+    // 10. A search hit in the saved page opens its reader at the passage, lit until clicked.
+    await shell.evaluate((id) => window.key.tabAction("open-content", { section: "search", workspaceId: id }), ws.id);
+    const searchTab = shell.locator(".kx-search-page:not([hidden])");
+    const field = searchTab.getByRole("combobox", { name: "Search everything" });
+    await field.waitFor();
+    await field.fill("fertile floodplain");
+    await field.press("Escape");
+    const hit = searchTab.locator('.kx-found-group[data-group="text"] .kx-found-hit', { hasText: "How rivers shaped early cities" });
+    await hit.locator(".kx-passage").first().waitFor({ timeout: 20000 });
+    await hit.locator(".kx-passage").first().click();
+    const lit = await until(async () => {
+      for (const f of shell.frames().filter((x) => x.url() === "about:srcdoc")) {
+        const text = await f.evaluate(() => [...document.querySelectorAll("mark.key-passage-kept")].map((m) => m.textContent).join("")).catch(() => "");
+        if (text) return { f, text };
+      }
+    }, "the reader at the search hit's passage", 20000);
+    report.searchHit = lit.text.slice(0, 80);
+    assert(/fertile/.test(lit.text), `the lit passage holds the match: ${lit.text}`);
+    await wait(2800);
+    assert(await lit.f.evaluate(() => document.querySelectorAll("mark.key-passage-kept").length > 0), "the passage stays lit");
+    const visible = await lit.f.evaluate(() => { const r = document.querySelector("mark.key-passage-kept").getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+    assert(visible, "the passage is scrolled into view");
+    await shell.screenshot({ path: path.join(shots, "10-search-hit-light.png") });
+    await shell.emulateMedia({ colorScheme: "dark" });
+    await wait(300);
+    await shell.screenshot({ path: path.join(shots, "10-search-hit-dark.png") });
+    await shell.emulateMedia({ colorScheme: "light" });
+
     assert(!errors.length, `page errors: ${errors.join("; ")}`);
     console.log(JSON.stringify({ ok: true, shots, ...report }, null, 2));
   } catch (error) {

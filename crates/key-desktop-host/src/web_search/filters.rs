@@ -7,7 +7,7 @@ use super::types::{WebResult, fold};
 use serde::{Deserialize, Serialize};
 
 /// The kinds of filter web search knows.
-pub const KEYS: [&str; 14] = ["year", "author", "title", "venue", "doi", "arxiv", "pmid", "pmcid", "openAccess", "type", "citations", "abstract", "language", "retracted"];
+pub const KEYS: [&str; 15] = ["year", "author", "title", "venue", "doi", "arxiv", "pmid", "pmcid", "openAccess", "type", "citations", "abstract", "language", "retracted", "site"];
 /// Filters that can be checked on a result itself, whatever the provider.
 pub const LOCAL: [&str; 12] = ["year", "author", "title", "venue", "doi", "arxiv", "pmid", "pmcid", "openAccess", "type", "citations", "abstract"];
 
@@ -51,6 +51,18 @@ pub struct WebFilters {
     pub language: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retracted: Option<bool>,
+    /// Only pages of this site: a host name (`nature.com`), applied by web search engines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
+}
+
+/// The host a `url:`/`site:` token names: `https://www.nature.com/articles/x` → `nature.com`.
+pub fn site_of(value: &str) -> Option<String> {
+    let v = value.trim().to_lowercase();
+    let v = v.split_once("://").map_or(v.as_str(), |(_, rest)| rest);
+    let host = v.split(['/', '?', '#']).next().unwrap_or("").trim_start_matches("www.").trim_end_matches('.');
+    let ok = host.contains('.') && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    ok.then(|| host.to_string())
 }
 
 /// A search field token (search-suggest's SearchFilter).
@@ -103,6 +115,8 @@ pub fn filter_key(token: &FilterToken) -> Option<&'static str> {
         "abstract" => "abstract",
         "language" if token.value.len() == 2 && token.value.chars().all(|c| c.is_ascii_alphabetic()) => "language",
         "retracted" => "retracted",
+        // `site:nature.com` (field_query.rs reads it as a link token).
+        "url" | "site" | "domain" if site_of(&token.value).is_some() => "site",
         _ => return None,
     })
 }
@@ -173,6 +187,7 @@ pub fn to_filters(tokens: &[FilterToken]) -> WebFilters {
             "abstract" => out.abstract_ = Some(text.to_string()),
             "language" => out.language = Some(text.to_lowercase()),
             "retracted" => out.retracted = Some(token.value != "false"),
+            "site" => out.site = site_of(&token.value),
             _ => {}
         }
     }
@@ -198,6 +213,7 @@ pub fn active(filters: &WebFilters) -> Vec<&'static str> {
         ("abstract", set(&f.abstract_)),
         ("language", set(&f.language)),
         ("retracted", f.retracted.is_some()),
+        ("site", set(&f.site)),
     ]
     .into_iter()
     .filter_map(|(k, on)| on.then_some(k))
@@ -226,6 +242,7 @@ pub fn pick(filters: &WebFilters, keys: &[&str]) -> WebFilters {
         abstract_: f.abstract_.filter(|_| has("abstract")),
         language: f.language.filter(|_| has("language")),
         retracted: f.retracted.filter(|_| has("retracted")),
+        site: f.site.filter(|_| has("site")),
     }
 }
 
@@ -311,6 +328,8 @@ mod tests {
         for field in ["tag", "collection", "notes", "fulltext", "item", "kind", "property", "url", "isbn"] {
             assert_eq!(filter_key(&token(field, "x", None)), None);
         }
+        assert_eq!(filter_key(&token("url", "nature.com", Some("contains"))), Some("site"));
+        assert_eq!(to_filters(&[token("url", "https://www.Nature.com/articles/s1", Some("contains"))]).site.as_deref(), Some("nature.com"));
     }
 
     #[test]

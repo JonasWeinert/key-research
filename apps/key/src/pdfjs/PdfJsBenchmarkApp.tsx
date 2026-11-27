@@ -355,7 +355,7 @@ export class PdfJsTileController {
           // (as a side panel closes) must not be undone by the new layout.
           const state = this.currentViewState();
           this.updateLayout();
-          this.restoreViewState(state);
+          this.restoreAfterLayout(state);
         });
       });
       this.resizeObserver.observe(this.scroll);
@@ -374,7 +374,7 @@ export class PdfJsTileController {
         const changed = host.baseWidth !== viewport.width || host.baseHeight !== viewport.height;
         host.page = page; host.baseWidth = viewport.width; host.baseHeight = viewport.height;
         this.loadedPages.add(index);
-        if (changed) { this.updateLayout(); this.restoreViewState(state); }
+        if (changed) { this.updateLayout(); this.restoreAfterLayout(state); }
         return page;
       }).finally(() => this.pageLoads.delete(index));
       this.pageLoads.set(index, pending);
@@ -411,6 +411,31 @@ export class PdfJsTileController {
       this.thumbnails.set(index, pending);
     }
     return pending;
+  }
+
+  /** A region of a page as an image (reading mode's figures and tables); `rect` is
+   * [x, y, width, height] in 0–65535 of the page, `width` the image's CSS width. */
+  async renderRegion(index: number, rect: number[], width: number): Promise<string | null> {
+    if (this.destroyed) return null;
+    const page = await this.loadPage(index);
+    const base = page.getViewport({ scale: 1 });
+    const [x, y, w, h] = rect.map(v => v / 65535);
+    const scale = Math.min(4, (width * this.dpr) / Math.max(1, base.width * w));
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.ceil(viewport.width * w));
+    canvas.height = Math.max(1, Math.ceil(viewport.height * h));
+    const context = canvas.getContext('2d', { alpha: false })!;
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({
+      canvas: null,
+      canvasContext: context,
+      viewport,
+      transform: [1, 0, 0, 1, -viewport.width * x, -viewport.height * y],
+      background: '#ffffff',
+    }).promise;
+    return canvas.toDataURL('image/png');
   }
 
   pageCount() {
@@ -504,6 +529,15 @@ export class PdfJsTileController {
       horizontalFraction:
         horizontalMaximum > 0 ? this.scroll.scrollLeft / horizontalMaximum : 0,
     };
+  }
+
+  /** After a new layout: a reader at the very top stays there (the place it keeps is 32%
+   *  down the view, which a new width would otherwise move down the first page). */
+  private restoreAfterLayout(state: PdfJsViewState) {
+    const atTop = this.scroll.scrollTop <= 1;
+    if (!atTop) return this.restoreViewState(state);
+    this.restoreViewState({ ...state, pageIndex: 0, pageOffsetFraction: 0 });
+    this.scroll.scrollTop = 0;
   }
 
   restoreViewState(state: PdfJsViewState) {
@@ -1640,6 +1674,10 @@ export interface PdfReaderHandle {
   closePanel(): void;
   /** Scrolls `page` into view with `top` (a fraction down it) at the top. */
   goTo(page: number, top?: number): void;
+  /** Reading mode: a page region drawn as an image (`rect` [x, y, width, height] in 0–65535). */
+  renderRegion(page: number, rect: number[], width: number): Promise<string | null>;
+  /** Reading mode: a highlight on a text range the host located; its id. */
+  addHighlightAt(range: TextRange, text: string, color: HighlightColor): string | undefined;
 }
 
 const PdfJsBenchmarkApp = forwardRef<PdfReaderHandle, PdfJsBenchmarkAppProps>(
@@ -2879,6 +2917,15 @@ function PdfJsBenchmarkApp({
       closePanel: () => setActivePanel(null),
       goTo: (page, top = 0) =>
         controllerRef.current?.scrollToBounds(page, { left: 0, right: 0, top, bottom: top }),
+      renderRegion: (page, rect, width) => controllerRef.current?.renderRegion(page, rect, width) ?? Promise.resolve(null),
+      addHighlightAt: (range, text, color) => {
+        const documentId = documentIdRef.current;
+        if (!documentId) return undefined;
+        const now = new Date().toISOString();
+        const created: ReaderAnnotation = { id: annotationId(), documentId, range, text, color, createdAt: now, updatedAt: now };
+        updateAnnotations([...annotationSnapshotRef.current, created]);
+        return created.id;
+      },
     }),
     [
       activateSearch,
@@ -2888,6 +2935,7 @@ function PdfJsBenchmarkApp({
       openAnnotationEditor,
       searchMatches,
       setReaderZoom,
+      updateAnnotations,
       zoom,
     ],
   );

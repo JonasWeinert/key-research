@@ -1,0 +1,12 @@
+{
+  "_synthetic": "Invented for tests, shaped like Jina Reader's JSON answer as its docs describe it (r.jina.ai/docs, checked 2026-11-27). Not a recorded answer.",
+  "code": 200,
+  "status": 20000,
+  "data": {
+    "title": "A post",
+    "url": "https://example.org/post",
+    "description": "Some words worth keeping.",
+    "content": "<article><h1>A post</h1><p>Some words worth keeping.</p></article>",
+    "usage": { "tokens": 40 }
+  }
+}

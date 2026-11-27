@@ -37,7 +37,7 @@ export default function NotePage({ invoke, workspaceId, noteId, viewId }: { invo
   const [library, setLibrary] = useState(false);
   const editorApi = useRef<NoteEditorHandle>(null);
   const libraryButton = useRef<HTMLButtonElement>(null);
-  const librarySearch = useRef<HTMLInputElement>(null);
+  const librarySearch = useRef<HTMLTextAreaElement>(null);
   const fading = useFadingButton(libraryButton, library);
   const closeLibrary = () => {
     setLibrary(false);

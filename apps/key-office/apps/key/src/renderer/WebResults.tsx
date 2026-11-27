@@ -10,8 +10,10 @@ import { shellContext, toast } from "./item-actions";
 import { Highlight } from "./search-highlight";
 import { WebAddButton, type WebAdd } from "./WebAddButton";
 import { openWebLink, type WebSearchState } from "./web-search";
+import { EnginePicker } from "./web-engines";
 import "./web-search.css";
 import { FollowButton } from "./feeds-ui";
+import { couldNot } from "../shared/plain-error";
 
 export function WebPill({ pressed, onClick }: { pressed: boolean; onClick: (e: React.MouseEvent) => void }) {
   return (
@@ -51,7 +53,7 @@ export async function copyCitation(hit: WebHit) {
     await writeRichClipboard({ text: entry.text, html: `<div class="csl-entry">${entry.html}</div>`, rtf: rtfDocument([entry.rtf]) });
     toast("Citation copied");
   } catch (e) {
-    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
+    toast(couldNot("format the citation", e));
   }
 }
 
@@ -73,6 +75,7 @@ export const FILTER_NAME: Record<WebFilterKey, string> = {
   abstract: "abstract",
   language: "language",
   retracted: "retraction",
+  site: "site",
 };
 
 /** "Alert me to new results": this search, with its web filters, as an OpenAlex alert in the Inbox. */
@@ -136,7 +139,7 @@ export default function WebResults({
         <span>On the web</span>
         <span className="kx-count">{web.hits.length || (loading.length ? "…" : 0)}</span>
         <span className="kx-web-sources">
-          {web.providers.map((p) => (
+          {web.providers.map((p) => p.info.kind === "chain" && !p.skipped?.length ? <EnginePicker key={p.info.id} web={web} /> : (
             <span key={p.info.id} className="kx-web-source" data-status={p.skipped?.length ? "skipped" : p.status} title={p.error ?? (p.skipped?.length ? `Not asked: it can't filter by ${skipNote(p.skipped)}` : undefined)}>
               {p.info.label}
               {p.status === "loading" && <span className="kx-search-spinner" aria-hidden="true" />}
@@ -146,7 +149,7 @@ export default function WebResults({
         <WebAlertButton web={web} />
       </div>
       {!web.online ? (
-        <p className="kx-web-note">You're offline. Web results come back when you reconnect.</p>
+        <p className="kx-web-note">This Mac is offline, so Key cannot search the web. Your library still searches; web results come back when you reconnect.</p>
       ) : web.none ? (
         <p className="kx-web-note">Every web source is turned off in Key Settings › Web & browser.</p>
       ) : query.trim().length < 2 && !web.filtered ? (
@@ -254,8 +257,8 @@ export default function WebResults({
           ))}
           {failed.map((p) => (
             <p key={p.info.id} className="kx-web-note" data-provider={p.info.id} role="status">
-              <span>Couldn't reach {p.info.label}</span>
-              {p.error && !/^couldn't reach/i.test(p.error) && <small>{p.error}</small>}
+              <span>Couldn’t reach {p.info.label}</span>
+              {p.error && !/^couldn[’']t reach/i.test(p.error) && <small>{p.error}</small>}
               <button type="button" onClick={() => web.retry(p.info.id)}>
                 Retry
               </button>
