@@ -1663,7 +1663,7 @@ function BulkBar({
             ))}
             <option value="__new">New property…</option>
           </select>
-          <button onClick={onFill} title={count > 25 ? "Agent fill works on 25 sources at a time" : "Fill a property with AI"}>
+          <button onClick={onFill} title="Fill a property with AI or a rule">
             <Icon name="sparkle" size={13} /> Fill with AI
           </button>
           <button onClick={() => void onEnrich()} title="Look the selection up in OpenAlex: authors, journal, topics, funding and citations">

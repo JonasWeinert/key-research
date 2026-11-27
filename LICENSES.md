@@ -23,21 +23,8 @@ Settings › About Key › Acknowledgements), plus `NOTICE` and `licenses/` in i
 | `vendor/cbindgen-compat`, `vendor/option-ext-compat`, `vendor/dwrote-compat` | MIT (Key's own stand-ins, not forks) | their `LICENSE` files | build only / inactive |
 | `extensions/*`, `experiments/*`, `tools/`, `scripts/` | MIT | `LICENSE` | no |
 
-## Pending removal: GenOffice-derived agent packages (Apache-2.0)
-
-`apps/key-office/packages/agent-core` and `apps/key-office/packages/ai-provider` come from
-[GenOffice](https://github.com/genspark-ai/genoffice) (commit
-`de139a061537bea40f0cc81ef8f09a95f77ac52a`, Copyright 2026 Mainfunc, Inc.), modified by Key, and
-stay under the Apache License 2.0 while they exist. Only the AI fill feature
-(`apps/key/src/main/agent-fill.ts`) still imports them; they are deleted once it runs on Key's own
-AI client. The Apache-2.0 text ships in `THIRD-PARTY-NOTICES.txt`.
-
-| Component | Licence | Licence text | Shipped |
-|---|---|---|---|
-| `apps/key-office/packages/{agent-core,ai-provider}`, `apps/key-office/tsconfig.base.json` | Apache-2.0 (modified by Key) | `THIRD-PARTY-NOTICES.txt` §0 and §5 | yes (bundled into the main process) |
-
 History: Key once bundled GenOffice's Docs, Sheets, Slides, Markdown and HTML editors, their
-packages and fonts in `apps/key-office`. They were removed in November 2026; document editing
+packages and fonts in `apps/key-office`. They were removed in November 2026 (the last two, `agent-core` and `ai-provider`, once the AI fill feature ran on Key's own AI client); document editing
 will be reimplemented separately. Git history keeps their provenance and licence files.
 
 ## Third-party code inside the tree
@@ -77,7 +64,6 @@ will be reimplemented separately. Git history keeps their provenance and licence
 
 ## What is not MIT, and why
 
-- **The two pending agent packages** (`agent-core`, `ai-provider`): Apache-2.0 until they are deleted.
 - **CSL styles and locales**: CC BY-SA 3.0 data, credited per file, shipped as separate data
   files and not compiled in; the share-alike term applies to these files (and changes to them),
   not to Key's program code.

@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld("key", {
         "save-content",
         "property-definitions-changed",
         "library-changed",
+        "fill-progress",
         "open-settings",
         "open-workspace-settings",
         "note-changed",

@@ -1,0 +1,598 @@
+/* The formula builder (FormulaBuilder.tsx), shown window-sized inside the property sheet. */
+.key-global-drawer.key-modal:has(.kx-fb) {
+  --kx-modal-width: 980px;
+  --kx-modal-min-height: 620px;
+}
+.kx-fb {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--kx-text);
+  font-size: 13px;
+}
+.kx-fb-loading {
+  padding: 24px;
+  color: var(--kx-text-2);
+}
+.kx-fb-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--kx-line);
+}
+.kx-fb-head > div:first-child {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.kx-fb-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.kx-fb-head small {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fb-body {
+  display: grid;
+  flex: 1;
+  grid-template-columns: 248px 1fr;
+  min-height: 0;
+}
+.kx-fb-palette {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 12px;
+  overflow: auto;
+  border-right: 1px solid var(--kx-line);
+  background: var(--kx-bg-sunken);
+}
+.kx-fb-palette h4,
+.kx-fb-preview h4,
+.kx-fb-reference h4 {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 6px;
+  color: var(--kx-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.kx-fb-describe {
+  display: grid;
+  gap: 6px;
+}
+.kx-fb-describe textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--kx-line);
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: 12px/1.4 var(--kx-font);
+  resize: none;
+}
+.kx-fb-describe small {
+  color: var(--kx-text-3);
+  font-size: 11.5px;
+}
+.kx-fb-describe > button {
+  justify-self: start;
+}
+.kx-fb-draft {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-sm);
+}
+.kx-fb-draft code {
+  font: 11.5px/1.4 ui-monospace, "SF Mono", monospace;
+  word-break: break-word;
+}
+.kx-fb-draft-error {
+  color: var(--kx-red) !important;
+}
+.kx-fb-templates {
+  display: grid;
+  gap: 4px;
+}
+.kx-fb-template {
+  display: grid;
+  gap: 1px;
+  padding: 6px 8px;
+  border: 1px solid var(--kx-line);
+  border-radius: 7px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: inherit;
+  text-align: left;
+}
+.kx-fb-template:hover,
+.kx-fb-chip:hover {
+  border-color: var(--kx-line-strong);
+  background: var(--kx-fill);
+}
+.kx-fb-template strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.kx-fb-template small {
+  color: var(--kx-text-2);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.kx-fb-blocks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kx-fb-chip {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--kx-line);
+  border-radius: 11px;
+  background: var(--kx-bg-raised);
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+}
+.kx-fb-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 16px;
+  overflow: auto;
+}
+.kx-fb-editor {
+  display: grid;
+  gap: 8px;
+}
+.kx-fb-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 28px 16px;
+  border: 1px dashed var(--kx-line-strong);
+  border-radius: 10px;
+  color: var(--kx-text-2);
+  text-align: center;
+}
+.kx-fb-empty strong {
+  color: var(--kx-text);
+  font-weight: 500;
+}
+.kx-fb-empty small {
+  max-width: 420px;
+  font-size: 12px;
+}
+.kx-fb-tree {
+  padding: 12px;
+  border: 1px solid var(--kx-line);
+  border-radius: 10px;
+  background: var(--kx-bg-raised);
+  line-height: 2.1;
+}
+.kx-fb-block {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  gap: 2px;
+  vertical-align: middle;
+}
+.kx-fb-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+  background: var(--kx-bg);
+}
+.kx-fb-group[data-kind="fn"] {
+  border-color: color-mix(in srgb, var(--kx-accent) 35%, var(--kx-line));
+  background: color-mix(in srgb, var(--kx-accent) 6%, var(--kx-bg));
+}
+.kx-fb-group[data-kind="fn"][data-category="logic"] {
+  border-color: color-mix(in srgb, var(--kx-indigo) 40%, var(--kx-line));
+  background: color-mix(in srgb, var(--kx-indigo) 6%, var(--kx-bg));
+}
+.kx-fb-group[data-kind="fn"][data-category="date"] {
+  border-color: color-mix(in srgb, var(--kx-green) 40%, var(--kx-line));
+  background: color-mix(in srgb, var(--kx-green) 6%, var(--kx-bg));
+}
+.kx-fb-word {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fb-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+  font: 500 12px var(--kx-font);
+}
+.kx-fb-pill[data-kind="field"] {
+  appearance: none;
+  padding-right: 18px;
+  background: var(--kx-accent-soft) linear-gradient(transparent, transparent);
+  color: var(--kx-accent-text);
+}
+.kx-fb-pill[data-kind="text"] {
+  color: var(--kx-text-2);
+}
+.kx-fb-pill[data-kind="empty"] {
+  border: 1px dashed var(--kx-line-strong);
+  background: none;
+  color: var(--kx-text-3);
+  font-style: italic;
+}
+.kx-fb-input {
+  min-width: 2ch;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--kx-line-strong);
+  background: none;
+  color: var(--kx-text);
+  font: 500 12px var(--kx-font);
+  outline: none;
+}
+.kx-fb-input:focus {
+  border-bottom-color: var(--kx-accent);
+}
+.kx-fb-op {
+  height: 20px;
+  border: 0;
+  background: none;
+  color: var(--kx-text-2);
+  font: 12px var(--kx-font);
+}
+.kx-fb-change {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 16px;
+  border-radius: 4px;
+  opacity: 0;
+  background: var(--kx-fill-2);
+  color: var(--kx-text-2);
+}
+.kx-fb-change select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+}
+.kx-fb-block:hover > .kx-fb-change,
+.kx-fb-change:focus-within {
+  opacity: 1;
+}
+.kx-fb-add {
+  height: 20px;
+  padding: 0 7px;
+  border: 1px dashed var(--kx-line-strong);
+  border-radius: 10px;
+  background: none;
+  color: var(--kx-text-3);
+  font: 11.5px var(--kx-font);
+}
+.kx-fb-add:hover {
+  color: var(--kx-accent);
+}
+.kx-fb-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.kx-fb-code-wrap {
+  position: relative;
+}
+.kx-fb-code {
+  position: relative;
+  min-height: 96px;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+}
+.kx-fb-code:focus-within {
+  border-color: var(--kx-accent);
+  box-shadow: 0 0 0 3px var(--kx-accent-soft);
+}
+.kx-fb-code pre,
+.kx-fb-code textarea {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 10px 12px;
+  font: 13px/1.6 ui-monospace, "SF Mono", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.kx-fb-code pre {
+  min-height: 96px;
+  color: var(--kx-text);
+  pointer-events: none;
+}
+.kx-fb-code textarea {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: transparent;
+  caret-color: var(--kx-text);
+  outline: none;
+  resize: none;
+}
+.kx-fb-code [data-hl="field"] {
+  color: var(--kx-accent-text);
+}
+.kx-fb-code [data-hl="unknown"] {
+  color: var(--kx-amber);
+}
+.kx-fb-code [data-hl="function"] {
+  color: var(--kx-indigo);
+  font-weight: 600;
+}
+.kx-fb-code [data-hl="text"] {
+  color: var(--kx-green);
+}
+.kx-fb-code [data-hl="number"],
+.kx-fb-code [data-hl="keyword"] {
+  color: var(--kx-amber);
+}
+.kx-fb-code [data-hl="operator"],
+.kx-fb-code [data-hl="paren"],
+.kx-fb-code [data-hl="comma"] {
+  color: var(--kx-text-2);
+}
+.kx-fb-code [data-error],
+.kx-fb-code [data-hl="error"] {
+  text-decoration: wavy underline var(--kx-red);
+  text-underline-offset: 3px;
+}
+.kx-fb-suggest {
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 4px);
+  left: 8px;
+  min-width: 260px;
+  margin: 0;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--kx-bg-raised);
+  box-shadow: var(--kx-shadow-pop);
+  list-style: none;
+}
+.kx-fb-suggest li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 8px;
+  border-radius: 5px;
+}
+.kx-fb-suggest li[aria-selected="true"] {
+  background: var(--kx-accent);
+  color: var(--kx-on-accent);
+}
+.kx-fb-suggest code {
+  font: 12px ui-monospace, "SF Mono", monospace;
+}
+.kx-fb-suggest small {
+  opacity: 0.7;
+  font-size: 11px;
+}
+.kx-fb-text-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.kx-fb-problem {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-red) 9%, transparent);
+  color: var(--kx-text);
+}
+.kx-fb-problem > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--kx-red);
+}
+.kx-fb-problem[data-level="warning"] {
+  background: color-mix(in srgb, var(--kx-amber) 10%, transparent);
+}
+.kx-fb-problem[data-level="warning"] > svg {
+  color: var(--kx-amber);
+}
+.kx-fb-problem div {
+  display: grid;
+  gap: 2px;
+}
+.kx-fb-problem strong {
+  font-weight: 500;
+}
+.kx-fb-problem small {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fb-reference {
+  display: grid;
+  gap: 10px;
+  max-height: 260px;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--kx-line);
+  border-radius: 8px;
+}
+.kx-fb-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--kx-text-3);
+}
+.kx-fb-search input {
+  flex: 1;
+  border: 0;
+  background: none;
+  color: var(--kx-text);
+  font: 12px var(--kx-font);
+  outline: none;
+}
+.kx-fb-ref-item {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--kx-line);
+}
+.kx-fb-ref-item strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.kx-fb-ref-item strong code {
+  margin-left: 6px;
+  color: var(--kx-text-3);
+  font: 11.5px ui-monospace, "SF Mono", monospace;
+}
+.kx-fb-ref-item small {
+  color: var(--kx-text-2);
+  font-size: 12px;
+}
+.kx-fb-example {
+  justify-self: start;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text);
+  text-align: left;
+}
+.kx-fb-example code {
+  font: 11.5px ui-monospace, "SF Mono", monospace;
+}
+.kx-fb-preview {
+  display: grid;
+  gap: 6px;
+}
+.kx-fb-preview header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kx-fb-preview header h4 {
+  margin: 0;
+}
+.kx-fb-type {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--kx-fill-2);
+  color: var(--kx-text-2);
+  font-size: 11px;
+  line-height: 17px;
+}
+.kx-fb-rows {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.kx-fb-rows td {
+  height: 26px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--kx-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-fb-rows td:first-child {
+  width: 55%;
+  color: var(--kx-text-2);
+}
+.kx-fb-hint {
+  color: var(--kx-text-3);
+}
+.kx-fb-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--kx-line);
+}
+.kx-fb-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--kx-text-3);
+  font: 11.5px ui-monospace, "SF Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The property sheet's summary of a formula: it opens the builder. */
+.key-formula-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--kx-line);
+  background: none;
+  color: var(--kx-text);
+  font: inherit;
+  text-align: left;
+}
+.key-formula-summary:hover {
+  background: var(--kx-fill);
+}
+.key-formula-summary > svg {
+  flex: none;
+  color: var(--kx-accent);
+}
+.key-formula-summary code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font: 12px ui-monospace, "SF Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.key-formula-summary span {
+  color: var(--kx-accent-text);
+  font-size: 12px;
+}
+
+/* Text segmented controls in the builder and the fill sheet. */
+.kx-fb .kx-segmented button,
+.kx-fill .kx-segmented button {
+  width: auto;
+  padding: 0 10px;
+  font: 12px var(--kx-font);
+  white-space: nowrap;
+}
+.kx-fb-head {
+  position: relative;
+  padding-right: 52px;
+}
+.kx-fb-pill[data-kind="field"] {
+  field-sizing: content;
+  min-width: 48px;
+}

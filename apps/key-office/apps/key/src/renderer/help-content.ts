@@ -313,21 +313,113 @@ export const HELP = {
   ),
 
   // ── Settings: AI ─────────────────────────────────────────────────────────────────────
+  "settings.ai.intro": hint("Three steps: choose a provider, connect it, pick a model. Key uses it only for tasks you start, such as Fill with AI."),
   "settings.ai.provider": explain(
     "AI assistant",
     [
-      "Some tasks, like filling in missing details of a reference from its PDF, can use a large language model. You choose which one: a local app such as Ollama or LM Studio that runs on this Mac, or a hosted service you have an account with.",
-      "Nothing is sent until you start such a task, and then only the passages that task needs.",
+      "Some tasks, like filling a property from each source’s abstract or drafting a formula from a sentence, can use a large language model. You choose which one: a local app such as Ollama or LM Studio that runs on this Mac, or a hosted service you have an account with.",
+      "Nothing is sent until you start such a task, and then only the passages that task needs. A fill recipe shows exactly which parts of each source it sends before it runs.",
     ],
     { privacy: "With a local model nothing leaves this Mac. With a hosted one, the passages go to that provider." },
   ),
-  "settings.ai.endpoint": explain(
-    "Connecting a provider",
-    ["Any service that speaks the OpenAI format works. For a local model, start Ollama or LM Studio first."],
+  "settings.ai.choose": explain(
+    "Which provider?",
+    [
+      "Hosted providers (Anthropic, OpenAI, Google and others) are fast and careful, and charge a few cents per hundred sources. You need an account and an API key.",
+      "Ollama and LM Studio run a model on this Mac: free and private, but slower and less careful with long papers. Other connects any service that speaks the OpenAI chat format.",
+    ],
+  ),
+  "settings.ai.key": explain(
+    "An API key",
+    ["An API key is a long password that lets Key use your account with the provider. The provider bills that account for what Key asks; nobody else can use the key."],
     {
-      steps: ["Enter the endpoint, the address the service answers on.", "Enter the model’s name as the service lists it.", "Add an API key if the service needs one, then press Save provider."],
-      example: "Ollama: http://localhost:11434/v1 with model llama3.1:8b",
+      steps: ["Choose Get a key and sign in at the provider.", "Create a key and copy it.", "Paste it here and choose Save. Key tests it straight away."],
+      privacy: "The key stays in your Keychain (or encrypted in Key’s data folder) and is sent only to that provider.",
     },
+  ),
+  "settings.ai.local": explain(
+    "A model on this Mac",
+    ["Ollama and LM Studio are free apps that download a model and run it on this Mac. Key talks to them at a local address, so the text never leaves the computer."],
+    {
+      steps: ["Install the app and download a model in it.", "Start it (LM Studio: start the server in its Developer tab).", "Choose Test here: Key lists the models it finds."],
+      example: "Ollama answers on http://localhost:11434/v1",
+    },
+  ),
+  "settings.ai.model": explain(
+    "Choosing a model",
+    [
+      "Smaller models are faster and cheaper and do well at short answers: a label, a number, yes or no. Larger ones are more careful with long methods sections and subtle classifications.",
+      "You can test a recipe on three sources before a full run, so it is easy to try the cheaper model first.",
+    ],
+  ),
+  "settings.ai.privacy": explain(
+    "What the AI assistant sends",
+    [
+      "Only what a task you start needs. For a fill recipe that is, per source, the parts you chose: metadata, abstract, the beginning of the PDF’s text or named sections, your notes or highlights. For a drafted formula, your description and the names of your properties.",
+      "Key never sends your whole library in the background, and never sends files.",
+    ],
+    { privacy: "Hosted providers receive the text under their own terms; a local model keeps it on this Mac." },
+  ),
+
+  // ── Formulas ─────────────────────────────────────────────────────────────────────────
+  "formula.builder": explain(
+    "Formula properties",
+    [
+      "A formula works out a value for every source from its fields and properties: a short citation, the days since you added it, whether it has a PDF, a priority score. It stays up to date as the library changes, and you can sort, filter and group by it.",
+      "Start from a template or a building block, then change any part with its menu. Text shows the same formula as you would type it.",
+    ],
+    { example: 'if({Has PDF}, "Ready", "Find PDF")' },
+  ),
+  "formula.describe": explain(
+    "Drafting a formula from words",
+    ["Describe what you want, and the AI assistant drafts a formula from Key’s list of functions and your property names. Check the preview before you use it; you can still change every part."],
+    { privacy: "Your description and the names of your properties go to the AI provider you chose. No source content is sent." },
+  ),
+  "formula.text": hint("Type { for fields and properties, or a few letters for functions. Errors point to the exact spot."),
+
+  // ── Fill recipes ─────────────────────────────────────────────────────────────────────
+  "fill.intro": hint("Fill a property on many sources at once, from an AI model or a rule. You review every value before it is saved."),
+  "fill.what": explain(
+    "What to fill",
+    [
+      "Pick a starter recipe, such as a one-sentence summary or the study design, or describe your own in a sentence. The answer goes into a property: an existing one, or a new one Key creates for the recipe.",
+      "Rules fill without AI: a formula, or a pattern that finds text such as “n = 120” in the abstract.",
+    ],
+  ),
+  "fill.source": explain(
+    "Where the answer comes from",
+    [
+      "Choose what the model reads for each source: its metadata, the abstract, the beginning of the PDF’s text, named sections such as Methods (found when the PDF was indexed), your notes or your highlights.",
+      "Less text is faster and cheaper; sections are the best way to point the model at the right part of a paper.",
+    ],
+    { privacy: "Only the parts you tick are sent, to the provider in Key Settings › AI assistant. With a local model nothing leaves this Mac." },
+  ),
+  "fill.shape": explain(
+    "The shape of the answer",
+    ["The answer is checked before it becomes a proposal: a number must be a number, a choice must be one of your options, a date a real date. Answers that do not fit are listed as failed instead of guessed."],
+  ),
+  "fill.test": explain(
+    "Test before running",
+    ["The test runs the recipe on three sources and shows each answer next to the passages it came from. Adjust the instruction until the answers are right, then run it on the selection, a collection or the whole library."],
+  ),
+  "fill.review": explain(
+    "Reviewing proposals",
+    [
+      "Nothing is saved until you accept it. Accept all, or go through the list: accept, edit or reject each value. Quotes marked as found appear in the source; the others could not be checked.",
+      "Values you typed yourself are never proposed over. Accepted values form one change you can undo, and Undo run takes back everything a run saved.",
+    ],
+  ),
+  "fill.auto": explain(
+    "Keep filled automatically",
+    ["With this on, the recipe also runs on sources you add from now on, and saves answers straight into empty cells. They are marked as filled by the recipe and can be undone like any run."],
+  ),
+  "fill.recipes": explain(
+    "Saved recipes",
+    ["A recipe remembers what to fill, from where and how. Copy it as text to share it or to use it in another workspace, and paste one to import it."],
+  ),
+  "fill.cost": explain(
+    "Tokens and cost",
+    ["Models count text in tokens, roughly four characters each. The estimate adds up the text a run would send and the answers it expects, priced at the provider’s list price. Local models cost nothing."],
   ),
 
   // ── Settings: Zotero ─────────────────────────────────────────────────────────────────

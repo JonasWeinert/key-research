@@ -133,54 +133,14 @@ const assert = require("node:assert/strict");
       );
       await page.evaluate((tabId) => window.key.tabAction("activate", { tabId }), owner);
     }
-    // The agent pane slides in beside the property form, inside the same sheet.
+    // Configure agent fill saves the property and opens the fill sheet for it, over the window.
     const sheet = page.locator(".key-global-drawer");
-    await sheet
-      .getByRole("button", { name: "Configure agent fill", exact: false })
-      .click();
-    await sheet
-      .getByRole("button", { name: "Back to property", exact: true })
-      .waitFor();
-    const instructions = sheet.getByRole("textbox", {
-      name: "Instructions",
-      exact: true,
-    });
-    await instructions.fill("Retain this unsaved recipe when navigating back.");
-    // The agent slide has settled when it lines up with the sheet's left edge.
-    await page.waitForFunction(
-      () =>
-        Math.abs(
-          document
-            .querySelector(".key-drawer-slide:last-child")
-            .getBoundingClientRect().x -
-            document.querySelector(".key-global-drawer").getBoundingClientRect().x,
-        ) < 1,
-    );
+    await sheet.getByRole("button", { name: "Configure agent fill", exact: false }).click();
+    const fill = page.getByRole("dialog", { name: "Fill a property", exact: true });
+    await fill.waitFor();
+    assert.equal(await fill.getByLabel("Property to fill").inputValue(), "Review");
     await page.screenshot({ path: path.join(temp, "agent-detail.png") });
-    await sheet
-      .getByRole("button", { name: "Back to property", exact: true })
-      .click();
-    await sheet
-      .getByRole("button", { name: "Configure agent fill", exact: false })
-      .click();
-    assert.equal(
-      await instructions.inputValue(),
-      "Retain this unsaved recipe when navigating back.",
-    );
-    await sheet
-      .getByRole("button", { name: "Save instructions", exact: true })
-      .click();
-    await sheet
-      .getByText("Recipe saved for this property. No inputs have been sent.", {
-        exact: true,
-      })
-      .waitFor();
-    await sheet
-      .getByRole("button", { name: "Back to property", exact: true })
-      .click();
-    await sheet
-      .getByRole("button", { name: "Close property editor", exact: true })
-      .click();
+    await fill.getByRole("button", { name: "Close", exact: true }).click();
     await page.locator(".key-global-drawer").waitFor({ state: "detached" });
     await page.waitForFunction(
       () => !document.querySelector(".key-shell-body").inert,
@@ -204,10 +164,7 @@ const assert = require("node:assert/strict");
       (id) => window.key.invoke("workspace_attributes", {}, id),
       ws.id,
     );
-    assert.equal(
-      defs.find((d) => d.name === "Review").agentic.instruction,
-      "Retain this unsaved recipe when navigating back.",
-    );
+    assert.ok(defs.some((d) => d.name === "Review"));
     assert.deepEqual(errors, []);
     const report = {
       ok: true,
@@ -215,7 +172,7 @@ const assert = require("node:assert/strict");
       globalBounds: bounds,
       nativeLayering: true,
       tabSwitchPreservesProperty: true,
-      agentDraftPreserved: true,
+      fillSheetOpens: true,
       nativeViewsRestored: true,
     };
     await writeFile(

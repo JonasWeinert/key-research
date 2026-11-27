@@ -14,6 +14,8 @@ import { modelsWorkItem } from "./models-ui";
 import { useAutoExportStatus } from "./BiblioSheets";
 import { useMarkdownExportStatus } from "./markdown-export";
 import { inboxStatusItem, openInbox, useFeedCounts } from "./feeds-ui";
+import { useFillStatus } from "./fill-status";
+import FillSheet from "./FillSheet";
 import { overflowingStatusItems, sanitizeStatusItems, STATUS_BAR_HEIGHT, type StatusItem } from "../shared/status-items";
 
 interface Notice {
@@ -309,6 +311,8 @@ export function StatusBar({
   const markdownExport = useMarkdownExportStatus(invoke, workspaceId);
   // Nothing unless new items came in (feeds-ui.tsx).
   const inbox = inboxStatusItem(useFeedCounts(invoke, workspaceId));
+  const fill = useFillStatus(invoke, workspaceId);
+  const [fillRun, setFillRun] = useState<string>();
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId).catch(() => {});
 
   const dom = activeViewId ? domItems.get(activeViewId) : undefined;
@@ -338,6 +342,7 @@ export function StatusBar({
     ...(autoExport ? [autoExport] : []),
     ...(markdownExport ? [markdownExport] : []),
     ...(inbox ? [inbox] : []),
+    ...(fill.item ? [fill.item] : []),
   ];
   const bar = useRef<HTMLElement>(null);
   const widths = useRef(new Map<string, number>());
@@ -387,6 +392,8 @@ export function StatusBar({
                   ? openWorkspaceSettings("markdown", workspaceId)
                 : item.id === "inbox"
                   ? openInbox(workspaceId)
+                : item.id === "fill"
+                  ? setFillRun(fill.runId)
                 : item.id === "workspace"
                   ? onOpenWorkspace()
                   : workPanel
@@ -429,6 +436,7 @@ export function StatusBar({
           {popoverContent}
         </StatusPopover>
       )}
+      {fillRun && workspaceId && <FillSheet invoke={invoke} workspaceId={workspaceId} targets={[]} runId={fillRun} onClose={() => setFillRun(undefined)} onSaved={() => {}} />}
     </footer>
   );
 }

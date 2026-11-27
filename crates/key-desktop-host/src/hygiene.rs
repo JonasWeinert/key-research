@@ -249,15 +249,31 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
         // given values; `{value}` or `{error}`.
         "store_formula_evaluate" => (|| {
             let formula: String = arg(args, "formula")?;
-            let context = match arg::<Option<String>>(args, "id")? {
-                Some(id) => key_store::formula::source_context(&store.source(&id)?.ok_or("Source not found")?),
-                None => arg::<Option<serde_json::Map<String, serde_json::Value>>>(args, "properties")?.unwrap_or_default(),
-            };
-            json_output(match key_store::formula::evaluate(&formula, &context) {
-                Ok(value) => json!({ "value": value.to_json(), "text": value.text() }),
-                Err(error) => json!({ "error": error }),
-            })
+            match arg::<Option<String>>(args, "id")? {
+                Some(id) => json_output(store.formula_evaluate(&formula, &id)?),
+                None => {
+                    let context = arg::<Option<serde_json::Map<String, serde_json::Value>>>(args, "properties")?.unwrap_or_default();
+                    json_output(match key_store::formula::evaluate_in(&formula, &key_store::formula::MapScope(&context)) {
+                        Ok(value) => json!({ "value": value.to_json(), "text": value.text(), "type": value.type_name() }),
+                        Err(error) => json!({ "error": error.message, "hint": error.hint, "start": error.start, "end": error.end }),
+                    })
+                }
+            }
         })(),
+        // The formula editor: fields, functions, templates and blocks; a formula's
+        // highlighting, type, errors and blocks; its values on real sources; blocks to text.
+        "store_formula_catalog" => (|| json_output(store.formula_catalog()?))(),
+        "store_formula_analyze" => (|| {
+            let name: Option<String> = arg(args, "name")?;
+            json_output(store.formula_analyze(&arg::<String>(args, "formula")?, name.as_deref())?)
+        })(),
+        "store_formula_preview" => (|| {
+            let ids: Option<Vec<String>> = arg(args, "ids")?;
+            json_output(store.formula_preview(&arg::<String>(args, "formula")?, &ids.unwrap_or_default(), arg::<Option<usize>>(args, "limit")?.unwrap_or(5))?)
+        })(),
+        "store_formula_prompt" => (|| json_output(store.formula_prompt(&arg::<String>(args, "description")?)?))(),
+        "store_formula_from_answer" => (|| json_output(store.formula_from_answer(&arg::<String>(args, "content")?)?))(),
+        "store_formula_print" => (|| json_output(json!({ "formula": key_store::formula::print(&arg::<serde_json::Value>(args, "blocks")?)? })))(),
         "store_journal" => (||json_output(store.journal_state(arg::<Option<usize>>(args, "limit")?.unwrap_or(20))?))(),
         // Duplicates.
         "store_duplicates" => (|| json_output(store.duplicate_groups(arg::<Option<bool>>(args, "withSources")?.unwrap_or(true))?))(),

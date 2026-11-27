@@ -6,12 +6,17 @@ import { useEffect, useRef, useState } from "react";
 import { useFormulaPreview, type FormulaEval } from "./formula";
 import "./property-tools.css";
 import { Icon } from "./icons";
+import FormulaBuilder from "./FormulaBuilder";
+import { FormulaValue } from "./formula-display";
+import type { Invoke } from "./library-api";
 export interface PropertyDraft {
   name: string;
   type: string;
   value: string;
   options: string[];
   formula: string;
+  /** How a formula's value shows: plain | badge | progress | check | relative. */
+  display?: string;
   applyValues: boolean;
 }
 const types: [string, ReactNode, string, string][] = [
@@ -19,7 +24,9 @@ const types: [string, ReactNode, string, string][] = [
   ["number", <span className="kx-type-glyph">#</span>, "Number", "Ratings, years and measurements."],
   ["boolean", <Icon name="check" size={14} />, "Checkbox", "A simple true or false value."],
   ["select", <Icon name="list" size={14} />, "Select", "One choice from a consistent set of options."],
-  ["formula", <span className="kx-type-glyph kx-formula-glyph">ƒ</span>, "Formula", "Calculated from other properties."],
+  ["multiselect", <Icon name="tag" size={14} />, "Multiple", "Any number of choices from a set of options."],
+  ["date", <Icon name="clock" size={14} />, "Date", "A day, such as a deadline or when you read it."],
+  ["formula", <Icon name="function" size={14} />, "Formula", "Worked out from other fields: counts, dates, labels and more."],
 ];
 export default function PropertyEditor({
   initial,
@@ -36,7 +43,14 @@ export default function PropertyEditor({
   targetLabel = "source",
   agentContent,
   onBack,
+  invoke,
+  workspaceId,
+  sampleIds,
 }: {
+  /** With these, the formula builder can open (it asks the host directly). */
+  invoke?: Invoke;
+  workspaceId?: string;
+  sampleIds?: string[];
   agentContent?: ReactNode;
   onBack?: () => void;
   allowAgent?: boolean;
@@ -58,6 +72,8 @@ export default function PropertyEditor({
   if (agentContent) retainedAgent.current = agentContent;
   const [draft, setDraft] = useState(initial),
     [option, setOption] = useState("");
+  // A new formula property opens straight into the builder.
+  const [building, setBuilding] = useState(!!invoke && initial.type === "formula" && !initial.formula.trim());
   const ref = useRef<HTMLFormElement>(null);
   const set = (patch: Partial<PropertyDraft>) =>
     setDraft((d) => ({ ...d, ...patch }));
@@ -81,8 +97,26 @@ export default function PropertyEditor({
   };
   const valid =
     !!draft.name.trim() &&
-    (draft.type !== "select" || draft.options.length > 0) &&
+    (!["select", "multiselect"].includes(draft.type) || draft.options.length > 0) &&
     (draft.type !== "formula" || !!draft.formula.trim());
+  if (building && invoke)
+    return (
+      <GlobalDrawer onClose={() => setBuilding(false)} busy={busy} presentation="window" label="Formula builder">
+        <FormulaBuilder
+          invoke={invoke}
+          workspaceId={workspaceId}
+          name={draft.name.trim() || undefined}
+          formula={draft.formula}
+          display={draft.display}
+          sampleIds={sampleIds}
+          onCancel={() => setBuilding(false)}
+          onDone={(formula, display) => {
+            set({ formula, display });
+            setBuilding(false);
+          }}
+        />
+      </GlobalDrawer>
+    );
   return (
     <GlobalDrawer onClose={onClose} busy={busy} presentation="sheet">
       <div className="key-drawer-slides">
@@ -177,12 +211,13 @@ export default function PropertyEditor({
                       key={id}
                       aria-pressed={draft.type === id}
                       title={hint}
-                      onClick={() =>
+                      onClick={() => {
                         set({
                           type: id,
                           value: id === "boolean" ? "false" : "",
-                        })
-                      }
+                        });
+                        if (id === "formula" && invoke && !draft.formula.trim()) setBuilding(true);
+                      }}
                     >
                       {icon}
                       <span>{label}</span>
@@ -193,7 +228,7 @@ export default function PropertyEditor({
                   {types.find(([id]) => id === draft.type)?.[3]}
                 </small>
               </fieldset>
-              {draft.type === "select" && (
+              {(draft.type === "select" || draft.type === "multiselect") && (
                 <section className="kx-form-section">
                   <h3>Options</h3>
                   <div className="kx-form-group key-property-options">
@@ -242,7 +277,23 @@ export default function PropertyEditor({
                   </div>
                 </section>
               )}
-              {draft.type === "formula" && (
+              {draft.type === "formula" && invoke && (
+                <section className="kx-form-section">
+                  <h3>Formula</h3>
+                  <div className="kx-form-group kx-formula">
+                    <button type="button" className="key-formula-summary" aria-label="Edit formula" onClick={() => setBuilding(true)}>
+                      <Icon name="function" size={14} />
+                      <code>{draft.formula || "No formula yet"}</code>
+                      <span>Edit…</span>
+                    </button>
+                    <div className="key-property-preview" role="status" data-state={formulaError ? "error" : preview ? "ok" : "empty"}>
+                      <small>{previewTitle ? `Result for ${previewTitle}` : "Result"}</small>
+                      <strong>{formulaError || (result && !result.error ? <FormulaValue value={result.value} display={draft.display} resultType={result.type} /> : "—")}</strong>
+                    </div>
+                  </div>
+                </section>
+              )}
+              {draft.type === "formula" && !invoke && (
                 <section className="kx-form-section">
                   <h3>Formula</h3>
                   <div className="kx-form-group kx-formula">
@@ -320,7 +371,7 @@ export default function PropertyEditor({
                   </label>
                   {draft.applyValues &&
                     targetCount > 0 &&
-                    draft.type !== "formula" && (
+                    !["formula", "multiselect"].includes(draft.type) && (
                       <label className="kx-form-row">
                         <span>Value</span>
                         {draft.type === "select" ? (
@@ -346,8 +397,8 @@ export default function PropertyEditor({
                           </Select>
                         ) : (
                           <Input
-                            required={draft.type === "number"}
-                            type={draft.type === "number" ? "number" : "text"}
+                            required={draft.type === "number" || draft.type === "date"}
+                            type={draft.type === "number" ? "number" : draft.type === "date" ? "date" : "text"}
                             step="any"
                             placeholder={draft.type === "number" ? "0" : "Value"}
                             value={draft.value}

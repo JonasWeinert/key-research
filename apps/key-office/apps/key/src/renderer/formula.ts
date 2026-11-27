@@ -8,7 +8,10 @@ export interface FormulaResult {
   value?: unknown;
   /** The value as text. */
   text?: string;
+  /** number | text | boolean | date | list | empty */
+  type?: string;
   error?: string;
+  hint?: string;
 }
 export type FormulaEval = (formula: string) => Promise<FormulaResult>;
 

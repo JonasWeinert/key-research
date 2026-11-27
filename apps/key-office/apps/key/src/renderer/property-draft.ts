@@ -4,12 +4,12 @@ export function preparePropertyDraft(draft: PropertyDraft) {
   const name = draft.name.trim();
   if (!name || name.length > 128)
     throw Error("Use a property name between 1 and 128 characters.");
-  if (!["text", "number", "boolean", "select", "formula"].includes(draft.type))
+  if (!["text", "number", "boolean", "select", "multiselect", "date", "formula"].includes(draft.type))
     throw Error("Unsupported property type.");
   const options = [
     ...new Set(draft.options.map((v) => v.trim()).filter(Boolean)),
   ];
-  if (draft.type === "select" && !options.length)
+  if ((draft.type === "select" || draft.type === "multiselect") && !options.length)
     throw Error("Add at least one select option.");
   if (draft.type === "formula" && !draft.formula.trim())
     throw Error("Enter a formula.");
@@ -27,14 +27,17 @@ export function preparePropertyDraft(draft: PropertyDraft) {
     }
     if (draft.type === "select" && !options.includes(draft.value))
       throw Error("Choose a value from the select options.");
+    if (draft.type === "date") {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.value)) throw Error("Choose a date.");
+    }
   }
   return {
     name,
     value,
     config: {
       type: draft.type,
-      ...(draft.type === "select" ? { options } : {}),
-      ...(draft.type === "formula" ? { formula: draft.formula.trim() } : {}),
+      ...(draft.type === "select" || draft.type === "multiselect" ? { options } : {}),
+      ...(draft.type === "formula" ? { formula: draft.formula.trim(), ...(draft.display ? { display: draft.display } : {}) } : {}),
     },
   };
 }

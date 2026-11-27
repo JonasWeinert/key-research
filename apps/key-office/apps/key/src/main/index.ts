@@ -19,7 +19,8 @@ import { join, resolve, basename, dirname, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { access, copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { AgentFill } from "./agent-fill";
+import { AiService } from "./ai/service";
+import { secrets as secretStore } from "./services/setup";
 import { AppSettingsStore, appInfo } from "./app-settings";
 import { downloadPdf } from "./download-pdf";
 import { dismissOnBlur, dismissOnMove, relayDismiss } from "./dismiss-relay";
@@ -226,7 +227,7 @@ let registry: Registry;
 /** The workspaces window (main/launcher.ts); with it on, closing the last workspace window shows it. */
 let launcher: Launcher | undefined;
 const launcherMode = launcherEnabled();
-let agentFill: AgentFill;
+let ai: AiService;
 let appSettings: AppSettingsStore;
 const views = new Map<string, OwnedView>();
 const readerCalls = new Map<number, Set<Promise<unknown>>>();
@@ -2418,10 +2419,17 @@ else
         anyWorkspace: () => focusedShell()?.workspaceId,
       }));
       routeEmbeddedMedia();
-      agentFill = new AgentFill(
-        registry,
-        join(app.getPath("userData"), "ai-settings.json"),
-      );
+      ai = new AiService({
+        settingsPath: join(app.getPath("userData"), "ai-settings.json"),
+        secrets: secretStore,
+        invoke: (command, args, workspaceId) => registry.invoke(command, args as Record<string, unknown>, workspaceId),
+        emit: (event, value) => {
+          emit(event, value);
+          if (event === "fill-progress" && (value as { run?: { status?: string } })?.run?.status === "done") emit("library-changed");
+        },
+        openExternal: (url) => void systemShell.openExternal(url),
+        notify: (message) => notify("error", message),
+      });
       appSettings = new AppSettingsStore(join(app.getPath("userData"), "app-settings.json"));
       await appSettings.load();
       startupMark("settings-loaded");
@@ -2500,15 +2508,7 @@ else
             launcher?.changed();
             return renamed;
           }
-          if (command === "agent_fill_status") return agentFill.status();
-          if (command === "agent_fill_configure")
-            return agentFill.configure(args);
-          if (command === "agent_tag_suggestions")
-            return agentFill.suggestTags(
-              args.tags,
-              args.instruction ??
-                "Merge synonyms and spelling variants without losing meaningful distinctions.",
-            );
+          if (ai.handles(command)) return ai.handle(command, args, targetWorkspace);
           if (command === "library_download_pdf") {
             if (record) throw Error("Download requires the library view");
             const info = await downloadPdf(registry, targetWorkspace, args.url, args.sourceId).catch((error) => libraryDownloadWithBrowser(targetWorkspace, args.url, args.sourceId, error));
@@ -2538,10 +2538,6 @@ else
             if (record) throw Error("Saved pages are read by the shell");
             return webSources.handle(command, args, targetWorkspace);
           }
-          if (command === "agent_fill_propose")
-            return agentFill.propose(targetWorkspace, args);
-          if (command === "agent_fill_apply")
-            return agentFill.apply(targetWorkspace, args.ids);
           const operation = registry.invoke(
             command,
             args,
@@ -2835,7 +2831,7 @@ else
       });
       setInterval(() => void syncZotero(), 30_000);
       startZoteroPluginSync({
-        invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
+        invoke: (command, args, workspaceId) => registry.invoke(command, args as Record<string, unknown>, workspaceId),
         workspaces: zoteroLinkedWorkspaces,
         changed: () => emit("library-changed"),
         syncing: (running) => emit("zotero-syncing", running),

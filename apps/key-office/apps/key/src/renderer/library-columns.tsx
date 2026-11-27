@@ -4,7 +4,8 @@ import type { DatabaseColumn, SortLevel } from "./DatabaseView";
 import type { ColumnSetting } from "./database-view-model";
 import { Icon } from "./icons";
 import { KIND_ICON, bridge, itemTypeLabel, relativeDate, shortCreators, type Collection, type Source } from "./library-api";
-import { formulaValue, type PropertyDefinition } from "./PropertySheets";
+import { type PropertyDefinition } from "./PropertySheets";
+import { FormulaValue } from "./formula-display";
 import { indexLabel } from "./SourceInspector";
 import { ZoteroMark, isZoteroSource } from "./zotero-badge";
 import type { Invoke, ZoteroSyncStatus } from "./library-api";
@@ -101,8 +102,8 @@ export function useSourceColumns({
       mark: d.type === "formula" ? "ƒ " : undefined,
       width: 130,
       hidden: true,
-      numeric: d.type === "number",
-      sortField: d.type === "formula" ? undefined : `property:${d.name}`,
+      numeric: d.type === "number" || (d.type === "formula" && d.resultType === "number" && d.display !== "progress"),
+      sortField: `property:${d.name}`,
       onEdit: () => latest.current.onEditProperty(d),
       render: (s) => <PropertyCell definition={d} source={s} onCommit={(value) => latest.current.onCommit(s, d.name, value)} />,
     }));
@@ -160,11 +161,17 @@ function PropertyCell({ definition: d, source, onCommit }: { definition: Propert
         autoFocus
         className="kx-cell-editor"
         aria-label={`Edit ${d.name}`}
-        defaultValue={String(raw ?? "")}
+        defaultValue={Array.isArray(raw) ? raw.join(", ") : String(raw ?? "")}
+        type={d.type === "date" ? "date" : "text"}
+        placeholder={d.type === "multiselect" ? (d.options ?? []).join(", ") : undefined}
         inputMode={d.type === "number" ? "decimal" : undefined}
         onMouseDown={(e) => e.stopPropagation()}
         onBlur={(e) => {
           const next = e.target.value.trim();
+          if (d.type === "multiselect") {
+            const chosen = next.split(",").map((v) => v.trim()).map((v) => (d.options ?? []).find((o) => o.toLowerCase() === v.toLowerCase())).filter((v): v is string => !!v);
+            return done(chosen.length ? [...new Set(chosen)] : null);
+          }
           done(next === "" ? null : d.type === "number" && Number.isFinite(Number(next)) ? Number(next) : next);
         }}
         onKeyDown={(e) => {
@@ -175,15 +182,33 @@ function PropertyCell({ definition: d, source, onCommit }: { definition: Propert
       />
     );
   }
-  const text = d.type === "formula" ? formulaValue(d, source) : raw === undefined || raw === null ? "" : d.type === "boolean" ? (raw ? "✓" : "") : String(raw);
+  if (d.type === "formula")
+    return (
+      <span className="kx-cell-property computed" title="Worked out by its formula">
+        <FormulaValue value={source.formulaValues?.[d.name]} resultType={d.resultType} display={d.display} />
+      </span>
+    );
+  if (d.type === "multiselect" || Array.isArray(raw))
+    return (
+      <span className="kx-cell-property" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to edit">
+        <FormulaValue value={Array.isArray(raw) ? raw : raw == null || raw === "" ? null : [String(raw)]} resultType="list" />
+      </span>
+    );
+  if (d.type === "boolean")
+    return (
+      <span className="kx-cell-property" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to edit">
+        {raw ? <FormulaValue value={true} resultType="boolean" display="check" /> : null}
+      </span>
+    );
+  const text = raw === undefined || raw === null ? "" : String(raw);
   return (
     <span
-      className={`kx-cell-property ${d.type === "formula" ? "computed" : ""}`}
+      className="kx-cell-property"
       onDoubleClick={(e) => {
         e.stopPropagation();
-        if (d.type !== "formula") setEditing(true);
+        setEditing(true);
       }}
-      title={d.type === "formula" ? "Calculated" : "Double-click to edit"}
+      title="Double-click to edit"
     >
       {text}
     </span>
