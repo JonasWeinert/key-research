@@ -503,6 +503,22 @@ impl Reviews {
         })
     }
 
+    /// AI pre-fill: suggested values under the "ai" actor, shown beside a field until a reviewer
+    /// takes one; never a reviewer's value.
+    pub fn ai_extract(&self, review: &str, record: &str, form: &str, values: &[crate::ai::Suggested], model: &str) -> Result<usize> {
+        self.write(review, |state, _, b| {
+            if state.record(record).is_none() {
+                return Err("This record no longer exists".into());
+            }
+            let events: Vec<Event> = values
+                .iter()
+                .map(|s| b.event("extract.value", "ai", Some(record), json!({ "formId": form, "fieldId": s.field, "value": s.value, "quote": s.quote, "page": s.page, "suggested": true, "model": model })))
+                .collect();
+            let n = events.len();
+            Ok((events, n))
+        })
+    }
+
     pub fn ai_suggest(&self, review: &str, record: &str, stage: Stage, suggestion: Json, actor: &str) -> Result<()> {
         self.write(review, |_, _, b| {
             let mut p = suggestion.as_object().cloned().unwrap_or_default();

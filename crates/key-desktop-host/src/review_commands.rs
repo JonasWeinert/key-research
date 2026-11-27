@@ -206,6 +206,38 @@ fn link_to_library(library: &Library, reviews: &Reviews, review: &str, ids: &[St
     Ok(Json::Object(out))
 }
 
+/// What AI pre-fill reads for a study: its abstract, then the linked source's text page by page
+/// (the library's indexed passages, in order).
+fn study_passages(library: &Library, meta: &RecordMeta, source: Option<&str>) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    if !meta.abstract_text.trim().is_empty() {
+        out.push(("Abstract".to_string(), meta.abstract_text.clone()));
+    }
+    let Some(source) = source else { return out };
+    let mut total = 0usize;
+    for page in 0..60i64 {
+        let Ok(Some(first)) = library.store.page_chunk(source, page) else { continue };
+        let mut text = String::new();
+        let mut id = first;
+        while let Ok(Some(p)) = library.store.passage(id) {
+            if p.source_id != source || p.page != page {
+                break;
+            }
+            text.push_str(&p.text);
+            text.push('\n');
+            id += 1;
+        }
+        total += text.len();
+        if !text.trim().is_empty() {
+            out.push((format!("p. {}", page + 1), text));
+        }
+        if total > 40_000 {
+            break;
+        }
+    }
+    out
+}
+
 pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web: &web_search::WebSearch, command: &str, args: &Json) -> Option<Result<Output, String>> {
     let reviews = match reviews(root) {
         Ok(r) => r,
@@ -414,6 +446,31 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 let stage = stage(args)?;
                 let meta = reviews.metas(&id, std::slice::from_ref(&record))?.remove(&record).ok_or("This record no longer exists")?;
                 reviews.read(&id, |state, _| Ok(key_review::ai::screening_request(&state.protocol, stage, &meta)))?
+            }
+            "review_ai_extract_request" => {
+                let id = review()?;
+                let record = text(args, "recordId").to_string();
+                let meta = reviews.metas(&id, std::slice::from_ref(&record))?.remove(&record).ok_or("This record no longer exists")?;
+                let source = reviews.read(&id, |s, _| Ok(s.record(&record).and_then(|r| r.source_id.clone())))?;
+                let passages = study_passages(library, &meta, source.as_deref());
+                let form_id = text(args, "formId").to_string();
+                reviews.read(&id, |state, _| {
+                    let form = state.protocol.forms.iter().find(|f| f.id == form_id).ok_or("This form no longer exists")?;
+                    Ok(json!({ "request": key_review::ai::extraction_request(form, &meta, &passages), "passages": passages.len() }))
+                })?
+            }
+            "review_ai_extract_answer" => {
+                let id = review()?;
+                let record = text(args, "recordId").to_string();
+                let meta = reviews.metas(&id, std::slice::from_ref(&record))?.remove(&record).ok_or("This record no longer exists")?;
+                let source = reviews.read(&id, |s, _| Ok(s.record(&record).and_then(|r| r.source_id.clone())))?;
+                let passages = study_passages(library, &meta, source.as_deref());
+                let form_id = text(args, "formId").to_string();
+                let suggested = reviews.read(&id, |state, _| {
+                    let form = state.protocol.forms.iter().find(|f| f.id == form_id).ok_or("This form no longer exists")?;
+                    key_review::ai::parse_extraction(text(args, "content"), form, &passages)
+                })?;
+                json!({ "suggested": reviews.ai_extract(&id, &record, &form_id, &suggested, text(args, "model"))? })
             }
             "review_ai_answer" => {
                 let suggestion = key_review::ai::parse_answer(text(args, "content"), text(args, "model"))?;

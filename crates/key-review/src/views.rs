@@ -314,7 +314,10 @@ impl Reviews {
             for form in &state.protocol.forms {
                 for f in form.fields() {
                     let key = (form.id.clone(), f.id.clone());
-                    let values = ex.and_then(|e| e.values.get(&key));
+                    let all = ex.and_then(|e| e.values.get(&key));
+                    let suggestion = all.and_then(|v| v.get("ai"));
+                    let people: Option<BTreeMap<String, crate::derive::Extracted>> = all.map(|v| v.iter().filter(|(who, _)| who.as_str() != "ai").map(|(k, x)| (k.clone(), x.clone())).collect());
+                    let values = people.as_ref();
                     let mine = values.and_then(|v| v.get(viewer));
                     let others: Vec<Json> = values
                         .map(|v| v.iter().filter(|(who, _)| who.as_str() != viewer).map(|(who, x)| json!({ "reviewer": who, "reviewerName": state.member_name(who), "value": x.value, "quote": x.quote, "page": x.page })).collect())
@@ -332,6 +335,7 @@ impl Reviews {
                             "others": if show_others { others } else { Vec::new() },
                             "othersCount": values.map(|v| v.len() - usize::from(mine.is_some())).unwrap_or(0),
                             "final": ex.and_then(|e| e.finals.get(&key)),
+                            "suggestion": suggestion,
                             "differs": differs && show_others,
                         }),
                     );
@@ -354,9 +358,12 @@ impl Reviews {
                 .map(|r| {
                     let ex = state.extraction.get(&r.id);
                     let mine = ex.map(|e| e.values.values().filter(|v| v.contains_key(viewer)).count()).unwrap_or(0);
-                    let extractors: HashSet<&String> = ex.map(|e| e.values.values().flat_map(|v| v.keys()).collect()).unwrap_or_default();
-                    let conflicts = ex.map(|e| e.values.iter().filter(|(k, v)| v.len() > 1 && !e.finals.contains_key(*k) && v.values().map(|x| canonical(&x.value)).collect::<HashSet<_>>().len() > 1).count()).unwrap_or(0);
-                    let missing = required.iter().filter(|k| !ex.is_some_and(|e| e.finals.contains_key(*k) || e.values.get(*k).is_some_and(|v| !v.is_empty()))).count();
+                    let person = |who: &String| who.as_str() != "ai";
+                    let extractors: HashSet<&String> = ex.map(|e| e.values.values().flat_map(|v| v.keys()).filter(|k| person(k)).collect()).unwrap_or_default();
+                    let conflicts = ex
+                        .map(|e| e.values.iter().filter(|(k, v)| !e.finals.contains_key(*k) && v.iter().filter(|(w, _)| person(w)).map(|(_, x)| canonical(&x.value)).collect::<HashSet<_>>().len() > 1).count())
+                        .unwrap_or(0);
+                    let missing = required.iter().filter(|k| !ex.is_some_and(|e| e.finals.contains_key(*k) || e.values.get(*k).is_some_and(|v| v.keys().any(person)))).count();
                     let meta = m.get(&r.id);
                     json!({
                         "id": r.id, "title": meta.map(|x| x.title.clone()).unwrap_or_default(), "byline": meta.map(|x| x.byline()).unwrap_or_default(),
@@ -439,7 +446,7 @@ fn pilot_agreement(state: &State, p: &crate::derive::Pilot) -> Json {
 
 fn extraction_counts(state: &State, viewer: &str) -> Json {
     let included = state.included();
-    let started = included.iter().filter(|r| state.extraction.get(&r.id).is_some_and(|e| !e.values.is_empty())).count();
+    let started = included.iter().filter(|r| state.extraction.get(&r.id).is_some_and(|e| e.values.values().any(|v| v.keys().any(|k| k != "ai")))).count();
     let mine = included.iter().filter(|r| state.extraction.get(&r.id).is_some_and(|e| e.values.values().any(|v| v.contains_key(viewer)))).count();
     json!({ "studies": included.len(), "started": started, "mine": mine })
 }

@@ -323,7 +323,7 @@ export interface Extracted {
 }
 export interface ExtractionView {
   forms: Form[];
-  values: Record<string, { mine: Extracted | null; others: { reviewer: string; reviewerName: string; value: unknown; quote: string; page: number | null }[]; othersCount: number; final: Extracted | null; differs: boolean }>;
+  values: Record<string, { mine: Extracted | null; others: { reviewer: string; reviewerName: string; value: unknown; quote: string; page: number | null }[]; othersCount: number; final: Extracted | null; differs: boolean; suggestion: Extracted | null }>;
   extractors: number;
 }
 export interface StudyRow {
@@ -428,6 +428,7 @@ export function reviewApi(invoke: Invoke, workspaceId: string, reviewId: string)
       call<{ analysis: Analysis; input: unknown[]; includedStudies: number }>("review_analyse", { request }),
     exportFile: (kind: string, viewer: string) => call<ExportFile>("review_export", { kind, viewer }),
     audit: (offset = 0, limit = 100) => call<{ events: { id: string; at: number; actor: string; actorName: string; kind: string; recordId: string | null; version: number | null; what: string }[]; total: number }>("review_audit", { offset, limit }),
+    aiExtract: (recordId: string, formId: string) => invoke<{ suggested: number }>("review_ai_extract", { reviewId, recordId, formId }, workspaceId),
     aiSuggest: (recordId: string, stage: Stage) => invoke<{ value: Choice; score: number | null; rationale: string; model: string }>("review_ai_suggest", { reviewId, recordId, stage }, workspaceId),
   };
 }

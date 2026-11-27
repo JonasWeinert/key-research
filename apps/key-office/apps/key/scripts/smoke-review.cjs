@@ -193,8 +193,17 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
       await call("review_extract", { reviewId, recordId: st.id, formId: "f-outcomes", fieldId: "outcomes", value: [{ outcome: "Pain persisting", type: "Dichotomous", e1, n1, e2, n2 }], quote: "Table 2", page: 5, actor: s.team[0].id });
       await call("review_extract", { reviewId, recordId: st.id, formId: "f-characteristics", fieldId: "design", value: i % 2 ? "Cluster randomised trial" : "Randomised controlled trial", actor: s.team[0].id });
     }
+    // AI pre-fill through the host, with a canned answer (no provider in a smoke): the request
+    // carries the study's text, the answer becomes a suggestion with its quote checked.
+    const first = studies[0];
+    const aiRequest = await call("review_ai_extract_request", { reviewId, recordId: first.id, formId: "f-characteristics" });
+    assert(aiRequest.request.prompt.includes("We randomised 240 adults"), "the abstract is in the request");
+    const answer = JSON.stringify({ values: [{ fieldId: "country", value: "Norway", quote: "randomised 240 adults", passage: "P1" }, { fieldId: "n_total", value: 240, quote: "made up words", passage: "P1" }] });
+    const ai = await call("review_ai_extract_answer", { reviewId, recordId: first.id, formId: "f-characteristics", content: answer, model: "smoke" });
+    assert.equal(ai.suggested, 2);
     await page.getByRole("tab", { name: /Extraction/ }).click();
     await page.locator(".kx-rv-xform").first().waitFor();
+    await page.locator(".kx-rv-xsuggestion", { hasText: "Norway" }).waitFor();
     await shot(page, "12-extraction");
 
     // Analysis: forest plot of the pooled risk ratio.
@@ -236,6 +245,22 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.getByRole("button", { name: "Versions & audit" }).click();
     await page.getByRole("heading", { name: "Audit trail" }).waitFor();
     await shot(page, "21-setup-history");
+
+    // A conflict under the two-reviewer rule: Ana includes, Reviewer 2 excludes; Ana resolves.
+    const [ana, second] = s.team;
+    await call("review_import_records", { reviewId, records: [{ title: "Dance classes and mood in care homes: a randomised trial", authors: ["Ross, Kim"], year: 2023, abstractText: "Care home residents were randomised to weekly dance classes." }], batch: { group: "other", name: "Citation searching" }, actor: ana.id });
+    const fresh = (await call("review_queue", { reviewId, stage: "ta", viewer: ana.id, filter: "" }))[0];
+    await call("review_decide", { reviewId, recordIds: [fresh], stage: "ta", value: "include", reasons: [], note: "", actor: ana.id });
+    const blind = await call("review_record", { reviewId, recordId: fresh, stage: "ta", viewer: second.id });
+    assert.deepEqual(blind.others, [], "blind: the second reviewer does not see the first decision");
+    await call("review_decide", { reviewId, recordIds: [fresh], stage: "ta", value: "exclude", reasons: [], note: "Not an exercise intervention", actor: second.id });
+    await page.getByRole("tab", { name: /Title & abstract/ }).click();
+    await page.getByRole("radio", { name: /Conflicts/ }).click();
+    await page.locator(".kx-rv-resolve-note").waitFor();
+    await shot(page, "22-conflict");
+    await page.keyboard.press("i");
+    await page.locator(".kx-rv-done").waitFor();
+    assert.equal((await call("review_record", { reviewId, recordId: fresh, stage: "ta", viewer: ana.id })).status.name, "included");
 
     // Dark mode.
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));

@@ -2068,3 +2068,33 @@ td.kx-rv-roles {
   min-width: 0;
   overflow-x: auto;
 }
+.kx-rv-xsuggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--kx-indigo) 8%, var(--kx-bg-raised));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--kx-indigo) 35%, transparent);
+  font-size: 12px;
+}
+.kx-rv-xsuggestion > svg {
+  flex: none;
+  color: var(--kx-indigo);
+}
+.kx-rv-xsuggestion > span {
+  flex: 1 1 auto;
+}
+.kx-rv-xsuggestion small {
+  display: block;
+  color: var(--kx-text-2);
+}
+.kx-rv-quote[data-empty] {
+  display: none;
+}
+.kx-rv-xfield-label .kx-rv-quote-add {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0;
+  font-size: 11.5px;
+}

@@ -74,6 +74,7 @@ function StudyForm(props: StageProps & { recordId: string; sourceId: string | nu
   const { api, viewer, recordId, notify, invoke, workspaceId, sourceId } = props;
   const view = useLoad(() => api.extraction(recordId, viewer), [api, recordId, viewer]);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [asking, setAsking] = useState(false);
   const refresh = useCallback(() => {
     if (sourceId) void invoke<Highlight[]>("library_annotations", { hash: sourceId }, workspaceId).then((h) => setHighlights((h ?? []).filter((x) => x.text))).catch(() => {});
   }, [invoke, workspaceId, sourceId]);
@@ -106,6 +107,29 @@ function StudyForm(props: StageProps & { recordId: string; sourceId: string | nu
           <span className="kx-rv-muted">No full text linked</span>
         )}
         {highlights.length > 0 && <span className="kx-rv-muted">{plural(highlights.length, "highlight")} to quote from</span>}
+        {props.summary.protocol.rules.aiAssist && (
+          <MenuButton
+            label="Suggest values with AI"
+            icon="sparkle"
+            title="Ask the AI model chosen in Key Settings for values from the abstract and full text, each with its quote. Suggestions are not values until you use them."
+            items={view.value.forms.map((f) => ({
+              label: f.name,
+              run: () => {
+                setAsking(true);
+                api
+                  .aiExtract(recordId, f.id)
+                  .then((r) => {
+                    notify(r.suggested ? `${plural(r.suggested, "suggestion")} from AI: check each, then use it` : "The AI found nothing to suggest", "ok");
+                    view.reload();
+                  })
+                  .catch((e) => notify(errorText(e), "error"))
+                  .finally(() => setAsking(false));
+              },
+            }))}
+          >
+            {asking ? "Asking AI…" : "Suggest with AI"}
+          </MenuButton>
+        )}
       </div>
       {view.value.forms.map((form) => (
         <div key={form.id} className="kx-rv-xform">
@@ -217,20 +241,21 @@ function FieldInput({ field, slot, highlights, onSave, extractors, canAgree, nee
           {field.required && <span className="kx-rv-required" aria-label="required">*</span>}
         </span>
         {field.guidance && <small>{field.guidance}</small>}
+        {!(quote || quoting) && (
+          <button type="button" className="kx-link-button kx-rv-quote-add" data-needed={needQuote || undefined} onClick={() => setQuoting(true)}>
+            {needQuote ? "Add the quote (required)" : "Add a quote"}
+          </button>
+        )}
       </div>
       <div className="kx-rv-xfield-input">
         {input}
-        <div className="kx-rv-quote">
+        <div className="kx-rv-quote" data-empty={!(quote || quoting) && !highlights.length ? true : undefined}>
           {quote || quoting ? (
             <>
               <textarea className="kx-rv-input" rows={2} data-waiting={waiting || undefined} placeholder={waiting ? "Add the quote that backs this value to save it" : "Quote from the paper"} value={quote} onChange={(e) => setQuote(e.target.value)} onBlur={() => commit()} aria-label="Quote" />
               <input className="kx-rv-input kx-rv-page" placeholder="p." inputMode="numeric" value={page ?? ""} onChange={(e) => setPage(e.target.value ? Number(e.target.value) : null)} onBlur={() => commit()} aria-label="Page" />
             </>
-          ) : (
-            <button type="button" className="kx-link-button kx-rv-quote-add" data-needed={needQuote || undefined} onClick={() => setQuoting(true)}>
-              {needQuote ? "Add the quote (required)" : "Add a quote"}
-            </button>
-          )}
+          ) : null}
           {highlights.length > 0 && (
             <MenuButton
               label="Quote a highlight"
@@ -251,6 +276,28 @@ function FieldInput({ field, slot, highlights, onSave, extractors, canAgree, nee
             />
           )}
         </div>
+        {slot?.suggestion && !slot.final && JSON.stringify(slot.suggestion.value) !== JSON.stringify(mine?.value) && (
+          <div className="kx-rv-xsuggestion">
+            <Icon name="sparkle" size={11} />
+            <span>
+              <strong>AI suggests</strong> {display(slot.suggestion.value)}
+              {slot.suggestion.quote ? <small>“{slot.suggestion.quote.slice(0, 160)}”{slot.suggestion.page ? ` p. ${slot.suggestion.page}` : ""}</small> : <small>No quote found in the text: check it</small>}
+            </span>
+            <Btn
+              small
+              onClick={() => {
+                const s = slot.suggestion!;
+                setValue(s.value);
+                setQuote(s.quote);
+                setPage(s.page);
+                if (s.quote) setQuoting(true);
+                commit(s.value, s.quote, s.page);
+              }}
+            >
+              Use
+            </Btn>
+          </div>
+        )}
         {extractors > 1 && slot && (slot.others.length > 0 || slot.othersCount > 0 || slot.final) && (
           <div className="kx-rv-xothers">
             {slot.others.length === 0 && slot.othersCount > 0 && <span className="kx-rv-muted">Another extractor has a value (shown once you enter yours)</span>}

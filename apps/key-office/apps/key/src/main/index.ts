@@ -2550,6 +2550,11 @@ else
             const answer = await ai.ask(request);
             return registry.invoke("review_ai_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
           }
+          if (command === "review_ai_extract") {
+            const { request } = await registry.invoke<any>("review_ai_extract_request", args, targetWorkspace);
+            const answer = await ai.ask(request);
+            return registry.invoke("review_ai_extract_answer", { ...args, content: answer.content, model: ai.status().model ?? "" }, targetWorkspace);
+          }
           if (ai.handles(command)) return ai.handle(command, args, targetWorkspace);
           if (command === "library_download_pdf") {
             if (record) throw Error("Download requires the library view");

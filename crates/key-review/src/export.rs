@@ -40,9 +40,10 @@ pub fn resolved_value(state: &State, record: &str, form: &str, field: &str) -> O
     if let Some(f) = ex.finals.get(&key) {
         return Some((f.value.clone(), false));
     }
-    let values = ex.values.get(&key)?;
-    let first = values.values().next()?.value.clone();
-    let conflict = values.values().any(|v| v.value != first);
+    // AI suggestions are not values until a reviewer takes one.
+    let values: Vec<&crate::derive::Extracted> = ex.values.get(&key)?.iter().filter(|(who, _)| who.as_str() != "ai").map(|(_, v)| v).collect();
+    let first = values.first()?.value.clone();
+    let conflict = values.iter().any(|v| v.value != first);
     Some((first, conflict))
 }
 
@@ -346,7 +347,7 @@ fn extraction_long(state: &State, conn: &rusqlite::Connection) -> Result<String>
         for form in &state.protocol.forms {
             for f in form.fields() {
                 let key = (form.id.clone(), f.id.clone());
-                let mut entries: Vec<(String, &crate::derive::Extracted, bool)> = ex.values.get(&key).map(|v| v.iter().map(|(who, x)| (state.member_name(who), x, false)).collect()).unwrap_or_default();
+                let mut entries: Vec<(String, &crate::derive::Extracted, bool)> = ex.values.get(&key).map(|v| v.iter().filter(|(who, _)| who.as_str() != "ai").map(|(who, x)| (state.member_name(who), x, false)).collect()).unwrap_or_default();
                 if let Some(fin) = ex.finals.get(&key) {
                     entries.push(("agreed".into(), fin, true));
                 }
