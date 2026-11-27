@@ -1,4 +1,4 @@
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const { tmpdir } = require("node:os");

@@ -4,7 +4,7 @@
 // scrolling away, Escape; scrolling inside one keeps it. Covers a sidebar context menu, the
 // workspace switcher, a library column menu, the note editor's slash menu, the palette, and
 // the PDF reader's selection toolbar (closed from the shell, and by scrolling the page).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

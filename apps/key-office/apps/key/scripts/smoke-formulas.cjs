@@ -5,7 +5,7 @@
 // property shows as a column of coloured labels (with the formula icon in its header) that
 // sorts, filters and groups by its value; an edit to a source moves it to its new group.
 // Screenshots (light and dark, two window sizes) go to the printed temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

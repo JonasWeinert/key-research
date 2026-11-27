@@ -11,7 +11,7 @@
 // a database that searches one term at a time gets a decomposed plan, the run reconstructs the
 // full search on the records, and the exported search strategy (Markdown and JSON) writes out
 // the queries, counts and reconstruction. Screenshots in light and dark.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, readdir } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

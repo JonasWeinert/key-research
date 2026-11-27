@@ -9,7 +9,7 @@
 //   - Add by identifier takes a pasted list (DOI, ISBN, arXiv, PMID, one already in the
 //     library, one unknown, one not an identifier) and lists what became of each;
 //   - a DOI pasted into the library search offers "Add … to library".
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

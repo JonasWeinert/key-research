@@ -9,7 +9,7 @@
 // web search result goes to the Inbox with Add to Inbox, shows under Saved with where it was
 // found, and is added to the library from there; OPML exports and imports back the same
 // subscriptions.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

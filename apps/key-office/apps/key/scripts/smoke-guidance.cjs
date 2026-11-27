@@ -4,7 +4,7 @@
 // explain themselves (the empty Inbox says what it is and offers its action). A first-use tip
 // shows once beside its feature and stays dismissed after a reload. Screenshots in light and
 // dark of each, at a small window too, to look at.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, writeFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

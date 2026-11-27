@@ -4,7 +4,7 @@
 // came from; a run over a collection with the estimate up front; the review (accept one,
 // edit one, accept the rest); a value the user typed is never proposed over; undo the run.
 // Screenshots go to the printed temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

@@ -1,6 +1,6 @@
 // Settings › About Key shows Key's licence and opens the bundled third-party notices.
 // shell.openPath is stubbed, so nothing opens outside the app.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

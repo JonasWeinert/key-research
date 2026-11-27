@@ -2,7 +2,7 @@
 // works), the lookup skeleton while a provider is rate limited, the selection toolbar's
 // Cite (and the clipboard it fills), and zooming to a quote. Screenshots land in the temp
 // dir printed at the end (light and dark).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { tmpdir } = require("node:os");

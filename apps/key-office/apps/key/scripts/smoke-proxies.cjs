@@ -10,7 +10,7 @@
 // PDF's publisher page goes direct on campus and through the proxy off it. Networks are the
 // app's simulated ones (KEY_SIMULATED_NETWORK, keyBrowser.network()).
 // Every *.test host resolves to the local server (Chromium's host resolver rules).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { execFileSync } = require("node:child_process");
 const { mkdtemp, mkdir, readFile, writeFile } = require("node:fs/promises");
 const http = require("node:http");

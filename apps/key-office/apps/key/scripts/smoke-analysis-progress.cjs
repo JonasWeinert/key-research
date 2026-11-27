@@ -4,7 +4,7 @@
 // and counts, reference lookups show "N of M" with a bar, the status bar's work item and
 // its popover name the lookup, and the reader's References line says which step it is on.
 // Needs a host built from this branch (KEY_HOST_EXECUTABLE) for the per-page layout counts.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

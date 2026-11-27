@@ -1,7 +1,7 @@
 // Times the tag manager on a synthetic 5,000-tag / 5,000-item library: the host calls an
 // apply makes (apply, tag index, re-analysis, journal) and, in the UI, Apply on a card until
 // the card has gone and until the manager has settled. Prints JSON.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

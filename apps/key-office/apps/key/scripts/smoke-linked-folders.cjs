@@ -4,7 +4,7 @@
 // saves to disk, an edit made on disk shows up through the watcher, a note links the file
 // with [[, the link survives a rename on disk, and once the folder is indexed its text is
 // found by search.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdir, mkdtemp, readFile, rename, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

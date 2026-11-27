@@ -1,3 +1,4 @@
+import { testMode, testWindowOptions } from "./test-mode";
 import { startupMark } from "./startup-marks";
 import { placeSearchResultBeside, placeSearchResultTab } from "../shared/search-preview-model";
 import {
@@ -648,8 +649,12 @@ registerNativeKind("web", {
     signInService?.attach(tab.webContents, {
       changed: () => {
         const w = shellOfView(record.id);
-        if (w) tabsChanged(w);
+        if (w) {
+          tabsChanged(w);
+          layout(w); // the sign-in card hides the page while it shows
+        }
       },
+      initialUrl: web.url,
       window: () => record.host?.window,
     });
     return tab;
@@ -997,7 +1002,7 @@ function layout(w: ShellWindow = focusedShell()) {
   }
   // Views hosted here that this window no longer shows are hidden (they may now be in another window).
   for (const record of views.values())
-    if (record.view && record.host === w) record.view.setVisible(!w.globalOverlay && shown.has(record.id));
+    if (record.view && record.host === w) record.view.setVisible(!w.globalOverlay && shown.has(record.id) && !(record.kind === "web" && signInService?.covers(record.view.webContents)));
   placeViews(w);
   refreshOverlayFrames(w);
   const shownTab = activeWorkspaceTab(w.state)?.id;
@@ -1512,6 +1517,7 @@ function createShell(
   const frame = options.saved?.bounds && visibleBounds(options.saved.bounds);
   const window = new BrowserWindow({
     ...WINDOW_OPTIONS,
+    ...testWindowOptions,
     ...(frame
       ? frame
       : // New windows cascade from the one they came from.
@@ -1523,6 +1529,8 @@ function createShell(
           })()
         : {}),
   });
+  // Test mode: created hidden, shown (virtually) as a person's window would be.
+  if (testMode) window.show();
   if (options.saved?.maximized) window.maximize();
   if (options.saved?.fullScreen) window.setFullScreen(true);
   const w: ShellWindow = {
@@ -3149,6 +3157,10 @@ else
       ipcMain.handle("key:sign-in-info", (event) => {
         shell(event.sender.id);
         return signInService?.info();
+      });
+      ipcMain.handle("key:sign-in-forget", async (event) => {
+        shell(event.sender.id);
+        await signInService?.forget();
       });
       ipcMain.handle("key:clear-browsing-data", async (event) => {
         shell(event.sender.id);

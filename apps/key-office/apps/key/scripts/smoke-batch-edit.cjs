@@ -5,7 +5,7 @@
 // taking a partial tag off apply to all; ⌘Z undoes the last operation with an "Undo: …"
 // toast and ⇧⌘Z redoes it; trash is undoable the same way. Screenshots light and dark go to
 // the printed temp folder.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

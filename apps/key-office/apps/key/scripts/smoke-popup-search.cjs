@@ -5,7 +5,7 @@
 // number comparison, a select property by name, a negated tag), the filter builder making
 // the same token; the Web pill asking a local mock of OpenAlex and Semantic Scholar (never
 // without it), "In library" badges, Add to library and Add to Inbox.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");

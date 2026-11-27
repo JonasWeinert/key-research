@@ -14,7 +14,7 @@
 //   node scripts/record-screenshots.cjs [--only=library,batch-edit] [--out=dir] [--keep]
 //
 // Scene names are the image names without "key-" (see SCENES); an unknown name is an error.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, writeFile, rm } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
 const { existsSync } = require("node:fs");

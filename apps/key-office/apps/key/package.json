@@ -15,6 +15,7 @@
     "dist:mac": "node scripts/build-backend.mjs --release && node scripts/prepare-package.mjs && electron-builder --mac dir",
     "build:backend": "node scripts/build-backend.mjs",
     "build:backend:release": "node scripts/build-backend.mjs --release",
+    "smoke": "node scripts/run-smokes.cjs",
     "bench": "node scripts/bench-electron.cjs",
     "perf-budget": "node scripts/perf-budget.cjs"
   },
