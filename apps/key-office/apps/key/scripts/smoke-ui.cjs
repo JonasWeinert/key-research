@@ -91,7 +91,10 @@ const assert = require("node:assert/strict");
     await page
       .getByRole("button", { name: "New database", exact: true })
       .click();
-    await page
+    // The page's tab stays mounted (hidden): wait for the database's own view before filling.
+    const databaseView = page.locator("[data-content-view]:visible").filter({ has: page.getByRole("combobox", { name: /Item type/ }) });
+    await databaseView.waitFor();
+    await databaseView
       .getByRole("textbox", { name: "Page title", exact: true })
       .fill("Reviewed notes");
     await page
