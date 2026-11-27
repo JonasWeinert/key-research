@@ -125,6 +125,14 @@ impl Store {
         Ok(out)
     }
 
+    /// The sources that keep a file as one of their other full texts (not their primary one).
+    pub fn sources_keeping(&self, hash: &str) -> Result<Vec<String>> {
+        let db = self.read()?;
+        let mut statement = db.prepare("SELECT source_id FROM source_full_texts WHERE file_hash = ?").map_err(e)?;
+        let rows = statement.query_map([hash], |r| r.get::<_, String>(0)).map_err(e)?;
+        rows.collect::<std::result::Result<_, _>>().map_err(e)
+    }
+
     /// Keeps a file as one of the source's other full texts (not its primary one).
     pub fn add_other_full_text(&self, source_id: &str, hash: &str, path: &str, mime: Option<&str>, size: Option<i64>) -> Result<()> {
         self.db()?

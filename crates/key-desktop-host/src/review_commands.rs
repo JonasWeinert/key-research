@@ -997,6 +997,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             "review_link_unlink" => library_sync::unlink(library, root, reviews, &review()?, text(args, "recordId"), origin(args), &actor()?)?,
             "review_link_undo" => json!(library_sync::undo(library, root, reviews, &review()?, &actor()?, args.get("redo").and_then(Json::as_bool).unwrap_or(false))?.map(|o| json!({ "recordId": o.record, "label": o.label }))),
             "review_link_changes" => library_sync::changes(library, reviews, &review()?, args.get("since").and_then(Json::as_i64).unwrap_or(0))?,
+            "review_reader_follow" => library_sync::reader_follow(library, reviews, &strings(args, "hashes"))?,
             "review_highlights" => library_sync::highlights(reviews, &review()?, text(args, "recordId"))?,
             "review_highlights_apply" => {
                 let upserts: Vec<Json> = args.get("upserts").and_then(Json::as_array).cloned().unwrap_or_default();

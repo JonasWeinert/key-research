@@ -7,7 +7,7 @@
 // folder. Also: possible matches (the library's duplicate matcher, never linked without a yes),
 // the user's highlights on review-only full texts and their carry-over to the library copy, and
 // which linked records changed in the library since a view last asked (the change log).
-use super::library_links::{LinkLibrary, keep_both, kept_both, live_source};
+use super::library_links::{self, LinkLibrary, keep_both, kept_both, live_source};
 use super::*;
 use key_review::library_sync::{self as sync, LinkOp, Plan};
 use std::collections::{HashMap, VecDeque};
@@ -320,6 +320,27 @@ pub fn share_new(library: &dyn LinkLibrary, root: &Path, reviews: &Reviews, revi
     plan.host(json!({ "do": "file", "sourceId": source, "hash": hash, "path": path.to_string_lossy() }));
     plan.review("fulltext.set", json!({ "status": "retrieved", "sourceId": source }), before);
     perform(library, root, reviews, review, plan, "review", actor)
+}
+
+/// Open readers showing a file that is no longer its source's primary full text, for sources
+/// linked in a review (the shared file was replaced from either side): old hash → the new.
+pub fn reader_follow(library: &dyn LinkLibrary, reviews: &Reviews, hashes: &[String]) -> Result<Json, String> {
+    let mut out = Map::new();
+    for hash in hashes {
+        if library.store().source_by_hash(hash)?.is_some_and(|s| s.file_hash() == Some(hash.as_str())) {
+            continue;
+        }
+        for id in library.store().sources_keeping(hash)? {
+            let Some(s) = live_source(library, &id).filter(|s| s.trashed_at.is_none()) else { continue };
+            let Some(now) = s.file_hash().filter(|h| *h != hash) else { continue };
+            let linked = library_links::links_for_source(library, reviews, &s.id).ok().and_then(|v| v.as_array().map(|a| !a.is_empty())).unwrap_or(false);
+            if linked && s.field("mime").is_none_or(|m| m.contains("pdf")) {
+                out.insert(hash.clone(), json!({ "sourceId": s.id, "hash": now }));
+                break;
+            }
+        }
+    }
+    Ok(Json::Object(out))
 }
 
 // ── Possible matches ──────────────────────────────────────────────────────────────────

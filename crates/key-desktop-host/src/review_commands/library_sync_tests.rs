@@ -209,6 +209,9 @@ fn a_replaced_file_goes_back_on_undo_and_no_file_is_deleted() {
     assert_eq!(primary(&w, &source).as_deref(), Some(review_hash.as_str()));
     assert_eq!(others(&w, &source), vec![lib_hash.clone()]);
     assert_eq!(record_state(&w, &rec).1, None);
+    // A reader open on the library's old file follows to the new one.
+    let follow = reader_follow(&w.library, &w.reviews, &[lib_hash.clone(), review_hash.clone()]).unwrap();
+    assert_eq!(follow, json!({ lib_hash.clone(): { "sourceId": source, "hash": review_hash } }));
     undo(&w.library, &w.root, &w.reviews, &w.review, &w.owner, false).unwrap().unwrap();
     assert_eq!(primary(&w, &source).as_deref(), Some(lib_hash.as_str()));
     assert_eq!(others(&w, &source), vec![review_hash.clone()]);
