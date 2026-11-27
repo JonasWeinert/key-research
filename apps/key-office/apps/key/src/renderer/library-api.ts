@@ -346,6 +346,8 @@ export interface ReferencesActivity {
 }
 export interface IndexActivity {
   paused: boolean;
+  /** Bulk indexing held back by the power policy (on battery, Low Power Mode). */
+  held?: boolean;
   reading?: IndexJob | null;
   embedding?: IndexJob | null;
   upNext: IndexJob[];
@@ -355,6 +357,8 @@ export interface IndexActivity {
   vectorsPending: number;
 }
 export interface LibraryStatus {
+  /** The power policy (key-desktop-host power.rs). */
+  power?: { held: "battery" | "low-power" | null; mode: string; continued: boolean };
   model: { state: string; received: number; total: number; error?: string | null };
   busy: boolean;
   vectors: number;

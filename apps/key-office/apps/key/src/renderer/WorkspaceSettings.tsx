@@ -8,7 +8,7 @@ import { ActivityPanel, olderSources, useLibraryStatus } from "./index-activity"
 import { bridge, type AppInfo, type AppSettings, type Invoke, type MergeSuggestion, type WorkspaceSummary, type ZoteroOptions, type ZoteroStatus, type ZoteroSyncStatus } from "./library-api";
 import { Group, Overridable, Row, SettingsFrame } from "./Settings";
 import { APP_SECTIONS, WORKSPACE_GROUPS, WORKSPACE_SECTIONS, openKeySettings, type WorkspaceSettingsSection } from "./settings-catalog";
-import { workspaceSettings, type WorkspaceSettingsPatch, type WorkspaceSettingsState } from "./workspace-settings-api";
+import { workspaceSettings, type BatteryMode, type WorkspaceSettingsPatch, type WorkspaceSettingsState } from "./workspace-settings-api";
 import { ADD_MODES } from "./add-from-source";
 import CitationSettings from "./CitationSettings";
 import { CitationKeySettings } from "./citation-keys";
@@ -21,6 +21,13 @@ import { ZoteroSettings, zoteroWorkspaceOf } from "./ZoteroSyncSettings";
 import { openTagManager } from "./tag-manager-open";
 import { WORKSPACE_COLORS, WORKSPACE_ICONS } from "./WorkspaceSwitcher";
 import type { Mode as ZoteroMode } from "./zotero-sheet-model";
+
+/** Bulk indexing on battery: what each choice does, in plain words. */
+const BATTERY_MODES: [BatteryMode, string, string][] = [
+  ["low", "Pause when the battery is low", "Pauses below 30% battery and in Low Power Mode. What you open is still indexed."],
+  ["battery", "Pause on battery", "Waits until this Mac is plugged in. What you open is still indexed."],
+  ["never", "Keep indexing", "Indexes on battery too, which uses more power."],
+];
 
 const home = (p: string) => p.replace(/^\/Users\/[^/]+/, "~");
 
@@ -444,6 +451,21 @@ function Indexing({ invoke, workspaceId, ws }: { invoke: Invoke; workspaceId: st
         )}
         <Row label="Pause indexing" detail="Stops reading new sources until Key quits. Search keeps working on what is already indexed.">
           <input type="checkbox" className="kx-switch" aria-label="Pause indexing" checked={paused} onChange={(e) => setPaused(e.target.checked)} />
+        </Row>
+        <Row label="On battery" help="settings.indexing.battery" detail={BATTERY_MODES.find(([mode]) => mode === (ws.state?.effective.battery ?? "low"))?.[2]}>
+          <select
+            className="kx-settings-select"
+            aria-label="Indexing on battery"
+            value={ws.state?.effective.battery ?? "low"}
+            disabled={!ws.state}
+            onChange={(e) => void ws.patch({ battery: e.target.value as BatteryMode })}
+          >
+            {BATTERY_MODES.map(([mode, label]) => (
+              <option key={mode} value={mode}>
+                {label}
+              </option>
+            ))}
+          </select>
         </Row>
         <Row label="Retry failed sources" detail={failed ? `${failed.toLocaleString()} could not be read, often a damaged or password-protected PDF` : "None failed"}>
           <button

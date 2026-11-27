@@ -50,6 +50,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_TTL, TempPdfs, type TempPdf } from "./browse
 import { hostLabel, pdfTitle, safeFileName, systemUrl, webUrl } from "./browser/urls";
 import { webPageRect } from "../shared/browser-layout";
 import { feedsEnvironmentRequest, watchFeedsEnvironment } from "./feeds-environment";
+import { powerStateRequest, watchPowerState } from "./power-state";
 import { forgetReading, reportReading } from "./reading-events";
 import { WindowStateStore, type SavedGroup, type SavedTab, type SavedTabs, type SavedView, type SavedWindow, type WindowState } from "./window-state";
 import {
@@ -2356,7 +2357,7 @@ else
           (app.isPackaged
             ? join(process.resourcesPath, "backend/libpdfium.dylib")
             : join(root, "vendor/pdfium/lib/libpdfium.dylib")),
-        prelude: () => [...hostKeyRequests(), feedsEnvironmentRequest()],
+        prelude: () => [...hostKeyRequests(), feedsEnvironmentRequest(), powerStateRequest()],
         // Background lookups filled sources in: open views refresh (the host throttles it).
         onHostEvent: (workspaceId, name) => {
           if (name === "library-changed") {
@@ -2366,6 +2367,7 @@ else
         },
       });
       watchFeedsEnvironment((command, args) => void registry.broadcast(command, args).catch(() => undefined));
+      watchPowerState((command, args) => void registry.broadcast(command, args).catch(() => undefined));
       serveNoteMedia(registry);
       tempPdfs = new TempPdfs(browserCache(), { workspace: scratchWorkspace, invoke: (c, a, id) => registry.invoke(c, a, id) });
       void tempPdfs.list().catch(() => undefined);

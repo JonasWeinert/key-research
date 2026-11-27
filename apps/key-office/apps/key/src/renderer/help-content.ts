@@ -805,6 +805,14 @@ export const HELP = {
     ],
   ),
   "launcher.opening": hint("What Key shows when you start it. Workspaces you open later always open in their own windows."),
+  "settings.indexing.battery": explain(
+    "Indexing on battery",
+    [
+      "Indexing reads every source once so search can find it. It is the heaviest work Key does, and on a laptop it uses battery.",
+      "By default Key waits while the battery is below 30% or Low Power Mode is on, and carries on once the Mac is plugged in. A source you open, select or scroll to is always indexed straight away, and search keeps working on what is already indexed.",
+      "While it waits, the status bar says Indexing paused on battery; click it and choose Continue anyway to index now, until the Mac is plugged in again.",
+    ],
+  ),
   "empty.notes-list": empty("No notes yet", "Notes, canvases and pages you write in this workspace are listed here, in folders you arrange.", "Create one with New note, or link a folder of Markdown files with +."),
 } satisfies Record<string, HelpEntry>;
 

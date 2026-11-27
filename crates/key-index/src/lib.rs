@@ -149,6 +149,9 @@ pub struct Job {
 #[serde(rename_all = "camelCase")]
 pub struct Activity {
     pub paused: bool,
+    /// Bulk indexing is held back by the power policy (on battery, Low Power Mode); what
+    /// the user opens or selects is still indexed.
+    pub held: bool,
     pub reading: Option<Job>,
     pub embedding: Option<Job>,
     pub up_next: Vec<Job>,
@@ -183,6 +186,8 @@ pub struct Indexer {
     embedder: Arc<Mutex<Option<Arc<Embedder>>>>,
     signal: Arc<Signal>,
     paused: Arc<AtomicBool>,
+    /// Held by the host's power policy: only prioritised sources are indexed.
+    held: Arc<AtomicBool>,
     busy: Arc<AtomicBool>,
     finished: Arc<Mutex<Vec<String>>>,
     live: Arc<Mutex<Live>>,
@@ -211,6 +216,7 @@ impl Indexer {
             embedder: Arc::default(),
             signal: Arc::default(),
             paused: Arc::default(),
+            held: Arc::default(),
             busy: Arc::default(),
             finished: Arc::default(),
             live: Arc::default(),
@@ -245,6 +251,16 @@ impl Indexer {
     }
     pub fn is_paused(&self) -> bool {
         self.paused.load(Ordering::SeqCst)
+    }
+    /// Holds back bulk indexing and back-fill (the power policy); sources the user opens,
+    /// selects or has on screen are still indexed.
+    pub fn set_held(&self, held: bool) {
+        if self.held.swap(held, Ordering::SeqCst) != held {
+            self.wake();
+        }
+    }
+    pub fn is_held(&self) -> bool {
+        self.held.load(Ordering::SeqCst)
     }
     pub fn is_busy(&self) -> bool {
         self.busy.load(Ordering::SeqCst)
@@ -343,6 +359,7 @@ impl Indexer {
             .collect();
         Activity {
             paused: self.paused.load(Ordering::SeqCst),
+            held: self.is_held(),
             reading,
             embedding,
             up_next,
@@ -351,6 +368,12 @@ impl Indexer {
             seconds_per_source,
             vectors_pending: self.store.unembedded_chunks().unwrap_or(0).max(0) as u64,
         }
+    }
+
+    /// The next source the bulk loop takes: held (on battery), only one the user asked for.
+    fn next_source(&self, skip: &[String]) -> Option<String> {
+        let held = self.is_held();
+        self.queue(1, skip).into_iter().next().filter(|(_, p)| !held || p.is_some()).map(|(id, _)| id)
     }
 
     /// The next sources to index: requested ones first, then the store's order.
@@ -515,11 +538,12 @@ impl Indexer {
             if let Ok(done) = self.finished.lock().map(|mut done| std::mem::take(&mut *done)) {
                 in_flight.retain(|id| !done.contains(id));
             }
+            let held = self.is_held();
             self.index_stale_notes();
-            let read_files = self.index_linked_files(pdf.as_ref());
+            let read_files = !held && self.index_linked_files(pdf.as_ref());
             let mut skip = self.working();
             skip.extend(in_flight.iter().cloned());
-            let next = self.queue(1, &skip).into_iter().next().map(|(id, _)| id);
+            let next = self.next_source(&skip);
             if next.as_ref().is_some_and(|id| !self.claim(id)) {
                 continue;
             }
@@ -532,9 +556,13 @@ impl Indexer {
                     if let Ok(mut live) = self.live.lock() {
                         *live = Live::default();
                     }
+                    // The bulk embedding server goes once it has been idle a minute.
+                    if let Some(embedder) = self.embedder.lock().ok().and_then(|e| e.clone()) {
+                        embedder.stop_bulk_server_if_idle(Duration::from_secs(60));
+                    }
                     // Idle: older PDFs are identified in the background, one at a time with
                     // a pause between, so anything new or wanted goes first.
-                    if self.backfill_identify(pdf.as_ref()) {
+                    if !held && self.backfill_identify(pdf.as_ref()) {
                         self.wait(BACKFILL_PAUSE);
                         continue;
                     }
@@ -575,7 +603,7 @@ impl Indexer {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     // Idle: give chunks indexed before the model was ready their vectors, one
                     // batch at a time so newly prepared documents are never kept waiting.
-                    while !self.paused.load(Ordering::SeqCst) && self.backfill_vectors() {
+                    while !self.paused.load(Ordering::SeqCst) && !self.is_held() && self.backfill_vectors() {
                         if let Ok(prepared) = receiver.try_recv() {
                             let id = prepared.id.clone();
                             if let Err(error) = self.embed(prepared) {
@@ -619,7 +647,7 @@ impl Indexer {
             return false;
         }
         let items: Vec<(&str, &str)> = rows.iter().map(|(_, title, text)| (title.as_str(), text.as_str())).collect();
-        match embedder.embed_documents(&items) {
+        match embedder.embed_bulk(&items) {
             Ok(vectors) => {
                 let pairs: Vec<(i64, Vec<f32>)> = rows.iter().map(|(id, _, _)| *id).zip(vectors).collect();
                 self.store.set_chunk_vectors(&pairs).is_ok()
@@ -912,7 +940,8 @@ impl Indexer {
             for batch in prepared.chunks.chunks_mut(32) {
                 priority::with_class(class, priority::yield_if_needed);
                 let items: Vec<(&str, &str)> = batch.iter().map(|c| (prepared.title.as_str(), c.text.as_str())).collect();
-                let vectors = embedder.embed_documents(&items)?;
+                // Background documents ask the shared server at background priority.
+                let vectors = if class == Class::Background { embedder.embed_bulk(&items)? } else { embedder.embed_documents(&items)? };
                 for (chunk, vector) in batch.iter_mut().zip(vectors) {
                     chunk.embedding = Some(vector);
                 }
@@ -1040,6 +1069,7 @@ mod tests {
             embedder: Arc::default(),
             signal: Arc::default(),
             paused: Arc::default(),
+            held: Arc::default(),
             busy: Arc::default(),
             finished: Arc::default(),
             live: Arc::default(),
@@ -1282,5 +1312,28 @@ mod tests {
         // Paused, the indexer's loop takes none (the loop checks before it gets here).
         indexer.set_paused(true);
         assert!(indexer.is_paused());
+    }
+
+    #[test]
+    fn held_on_battery_only_what_the_user_asked_for_is_indexed() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(&dir.path().join("library")).unwrap();
+        let indexer = idle(&store, &dir.path().join("models"));
+        let mut ids = Vec::new();
+        for title in ["One", "Two"] {
+            let mut fields = serde_json::Map::new();
+            fields.insert("title".into(), serde_json::json!(title));
+            let source = store.insert_source(key_store::SourceInput { kind: "reference".into(), fields, ..Default::default() }).unwrap();
+            store.set_index_status(&source.id, "pending", None, 0, 0).unwrap();
+            ids.push(source.id);
+        }
+        assert!(indexer.next_source(&[]).is_some(), "bulk indexing takes the next source");
+        indexer.set_held(true);
+        assert!(indexer.activity().held);
+        assert_eq!(indexer.next_source(&[]), None, "held: nobody asked for these");
+        indexer.prioritize(std::slice::from_ref(&ids[1]), Priority::Opened);
+        assert_eq!(indexer.next_source(&[]), Some(ids[1].clone()), "an opened source still goes ahead");
+        indexer.set_held(false);
+        assert!(indexer.next_source(&[ids[1].clone()]).is_some());
     }
 }
