@@ -43,7 +43,7 @@ const BACKGROUND: &[&str] = &[
 const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_"];
 
 /// Exceptions to the prefixes: quick despite their family.
-const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_autoexport_targets"];
+const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_md_export_restore", "store_autoexport_targets"];
 
 pub fn is_slow(command: &str) -> bool {
     !QUICK.contains(&command) && SLOW_PREFIXES.iter().any(|p| command.starts_with(p))
@@ -64,6 +64,19 @@ pub fn class_of(command: &str) -> Class {
 
 /// The class a request runs at: the caller's hint (`x-key-class`) where given, else the
 /// table's; slow work is at most foreground.
+/// Edits to sources' details: after one, open views of those sources elsewhere (a reader's
+/// docked details, its tab title, another window) refresh through the throttled
+/// `library-changed` event (events.rs).
+const SOURCE_EDITS: &[&str] = &[
+    "store_update", "store_edit", "store_trash", "store_delete", "store_bulk_tag", "store_tag_apply", "store_tag_apply_many", "store_retag", "store_undo",
+    "store_redo", "store_merge_sources", "store_merge_exact", "store_citation_key_set", "store_set_reading_status", "store_membership",
+    "library_update_metadata", "library_set_labels", "library_set_property",
+];
+
+pub fn changes_sources(command: &str) -> bool {
+    SOURCE_EDITS.contains(&command)
+}
+
 pub fn resolve(command: &str, hint: Option<&str>) -> Class {
     let class = hint.and_then(Class::parse).unwrap_or_else(|| class_of(command));
     if class == Class::Interactive && is_slow(command) { Class::Foreground } else { class }

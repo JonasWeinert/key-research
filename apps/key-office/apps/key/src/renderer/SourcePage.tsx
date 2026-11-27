@@ -12,7 +12,7 @@ import { ProgressRing } from "./index-activity";
 import { useSourceProgress } from "./source-progress";
 import { ItemPage } from "./ItemPage";
 import { ITEM_TYPES, KIND_ICON, OA_LABEL, bridge as libraryBridge, fetchedAgo, formatBytes, itemTypeLabel, shortCreators, type Collection, type Facet, type Invoke, type Note, type Source, type SourceGraph } from "./library-api";
-import { libraryChanged } from "./library-nav";
+import { libraryChanged, onLibraryChanged } from "./library-nav";
 import { FilterButton, FilterLink, FilterLinks, fieldFilter, showInLibrary, sourceFilter } from "./filter-links";
 import { EntityLink } from "./entity-ui";
 import { PaperRelations } from "./RelationMap";
@@ -72,6 +72,9 @@ export interface DockedPanel {
   onPopOut?: () => void;
   onClose?: () => void;
 }
+
+/** A file Key keeps in the workspace under its content hash. */
+const MANAGED_FILE = /\/\.key\/files\/[0-9a-f]{64}\./;
 
 export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side, docked }: { invoke: Invoke; workspaceId: string; sourceId: string; viewId?: string; side?: SourceSide; docked?: DockedPanel }) {
   const [source, setSource] = useState<Source>();
@@ -153,6 +156,21 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         .catch(() => {}),
     [invoke, workspaceId, sourceId],
   );
+  // A file Key keeps under its content hash shows the name the workspace's file naming rule
+  // gives it (the one dragging it out or mirroring it uses).
+  const [readableName, setReadableName] = useState<string>();
+  const storedPath = source?.filePath;
+  useEffect(() => {
+    setReadableName(undefined);
+    if (!storedPath || !MANAGED_FILE.test(storedPath)) return;
+    let live = true;
+    void invoke<Record<string, string>>("store_file_readable_names", { ids: [sourceId] }, workspaceId)
+      .then((names) => live && setReadableName(names[sourceId] || undefined))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [invoke, workspaceId, sourceId, storedPath, source?.title, source?.year]);
   const loadHighlights = useCallback(
     () =>
       invoke<Highlight[]>("library_annotations", { hash: sourceId }, workspaceId)
@@ -192,11 +210,19 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
         void loadSource();
         void loadGraph();
       }),
+      // Edited elsewhere (the library's inspector, another window, a background lookup): a
+      // docked details panel beside a reader shows the new details without reopening.
+      bridge().on("library-sources-changed", (p) => {
+        if ((p as { workspaceId?: string })?.workspaceId !== workspaceId) return;
+        void loadSource();
+        void loadGraph();
+      }),
+      onLibraryChanged(() => void loadSource()),
       bridge().on("note-changed", (p) => (p as { sourceId?: string })?.sourceId === sourceId && void loadNotes()),
       bridge().on("annotations-changed", () => void loadHighlights()),
     ];
     return () => offs.forEach((off) => off());
-  }, [sourceId, loadSource, loadGraph, loadNotes, loadHighlights]);
+  }, [sourceId, workspaceId, loadSource, loadGraph, loadNotes, loadHighlights]);
   // The tab follows the title.
   useEffect(() => {
     if (source && viewId) void bridge().tabAction("content-title", { viewId, title: source.title || "Untitled" });
@@ -365,6 +391,7 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
   const shown = moreFields ? all : filled.length ? filled : (FIELDS[source.itemType || ""] ?? DEFAULT_FIELDS);
   const hidden = all.length - shown.length;
   const names = new Map(collections.map((c) => [c.id, c.name]));
+  const managed = !!source.filePath && MANAGED_FILE.test(source.filePath);
   const isPdf = !!source.filePath && source.kind === "pdf";
   const isSavedPage = !!source.filePath && source.kind === "web";
   const readPage = (annotationId?: string) => void import("./web-page-open").then(({ openWebPage }) => openWebPage(workspaceId, sourceId, annotationId ? { annotationId } : undefined, source.title, docked ? {} : { placement: "split", fromViewId: viewId }));
@@ -525,9 +552,9 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
             >
               {source.filePath ? (
                 <>
-                  <div className="kx-file-name" title={source.filePath}>
+                  <div className="kx-file-name" title={managed ? `Saved in this workspace${readableName ? ` as ${readableName}` : ""}` : source.filePath}>
                     <Icon name={KIND_ICON[source.kind] ?? "doc"} size={14} />
-                    <span>{/\/\.key\/files\/[0-9a-f]{64}\./.test(source.filePath) ? "Saved in this workspace" : source.filePath.split("/").pop()}</span>
+                    <span>{managed ? (readableName ?? "Saved in this workspace") : source.filePath.split("/").pop()}</span>
                   </div>
                   <small>{[source.pageCount ? `${source.pageCount} pages` : "", formatBytes(source.fileSize), source.mime].filter(Boolean).join(" · ")}</small>
                 </>

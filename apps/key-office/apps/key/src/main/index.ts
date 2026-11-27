@@ -495,6 +495,20 @@ function emit(event: string, value?: unknown) {
 function emitTo(w: ShellWindow, event: string, value?: unknown) {
   if (!w.window.isDestroyed()) w.window.webContents.send(event, value);
 }
+/** Library readers of a workspace whose source changed elsewhere (a title edited in the
+ * library) take its new title and details. */
+async function refreshReaderTitles(workspaceId: string) {
+  for (const v of views.values()) {
+    if (v.kind !== "pdf" || v.temp || v.workspaceId !== workspaceId) continue;
+    const hash = v.source?.hash ?? v.id.split(":").at(-1);
+    const info: any = await registry.invoke("library_source_info", { hash }, workspaceId).catch(() => undefined);
+    if (!info || (info.title === v.title && info.title === v.source?.title)) continue;
+    v.source = info;
+    if (info.title) v.title = info.title;
+    const w = shellOfView(v.id);
+    if (w) tabsChanged(w);
+  }
+}
 function tabsChanged(w: ShellWindow) {
   emitTo(w, "tabs-changed", snapshot(w));
   saveWindows();
@@ -819,7 +833,9 @@ async function addTempToLibrary(temp: OwnedView) {
   try {
     const path = join(directory, `${safeFileName(temp.title || entry.title).replace(/\.pdf$/i, "")}.pdf`);
     await copyFile(entry.file, path);
-    const imported: any = await registry.invoke("library_import_file", { path }, workspaceId);
+    // The scratch library analysed this PDF already: the library takes that analysis over.
+    const scratch = await scratchWorkspace().catch(() => undefined);
+    const imported: any = await registry.invoke("library_import_file", { path, carryFrom: scratch ? join(scratch.root, ".key") : null }, workspaceId);
     if (imported.hash !== entry.hash) throw Error("The PDF changed while it was added");
     if (!imported.existing) await registry.invoke("store_update", { id: imported.id, patch: { url: entry.url } }, workspaceId).catch(() => undefined);
     await carryTempWork(entry, workspaceId, imported.id);
@@ -1349,11 +1365,26 @@ async function importSources(workspaceId?: string, w: ShellWindow = focusedShell
 }
 let workspaceParent = "";
 /** The "Zotero" workspace beside the default one, created on first use. */
-const zoteroWorkspace = () => registry.add(join(workspaceParent, "Zotero"), "Zotero");
-/** Imports the Zotero library into its own "Zotero" workspace beside the default one. */
+const dedicatedZoteroWorkspace = () => registry.add(join(workspaceParent, "Zotero"), "Zotero");
+/** The workspace Zotero imports into or syncs with: the one asked for (any workspace can),
+ * else the dedicated "Zotero" workspace as before. */
+async function zoteroWorkspace(workspaceId?: unknown) {
+  if (typeof workspaceId === "string" && workspaceId) {
+    const found = (await registry.list()).find((w) => w.id === workspaceId);
+    if (found) return found;
+  }
+  return dedicatedZoteroWorkspace();
+}
+/** Every workspace that syncs with Zotero: the dedicated "Zotero" workspace (when it exists)
+ * and any other whose host keeps a sync state. */
+async function zoteroLinkedWorkspaces() {
+  const dedicated = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
+  return (await registry.list()).filter((w) => w.root === dedicated || existsSync(join(w.root, ".key", "zotero-sync.sqlite")));
+}
+/** Imports the Zotero library into the chosen workspace (by default its own "Zotero" one). */
 async function importZotero(options?: Record<string, unknown>) {
-  const { proxies, ...rest } = options ?? {};
-  const workspace = await zoteroWorkspace();
+  const { proxies, workspaceId, ...rest } = options ?? {};
+  const workspace = await zoteroWorkspace(workspaceId);
   const report = await registry.invoke("store_import_zotero", rest, workspace.id);
   emit("library-changed");
   if (proxies) await importLibraryProxies({ dataDir: typeof rest.dataDir === "string" ? rest.dataDir : undefined, follow: true }).catch(() => undefined);
@@ -1376,11 +1407,10 @@ async function syncZotero(force = false) {
   if (zoteroSyncing || !appSettings?.get().zoteroSync) return;
   zoteroSyncing = true;
   try {
-    const root = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
-    const workspace = root && (await registry.list()).find((w) => w.root === root);
-    if (!workspace) return;
-    const result: any = await registry.invoke("store_zotero_sync", { force }, workspace.id);
-    if (result?.ran) emit("library-changed");
+    for (const workspace of await zoteroLinkedWorkspaces()) {
+      const result: any = await registry.invoke("store_zotero_sync", { force }, workspace.id).catch((e) => console.warn("Zotero sync:", e));
+      if (result?.ran) emit("library-changed");
+    }
     // Proxies added in Zotero (or its Connector) follow, now and then.
     if (proxyService?.data.prefs.followZotero && Date.now() - proxiesImportedAt > 60 * 60_000) void importLibraryProxies().catch(() => undefined);
   } catch (e) {
@@ -2326,7 +2356,10 @@ else
         prelude: () => [...hostKeyRequests(), feedsEnvironmentRequest()],
         // Background lookups filled sources in: open views refresh (the host throttles it).
         onHostEvent: (workspaceId, name) => {
-          if (name === "library-changed") emit("library-sources-changed", { workspaceId });
+          if (name === "library-changed") {
+            emit("library-sources-changed", { workspaceId });
+            void refreshReaderTitles(workspaceId);
+          }
         },
       });
       watchFeedsEnvironment((command, args) => void registry.broadcast(command, args).catch(() => undefined));
@@ -2598,11 +2631,16 @@ else
         }
         if (patch?.webProviders) for (const entry of Object.values(patch.webProviders as Record<string, { apiKey?: string }>)) delete entry.apiKey;
         const next = await appSettings.update(patch ?? {});
+        // Every view shows the same tips (explain.tsx keeps a copy).
+        if (JSON.stringify(before.tips) !== JSON.stringify(next.tips)) emit("tips-changed", next.tips);
         if (!before.zoteroSync && next.zoteroSync) void syncZotero(true);
         // Running library hosts pick up the layout setting at once.
         if (before.layoutModel !== next.layoutModel)
           for (const workspace of await registry.list())
             void registry.invoke("store_analysis_options", { layoutModel: next.layoutModel }, workspace.id).catch(() => {});
+        if (before.modelsOwnSourcesOnly !== next.modelsOwnSourcesOnly)
+          for (const workspace of await registry.list())
+            void registry.invoke("store_models_options", { ownSourcesOnly: next.modelsOwnSourcesOnly }, workspace.id).catch(() => {});
         if (before.modelsAutoDownload !== next.modelsAutoDownload)
           for (const workspace of await registry.list())
             void registry.invoke("store_models_options", { autoDownload: next.modelsAutoDownload }, workspace.id).catch(() => {});
@@ -2763,6 +2801,8 @@ else
         const text = typeof data?.text === "string" ? data.text : "";
         const html = typeof data?.html === "string" ? data.html : undefined;
         const rtf = typeof data?.rtf === "string" ? data.rtf : undefined;
+        // Smokes run side by side: with KEY_TEST_CLIPBOARD each app keeps its copies to itself.
+        if (process.env.KEY_TEST_CLIPBOARD === "1") return void ((globalThis as { __keyClipboard?: unknown }).__keyClipboard = { text, html: html ?? "", rtf: rtf ?? "" });
         clipboard.write({ text, ...(html ? { html } : {}), ...(rtf ? { rtf } : {}) });
       });
       ipcMain.handle("key:reveal-path", (event, path) => {
@@ -2785,9 +2825,9 @@ else
         if (action === "import") return importLibraryProxies(payload ?? {});
         throw Error("Unknown proxy action");
       });
-      ipcMain.handle("key:zotero-workspace", (event) => {
+      ipcMain.handle("key:zotero-workspace", (event, workspaceId?: unknown) => {
         shell(event.sender.id);
-        return zoteroWorkspace();
+        return zoteroWorkspace(workspaceId);
       });
       ipcMain.handle("key:sync-zotero", async (event) => {
         shell(event.sender.id);
@@ -2796,10 +2836,7 @@ else
       setInterval(() => void syncZotero(), 30_000);
       startZoteroPluginSync({
         invoke: (command, args, workspaceId) => registry.invoke(command, args, workspaceId),
-        workspace: async () => {
-          const root = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
-          return root ? (await registry.list()).find((w) => w.root === root) : undefined;
-        },
+        workspaces: zoteroLinkedWorkspaces,
         changed: () => emit("library-changed"),
         syncing: (running) => emit("zotero-syncing", running),
         check: (sender) => void shell(sender),

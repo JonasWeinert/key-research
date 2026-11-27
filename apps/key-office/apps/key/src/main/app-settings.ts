@@ -20,6 +20,8 @@ export interface AppSettings {
   layoutModel: boolean
   /** Download on-device models from Hugging Face by themselves when first needed. */
   modelsAutoDownload: boolean
+  /** Download models only from Key's own repositories, never from a file's original source. */
+  modelsOwnSourcesOnly: boolean
   /** Keep the imported Zotero library in step with Zotero (off: import once). */
   zoteroSync: boolean
   /** Look sources up in OpenAlex when they arrive with a DOI, and refresh counts when viewed. */
@@ -44,6 +46,13 @@ export interface AppSettings {
   signInNotice: boolean
   /** The browser passkey sign-ins are finished in: the system's default, or one Key can read. */
   signInBrowser: SignInBrowser
+  /** First-use tips: which were seen, and whether they show at all (kept here, not in a
+   *  view's storage, so every view agrees and clearing a profile's storage keeps them). */
+  tips: TipsSetting
+}
+export interface TipsSetting {
+  seen: string[]
+  off: boolean
 }
 export type SignInBrowser = 'default' | 'chrome' | 'edge' | 'brave' | 'arc' | 'vivaldi' | 'chromium' | 'firefox' | 'safari'
 const SIGN_IN_BROWSERS: SignInBrowser[] = ['default', 'chrome', 'edge', 'brave', 'arc', 'vivaldi', 'chromium', 'firefox', 'safari']
@@ -52,7 +61,7 @@ export interface WebProviderSetting {
   enabled?: boolean
   apiKey?: string
 }
-const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default' }
+const DEFAULTS: AppSettings = { theme: 'system', onboarded: false, layoutModel: true, modelsAutoDownload: true, modelsOwnSourcesOnly: false, zoteroSync: false, openalex: true, openalexMailto: '', openalexApiKey: '', webProviders: {}, addFromSource: 'ask', citationStyle: 'apa', citationLocale: 'en-US', findPdfOnAdd: false, openAtLaunch: 'workspaces', signInNotice: true, signInBrowser: 'default', tips: { seen: [], off: false } }
 
 export class AppSettingsStore {
   private value: AppSettings = { ...DEFAULTS }
@@ -88,6 +97,7 @@ function sanitize(input: AppSettings): AppSettings {
     onboarded: input.onboarded === true,
     layoutModel: input.layoutModel !== false,
     modelsAutoDownload: input.modelsAutoDownload !== false,
+    modelsOwnSourcesOnly: input.modelsOwnSourcesOnly === true,
     zoteroSync: input.zoteroSync === true,
     openalex: input.openalex !== false,
     openalexMailto: typeof input.openalexMailto === 'string' && /^[^\s@]+@[^\s@]+$/.test(input.openalexMailto.trim()) ? input.openalexMailto.trim() : '',
@@ -100,7 +110,14 @@ function sanitize(input: AppSettings): AppSettings {
     signInNotice: input.signInNotice !== false,
     signInBrowser: SIGN_IN_BROWSERS.includes(input.signInBrowser) ? input.signInBrowser : 'default',
     citationLocale: typeof input.citationLocale === 'string' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$/.test(input.citationLocale) ? input.citationLocale : 'en-US',
+    tips: tips(input.tips),
   }
+}
+
+function tips(input: unknown): TipsSetting {
+  const value = (input && typeof input === 'object' ? input : {}) as Partial<TipsSetting>
+  const seen = Array.isArray(value.seen) ? [...new Set(value.seen.filter((s): s is string => typeof s === 'string' && /^[a-z0-9.-]{1,64}$/.test(s)))].slice(0, 300) : []
+  return { seen, off: value.off === true }
 }
 
 function webProviders(input: unknown): Record<string, WebProviderSetting> {
@@ -124,6 +141,8 @@ function apply(settings: AppSettings) {
   process.env.KEY_MODEL_DIR = modelDir()
   // Test runs never download unless the launcher opted in (the hosts' default under tests).
   if (launchedAutoDownload === undefined && !isTestRun()) process.env.KEY_MODELS_AUTO_DOWNLOAD = settings.modelsAutoDownload ? '1' : '0'
+  // Hosts started from now on read it; running ones are told (index.ts).
+  process.env.KEY_MODELS_OWN_ONLY = settings.modelsOwnSourcesOnly ? '1' : '0'
   process.env.KEY_OPENALEX_ENABLED = settings.openalex ? '1' : '0'
   process.env.KEY_OPENALEX_MAILTO = settings.openalexMailto
   // API keys never go through the environment (children would inherit them): hosts get the

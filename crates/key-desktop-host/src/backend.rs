@@ -3022,9 +3022,21 @@ impl Host {
             "library_import_file" => {
                 let path: PathBuf = arg(args, "path").ok()?;
                 let expected: Option<String> = arg(args, "expectedHash").ok().flatten();
+                // `carryFrom`: another library's database folder (the browser's scratch library)
+                // that analysed this file already; the indexer takes that analysis over.
+                let carry_from: Option<PathBuf> = arg(args, "carryFrom").ok().flatten();
                 let library = &self.library;
                 let root = self.root.clone();
-                let result = tokio::task::block_in_place(|| library.import_file(&path, expected.as_deref(), &root, None));
+                let result = tokio::task::block_in_place(|| {
+                    if let Some(from) = carry_from.as_ref().filter(|p| p.is_absolute()) {
+                        if let Ok(hash) = key_index::file_hash(&path) {
+                            if let Err(error) = library.store.carry_analysis(&hash, from) {
+                                eprintln!("Key: the analysis could not be carried over: {error}");
+                            }
+                        }
+                    }
+                    library.import_file(&path, expected.as_deref(), &root, None)
+                });
                 library.indexer.wake();
                 Some(result.and_then(json_output))
             }

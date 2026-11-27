@@ -240,14 +240,16 @@ export default function ReferenceLibrary({
     [collectionId, scope, kind, tag, filters, sorts],
   );
 
+  const listKey = useRef(`list:${Math.random().toString(36).slice(2)}`);
   const load = useCallback(
     async (offset = 0) => {
       const id = ++request.current;
       if (!offset) setLoading(true);
       try {
         const [page, nextFacets] = await Promise.all([
-          invoke<SourcePage>("store_sources", { ...query, offset, limit: PAGE }, workspaceId),
-          offset ? Promise.resolve(undefined) : invoke<Facets>("store_facets", { ...query, kind: null, tag: null }, workspaceId),
+          // A newer filter or sort replaces (and stops) a first page still being counted.
+          invoke<SourcePage>("store_sources", { ...query, offset, limit: PAGE, ...(offset ? {} : { $supersede: `${listKey.current}:list` }) }, workspaceId),
+          offset ? Promise.resolve(undefined) : invoke<Facets>("store_facets", { ...query, kind: null, tag: null, $supersede: `${listKey.current}:facets` }, workspaceId),
         ]);
         if (id !== request.current) return;
         setItems((previous) => (offset ? [...previous, ...page.items] : page.items));

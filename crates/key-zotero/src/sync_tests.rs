@@ -275,3 +275,24 @@ fn real_library() {
         std::fs::write(out, notes.join("\n\n")).unwrap();
     }
 }
+
+#[test]
+fn importing_into_a_workspace_joins_the_sources_it_already_has() {
+    let zotero = Zotero::new();
+    zotero.sql("INSERT INTO fields VALUES (5, 'DOI');");
+    zotero.field(5, "DOI", "10.1/abook");
+    let library = tempfile::tempdir().unwrap();
+    let store = Store::open(library.path()).unwrap();
+    // The workspace has the book already, under its own title and without a tag.
+    let mine = store.insert_source(serde_json::from_value(json!({"kind": "reference", "title": "My copy of a book", "doi": "https://doi.org/10.1/ABOOK"})).unwrap()).unwrap();
+    let report = import(&store, &zotero.options()).unwrap();
+    assert_eq!(report.added, 2, "the article and the report are new; the book joins the source it is");
+    let book = by_key(&store, "ITEMBBBB");
+    assert_eq!(book.id, mine.id);
+    assert_eq!(book.title(), "My copy of a book", "Key's values stay");
+    assert_eq!(book.tags, vec!["x"], "what it lacked comes from Zotero");
+    // Syncing again keeps the link.
+    import(&store, &zotero.options()).unwrap();
+    assert_eq!(by_key(&store, "ITEMBBBB").id, mine.id);
+    assert_eq!(store.list_sources(&key_store::ListQuery::default()).unwrap().total, 3);
+}

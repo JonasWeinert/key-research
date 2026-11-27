@@ -96,8 +96,12 @@ function png(width, height, [r, g, b]) {
     await page.keyboard.press("Enter");
     await page.locator(".kx-inspector .kx-page-note .ne-callout").waitFor();
     await page.keyboard.type("Compare with ");
-    await page.keyboard.type("@Interac");
-    await page.locator(".ne-menu-item", { hasText: "Interaction study" }).waitFor();
+    // Under load the menu opens and its matches arrive late: wait for the menu, then for the
+    // source to be the selected match (not merely listed) before Enter takes it.
+    await page.keyboard.type("@");
+    await page.locator(".ne-menu-item").first().waitFor();
+    await page.keyboard.type("Interac");
+    await page.locator(".ne-menu-item[aria-selected=true]", { hasText: "Interaction study" }).waitFor({ timeout: 15000 });
     await page.keyboard.press("Enter");
     await page.locator(".kx-inspector .kx-page-note a[href^='key://source/']").waitFor();
     let body = "";

@@ -217,6 +217,7 @@ pub(crate) fn run(db: &Connection, query: &SearchQuery, vector: Option<&[f32]>) 
         }
     }
 
+    crate::cancel::check()?;
     // Title, author, journal, tag and note matches lift a source even without passages.
     // The last word matches as a prefix from two letters, so results follow typing.
     let metadata_phrase = fts_any_prefix(&query.text, 2);
@@ -254,6 +255,7 @@ pub(crate) fn run(db: &Connection, query: &SearchQuery, vector: Option<&[f32]>) 
         }
     }
 
+    crate::cancel::check()?;
     let mut by_owner: HashMap<Owner, Vec<(i64, Candidate)>> = HashMap::new();
     for (id, candidate) in chunks {
         by_owner.entry(candidate.owner.clone()).or_default().push((id, candidate));
@@ -332,6 +334,7 @@ pub(crate) fn run(db: &Connection, query: &SearchQuery, vector: Option<&[f32]>) 
         .map_err(e)?;
     for (owner, score) in sources {
         let Owner::Source(source_id) = &owner else { continue };
+        crate::cancel::check()?;
         let Some(source) = source_of.query_row([source_id], read_source).optional().map_err(e)? else { continue };
         let mut fields = Vec::new();
         if let (Some(phrase), true) = (&metadata_phrase, metadata.contains_key(source_id)) {

@@ -340,6 +340,30 @@ export const HELP = {
       "Either way, Key only reads from Zotero. Where both apps changed the same item, Key keeps its own version and lists the conflict.",
     ],
   ),
+  "model.sources": explain(
+    "Where models come from",
+    [
+      "Key keeps a copy of every model in its own repositories on Hugging Face, pinned to one version, and checks each file against its published checksum.",
+      "If Key’s copy cannot be reached, Key can fetch the same file from the publisher of the original model instead. It must match the same checksum, so it is the same file.",
+      "Turn this on to use Key’s repositories only, for example where your institution allows only known sources. Each model shows where it came from.",
+    ],
+  ),
+  "markdown.removed": explain(
+    "Files you deleted",
+    [
+      "When you delete one of Key’s Markdown files from the export folder, Key takes that as your choice and does not write it again, even when you export everything.",
+      "Moving or renaming a file inside the folder is not deleting it: Key finds it and keeps writing there.",
+      "Restore brings a file back with the next export, with your notes from Key in it.",
+    ],
+  ),
+  "zotero.this-workspace": explain(
+    "A Zotero workspace or this one?",
+    [
+      "A workspace named Zotero keeps what comes from Zotero apart from your other work. That is how Key did it at first, and it stays like that if you set it up so.",
+      "You can also bring Zotero’s items into this workspace, beside what is already here, and keep it in sync. Sources Key already has are matched, not added twice.",
+      "Each workspace keeps its own Zotero set-up: what it covers, when it last synced and its conflicts.",
+    ],
+  ),
   "zotero.plugin": explain(
     "The Key Sync plugin",
     [

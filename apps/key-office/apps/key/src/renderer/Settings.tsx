@@ -497,6 +497,8 @@ function SearchSettings({
         listing={fetched}
         autoDownload={settings.modelsAutoDownload !== false}
         onAutoDownload={(value) => onSettings({ modelsAutoDownload: value })}
+        ownSourcesOnly={settings.modelsOwnSourcesOnly === true}
+        onOwnSourcesOnly={(value) => onSettings({ modelsOwnSourcesOnly: value })}
         accelerator={accelerator}
         onChanged={refreshModels}
       />

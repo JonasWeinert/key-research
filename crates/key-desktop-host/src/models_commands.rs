@@ -92,6 +92,9 @@ pub fn dispatch(store: &Store, indexer: &Indexer, command: &str, args: &Json) ->
             if let Some(auto) = arg::<Option<bool>>(args, "autoDownload")? {
                 key_models::set_auto_download(auto);
             }
+            if let Some(only) = arg::<Option<bool>>(args, "ownSourcesOnly")? {
+                key_models::set_own_sources_only(only);
+            }
             json_output(models().list())
         })(),
         _ => return None,

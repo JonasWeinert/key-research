@@ -16,6 +16,10 @@
 .kx-models-error {
   color: var(--kx-red);
 }
+/* A model that came (partly) from its original publisher says so, quietly. */
+.kx-models-source[data-upstream] {
+  color: var(--kx-amber);
+}
 .kx-models-failed {
   color: var(--kx-red);
   font-size: 12px;

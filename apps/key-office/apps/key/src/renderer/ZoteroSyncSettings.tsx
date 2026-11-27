@@ -16,16 +16,19 @@ export function ZoteroSettings({
   settings,
   onSettings,
   onOpen,
+  target,
 }: {
   invoke: Invoke;
   workspaces: WorkspaceSummary[];
+  /** The workspace that syncs with Zotero, when it is not the dedicated "Zotero" one. */
+  target?: WorkspaceSummary;
   info: AppInfo;
   settings: AppSettings;
   onSettings: (patch: Partial<AppSettings>) => void;
   /** Opens the Zotero sheet: at the start, or on a mode's second step. */
   onOpen: (mode?: Mode, current?: ZoteroOptions | null) => void;
 }) {
-  const workspace = zoteroWorkspaceOf(workspaces);
+  const workspace = target ?? zoteroWorkspaceOf(workspaces);
   const [status, setStatus] = useState<ZoteroStatus>();
   const [sync, setSync] = useState<ZoteroSyncStatus>();
   const [busy, setBusy] = useState(false);
@@ -65,7 +68,8 @@ export function ZoteroSettings({
     }
   };
   const configure = (args: Record<string, unknown>) => invoke("store_zotero_plugin_configure", args, workspace!.id);
-  const syncNow = () => act(() => invoke("store_zotero_plugin_sync", { force: true }, workspace!.id));
+  // Through main, so the status bar shows the sync running as it does for the scheduled ones.
+  const syncNow = () => act(() => (bridge().zoteroPlugin ? bridge().zoteroPlugin("wake") : invoke("store_zotero_plugin_sync", { force: true }, workspace!.id)));
 
   const imported = !!status?.at;
   const report = status?.report;

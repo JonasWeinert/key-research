@@ -28,6 +28,8 @@ fn status(store: &Store) -> Result<Json, String> {
         "folder": config.folder,
         "last": md_export::last_summary(store)?,
         "conflicts": md_export::conflicts(store)?,
+        // Files the user deleted from the folder, which exports leave out until restored.
+        "removed": md_export::removed(store)?,
         "mirror": file_mirror::mirror_config(store)?,
         "mirrorLast": file_mirror::mirror_summary(store),
     }))
@@ -93,6 +95,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json, root: &Path) -> O
             }
         })(),
         "store_md_export_status" => status(store).and_then(json_output),
+        "store_md_export_restore" => (|| json_output(md_export::restore_removed(store, arg::<Option<Vec<String>>>(args, "ids")?.as_deref())?))(),
 
         // ── File names ──
         "store_file_naming" => (|| {

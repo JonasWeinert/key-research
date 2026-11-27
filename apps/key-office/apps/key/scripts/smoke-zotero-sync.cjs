@@ -311,6 +311,19 @@ const library = (pdf) => ({
     await group.getByRole("button", { name: "Resume" }).click();
     report.settings = true;
 
+    // 4b. Another workspace can import from Zotero or sync too (its own set-up).
+    await page.evaluate((id) => window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: { window: "workspace", section: "zotero", workspaceId: id } })), ws.id);
+    const other = page.locator(".kx-settings-group", { has: page.getByText(/Keep “.*” in sync/) }).last();
+    await other.waitFor();
+    await other.getByText(/Zotero syncs into “Zotero”/).waitFor();
+    await other.getByRole("button", { name: "Set up…" }).waitFor();
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.waitForTimeout(300);
+    await other.screenshot({ path: path.join(shots, "11b-settings-other-workspace-light.png") });
+    report.anyWorkspace = true;
+    await page.emulateMedia({ colorScheme: "dark" });
+    await openSettings();
+
     // 5. Zotero back: changing the scope from Settings, in dark.
     mock = await startMockZotero({ port: mock.port, token: mock.token, library: library(pdf) });
     await group.getByRole("button", { name: "Change…" }).click();

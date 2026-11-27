@@ -33,21 +33,29 @@ fn lane(name: &str, workers: usize, blocking: usize, class: Class) -> Result<Lan
 }
 
 /// Newer requests with the same `x-key-supersede` key (a search per keystroke) make older
-/// ones that have not started answer "Superseded" at once.
+/// ones that have not started answer "Superseded" at once, and cancel the one that is running
+/// (its read queries stop, see key_store::cancel).
 #[derive(Default)]
-struct Supersede(Mutex<HashMap<String, u64>>);
+struct Supersede(Mutex<HashMap<String, (u64, key_store::cancel::Token)>>);
 impl Supersede {
-    fn issue(&self, key: &str) -> u64 {
+    fn issue(&self, key: &str) -> (u64, key_store::cancel::Token) {
         let mut map = self.0.lock().unwrap_or_else(|e| e.into_inner());
         if map.len() > 256 {
             map.clear();
         }
-        let next = map.get(key).copied().unwrap_or(0) + 1;
-        map.insert(key.to_string(), next);
-        next
+        let token = key_store::cancel::Token::new();
+        let next = match map.get(key) {
+            Some((generation, older)) => {
+                older.cancel();
+                generation + 1
+            }
+            None => 1,
+        };
+        map.insert(key.to_string(), (next, token.clone()));
+        (next, token)
     }
     fn current(&self, key: &str, generation: u64) -> bool {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).get(key).is_none_or(|g| *g == generation)
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).get(key).is_none_or(|(g, _)| *g == generation)
     }
 }
 
@@ -130,7 +138,7 @@ fn run() -> Result<(), String> {
             let _permit = permit;
             // Counted while it runs: background loops pause for user actions.
             let _active = key_store::priority::begin(class);
-            if let Some((key, generation)) = &generation {
+            if let Some((key, (generation, _))) = &generation {
                 if !supersede.current(key, *generation) {
                     let _ = ipc::write_response(&mut *out.lock().unwrap(), envelope.id, Err("Superseded by a newer request".into()));
                     return;
@@ -166,11 +174,17 @@ fn run() -> Result<(), String> {
             // (a visible-class read on a foreground thread).
             let started = std::time::Instant::now();
             let command = envelope.command.clone();
+            let token = generation.as_ref().map(|(_, (_, token))| token.clone()).unwrap_or_default();
             let result = key_store::priority::with_class(class, || {
                 tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(host.dispatch(&envelope.command, &envelope.args, &binary, &headers))
+                    key_store::cancel::run(&token, || tokio::runtime::Handle::current().block_on(host.dispatch(&envelope.command, &envelope.args, &binary, &headers)))
                 })
             });
+            // A query a newer one replaced stopped part way ("interrupted"): say why.
+            let result = if token.is_cancelled() && result.is_err() { Err(key_store::cancel::SUPERSEDED.into()) } else { result };
+            if result.is_ok() && priority::changes_sources(&command) {
+                events::library_changed();
+            }
             // KEY_LOCK_TRACE_MS: user actions slower than this are reported (stderr).
             if class == Class::Interactive && std::env::var("KEY_LOCK_TRACE_MS").ok().and_then(|v| v.parse::<u128>().ok()).is_some_and(|ms| started.elapsed().as_millis() > ms) {
                 eprintln!("key slow: {command} took {:?}", started.elapsed());

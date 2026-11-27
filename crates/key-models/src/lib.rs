@@ -10,7 +10,9 @@
 // The root is `KEY_MODEL_DIR` (Electron passes it) or the platform's app data folder.
 // `KEY_MODELS_BASE_URL` replaces https://huggingface.co (a mirror, or a test's mock); without
 // it a file whose Hugging Face copy cannot be reached is fetched from its upstream source,
-// which must match the same hash.
+// which must match the same hash, unless the user asked for Key's own repositories only
+// (`set_own_sources_only`, `KEY_MODELS_OWN_ONLY=1`). Which source each file came from is kept
+// (`<root>/<id>/<revision>/.sources`) and shown.
 mod fetch;
 
 use serde::{Deserialize, Serialize};
@@ -112,6 +114,21 @@ pub fn default_root() -> PathBuf {
 }
 
 static AUTO: AtomicU8 = AtomicU8::new(0);
+static OWN_ONLY: AtomicU8 = AtomicU8::new(0);
+
+/// Download models only from Key's own (Hugging Face) repositories, never from a file's
+/// upstream source. Off by default.
+pub fn set_own_sources_only(only: bool) {
+    OWN_ONLY.store(if only { 1 } else { 2 }, Ordering::SeqCst);
+}
+
+pub fn own_sources_only() -> bool {
+    match OWN_ONLY.load(Ordering::SeqCst) {
+        1 => true,
+        2 => false,
+        _ => std::env::var("KEY_MODELS_OWN_ONLY").as_deref() == Ok("1"),
+    }
+}
 
 /// Whether models download by themselves when first needed: the user's setting (passed as
 /// `KEY_MODELS_AUTO_DOWNLOAD`, or changed while running), on by default; test runs
@@ -158,6 +175,11 @@ pub struct Status {
     /// The folder holding the model, once ready.
     pub path: Option<String>,
     pub disk_bytes: u64,
+    /// Where the files came from, once downloaded: "Key's repository (huggingface.co)" or the
+    /// upstream hosts a fallback used.
+    pub source: Option<String>,
+    /// True when some file came from its upstream source instead of Key's repository.
+    pub from_upstream: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -165,6 +187,7 @@ pub struct Status {
 pub struct Listing {
     pub root: String,
     pub auto_download: bool,
+    pub own_sources_only: bool,
     pub disk_bytes: u64,
     pub models: Vec<Status>,
 }
@@ -224,6 +247,20 @@ impl Models {
     }
     fn progress_path(&self, spec: &Spec) -> PathBuf {
         self.model_root(spec).join(".progress.json")
+    }
+    fn sources_path(&self, spec: &Spec) -> PathBuf {
+        self.model_root(spec).join(&spec.revision).join(".sources")
+    }
+    /// file path -> host it was downloaded from (and whether that was an upstream fallback).
+    fn sources_used(&self, spec: &Spec) -> BTreeMap<String, (String, bool)> {
+        fs::read(self.sources_path(spec)).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+    fn note_source(&self, spec: &Spec, file: &FileSpec, host: String, upstream: bool) {
+        let mut used = self.sources_used(spec);
+        used.insert(file.path.clone(), (host, upstream));
+        if let Ok(bytes) = serde_json::to_vec(&used) {
+            let _ = fs::write(self.sources_path(spec), bytes);
+        }
     }
     fn stamp_path(&self, spec: &Spec) -> PathBuf {
         self.model_root(spec).join(&spec.revision).join(".verified")
@@ -313,6 +350,14 @@ impl Models {
             disk_bytes: dir_size(&self.model_root(spec)),
             ..Default::default()
         };
+        let used = self.sources_used(spec);
+        if !used.is_empty() {
+            status.from_upstream = used.values().any(|(_, upstream)| *upstream);
+            let mut hosts: Vec<String> = used.values().filter(|(_, upstream)| *upstream).map(|(host, _)| host.clone()).collect();
+            hosts.sort();
+            hosts.dedup();
+            status.source = Some(if hosts.is_empty() { format!("Key’s repository ({})", used.values().next().map(|(h, _)| h.as_str()).unwrap_or("huggingface.co")) } else { format!("Partly from the original source: {}", hosts.join(", ")) });
+        }
         if self.ready(id) {
             status.state = "ready".into();
             status.received = status.total;
@@ -362,6 +407,7 @@ impl Models {
         Listing {
             root: self.root.to_string_lossy().into_owned(),
             auto_download: auto_download(),
+            own_sources_only: own_sources_only(),
             disk_bytes: models.iter().map(|m| m.disk_bytes).sum(),
             models,
         }
@@ -444,7 +490,7 @@ impl Models {
     fn sources(&self, spec: &Spec, file: &FileSpec) -> Vec<String> {
         let base = self.base.clone().unwrap_or_else(|| HUB.to_string());
         let mut sources = vec![format!("{base}/{}/resolve/{}/{}", spec.repo, spec.revision, file.path)];
-        if self.base.is_none() {
+        if self.base.is_none() && !own_sources_only() {
             sources.extend(file.upstream.clone());
         }
         sources
@@ -457,7 +503,7 @@ impl Models {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let mut last = String::new();
-        for source in self.sources(spec, file) {
+        for (at, source) in self.sources(spec, file).into_iter().enumerate() {
             // A file that arrives with the wrong hash is thrown away and fetched once more.
             for _ in 0..2 {
                 match self.fetch_part(spec, file, &source, &part, progress, lock) {
@@ -470,6 +516,7 @@ impl Models {
                 let digest = sha256_file(&part)?;
                 if digest == file.sha256 {
                     fs::rename(&part, &target).map_err(|e| e.to_string())?;
+                    self.note_source(spec, file, host_of(&source), at > 0);
                     return Ok(());
                 }
                 let _ = fs::remove_file(&part);

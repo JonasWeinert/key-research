@@ -58,6 +58,8 @@ interface Props {
   initialMode?: Mode;
   /** The sync's current options, when changing what it covers. */
   current?: ZoteroOptions | null;
+  /** The workspace to import into or keep in sync (any workspace); by default the "Zotero" one. */
+  target?: string;
   /** Start on what is already set up (when anything is), not on the first step. */
   overview?: boolean;
 }
@@ -72,7 +74,7 @@ interface Existing {
 /** Tells the shell (the status bar) that Zotero's setup changed. */
 const zoteroChanged = () => window.dispatchEvent(new CustomEvent("key:zotero-changed"));
 
-export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, initialMode, current: given, overview }: Props) {
+export function ZoteroImport({ invoke, workspaceId, target, onClose, onDone, onBusy, initialMode, current: given, overview }: Props) {
   const [mode, setMode] = useState<Mode>(initialMode ?? "import");
   const [step, setStep] = useState<"checking" | "overview" | "mode" | "scope">(initialMode ? "scope" : overview ? "checking" : "mode");
   const [current, setCurrent] = useState(given);
@@ -91,9 +93,11 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
   const request = useMemo(() => optionsOf(choice), [choice]);
   const changing = !!current && mode === "sync";
 
-  // What is set up already, read from the Zotero workspace (there once anything came across).
+  // What is set up already, read from the target workspace (the Zotero workspace by default;
+  // there once anything came across).
   const readExisting = async (): Promise<Existing | undefined> => {
-    const zotero = (await bridge().workspaces?.().catch(() => []))?.find((w) => /\/Zotero$/.test(w.root));
+    const all = (await bridge().workspaces?.().catch(() => [])) ?? [];
+    const zotero = target ? all.find((w) => w.id === target) : all.find((w) => /\/Zotero$/.test(w.root));
     if (!zotero) return undefined;
     const [sync, imported] = await Promise.all([
       invoke<ZoteroSyncStatus>("store_zotero_plugin_status", {}, zotero.id).catch(() => undefined),
@@ -219,10 +223,10 @@ export function ZoteroImport({ invoke, workspaceId, onClose, onDone, onBusy, ini
     setProgress("starting");
     let stop = () => {};
     try {
-      const workspace = await bridge().zoteroWorkspace();
+      const workspace = await bridge().zoteroWorkspace(target);
       stop = pollProgress(workspace.id);
       if (mode === "import") {
-        const done = await bridge().importZotero({ ...request, ...(proxies ? { proxies: true } : {}) } as typeof request);
+        const done = await bridge().importZotero({ ...request, ...(proxies ? { proxies: true } : {}), ...(target ? { workspaceId: target } : {}) } as typeof request);
         zoteroChanged();
         setResult(done);
         onDone(done.workspace, done.report, mode);

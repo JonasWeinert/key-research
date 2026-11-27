@@ -98,6 +98,8 @@ export function layoutMap(data: RelationMapData, options: LayoutOptions): Layout
   const rx = Math.max(70, width / 2 - (compact ? 120 : 160));
   const margin = compact ? 18 : 24;
   const nodes: PlacedNode[] = [];
+  // The centre's label (below it): nodes on its rows keep clear of it, at any width.
+  const centreLabel = labelBox(cx, cy + centerR + 6, 0, 1, truncate(data.center.name, 34), 12.5);
   sides.forEach((side, s) => {
     const list: (MapNode | null)[] = side.flatMap((g, i) => (i ? [null, ...g] : g));
     if (!list.length) return;
@@ -114,13 +116,15 @@ export function layoutMap(data: RelationMapData, options: LayoutOptions): Layout
       const arcWidth = rx * Math.sqrt(Math.max(0.2, 1 - ((y - cy) / ry) ** 2));
       // Stronger nearer the centre.
       const reach = 0.5 + 0.5 * (1 - Math.sqrt(strength));
-      const x = cx + dir * Math.max(centerR + 36, arcWidth * reach);
       const r = (compact ? 3.5 : 4) + (compact ? 4 : 6) * Math.sqrt(strength);
+      const onLabelRows = y + r + 7 > centreLabel[1] && y - r - 7 < centreLabel[3];
+      const clear = onLabelRows ? (centreLabel[2] - centreLabel[0]) / 2 + r + 8 : 0;
+      const x = cx + dir * Math.max(centerR + 36, clear, arcWidth * reach);
       nodes.push({ ...node, key: nodeKey(node), x, y, r, dx: dir, dy: 0, label: truncate(node.name, compact ? 22 : MAX_LABEL), showLabel: true, strength });
     });
   });
   // Labels: strongest first; one that overlaps a placed label (or the centre's) hides.
-  const boxes: [number, number, number, number][] = [labelBox(cx, cy + centerR + 6, 0, 1, truncate(data.center.name, 34), 12.5)];
+  const boxes: [number, number, number, number][] = [centreLabel];
   for (const node of [...nodes].sort((a, b) => b.strength - a.strength)) {
     const box = labelBox(node.x, node.y, node.dx, node.dy, node.label, 11.5, node.r);
     const clash = boxes.some((b) => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1]);

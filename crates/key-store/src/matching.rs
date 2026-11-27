@@ -7,7 +7,6 @@
 use crate::{Result, Store, e};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::HashMap;
 
 /// A work to look for. Every field is optional; `key` comes back with its match.
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -83,30 +82,12 @@ pub fn bare_isbn(text: &str) -> Option<String> {
     crate::normalize::isbn(text)
 }
 
-// ── The index ────────────────────────────────────────────────────────────────
+// ── Lookups ──────────────────────────────────────────────────────────────────
 
 struct Row {
     id: String,
     title: String,
     has_file: bool,
-}
-
-#[derive(Default)]
-struct Index {
-    rows: Vec<Row>,
-    by: HashMap<(&'static str, String), usize>,
-    by_id: HashMap<String, usize>,
-}
-
-impl Index {
-    fn put(&mut self, kind: &'static str, value: Option<String>, row: usize) {
-        if let Some(value) = value.filter(|v| !v.is_empty()) {
-            self.by.entry((kind, value)).or_insert(row);
-        }
-    }
-    fn get(&self, kind: &'static str, value: Option<String>) -> Option<usize> {
-        self.by.get(&(kind, value?)).copied()
-    }
 }
 
 fn hit(query: &MatchQuery, row: &Row, kind: &'static str) -> MatchHit {
@@ -121,8 +102,9 @@ fn query_doi(q: &MatchQuery) -> Option<String> {
     })
 }
 
-/// The identifier match for one query against the index.
-fn find(index: &Index, q: &MatchQuery) -> Option<MatchHit> {
+/// What a query is looked up by, surest first (the same keys `duplicates::row_keys` stores
+/// for each library source).
+fn lookups(q: &MatchQuery) -> Vec<(&'static str, String)> {
     let link = q.url.as_deref().and_then(link_key);
     let doi = query_doi(q);
     let arxiv = q.arxiv.as_deref().and_then(bare_arxiv).or(match &link {
@@ -133,25 +115,44 @@ fn find(index: &Index, q: &MatchQuery) -> Option<MatchHit> {
         Some(LinkKey::Pmid(p)) => Some(p.clone()),
         _ => None,
     });
-    let checks: [(&'static str, Option<String>); 6] = [
+    let url = match link {
+        Some(LinkKey::Url(u)) => Some(u),
+        _ => None,
+    };
+    let checks: [(&'static str, Option<String>); 7] = [
         ("doi", doi),
         ("arxiv", arxiv),
         ("pmid", pmid),
         ("pmcid", q.pmcid.as_deref().and_then(bare_pmcid)),
         ("isbn", q.isbn.as_deref().and_then(bare_isbn)),
         ("openalex", q.openalex.as_deref().and_then(bare_openalex)),
+        ("url", url),
     ];
-    for (kind, value) in checks {
-        if let Some(row) = index.get(kind, value) {
-            return Some(hit(q, &index.rows[row], kind));
+    checks.into_iter().filter_map(|(kind, value)| Some((kind, value.filter(|v| !v.is_empty())?))).collect()
+}
+
+/// The identifier match for one query: an index probe per identifier it has.
+fn find(db: &rusqlite::Connection, q: &MatchQuery) -> Result<Option<MatchHit>> {
+    use rusqlite::OptionalExtension;
+    let mut statement = db
+        .prepare_cached(
+            "SELECT s.id, s.title, s.file_path FROM source_match_keys k JOIN sources s ON s.id = k.source_id
+             WHERE k.kind = ?1 AND k.value = ?2 AND s.trashed_at IS NULL ORDER BY s.rowid LIMIT 1",
+        )
+        .map_err(e)?;
+    for (kind, value) in lookups(q) {
+        let row = statement
+            .query_row(rusqlite::params![kind, value], |r| {
+                let text = |i: usize| r.get::<_, Option<String>>(i).map(|v| v.filter(|v| !v.trim().is_empty()));
+                Ok(Row { id: r.get(0)?, title: text(1)?.unwrap_or_default(), has_file: text(2)?.is_some() })
+            })
+            .optional()
+            .map_err(e)?;
+        if let Some(row) = row {
+            return Ok(Some(hit(q, &row, kind)));
         }
     }
-    if let Some(LinkKey::Url(url)) = &link {
-        if let Some(row) = index.get("url", Some(url.clone())) {
-            return Some(hit(q, &index.rows[row], "url"));
-        }
-    }
-    None
+    Ok(None)
 }
 
 /// The query as the duplicate engine compares works, when its title says enough.
@@ -174,43 +175,6 @@ fn title_work(q: &MatchQuery) -> Option<crate::duplicates::Work> {
 }
 
 impl Store {
-    fn match_index(&self) -> Result<Index> {
-        let db = self.read()?;
-        let mut statement = db
-            .prepare("SELECT id, title, doi, url, pmid, pmcid, arxiv_id, isbn, openalex_id, file_path FROM sources WHERE trashed_at IS NULL")
-            .map_err(e)?;
-        let mut index = Index::default();
-        let mut rows = statement.query([]).map_err(e)?;
-        while let Some(r) = rows.next().map_err(e)? {
-            let text = |i: usize| r.get::<_, Option<String>>(i).ok().flatten().filter(|v| !v.trim().is_empty());
-            let at = index.rows.len();
-            let doi = text(2).as_deref().and_then(bare_doi);
-            index.put("doi", doi.clone(), at);
-            if let Some(url) = text(3) {
-                match link_key(&url) {
-                    Some(LinkKey::Doi(d)) => index.put("doi", Some(d), at),
-                    Some(LinkKey::Arxiv(a)) => index.put("arxiv", Some(a), at),
-                    Some(LinkKey::Pmid(p)) => index.put("pmid", Some(p), at),
-                    Some(LinkKey::Url(u)) => index.put("url", Some(u), at),
-                    None => {}
-                }
-            }
-            index.put("pmid", text(4).as_deref().and_then(bare_pmid), at);
-            index.put("pmcid", text(5).as_deref().and_then(bare_pmcid), at);
-            index.put("arxiv", text(6).as_deref().and_then(bare_arxiv), at);
-            index.put("arxiv", doi.as_deref().and_then(|d| d.strip_prefix("10.48550/arxiv.")).map(String::from), at);
-            // A book can carry several ISBNs ("978…; 978…").
-            for isbn in crate::normalize::isbns(&text(7).unwrap_or_default()) {
-                index.put("isbn", Some(isbn), at);
-            }
-            index.put("openalex", text(8).as_deref().and_then(bare_openalex), at);
-            let id: String = r.get(0).map_err(e)?;
-            index.by_id.insert(id.clone(), at);
-            index.rows.push(Row { id, title: text(1).unwrap_or_default(), has_file: text(9).is_some() });
-        }
-        Ok(index)
-    }
-
     /// Which of these works the library has (at most 500 asked at once); unmatched ones are
     /// left out. Identifiers and links match exactly; otherwise the duplicate engine
     /// (duplicates.rs) decides whether a library source is the same work by its title,
@@ -219,15 +183,18 @@ impl Store {
         if queries.is_empty() {
             return Ok(Vec::new());
         }
-        let index = self.match_index()?;
         let queries: Vec<&MatchQuery> = queries.iter().take(500).collect();
-        let mut hits: Vec<Option<MatchHit>> = queries.iter().map(|q| find(&index, q)).collect();
+        let mut hits: Vec<Option<MatchHit>> = {
+            let db = self.read()?;
+            queries.iter().map(|q| find(&db, q)).collect::<Result<_>>()?
+        };
         let open: Vec<(usize, crate::duplicates::Work)> = hits.iter().enumerate().filter(|(_, h)| h.is_none()).filter_map(|(i, _)| title_work(queries[i]).map(|w| (i, w))).collect();
         if !open.is_empty() {
             let works: Vec<crate::duplicates::Work> = open.iter().map(|(_, w)| w.clone()).collect();
             for ((i, _), found) in open.iter().zip(self.find_duplicates_for(&works)?) {
-                if let Some(row) = found.first().and_then(|m| index.by_id.get(&m.source_id)) {
-                    hits[*i] = Some(hit(queries[*i], &index.rows[*row], "title"));
+                if let Some(source) = found.first().and_then(|m| self.source(&m.source_id).ok().flatten()) {
+                    let row = Row { id: source.id.clone(), title: source.field("title").unwrap_or_default().to_string(), has_file: source.file_path().is_some() };
+                    hits[*i] = Some(hit(queries[*i], &row, "title"));
                 }
             }
         }
@@ -313,5 +280,64 @@ mod tests {
                 ("k", doi.as_str(), "doi", true),
             ]
         );
+    }
+
+    /// 20k sources: "Add to library"'s check and a duplicate lookup are index probes, and a
+    /// change updates the duplicate index instead of rebuilding it.
+    #[test]
+    fn lookups_stay_fast_at_20k_sources() {
+        use std::time::{Duration, Instant};
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        {
+            let db = store.db().unwrap();
+            let tx = db.unchecked_transaction().unwrap();
+            let words = ["rural", "urban", "maternal", "fiscal", "digital", "public", "global", "early", "social", "local", "mental", "labour", "trade", "health", "energy", "school", "credit", "water", "climate", "migrant"];
+            for i in 0..20_000 {
+                let title = format!("{} {} {} study {i} of household income and child health", words[i % 20], words[(i / 20) % 20], words[(i / 400) % 20]);
+                let input: SourceInput = serde_json::from_value(json!({
+                    "kind": "reference", "title": title, "year": 1990 + i % 30,
+                    "doi": format!("10.5555/bench.{i}"), "url": format!("https://example.org/articles/{i}?utm_source=x"),
+                    "creators": [{"family": format!("Author{}", i % 2000), "role": "author"}],
+                }))
+                .unwrap();
+                crate::insert_source_row(&tx, &format!("s{i:05}"), &input, 0).unwrap();
+            }
+            tx.commit().unwrap();
+        }
+        let ask = |value: Json| {
+            let start = Instant::now();
+            let hits = store.match_identifiers(&[query(value)]).unwrap();
+            (hits.into_iter().map(|h| (h.source_id, h.kind)).next(), start.elapsed())
+        };
+        // Warm the readers' statement caches.
+        for _ in 0..3 {
+            ask(json!({"key": "w", "doi": "10.5555/bench.1", "title": "urban rural rural study 1 of household income and child health"}));
+        }
+        let budget = if cfg!(debug_assertions) { Duration::from_millis(25) } else { Duration::from_millis(5) };
+        let (found, took) = ask(json!({"key": "a", "doi": "https://doi.org/10.5555/BENCH.12345"}));
+        assert_eq!(found, Some(("s12345".to_string(), "doi")));
+        assert!(took < budget, "DOI lookup took {took:?}");
+        let (found, took) = ask(json!({"key": "b", "url": "http://www.example.org/articles/777/"}));
+        assert_eq!(found, Some(("s00777".to_string(), "url")));
+        assert!(took < budget, "link lookup took {took:?}");
+        let (found, took) = ask(json!({"key": "c", "title": "Maternal trade mental study 4242 of household income and child health", "year": 2002, "firstAuthor": "Author242"}));
+        assert_eq!(found, Some(("s04242".to_string(), "title")));
+        assert!(took < budget * 2, "title lookup took {took:?}");
+
+        // The duplicate index is built once, then follows each change.
+        let start = Instant::now();
+        store.duplicate_groups(false).unwrap();
+        let built = start.elapsed();
+        let added = add(&store, json!({"kind": "reference", "title": "A new study of household income and child health", "year": 2019, "creators": [{"family": "Author99", "role": "author"}]}));
+        let start = Instant::now();
+        let index = store.duplicate_index().unwrap();
+        let refreshed = start.elapsed();
+        assert!(index.contains(&added));
+        assert!(refreshed < budget && refreshed * 5 < built, "refresh took {refreshed:?} (build {built:?})");
+        // A trashed source is no longer found.
+        store.trash(&["s12345".to_string()], true).unwrap();
+        assert_eq!(ask(json!({"key": "e", "doi": "10.5555/bench.12345"})).0, None);
+        assert!(!store.duplicate_index().unwrap().contains("s12345"));
     }
 }

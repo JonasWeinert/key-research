@@ -3,3 +3,4 @@
 0001-trim-manifest-to-the-library.patch | drop the CLI and test targets whose files are pruned from the vendored tree | Key-only, not for upstream
 0002-bibliography-drops-citation-name-disambiguation.patch | bibliography entries no longer print a citation's disambiguated name forms ("Smith." for "Smith, A.") | should be submitted upstream (typst/hayagriva)
 0003-title-case-keeps-inner-capitals.patch | CSL title case capitalises word starts only, so "PLoS One", "iPhone", "mRNA" keep their case (CSL spec behaviour) | should be submitted upstream (typst/hayagriva)
+0004-csl-year-suffixes-cite-groups-and-dates.patch | CSL behaviour hayagriva lacked: year suffixes in bibliography order (and a sorted citation lists them so), collapsed years joined by the default cite-group delimiter ", ", no stray delimiter around a date without the parts asked for (APA "(2021,)"), date ranges rendered with their end instead of a panic | should be submitted upstream (typst/hayagriva)

@@ -162,6 +162,8 @@ pub struct FileState {
     pub conflict: Option<PathBuf>,
     /// "source" or "note".
     pub kind: String,
+    /// The user deleted the file from the folder: it is not written again until restored.
+    pub removed: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -182,6 +184,9 @@ pub struct Summary {
     pub unchanged: usize,
     pub conflicts: Vec<Problem>,
     pub errors: Vec<Problem>,
+    /// Items left out because the user deleted their file from the folder.
+    #[serde(default)]
+    pub removed: usize,
     /// Files written this run (at most 50).
     pub files: Vec<PathBuf>,
 }
@@ -229,6 +234,28 @@ fn save_state(store: &Store, state: &HashMap<String, FileState>) -> Result<(), S
 
 pub fn last_summary(store: &Store) -> Result<Option<Summary>, String> {
     Ok(store.meta(LAST)?.and_then(|t| serde_json::from_str(&t).ok()))
+}
+
+/// Files the user deleted from the export folder, which Key leaves out: id and the path it had.
+pub fn removed(store: &Store) -> Result<Vec<Problem>, String> {
+    let mut out: Vec<Problem> = state(store)?
+        .into_iter()
+        .filter(|(_, s)| s.removed)
+        .map(|(id, s)| Problem { id, title: s.path.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(), path: Some(s.path), conflict: None, message: String::new() })
+        .collect();
+    out.sort_by(|a, b| a.title.cmp(&b.title));
+    Ok(out)
+}
+
+/// Exports these removed files again from the next run on (all of them without `ids`).
+pub fn restore_removed(store: &Store, ids: Option<&[String]>) -> Result<usize, String> {
+    let mut all = state(store)?;
+    let chosen: Vec<String> = all.iter().filter(|(id, s)| s.removed && ids.is_none_or(|ids| ids.contains(id))).map(|(id, _)| id.clone()).collect();
+    for id in &chosen {
+        all.remove(id);
+    }
+    save_state(store, &all)?;
+    Ok(chosen.len())
 }
 
 /// The open conflicts (files Key did not overwrite).
@@ -508,6 +535,8 @@ pub enum Outcome {
     Written(PathBuf),
     Unchanged(PathBuf),
     Conflict { path: PathBuf, copy: PathBuf, reason: String },
+    /// Its file was deleted by the user; left out.
+    Removed,
 }
 
 fn stamp(path: &Path) -> Option<(u64, std::time::SystemTime)> {
@@ -559,6 +588,21 @@ fn locate(doc: &Doc, known: Option<&FileState>, vault: &mut Vault) -> PathBuf {
 
 fn sync_doc(doc: &Doc, render: &dyn Fn(&HashMap<String, String>) -> String, live: &HashSet<String>, config: &Config, state: &mut HashMap<String, FileState>, vault: &mut Vault, force: bool) -> Result<Outcome, String> {
     let known = state.get(doc.id).cloned();
+    if let Some(k) = &known {
+        // A file Key wrote that is gone from the folder (not moved or renamed in it, and the
+        // folder itself still there): the user removed it, and Key leaves it out from now on.
+        let deleted = !k.path.as_os_str().is_empty()
+            && k.path.starts_with(doc.folder)
+            && k.path.parent().is_some_and(Path::exists)
+            && !k.path.exists()
+            && vault.find(doc.id).is_none();
+        if k.removed || deleted {
+            if !k.removed {
+                state.insert(doc.id.to_string(), FileState { removed: true, ..k.clone() });
+            }
+            return Ok(Outcome::Removed);
+        }
+    }
     let path = locate(doc, known.as_ref(), vault);
     let seen = stamp(&path);
     let mut existing = match std::fs::read(&path) {
@@ -596,6 +640,7 @@ fn sync_doc(doc: &Doc, render: &dyn Fn(&HashMap<String, String>) -> String, live
         written_at: key_store::now_ms(),
         conflict,
         kind: doc.kind.into(),
+        removed: false,
     };
     match region::merge(existing.as_deref(), &export, expected.as_deref()) {
         Merge::Write(text) => {
@@ -778,6 +823,7 @@ fn record(summary: &mut Summary, id: &str, title: &str, outcome: Result<Outcome,
             }
         }
         Ok(Outcome::Unchanged(_)) => summary.unchanged += 1,
+        Ok(Outcome::Removed) => summary.removed += 1,
         Ok(Outcome::Conflict { path, copy, reason }) => summary.conflicts.push(problem(id, title, Some(path), Some(copy), reason)),
         Err(message) => summary.errors.push(problem(id, title, None, None, message)),
     }
@@ -863,6 +909,31 @@ fn fence_attr(info: &str, name: &str) -> Option<String> {
     Some(info[at..at + end].to_string())
 }
 
+/// A relation map's legend as one line of text: what each mark is (as the map draws it)
+/// and how much it shows. `kinds` is the map's comma list (empty: everything).
+fn map_legend(kinds: Option<&str>, cap: Option<&str>, min: Option<&str>) -> String {
+    const MARKS: &[(&str, &str)] = &[
+        ("topic", "topics (filled diamonds)"),
+        ("field", "fields (outlined diamonds)"),
+        ("person", "people (circles)"),
+        ("venue", "journals (rounded squares)"),
+        ("tag", "tags (pills)"),
+        ("collection", "collections (outlined squares)"),
+        ("source", "related sources (cards)"),
+    ];
+    let wanted: Vec<&str> = kinds.unwrap_or("").split(',').map(str::trim).filter(|k| !k.is_empty()).collect();
+    let shown: Vec<&str> = MARKS.iter().filter(|(k, _)| wanted.is_empty() || wanted.contains(k)).map(|(_, label)| *label).collect();
+    let mut line = format!("*Legend:* the centre is the item; around it {}", shown.join(", "));
+    if let Some(cap) = cap.filter(|c| c.parse::<u32>().is_ok_and(|n| n > 0)) {
+        line.push_str(&format!("; up to {cap} of each"));
+    }
+    if let Some(min) = min.filter(|m| m.parse::<u32>().is_ok_and(|n| n > 1)) {
+        line.push_str(&format!("; only those shared by at least {min} sources"));
+    }
+    line.push_str(". Larger marks are shared by more sources.\n");
+    line
+}
+
 /// A note's Markdown for other apps: item links resolved, quotes and citations as Pandoc
 /// citations when `pandoc` is on, links to other notes as `[[wiki links]]`.
 fn note_markdown(body: &str, citer: &mut Citer, pandoc: bool) -> String {
@@ -911,6 +982,24 @@ fn note_markdown(body: &str, citer: &mut Citer, pandoc: bool) -> String {
                         }
                     }
                 }
+                continue;
+            }
+            // A relation map reads as what it is centred on and a legend line (other apps
+            // cannot draw it).
+            if kind == "embed" && fence_attr(info, "view").as_deref() == Some("map") {
+                let mut label = Vec::new();
+                for next in lines.by_ref() {
+                    if next.trim_start().starts_with("```") {
+                        break;
+                    }
+                    label.push(next.trim().to_string());
+                }
+                let label = label.join(" ");
+                let href = fence_attr(info, "href").unwrap_or_default();
+                let centre = if href.is_empty() { label.clone() } else { links(&format!("[{}]({href})", if label.is_empty() { "the item" } else { &label }), citer, pandoc) };
+                out.push_str(&format!("**Relation map** of {centre}\n\n"));
+                out.push_str(&map_legend(fence_attr(info, "kinds").as_deref(), fence_attr(info, "cap").as_deref(), fence_attr(info, "min").as_deref()));
+                out.push('\n');
                 continue;
             }
             // Other code blocks pass through untouched.
@@ -1092,6 +1181,22 @@ mod tests {
     }
 
     #[test]
+    fn a_file_the_user_deleted_stays_deleted_until_restored() {
+        let (_dir, store, id, vault) = setup();
+        run(&store);
+        std::fs::remove_file(vault.join("smith2021.md")).unwrap();
+        store.apply_annotations(&id, &[json!({ "id": "h3", "text": "Third" })], &[]).unwrap();
+        let summary = sync(&store, &Request { notes: true, force: true, ..Default::default() }, &cite).unwrap();
+        assert_eq!((summary.written, summary.removed), (0, 1), "{summary:?}");
+        assert!(!vault.join("smith2021.md").exists(), "a deleted file is not written again");
+        assert_eq!(removed(&store).unwrap().iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), [id.as_str()]);
+        assert_eq!(restore_removed(&store, None).unwrap(), 1);
+        assert!(removed(&store).unwrap().is_empty());
+        assert_eq!(run(&store).written, 1);
+        assert!(std::fs::read_to_string(vault.join("smith2021.md")).unwrap().contains("Third"));
+    }
+
+    #[test]
     fn hand_edits_in_keys_section_get_a_conflict_copy() {
         let (_dir, store, id, vault) = setup();
         run(&store);
@@ -1131,12 +1236,19 @@ mod tests {
         config.notes_folder = Some(notes.clone());
         save_config(&store, &config).unwrap();
         let other = store.save_note(None, None, "Other", "x", None).unwrap();
-        let body = format!("As [Smith](key://source/{id}#page:4) and [the quote](key://source/{id}#highlight%3Ah1) say, see [other](key://note/{}).\n\n```quote source=\"{id}\" page=\"7\"\nQuoted.\n```\n", other.id);
+        let body = format!(
+            "As [Smith](key://source/{id}#page:4) and [the quote](key://source/{id}#highlight%3Ah1) say, see [other](key://note/{}).\n\n```quote source=\"{id}\" page=\"7\"\nQuoted.\n```\n\n```embed href=\"key://source/{id}\" view=\"map\" kinds=\"topic,person\" cap=\"8\" min=\"2\"\nGrowth\n```\n",
+            other.id
+        );
         store.save_note(None, None, "Reading notes", &body, None).unwrap();
         run(&store);
         let text = std::fs::read_to_string(notes.join("Reading notes.md")).unwrap();
         assert!(text.contains("As [@smith2021, p. 4] and [@smith2021, p. 3] say, see [[Other|other]]."), "{text}");
         assert!(text.contains("> Quoted. [@smith2021, p. 7]"));
+        // A relation map becomes its centre and a legend line.
+        assert!(text.contains("**Relation map** of "), "{text}");
+        assert!(text.contains("*Legend:* the centre is the item; around it topics (filled diamonds), people (circles); up to 8 of each; only those shared by at least 2 sources."), "{text}");
+        assert!(!text.contains("```embed"), "{text}");
     }
 
     #[test]

@@ -29,6 +29,22 @@ describe("layoutMap", () => {
     expect(layout.links).toEqual([{ a: "person:A", b: "tag:x", weight: 4, strength: 1 }]);
   });
 
+  it("keeps nodes clear of the centre's label at any width", () => {
+    const long = { ...data, center: { ...data.center, name: "Open science and the reproducibility of results" } };
+    for (const width of [280, 340, 420, 520, 640, 760]) {
+      const layout = layoutMap(long, { width, height: 300, kinds: all, minCount: 1, compact: width < 500 });
+      const chars = Math.min(34, long.center.name.length);
+      const half = (chars * 6.15 * (12.5 / 11.5) + 4) / 2;
+      // The label's box (12.5px text below the centre) and each node's mark with its own label's gap.
+      const top = layout.cy + layout.centerR + 6 + 2;
+      const bottom = top + 16.5;
+      for (const n of layout.nodes) {
+        const onRows = n.y + n.r > top && n.y - n.r < bottom;
+        if (onRows) expect(Math.abs(n.x - layout.cx) - n.r, `${n.key} at ${width}px`).toBeGreaterThan(half);
+      }
+    }
+  });
+
   it("sizes the strongest largest and is deterministic", () => {
     const a = layoutMap(data, { width: 760, height: 420, kinds: all, minCount: 1 });
     const b = layoutMap(data, { width: 760, height: 420, kinds: all, minCount: 1 });

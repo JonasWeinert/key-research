@@ -680,7 +680,9 @@ impl Indexer {
             // PDFs go through layout analysis (reading order, sections, no page furniture);
             // plain PDF text is the fallback when it is unavailable or fails.
             let mut analysed = None;
-            if source.kind == "pdf" {
+            // The same file analysed elsewhere already (a web PDF read before it was added).
+            let carried = if source.kind == "pdf" { self.store.take_carried_analysis(&hash)? } else { None };
+            if carried.is_none() && source.kind == "pdf" {
                 self.set_reading(Some(Job { stage: "analysing".into(), ..job.clone() }));
                 let model = self.layout_model();
                 let steps = if model { 2 } else { 1 };
@@ -704,12 +706,16 @@ impl Indexer {
             if let Some(layout) = &analysed {
                 self.identify_by_heading(&source, &hash, layout)?;
             }
-            let (body, page_count, engine, markdown) = match analysed {
-                Some(layout) => {
+            let (body, page_count, engine, markdown) = match (carried, analysed) {
+                (Some(carried), _) => {
+                    let pages = carried.page_count.unwrap_or_else(|| carried.chunks.iter().filter_map(|c| c.page).max().map_or(0, |p| p + 1)) as usize;
+                    (carried.chunks, pages, carried.engine, carried.markdown)
+                }
+                (None, Some(layout)) => {
                     self.set_reading(Some(Job { stage: "chunking".into(), done: layout.page_count as u64, total: layout.page_count as u64, ..job.clone() }));
                     (chunk_layout(&layout.blocks), layout.page_count, layout.engine, Some(layout.markdown))
                 }
-                None => {
+                (None, None) => {
                     let pages = match source.kind.as_str() {
                         "pdf" => pdf.pages(&path, &hash, &|done, total| {
                             self.set_reading(Some(Job { stage: "reading".into(), done: done as u64, total: total as u64, ..job.clone() }))

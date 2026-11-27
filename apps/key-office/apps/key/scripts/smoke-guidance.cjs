@@ -182,6 +182,9 @@ const item = (n) => `<item><title>Guided work number ${n}</title><link>http://jo
     await tip.getByRole("button", { name: "Got it" }).click();
     await tip.waitFor({ state: "detached" });
     assert.ok((await page.evaluate(() => localStorage.getItem("key.tips"))).includes("tip.inbox-keys"), "the tip is remembered");
+    // Kept in the app's settings (main), so a cleared view storage does not bring it back.
+    await page.waitForFunction(async () => (await window.key.appSettings()).settings?.tips?.seen?.includes("tip.inbox-keys"));
+    await page.evaluate(() => localStorage.removeItem("key.tips"));
     await page.reload();
     await page.getByRole("region", { name: "Home", exact: true }).waitFor().catch(() => {});
     await page.locator(".kx-inbox-row button").click();

@@ -86,7 +86,100 @@ pub struct DetectedSection {
     pub top: f64,
 }
 
+/// A finished analysis taken from another library for a file with the same content.
+#[derive(Clone, Debug, Default)]
+pub struct CarriedAnalysis {
+    pub engine: String,
+    pub markdown: Option<String>,
+    pub page_count: Option<i64>,
+    /// The document's passages (without the abstract, which follows the source's metadata).
+    pub chunks: Vec<crate::ChunkInput>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CarriedChunk {
+    page: Option<i64>,
+    start_seconds: Option<f64>,
+    text: String,
+    rects: Vec<[u16; 4]>,
+    kind: Option<String>,
+    section: Option<String>,
+}
+
 impl Store {
+    /// Keeps the analysis another library (`from`, its database folder) finished for the PDF
+    /// with this content `hash`, for this library's indexer to use instead of analysing the
+    /// file again (`take_carried_analysis`). False when that library has none ready.
+    pub fn carry_analysis(&self, hash: &str, from: &std::path::Path) -> Result<bool> {
+        let path = from.join("key.db");
+        if !path.is_file() || from == self.root() {
+            return Ok(false);
+        }
+        let donor = rusqlite::Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX).map_err(e)?;
+        donor.busy_timeout(std::time::Duration::from_secs(2)).map_err(e)?;
+        let found: Option<(String, Option<i64>, Option<String>, String, Option<String>)> = donor
+            .query_row(
+                "SELECT s.id, s.page_count, s.abstract, a.engine, a.markdown FROM sources s JOIN source_analysis a ON a.source_id = s.id
+                 WHERE s.file_hash = ?1 AND s.trashed_at IS NULL AND s.index_status IN ('ready', 'no_text') ORDER BY a.analyzed_at DESC LIMIT 1",
+                [hash],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .optional()
+            .map_err(e)?;
+        let Some((id, page_count, abstract_text, engine, markdown)) = found else { return Ok(false) };
+        let abstract_text = abstract_text.map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
+        let mut statement = donor.prepare("SELECT seq, page, start_seconds, text, rects, kind, section FROM chunks WHERE source_id = ? ORDER BY seq").map_err(e)?;
+        let rows = statement
+            .query_map([&id], |r| {
+                Ok((r.get::<_, i64>(0)?, CarriedChunk {
+                    page: r.get(1)?,
+                    start_seconds: r.get(2)?,
+                    text: r.get(3)?,
+                    rects: r.get::<_, Option<String>>(4)?.and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default(),
+                    kind: r.get(5)?,
+                    section: r.get(6)?,
+                }))
+            })
+            .map_err(e)?;
+        let mut chunks = Vec::new();
+        for row in rows {
+            let (seq, chunk) = row.map_err(e)?;
+            // The indexer puts the abstract first; it is added again from this library's record.
+            if seq == 0 && chunk.page.is_none() && abstract_text.as_deref() == Some(chunk.text.trim()) {
+                continue;
+            }
+            chunks.push(chunk);
+        }
+        self.db()?
+            .execute(
+                "INSERT OR REPLACE INTO carried_analysis(hash, engine, markdown, page_count, chunks, carried_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![hash, engine, markdown, page_count, serde_json::to_string(&chunks).map_err(e)?, now_ms()],
+            )
+            .map_err(e)?;
+        Ok(true)
+    }
+
+    /// The analysis carried over for this content hash, once (it is removed).
+    pub fn take_carried_analysis(&self, hash: &str) -> Result<Option<CarriedAnalysis>> {
+        let db = self.db()?;
+        let found: Option<(String, Option<String>, Option<i64>, String)> = db
+            .query_row("SELECT engine, markdown, page_count, chunks FROM carried_analysis WHERE hash = ?", [hash], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+            .optional()
+            .map_err(e)?;
+        let Some((engine, markdown, page_count, chunks)) = found else { return Ok(None) };
+        db.execute("DELETE FROM carried_analysis WHERE hash = ?", [hash]).map_err(e)?;
+        let chunks: Vec<CarriedChunk> = serde_json::from_str(&chunks).unwrap_or_default();
+        Ok(Some(CarriedAnalysis {
+            engine,
+            markdown,
+            page_count,
+            chunks: chunks
+                .into_iter()
+                .map(|c| crate::ChunkInput { page: c.page, start_seconds: c.start_seconds, text: c.text, rects: c.rects, kind: c.kind, section: c.section, embedding: None })
+                .collect(),
+        }))
+    }
+
     /// Records how a source's text was extracted. With `references`, its bibliography is
     /// detected and looked up (again) next; otherwise there is none to find.
     pub fn set_analysis(&self, source_id: &str, engine: &str, markdown: Option<&str>, references: bool) -> Result<()> {
