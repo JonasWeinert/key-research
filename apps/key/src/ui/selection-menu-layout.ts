@@ -64,27 +64,28 @@ export interface KeyLike {
 }
 
 /** A host's key as written ("3", "shift+3", "enter", "e") → what it matches. */
-export function parseKey(spec: string): { key: string; shift: boolean } {
+export function parseKey(spec: string): { key: string; shift: boolean; alt: boolean } {
   const parts = spec.toLowerCase().split('+').map(p => p.trim()).filter(Boolean);
   const shift = parts.includes('shift');
-  return { key: parts.filter(p => p !== 'shift')[0] ?? '', shift };
+  const alt = parts.includes('alt') || parts.includes('option');
+  return { key: parts.filter(p => p !== 'shift' && p !== 'alt' && p !== 'option')[0] ?? '', shift, alt };
 }
 
 /** Does the key press match the spec? Digits by their key code too, so Shift+3 is still "3". */
 export function keyMatches(event: KeyLike, spec: string | undefined): boolean {
-  if (!spec || event.metaKey || event.ctrlKey || event.altKey) return false;
-  const { key, shift } = parseKey(spec);
-  if (!key || !!event.shiftKey !== shift) return false;
+  if (!spec || event.metaKey || event.ctrlKey) return false;
+  const { key, shift, alt } = parseKey(spec);
+  if (!key || !!event.shiftKey !== shift || !!event.altKey !== alt) return false;
   if (/^[0-9]$/.test(key)) return event.code === `Digit${key}` || event.code === `Numpad${key}` || (!event.code && event.key === key) || (!shift && event.key === key);
   return event.key.toLowerCase() === key;
 }
 
 /** How a key is shown on its cap: "3", "⇧3", "↩". */
 export function keyLabel(spec: string): string {
-  const { key, shift } = parseKey(spec);
-  const names: Record<string, string> = { enter: '↩', escape: 'esc', esc: 'esc', tab: '⇥', space: '␣' };
+  const { key, shift, alt } = parseKey(spec);
+  const names: Record<string, string> = { enter: '↩', escape: 'esc', esc: 'esc', tab: '⇥', space: '␣', backspace: '⌫', delete: '⌦' };
   const cap = names[key] ?? key.toUpperCase();
-  return `${shift ? '⇧' : ''}${cap}`;
+  return `${alt ? '⌥' : ''}${shift ? '⇧' : ''}${cap}`;
 }
 
 /** The actions a typed filter keeps: every word somewhere in the label, detail, group or keywords. */

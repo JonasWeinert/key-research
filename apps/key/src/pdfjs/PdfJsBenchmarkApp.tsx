@@ -1413,6 +1413,19 @@ interface BenchmarkFixture {
   bytes: number[];
 }
 
+/** Where `position: fixed` puts (0, 0) for an element in `host`: the window's corner, unless an
+ * ancestor contains fixed boxes (a container query's pane, a transform). Cards placed in window
+ * coordinates subtract it. */
+function fixedOrigin(host: Element | null | undefined): { x: number; y: number } {
+  if (!host) return { x: 0, y: 0 };
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none';
+  host.append(probe);
+  const r = probe.getBoundingClientRect();
+  probe.remove();
+  return { x: r.left, y: r.top };
+}
+
 interface LiveAnchoredCardProps
   extends Omit<ComponentPropsWithoutRef<'div'>, 'style'> {
   resolveAnchor: () => DOMRect | undefined;
@@ -1444,6 +1457,12 @@ function LiveAnchoredCard({
       },
       gap,
     );
+    // Inside the reader's box when it is narrower than the window (beside a sidebar).
+    const box = card.parentElement?.getBoundingClientRect();
+    if (box && box.width > cardRect.width + 16) next.left = Math.max(box.left + 8, Math.min(next.left, box.right - cardRect.width - 8));
+    const origin = fixedOrigin(card.parentElement);
+    next.left -= origin.x;
+    next.top -= origin.y;
     setPosition(current =>
       current &&
       Math.abs(current.left - next.left) < 0.5 &&
@@ -2506,6 +2525,22 @@ function PdfJsBenchmarkApp({
     setStatus('Comment saved');
   }, [annotations, commentDraft, updateAnnotations]);
 
+  // ⌘↩ saves the comment being written (before the app's own shortcuts see it).
+  const saveCommentRef = useRef(saveComment);
+  saveCommentRef.current = saveComment;
+  useEffect(() => {
+    if (!commentDraft) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || !(event.metaKey || event.ctrlKey)) return;
+      if (!(event.target instanceof Element) || !event.target.closest('.pdfjs-comment-anchor-card')) return;
+      event.preventDefault();
+      event.stopPropagation();
+      saveCommentRef.current();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [commentDraft]);
+
   const removeActiveAnnotation = useCallback(() => {
     if (!activeAnnotation) return;
     updateAnnotations(
@@ -3293,14 +3328,20 @@ function PdfJsBenchmarkApp({
           place={`p. ${activeAnnotation.range.start.page + 1}`}
           usage={annotationUsage}
           renderComment={comment => <MarkdownContent markdown={comment} />}
-          style={{
-            left: Math.max(12, Math.min(window.innerWidth - 324, context.left + context.width / 2 - 156)),
-            ...(context.bottom + 300 < window.innerHeight
-              ? { top: context.bottom + 10 }
-              : context.top - 300 > 54
-                ? { bottom: window.innerHeight - context.top + 10 }
-                : { top: Math.max(54, Math.min(window.innerHeight - 320, context.bottom + 10)) }),
-          }}
+          style={(() => {
+            // In the reader's own box (beside a sidebar), and where fixed boxes start.
+            const area = scrollRef.current?.getBoundingClientRect();
+            const lo = Math.max(12, (area?.left ?? 0) + 8);
+            const hi = Math.min(window.innerWidth, area?.right ?? window.innerWidth) - 320;
+            const origin = fixedOrigin(rootRef.current);
+            const top =
+              context.bottom + 300 < window.innerHeight
+                ? context.bottom + 10
+                : context.top - 300 > 54
+                  ? Math.max(54, context.top - 10 - 300)
+                  : Math.max(54, Math.min(window.innerHeight - 320, context.bottom + 10));
+            return { left: Math.max(lo, Math.min(hi, context.left + context.width / 2 - 156)) - origin.x, top: top - origin.y };
+          })()}
           onColor={color => addHighlight(color as HighlightColor)}
           onComment={openCommentEditor}
           onCopy={() => void copyContextText()}
@@ -3691,7 +3732,7 @@ function PdfJsBenchmarkApp({
                 >
                   Cancel
                 </button>
-                <button type="button" className="primary" onClick={saveComment}>
+                <button type="button" className="primary" onClick={saveComment} title="Save (⌘↩)">
                   Save comment
                 </button>
               </div>

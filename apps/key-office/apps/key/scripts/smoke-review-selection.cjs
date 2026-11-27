@@ -72,7 +72,7 @@ const menuGeometry = () => {
   const pilatesPdf = path.join(temp, "silva-2020.pdf");
   await writeFile(pilatesPdf, pdfWith(["Pilates versus usual care for neck pain: a randomised trial", "Participants were adolescents aged 12 to 16 at one school.", "Pupils were allocated by class, not at random.", "Neck pain was measured at twelve weeks."]));
   const yogaPdf = path.join(temp, "moreau-2018.pdf");
-  await writeFile(yogaPdf, pdfWith(["Yoga for chronic low back pain: a randomised trial", "Participants were recruited in Norway from four clinics.", "Pain at baseline, mean (SD):", "12.3 (4.5)", "Randomised:", "n = 120"]));
+  await writeFile(yogaPdf, pdfWith(["Yoga for chronic low back pain: a randomised trial", "Participants were recruited in Norway from four clinics.", "Pain at baseline, mean (SD):", "12.3 (4.5)", "Randomised:", "n = 120", "Recruitment ran from March 2015 to June 2016.", "This was a cluster-randomised trial."]));
   const taichiHtml = path.join(temp, "taichi.html");
   await writeFile(taichiHtml, "<!doctype html><html><head><meta charset=utf-8><title>Tai chi</title></head><body style='font:16px Georgia;padding:24px'><h1>Tai chi and balance in older people</h1><p>Residents of two care homes took part.</p><p>Participants were children in a school sports club.</p></body></html>");
   const app = await electron.launch({
@@ -128,7 +128,9 @@ const menuGeometry = () => {
         id: "f-pain",
         name: "Pain",
         kind: "custom",
-        sections: [{ id: "s-pain", title: "Pain at baseline", guidance: "", fields: [num("mean_pain", "Mean pain score"), num("sd_pain", "SD pain score"), num("n_total", "Participants randomised"), { ...num("country", "Country"), kind: "text" }] }],
+        sections: [{ id: "s-pain", title: "Pain at baseline", guidance: "", fields: [num("mean_pain", "Mean pain score"), num("sd_pain", "SD pain score"), num("n_total", "Participants randomised"), { ...num("country", "Country"), kind: "text" }] },
+          { id: "s-design", title: "Design", guidance: "", fields: [{ ...num("start", "Start of recruitment"), kind: "date" }, { ...num("end", "End of recruitment"), kind: "date" }, { ...num("design", "Design"), kind: "choice", options: ["Randomised controlled trial", "Cluster randomised trial", "Cohort study"] }] },
+        ],
       },
     ];
     await call("review_protocol_save", { reviewId, protocol, note: "", actor: me, rescreen: false });
@@ -306,8 +308,11 @@ const menuGeometry = () => {
     await selectSpan("12.3 (4.5)");
     await page.locator(".ksm[data-mode=extract] .ksm-row").first().waitFor();
     const first = page.locator(".ksm[data-mode=extract] .ksm-row").first();
-    assert.match(await first.textContent(), /Use for Mean pain score/);
-    assert.match(await first.textContent(), /Mean pain score 12\.3, SD pain score 4\.5/);
+    assert.match(await first.textContent(), /Mean pain score/);
+    assert.match(await first.textContent(), /12\.3 · 4\.5/);
+    assert.match(await first.textContent(), /SD pain score 4\.5/);
+    const noModal = async (what) => assert.equal(await page.locator(".kx-rv-dialog, .key-global-drawer.key-modal, [role=dialog][aria-modal=true]").count(), 0, `no dialog: ${what}`);
+    await noModal("the extraction menu");
     await geometry("extraction");
     await themed(page, "09-extract-menu");
     await page.keyboard.press("Enter");
@@ -340,6 +345,95 @@ const menuGeometry = () => {
     await page.keyboard.press("Meta+z");
     await until(async () => !(await call("review_extraction", { reviewId, recordId: yogaId, viewer: me })).values["f-pain/n_total"]?.mine?.value, "the fill taken back");
     report.extraction = true;
+
+    // Each kind of passage: words, a date range, a choice; nothing modal, and a date field is
+    // offered for a date only (else under "Other fields: as source only").
+    const extractMenu = async (text, name) => {
+      for (const notice of await page.locator(".kx-rv-notice").all()) await notice.click({ position: { x: 4, y: 4 } }).catch(() => {});
+      await page.locator(".kx-rv-notice").first().waitFor({ state: "detached" }).catch(() => {});
+      await selectSpan(text);
+      await page.locator(".ksm[data-mode=extract] .ksm-row").first().waitFor();
+      const rows = await page.locator(".ksm[data-mode=extract] .ksm-row").allTextContents();
+      await geometry(name);
+      await noModal(name);
+      await themed(page, name);
+      await page.keyboard.press("Escape");
+      await page.locator(".ksm").waitFor({ state: "detached" });
+      return rows;
+    };
+    const textRows = await extractMenu("Norway", "14-extract-text");
+    assert(textRows.slice(0, 2).some((r) => /Country/.test(r)), `words go to the text field: ${textRows}`);
+    assert(!textRows.some((r) => /Start of recruitment/.test(r)), `a date field is not offered for words: ${textRows}`);
+    assert.equal(await page.locator(".ksm").count(), 0);
+    const dateRows = await extractMenu("March 2015", "15-extract-date");
+    const start = dateRows.find((r) => /Start of recruitment/.test(r));
+    assert(start && /2015-03/.test(start) && /2016-06/.test(start), `the range fills both ends: ${dateRows}`);
+    const choiceRows = await extractMenu("cluster-randomised", "16-extract-choice");
+    // (The focused field comes first; the choice field shows its closest option.)
+    assert(choiceRows.slice(0, 2).some((r) => /^Design/.test(r) && /Cluster randomised trial/.test(r)), `the closest option: ${choiceRows}`);
+
+    // The reader's own comments inside the review: the editor from the menu, then the card on
+    // clicking the highlight; readable, nothing overlapping or clipped, above the sidebar.
+    const cardGeometry = (selector) =>
+      page.evaluate((selector) => {
+        const card = document.querySelector(selector);
+        if (!card) return { error: `no ${selector}` };
+        const c = card.getBoundingClientRect();
+        const problems = [];
+        const controls = [...card.querySelectorAll("button, textarea, [contenteditable=true], input")].filter((el) => el.getClientRects().length).map((el) => ({ r: el.getBoundingClientRect(), name: (el.getAttribute("aria-label") || el.textContent || el.tagName).trim().slice(0, 30) }));
+        for (let i = 0; i < controls.length; i++)
+          for (let j = i + 1; j < controls.length; j++) {
+            const [a, b] = [controls[i], controls[j]];
+            if (a.r.left + 0.5 < b.r.right && b.r.left + 0.5 < a.r.right && a.r.top + 0.5 < b.r.bottom && b.r.top + 0.5 < a.r.bottom) problems.push(`overlap: ${a.name} / ${b.name}`);
+          }
+        for (const x of controls) if (x.r.left < c.left - 0.5 || x.r.right > c.right + 0.5 || x.r.bottom > c.bottom + 0.5) problems.push(`clipped: ${x.name}`);
+        if (c.left < 0 || c.top < 0 || c.right > innerWidth || c.bottom > innerHeight) problems.push("card off screen");
+        const hit = document.elementFromPoint(c.left + c.width / 2, c.top + Math.min(20, c.height / 2));
+        if (!card.contains(hit)) problems.push(`covered by ${hit?.className}`);
+        return { problems };
+      }, selector);
+    await selectSpan("Randomised:");
+    await page.locator(".ksm[data-mode=extract]").waitFor();
+    await page.locator(".ksm .ksm-more").click();
+    await page.locator(".ksm").getByRole("button", { name: "Add note" }).click();
+    await page.locator(".pdfjs-comment-anchor-card .pdfjs-comment-editor").waitFor();
+    await page.keyboard.type("Randomised by class, so check the clustering in the analysis before trusting this number.");
+    const editor = await cardGeometry(".pdfjs-comment-anchor-card");
+    assert.deepEqual(editor.problems, [], `the comment editor: ${editor.problems}`);
+    await themed(page, "12-comment-editor");
+    // (The screenshots closed a notice; back into the editor, then ⌘↩ saves.)
+    await page.locator(".pdfjs-comment-anchor-card [contenteditable=true]").click();
+    await page.keyboard.press("Meta+Enter");
+    await page.locator(".pdfjs-comment-anchor-card").waitFor({ state: "detached" });
+    const hl = await page.locator(".kx-rv-reader .pdfjs-highlight").first().boundingBox();
+    await page.mouse.click(hl.x + hl.width / 2, hl.y + hl.height / 2);
+    await page.locator(".key-highlight-info").waitFor();
+    const info = await cardGeometry(".key-highlight-info");
+    assert.deepEqual(info.problems, [], `the highlight card: ${info.problems}`);
+    await themed(page, "13-highlight-card");
+    report.comments = true;
+
+    // Many criteria: letters after 9 (none clashing with the view's keys), one column for labels.
+    const many = (await call("review_create", { name: "Keys (smoke)", ownerName: "Ana Example" })).reviewId;
+    const k = await call("review_get", { reviewId: many, viewer: "" });
+    const elements = ["population", "intervention", "comparator", "outcome", "design", "other"];
+    k.protocol.criteria = Array.from({ length: 14 }, (_, i) => ({ id: `c${i + 1}`, element: elements[i % elements.length], label: i === 11 ? "A criterion with a long label that has to wrap onto a second line in the sidebar" : `Criterion ${i + 1}`, reason: "", guidance: "", stages: ["ta"] }));
+    await call("review_protocol_save", { reviewId: many, protocol: k.protocol, note: "", actor: k.team[0].id, rescreen: false });
+    await call("review_import_records", { reviewId: many, records: [{ title: "A record to screen", authors: ["A, B."], year: 2020, abstractText: "Invented." }], batch: { group: "databases", name: "PubMed" }, actor: k.team[0].id });
+    await page.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id, title: "Keys (smoke)" }), { ws: ws.id, id: many });
+    await page.getByRole("heading", { name: "Keys (smoke)" }).waitFor();
+    await page.getByRole("tab", { name: /Title & abstract/ }).click();
+    await page.locator(".kx-rv-criteria-pick label").nth(13).waitFor();
+    const keys = await page.locator(".kx-rv-criteria-pick label").evaluateAll((ls) => ls.map((l) => l.querySelector("kbd")?.textContent ?? ""));
+    assert.deepEqual(keys.slice(9), ["A", "C", "D", "F", "G"], `letters after 9: ${keys}`);
+    const lefts = await page.locator(".kx-rv-criteria-pick label > span:not(.kx-rv-kbd-space)").evaluateAll((ls) => ls.map((l) => Math.round(l.getBoundingClientRect().left)));
+    assert.equal(new Set(lefts).size, 1, `every label starts at one x: ${lefts}`);
+    await page.locator(".kx-rv-decide-head").click();
+    await page.keyboard.press("c");
+    await page.locator(".kx-rv-criteria-pick label[data-on]", { hasText: "Criterion 11" }).waitFor();
+    assert.equal(await page.locator(".kx-rv-record-title:visible").textContent(), "A record to screen", "a letter marks, it does not decide");
+    await themed(page, "17-criteria-letters");
+    report.criteriaKeys = keys.slice(9).join("");
 
     assert.deepEqual(errors, []);
     report.ok = true;

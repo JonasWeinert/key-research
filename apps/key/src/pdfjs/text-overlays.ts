@@ -524,7 +524,7 @@ export class PdfJsTextOverlayManager {
       const tag = document.createElement('div');
       tag.className = `pdfjs-host-mark-tag tone-${mark.tone}`;
       tag.dataset.id = mark.id;
-      tag.textContent = mark.label;
+      tag.textContent = mark.label.split(":")[0];
       tag.style.left = `${first.left * 100}%`;
       tag.style.top = `${first.top * 100}%`;
       tag.title = mark.label;

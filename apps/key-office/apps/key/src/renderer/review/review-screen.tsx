@@ -18,7 +18,7 @@ import { highlightPage, type Highlight } from "../item-actions";
 import { GlobalDialog } from "../GlobalDrawer";
 import { CHOICE_LABEL, ELEMENT_LABEL, STAGE_LABEL, asks, plural, reasonText, type Choice, type Criterion, type DecisionInfo, type Evidence, type ListRow, type ReasonRule, type RecordView, type Stage } from "./review-api";
 import { Btn, Highlighted, MenuButton, StatusPill, errorText, formatDate, type MenuItem } from "./review-ui";
-import { afterDecision, counter, current as sessionCurrent, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step as sessionStep, toggle, type Session } from "./review-session";
+import { afterDecision, boundKeys, counter, criterionKeys, current as sessionCurrent, finishesOnPick, mergeQueue, missing, onChoice, showRecord, startSession, step as sessionStep, toggle, type Session } from "./review-session";
 import type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
 import { MarksLegend, evidenceKey, evidenceLabel, evidenceMarks, flashRow, useMarksShown } from "./review-marks";
 import { FullTexts, attachFiles } from "./review-fulltexts";
@@ -155,6 +155,8 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
   }, []);
   // The stage's criteria: what is shown beside the record and what a decision names.
   const reasonsFor = useMemo(() => protocol.criteria.filter((c) => !c.stages.length || c.stages.includes(stage)), [protocol.criteria, stage]);
+  // Each criterion's key: 1–9, then letters nothing else here uses (review-session.ts).
+  const critKeys = useMemo(() => criterionKeys(reasonsFor.length, boundKeys(protocol.shortcuts, protocol.labelKeys ?? {})), [reasonsFor.length, protocol.shortcuts, protocol.labelKeys]);
   const current = session ? sessionCurrent(session) : undefined;
 
   useEffect(() => {
@@ -325,13 +327,12 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
       }
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
       const k = e.key.toLowerCase();
-      if (/^[0-9]$/.test(k)) {
-        if (k === "0") setOtherOpen(true);
-        else {
-          const c = reasonsFor[Number(k) - 1];
-          if (c) pick(c.id);
-        }
-      } else if (e.key === "Enter") {
+      if (k === "0") setOtherOpen(true);
+      else if (k.length === 1 && critKeys.includes(k)) {
+        const c = reasonsFor[critKeys.indexOf(k)];
+        if (c) pick(c.id);
+      } else if (/^[0-9]$/.test(k)) return;
+      else if (e.key === "Enter") {
         if (picking) void decide(picking);
         else if (recorded) void advance();
         else return;
@@ -358,7 +359,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active, decide, step, undo, undoMark, reasons, other, picking, recorded, offerExclude, reasonsFor, protocol.shortcuts, labelKeys, pick, toggleLabel, advance]);
+  }, [active, decide, step, undo, undoMark, reasons, other, picking, recorded, offerExclude, reasonsFor, protocol.shortcuts, labelKeys, pick, toggleLabel, advance, critKeys]);
 
   // Full-text screening in the reader: a selected passage is marked against a criterion right
   // from the selection menu (numbers: not met; Shift: met), stored as evidence on the pending
@@ -412,11 +413,12 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     (onPick: (kind: PassageKind, c: Criterion | undefined, p: Passage, text?: string) => ReaderFollowUp | void, current?: Evidence): ReaderSelectionAction[] => {
       const many = reasonsFor.length > 9;
       const rows: ReaderSelectionAction[] = reasonsFor.map((c, i) => {
-        const n = i < 9 ? String(i + 1) : undefined;
+        const n = critKeys[i];
         return {
           id: `criterion-${c.id}`,
           label: c.label,
           title: c.guidance || c.label,
+          detail: current?.criterion === c.id ? (current.kind === "met" ? "Marked met now" : "Marked not met now") : undefined,
           group: many ? (ELEMENT_LABEL[c.element] ?? c.element) : undefined,
           keywords: `${ELEMENT_LABEL[c.element] ?? ""} ${c.reason}`,
           tone: "notMet",
@@ -433,11 +435,11 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
       );
       return rows;
     },
-    [reasonsFor],
+    [reasonsFor, critKeys],
   );
   const readerActions = useMemo(() => criteriaRows((kind, c, p, text) => markPassage(kind, p, c, text)), [criteriaRows, markPassage]);
   const screenMode = useMemo<ReaderSelectionMode>(
-    () => ({ id: "screen", label: "Mark this passage", filter: reasonsFor.length > 4 ? "Filter criteria" : undefined, hint: reasonsFor.length ? `1–${Math.min(9, reasonsFor.length)} not met · ⇧ met` : undefined, empty: "No criteria for this stage yet (Setup › Criteria)" }),
+    () => ({ id: "screen", label: "Mark this passage", filter: reasonsFor.length > 4 ? "Filter criteria" : undefined, hint: reasonsFor.length ? `${reasonsFor.length > 9 ? "1–9, A…" : `1–${reasonsFor.length}`} not met · ⇧ and the key: met` : undefined, empty: "No criteria for this stage yet (Setup › Criteria)" }),
     [reasonsFor.length],
   );
   const marks = useMemo<ReaderMark[]>(() => (marksShown ? evidenceMarks(evidence, reasonsFor) : []), [marksShown, evidence, reasonsFor]);
@@ -556,6 +558,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
         other={other}
         otherOpen={otherOpen}
         onToggle={pick}
+        keys={critKeys}
         evidence={stage === "ft" ? evidence : undefined}
         onShowEvidence={showEvidence}
         onOther={() => setOtherOpen(true)}
@@ -613,7 +616,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
       <aside className="kx-rv-decide" aria-label="Decision">
         {decision}
       </aside>
-      {cheats && <CheatSheet onClose={() => setCheats(false)} shortcuts={protocol.shortcuts} labelKeys={labelKeys} rule={rule} autoAdvance={autoAdvance} />}
+      {cheats && <CheatSheet keys={critKeys} onClose={() => setCheats(false)} shortcuts={protocol.shortcuts} labelKeys={labelKeys} rule={rule} autoAdvance={autoAdvance} />}
     </div>
   );
 }
@@ -629,6 +632,8 @@ function CriteriaPicker(props: {
   other: string;
   otherOpen: boolean;
   onToggle: (id: string) => void;
+  /** Each criterion's key (criterionKeys): undefined when it has none. */
+  keys?: (string | undefined)[];
   /** Full-text evidence: each criterion shows its passages as chips (a click shows the place). */
   evidence?: Evidence[];
   onShowEvidence?: (e: Evidence) => void;
@@ -671,14 +676,15 @@ function CriteriaPicker(props: {
         const check = checks.find((x) => x.criterionId === c.id);
         const state = !check ? undefined : check.met == null ? "unknown" : check.met ? "ok" : "fails";
         const on = selected.includes(c.id);
-        const heading = grouped && c.element !== lastElement ? (ELEMENT_LABEL[c.element] ?? c.element) : null;
-        lastElement = c.element;
+        const element = c.element || "other";
+        const heading = grouped && element !== lastElement ? ELEMENT_LABEL[element] || element : null;
+        lastElement = element;
         return (
           <div key={c.id} className="kx-rv-criteria-item" data-criterion={c.id}>
             {heading && <h4>{heading}</h4>}
             <label title={c.guidance || undefined} data-state={state} data-on={on || undefined}>
               <input type={rule === "first" ? "radio" : "checkbox"} name="criterion" checked={on} onChange={() => props.onToggle(c.id)} />
-              {i < 9 ? <kbd>{i + 1}</kbd> : <span className="kx-rv-kbd-space" />}
+              {props.keys?.[i] ? <kbd>{props.keys[i]!.toUpperCase()}</kbd> : <span className="kx-rv-kbd-space" aria-hidden="true" />}
               <span>
                 {c.label}
                 {on ? <small>Not met: {reasonText(c)}</small> : check && <small>{check.met == null ? `${check.rule}: not known` : check.met ? check.rule : `Not met: ${check.rule}`}</small>}
@@ -1200,12 +1206,13 @@ function QueueDone({ summary, stage, filter, go, onUndo, canGoBack, onBack }: St
 
 const RULE_WORDS: Record<ReasonRule, string> = { none: "nothing more", first: "the first criterion it does not meet", all: "every criterion it does not meet" };
 
-function CheatSheet({ onClose, shortcuts, labelKeys, rule, autoAdvance }: { onClose: () => void; shortcuts: Record<string, string>; labelKeys: Record<string, string>; rule: StageProps["summary"]["protocol"]["rules"]["ta"]; autoAdvance: boolean }) {
+function CheatSheet({ onClose, shortcuts, labelKeys, rule, autoAdvance, keys = [] }: { onClose: () => void; shortcuts: Record<string, string>; labelKeys: Record<string, string>; rule: StageProps["summary"]["protocol"]["rules"]["ta"]; autoAdvance: boolean; keys?: (string | undefined)[] }) {
+  const letters = keys.slice(9).filter(Boolean).map((k) => k!.toUpperCase());
   const rows: [string, string][] = [
     [(shortcuts.include || "I").toUpperCase(), "Include"],
     [(shortcuts.exclude || "E").toUpperCase(), `Exclude (asks for ${RULE_WORDS[asks(rule, "exclude")]})`],
     ...(rule.maybe ? ([[(shortcuts.maybe || "M").toUpperCase(), `Maybe (asks for ${RULE_WORDS[asks(rule, "maybe")]})`]] as [string, string][]) : []),
-    ["1 – 9", autoAdvance && asks(rule, "exclude") === "first" ? "A criterion not met (while excluding: records it and goes on)" : "Mark a criterion not met"],
+    [letters.length ? `1 – 9, ${letters.join(" ")}` : "1 – 9", autoAdvance && asks(rule, "exclude") === "first" ? "A criterion not met (while excluding: records it and goes on)" : "Mark a criterion not met"],
     ["0", "Other… (the reason in your words)"],
     ["Enter", "Record the choice; with auto-advance off, the next record"],
     ["Esc", "Back out of the criteria step, the note or Other"],

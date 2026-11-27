@@ -7,12 +7,16 @@
 //     id, label, title?        the row; `title` is its tooltip
 //     icon?                    a glyph name (ui/glyphs.ts)
 //     detail?                  a second line (a preview: "→ mean 12.3, SD 4.5")
+//     prefix?, aside?          a muted lead-in before the label (a form section); a value at
+//                              the row's end, right-aligned ("12.3", "12 → 12.3")
 //     group?                   a heading the row goes under (criteria by PICO part, form sections)
 //     key?                     answered while the menu is open and shown on a key cap:
 //                              "3", "shift+3", "enter", "n"
 //     tone?                    notMet | met | evidence | source | accent | danger (colour only)
 //     runLabel?                with a mode: the row's main target as a pill ("Not met")
-//     quick?                   more one-click targets on the same row ({ id, label, key?, tone?, run })
+//     quick?                   more one-click targets on the same row ({ id, label, key?, tone?,
+//                              quiet? — shown on the active row only, run })
+//     folded?                  with a mode: under a closed "more" group (mode.folded names it)
 //     input?                   { placeholder } — the row opens an inline field; `run` gets its text
 //     secondary?               with a mode: listed under the main rows, smaller
 //     keywords?                extra words the filter matches
@@ -20,7 +24,8 @@
 //                              menu's place ("Exclude and go to next" ↩ · "Keep reading" esc)
 //   ReaderSelectionMode     { id, label, filter?: placeholder, empty?, hint? } — when given, the
 //                              host's actions are the menu (first, larger, a vertical list,
-//                              type to filter) and the reader's own tools fold into a small row
+//                              type to filter) and the reader's own tools fold into a small row;
+//                              keys may carry Shift or Alt ("alt+enter": the active row's)
 //   ReaderMark              { id, page, rects, text, tone, label } — the host's marks drawn in the
 //                              page (review evidence, extraction sources), not the user's highlights;
 //                              a click opens this menu with the host's `markActions(mark)`
@@ -54,6 +59,8 @@ export interface ReaderSelectionQuick {
   key?: string;
   tone?: SelectionTone;
   title?: string;
+  /** Shown on the active (or pointed-at) row only. */
+  quiet?: boolean;
   run(passage: ReaderPassage): RunResult | Promise<RunResult>;
 }
 
@@ -64,10 +71,13 @@ export interface ReaderSelectionAction {
   title?: string;
   icon?: GlyphName;
   detail?: string;
+  prefix?: string;
+  aside?: string;
   group?: string;
   key?: string;
   tone?: SelectionTone;
   runLabel?: string;
+  folded?: boolean;
   quick?: ReaderSelectionQuick[];
   input?: { placeholder: string };
   secondary?: boolean;
@@ -87,6 +97,8 @@ export interface ReaderSelectionMode {
   empty?: string;
   /** A quiet line under the heading ("1–9 not met · ⇧ met"). */
   hint?: string;
+  /** The name of the closed group of `folded` actions ("Other fields: source only"). */
+  folded?: string;
 }
 
 /** A host's mark in the page (see the header). */
@@ -149,7 +161,7 @@ interface Props {
 
 interface Row {
   action: ReaderSelectionAction;
-  targets: Array<{ id: string; label: string; key?: string; tone?: SelectionTone; run: (p: ReaderPassage) => RunResult | Promise<RunResult> }>;
+  targets: Array<{ id: string; label: string; key?: string; tone?: SelectionTone; quiet?: boolean; run: (p: ReaderPassage) => RunResult | Promise<RunResult> }>;
 }
 
 const editable = (t: EventTarget | null) => t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
@@ -170,6 +182,7 @@ export function SelectionMenu(props: Props) {
   const [follow, setFollow] = useState<{ data: ReaderFollowUp; anchor: Box } | null>(null);
   const [place, setPlace] = useState<Placement | null>(null);
   const [more, setMore] = useState(false);
+  const [unfolded, setUnfolded] = useState(false);
   const lastAnchor = useRef<Box | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
@@ -185,6 +198,7 @@ export function SelectionMenu(props: Props) {
     setInputText('');
     setFollow(null);
     setMore(false);
+    setUnfolded(false);
   }, [open, anchorKey, mode?.id]);
 
   // Actions worked out for the passage: asked for once per selection.
@@ -207,13 +221,16 @@ export function SelectionMenu(props: Props) {
 
   const rows = useMemo<Row[]>(() => {
     const list = mode ? filterItems(actions, query) : actions;
-    const primary = list.filter(a => !mode || !a.secondary);
-    const secondary = mode ? list.filter(a => a.secondary) : [];
-    return [...primary, ...secondary].map(action => ({
+    const primary = list.filter(a => !mode || (!a.secondary && !a.folded));
+    const secondary = mode ? list.filter(a => a.secondary && !a.folded) : [];
+    // Folded rows count once opened (or while filtering).
+    const folded = mode && (unfolded || query) ? list.filter(a => a.folded) : [];
+    return [...primary, ...secondary, ...folded].map(action => ({
       action,
-      targets: [{ id: action.id, label: action.runLabel ?? action.label, key: action.key, tone: action.tone, run: (p: ReaderPassage) => action.run(p) }, ...(action.quick ?? []).map(q => ({ id: q.id, label: q.label, key: q.key, tone: q.tone, run: q.run }))],
+      targets: [{ id: action.id, label: action.runLabel ?? action.label, key: action.key, tone: action.tone, run: (p: ReaderPassage) => action.run(p) }, ...(action.quick ?? []).map(q => ({ id: q.id, label: q.label, key: q.key, tone: q.tone, quiet: q.quiet, run: q.run }))],
     }));
-  }, [actions, mode, query]);
+  }, [actions, mode, query, unfolded]);
+  const foldedCount = mode ? actions.filter(a => a.folded).length : 0;
 
   const visible = (open && !!anchor) || !!follow;
 
@@ -273,9 +290,10 @@ export function SelectionMenu(props: Props) {
         else closeAll();
         return;
       }
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      // The host's keys ("3", "shift+3") on any row's target.
-      for (const row of rows) {
+      if (e.metaKey || e.ctrlKey) return;
+      // The host's keys ("3", "shift+3", "alt+enter") on a row's target, the active row's first.
+      const activeRow = rows[Math.min(active.row, rows.length - 1)];
+      for (const row of activeRow ? [activeRow, ...rows] : rows) {
         const t = row.targets.find(x => keyMatches(e, x.key));
         if (t && !(inside && editable(e.target) && /^[a-z0-9]$/i.test(e.key) && e.target === filterRef.current)) {
           stop();
@@ -294,6 +312,7 @@ export function SelectionMenu(props: Props) {
         }
         return;
       }
+      if (e.altKey) return;
       const count = rows.length;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || (e.key === 'Tab' && !inside)) {
         stop();
@@ -432,8 +451,9 @@ export function SelectionMenu(props: Props) {
       </div>
     );
   } else if (mode) {
-    const primaryRows = rows.filter(r => !r.action.secondary);
-    const secondaryRows = rows.filter(r => r.action.secondary);
+    const primaryRows = rows.filter(r => !r.action.secondary && !r.action.folded);
+    const secondaryRows = rows.filter(r => r.action.secondary && !r.action.folded);
+    const foldedRows = rows.filter(r => r.action.folded);
     const rowView = (row: Row, index: number) => {
       const a = row.action;
       const isActive = index === active.row;
@@ -480,9 +500,13 @@ export function SelectionMenu(props: Props) {
           >
             {a.icon ? <Glyph name={a.icon} size={13} className="ksm-row-icon" /> : null}
             <span className="ksm-row-text">
-              <span className="ksm-row-label">{a.label}</span>
+              <span className="ksm-row-label">
+                {a.prefix && <span className="ksm-row-prefix">{a.prefix}</span>}
+                {a.label}
+              </span>
               {a.detail && <small className="ksm-row-detail">{a.detail}</small>}
             </span>
+            {a.aside && <span className="ksm-row-aside">{a.aside}</span>}
             {a.runLabel ? (
               <span className="ksm-pill" data-tone={a.tone}>
                 {a.runLabel}
@@ -492,7 +516,7 @@ export function SelectionMenu(props: Props) {
               <Kbd spec={a.key ?? (isActive && active.target === 0 ? 'enter' : undefined)} />
             )}
           </button>
-          {row.targets.slice(1).map((t, i) => (
+          {row.targets.slice(1).map((t, i) => (t.quiet && !isActive ? null : (
             <button
               key={t.id}
               type="button"
@@ -508,7 +532,7 @@ export function SelectionMenu(props: Props) {
               {t.label}
               <Kbd spec={t.key} />
             </button>
-          ))}
+          )))}
         </div>
       );
     };
@@ -545,6 +569,22 @@ export function SelectionMenu(props: Props) {
           {secondaryRows.length > 0 && (
             <div className="ksm-secondary" role="group" aria-label="More">
               {secondaryRows.map(r => rowView(r, index++))}
+            </div>
+          )}
+          {foldedCount > 0 && (
+            <div className="ksm-secondary ksm-folded" role="group" aria-label={mode.folded ?? 'More'}>
+              {foldedRows.length > 0 ? (
+                <>
+                  <h5 className="ksm-group-title">{mode.folded ?? 'More'}</h5>
+                  {foldedRows.map(r => rowView(r, index++))}
+                </>
+              ) : (
+                <button type="button" className="ksm-unfold" aria-expanded={false} onClick={() => setUnfolded(true)}>
+                  <Glyph name="chevronRight" size={11} />
+                  <span>{mode.folded ?? 'More'}</span>
+                  <span className="ksm-count">{foldedCount}</span>
+                </button>
+              )}
             </div>
           )}
         </div>

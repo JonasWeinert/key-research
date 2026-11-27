@@ -3103,7 +3103,10 @@ td.kx-rv-roles {
     outline: 2px solid var(--kx-accent);
   }
 }
-.kx-rv-xfield[data-focused] {
+.kx-rv-xfield[data-focused],
+.kx-rv-xfield[data-picking] {
+  margin-left: -8px;
+  padding-left: 8px;
   box-shadow: inset 2px 0 0 var(--kx-accent);
 }
 .kx-rv-xfield[data-picking] {
@@ -3111,9 +3114,11 @@ td.kx-rv-roles {
   background: color-mix(in srgb, var(--kx-indigo) 7%, transparent);
 }
 .kx-rv-xfield-label .kx-rv-pick {
-  align-self: flex-start;
-  width: 20px;
-  height: 20px;
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  vertical-align: -3px;
   opacity: 0;
 }
 .kx-rv-xfield:hover .kx-rv-pick,
@@ -3137,4 +3142,36 @@ td.kx-rv-roles {
 }
 .kx-rv-pick-banner > span {
   flex: 1 1 auto;
+}
+
+/* The criteria: one grid for every row (checkbox · key · label · result), so rows without a
+   key line up with the rest; sub-lines start at the label. */
+.kx-rv-criteria-pick label {
+  display: grid;
+  grid-template-columns: 14px 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 7px;
+  min-height: 26px;
+  text-align: start;
+}
+.kx-rv-criteria-pick label > input {
+  margin-top: 3px;
+}
+.kx-rv-criteria-pick label > kbd,
+.kx-rv-criteria-pick label > .kx-rv-kbd-space {
+  justify-self: start;
+  width: auto;
+  min-width: 18px;
+  margin-top: 1px;
+  text-align: center;
+}
+.kx-rv-criteria-pick label > span:not(.kx-rv-kbd-space) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kx-rv-criteria-pick label > svg {
+  justify-self: end;
+}
+.kx-rv-criteria-item .kx-rv-evidence-chips {
+  margin-left: 59px;
 }

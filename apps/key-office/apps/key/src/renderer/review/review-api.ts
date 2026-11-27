@@ -522,6 +522,8 @@ export interface SelectionTarget {
   focused: boolean;
   row: number | null;
   newRow: boolean;
+  /** Nothing in the passage fits the field: choosing it adds the passage as its source only. */
+  sourceOnly: boolean;
   score: number;
 }
 export interface StudyRow {

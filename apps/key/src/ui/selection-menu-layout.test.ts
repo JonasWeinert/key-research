@@ -71,6 +71,10 @@ describe('keys', () => {
     expect(keyLabel('shift+3')).toBe('⇧3');
     expect(keyLabel('enter')).toBe('↩');
     expect(keyLabel('escape')).toBe('esc');
+    expect(keyLabel('alt+enter')).toBe('⌥↩');
+    expect(keyMatches({ key: 'Enter', altKey: true }, 'alt+enter')).toBe(true);
+    expect(keyMatches({ key: 'Enter', altKey: true }, 'enter')).toBe(false);
+    expect(keyMatches({ key: 'Enter' }, 'alt+enter')).toBe(false);
   });
   it('moves focus with wrapping', () => {
     expect(moveIndex(-1, 4, 'ArrowDown')).toBe(0);

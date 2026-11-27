@@ -513,17 +513,18 @@
   }
 }
 .pdfjs-host-mark-tag {
+  /* In the margin beside the passage's first line, so it never covers text. */
   position: absolute;
-  max-width: 40%;
-  padding: 0 4px;
+  max-width: 10.5%;
+  padding: 0 3px;
   overflow: hidden;
-  border-radius: 3px 3px 3px 0;
+  border-radius: 3px;
   color: var(--kx-accent-ink, Canvas);
   background: var(--ksm-mark);
-  font: 600 9px/13px var(--kx-font, system-ui, sans-serif);
+  font: 600 8px/12px var(--kx-font, system-ui, sans-serif);
   text-overflow: ellipsis;
   white-space: nowrap;
-  transform: translateY(-100%);
+  transform: translateX(calc(-100% - 4px));
   pointer-events: none;
 }
 /* The same marks in flowing text (text-marks.ts: reading mode). */
@@ -567,4 +568,47 @@
   background: color-mix(in srgb, var(--ksm-mark) 20%, transparent);
   box-shadow: inset 0 -2px 0 var(--ksm-mark);
   content: "";
+}
+
+/* A row's muted lead-in, its value at the end, the closed group of further rows. */
+.ksm-row-prefix {
+  margin-right: 5px;
+  color: var(--ksm-text-3);
+}
+.ksm-row-aside {
+  flex: 0 1 auto;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--ksm-text-2);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ksm[data-mode] .ksm-list {
+  max-height: 290px;
+}
+.ksm .ksm-unfold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 26px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ksm-text-2);
+  background: transparent;
+  font-size: 12px;
+  text-align: start;
+}
+.ksm .ksm-unfold:hover {
+  color: var(--ksm-text);
+  background: var(--ksm-fill);
+}
+.ksm-count {
+  margin-left: auto;
+  color: var(--ksm-text-3);
+  font-variant-numeric: tabular-nums;
 }
