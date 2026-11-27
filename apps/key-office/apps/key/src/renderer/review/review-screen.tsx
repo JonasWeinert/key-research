@@ -308,6 +308,7 @@ function SingleRecord(props: StageProps & { stage: Stage; filter: string; focus?
     });
     setReasons(last.reasons);
     setOther(last.other);
+    if (!last.reasons.length && !last.other) setOfferExclude(false);
     notify("Took back the last mark", "ok");
   }, [notify]);
   // Keys: only while this tab shows and nothing is being typed into.
