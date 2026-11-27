@@ -9,6 +9,9 @@
 // correction of Hedges' g with the large-sample variance, REML by Fisher scoring, I² from τ² and
 // the "typical" within-study variance, prediction intervals with z (t with k − 1 df under
 // Hartung–Knapp). The tests at the end reproduce metafor 5.2-1's results on its own example data.
+// std-D added correlations (r, Fisher's z, partial r from t and df), the response ratio, incidence
+// rate ratios, proportions (logit, Freeman–Tukey) with back-transformation, the standardised mean
+// change and hazard ratios, each checked against escalc().
 use crate::stats::{chisq_sf, ln_gamma, norm_p2, norm_quantile, t_p2, t_quantile};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -22,6 +25,27 @@ pub enum Measure {
     SMD,
     /// An estimate and its standard error as reported (ratio measures on the log scale).
     GEN,
+    // std-D: more effect sizes (metafor's escalc names).
+    /// Correlation coefficient.
+    COR,
+    /// Fisher's r-to-z transformed correlation.
+    ZCOR,
+    /// Partial correlation from a regression's t statistic and residual df (metafor's variance).
+    PCOR,
+    /// Partial correlation with the economics standard error √((1 − r²)/df) (Stanley & Doucouliagos 2012).
+    PCORSD,
+    /// Log response ratio (ratio of means).
+    ROM,
+    /// Log incidence rate ratio (events over person-time).
+    IRR,
+    /// Logit-transformed proportion (one group).
+    PLO,
+    /// Freeman–Tukey double-arcsine proportion (one group).
+    PFT,
+    /// Standardised mean change, raw-score standardisation (Becker 1988).
+    SMCR,
+    /// Hazard ratio from HR and its interval or SE (generic inverse variance, log scale).
+    HR,
 }
 
 impl Measure {
@@ -33,12 +57,33 @@ impl Measure {
             "MD" => Measure::MD,
             "SMD" | "G" | "HEDGES" => Measure::SMD,
             "GEN" | "GENERIC" | "IV" => Measure::GEN,
+            "COR" => Measure::COR,
+            "ZCOR" => Measure::ZCOR,
+            "PCOR" => Measure::PCOR,
+            "PCORSD" => Measure::PCORSD,
+            "ROM" => Measure::ROM,
+            "IRR" => Measure::IRR,
+            "PLO" => Measure::PLO,
+            "PFT" => Measure::PFT,
+            "SMCR" => Measure::SMCR,
+            "HR" => Measure::HR,
             other => return Err(format!("Unknown effect measure {other}")),
         })
     }
     /// Analysed on the log scale and shown as ratios.
     pub fn is_ratio(self) -> bool {
-        matches!(self, Measure::RR | Measure::OR)
+        matches!(self, Measure::RR | Measure::OR | Measure::ROM | Measure::IRR | Measure::HR)
+    }
+    /// How pooled values are shown: "exp" (ratios), "tanh" (Fisher's z to r), "expit" (logit to
+    /// a proportion), "ipft" (double arcsine to a proportion, Miller 1978) or "none".
+    pub fn transform(self) -> &'static str {
+        match self {
+            m if m.is_ratio() => "exp",
+            Measure::ZCOR => "tanh",
+            Measure::PLO => "expit",
+            Measure::PFT => "ipft",
+            _ => "none",
+        }
     }
     pub fn label(self) -> &'static str {
         match self {
@@ -48,6 +93,16 @@ impl Measure {
             Measure::MD => "Mean difference",
             Measure::SMD => "Standardised mean difference (Hedges' g)",
             Measure::GEN => "Effect estimate",
+            Measure::COR => "Correlation",
+            Measure::ZCOR => "Correlation (Fisher's z)",
+            Measure::PCOR => "Partial correlation",
+            Measure::PCORSD => "Partial correlation (economics SE)",
+            Measure::ROM => "Response ratio",
+            Measure::IRR => "Incidence rate ratio",
+            Measure::PLO => "Proportion (logit)",
+            Measure::PFT => "Proportion (double arcsine)",
+            Measure::SMCR => "Standardised mean change",
+            Measure::HR => "Hazard ratio",
         }
     }
 }
@@ -74,6 +129,17 @@ pub struct StudyData {
     /// The reported estimate is a ratio (OR, RR, HR): analysed as its log.
     pub ratio: bool,
     pub subgroup: Option<String>,
+    // std-D: inputs of the further effect sizes.
+    /// A correlation (COR/ZCOR), or the pre–post correlation (SMCR).
+    pub r: Option<f64>,
+    /// A t statistic and its degrees of freedom (PCOR).
+    pub t: Option<f64>,
+    pub df: Option<f64>,
+    /// Person-time per group (IRR).
+    pub time1: Option<f64>,
+    pub time2: Option<f64>,
+    /// The table row this came from (several estimates per study).
+    pub row: Option<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,17 +221,80 @@ pub fn effect(s: &StudyData, measure: Measure) -> Result<Effect, String> {
             let g = j * (m1 - m2) / sp;
             Ok(Effect { yi: g, vi: 1.0 / n1 + 1.0 / n2 + g * g / (2.0 * (n1 + n2)) })
         }
-        Measure::GEN => {
+        Measure::COR | Measure::ZCOR => {
+            let (r, n) = (need(s.r, "correlation")?, need(s.n1, "sample size (group 1 total)")?);
+            if !(-1.0 < r && r < 1.0) || n < 4.0 {
+                return Err(format!("{}: needs a correlation between −1 and 1 and at least 4 participants", s.label));
+            }
+            Ok(if measure == Measure::COR { Effect { yi: r, vi: (1.0 - r * r).powi(2) / (n - 1.0) } } else { Effect { yi: r.atanh(), vi: 1.0 / (n - 3.0) } })
+        }
+        Measure::PCOR | Measure::PCORSD => {
+            let (t, df) = (need(s.t, "t statistic")?, need(s.df, "degrees of freedom")?);
+            if df <= 0.0 {
+                return Err(format!("{}: degrees of freedom must be above 0", s.label));
+            }
+            let r = t / (t * t + df).sqrt();
+            // df = n − m − 1 (m predictors); metafor's large-sample variance divides by n − m = df + 1.
+            Ok(Effect { yi: r, vi: if measure == Measure::PCOR { (1.0 - r * r).powi(2) / (df + 1.0) } else { (1.0 - r * r) / df } })
+        }
+        Measure::ROM => {
+            let (m1, sd1, n1) = (need(s.m1, "mean (group 1)")?, need(s.sd1, "SD (group 1)")?, need(s.n1, "number (group 1)")?);
+            let (m2, sd2, n2) = (need(s.m2, "mean (group 2)")?, need(s.sd2, "SD (group 2)")?, need(s.n2, "number (group 2)")?);
+            if m1 <= 0.0 || m2 <= 0.0 {
+                return Err(format!("{}: a response ratio needs means above 0", s.label));
+            }
+            // With metafor's default small-sample bias correction (Lajeunesse 2015, Ecology 96:2056).
+            let (c1, c2) = (sd1 * sd1 / (n1 * m1 * m1), sd2 * sd2 / (n2 * m2 * m2));
+            Ok(Effect { yi: (m1 / m2).ln() + 0.5 * (c1 - c2), vi: c1 + c2 })
+        }
+        Measure::IRR => {
+            let (mut x1, t1, mut x2, t2) = (need(s.e1, "events (group 1)")?, need(s.time1, "person-time (group 1)")?, need(s.e2, "events (group 2)")?, need(s.time2, "person-time (group 2)")?);
+            if t1 <= 0.0 || t2 <= 0.0 || x1 < 0.0 || x2 < 0.0 {
+                return Err(format!("{}: needs events of 0 or more and person-time above 0", s.label));
+            }
+            if x1 == 0.0 || x2 == 0.0 {
+                x1 += 0.5;
+                x2 += 0.5;
+            }
+            Ok(Effect { yi: ((x1 / t1) / (x2 / t2)).ln(), vi: 1.0 / x1 + 1.0 / x2 })
+        }
+        Measure::PLO | Measure::PFT => {
+            let (mut x, mut n) = (need(s.e1, "events")?, need(s.n1, "total")?);
+            if n <= 0.0 || x < 0.0 || x > n {
+                return Err(format!("{}: events must be between 0 and the total", s.label));
+            }
+            if measure == Measure::PFT {
+                return Ok(Effect { yi: 0.5 * ((x / (n + 1.0)).sqrt().asin() + ((x + 1.0) / (n + 1.0)).sqrt().asin()), vi: 1.0 / (4.0 * n + 2.0) });
+            }
+            if x == 0.0 || x == n {
+                x += 0.5;
+                n += 1.0;
+            }
+            let p = x / n;
+            Ok(Effect { yi: (p / (1.0 - p)).ln(), vi: 1.0 / (n * p) + 1.0 / (n * (1.0 - p)) })
+        }
+        Measure::SMCR => {
+            let (m1, m2, sd1, n, r) = (need(s.m1, "follow-up mean")?, need(s.m2, "baseline mean")?, need(s.sd1, "baseline SD")?, need(s.n1, "number")?, need(s.r, "pre–post correlation")?);
+            if sd1 <= 0.0 || n < 3.0 {
+                return Err(format!("{}: needs a baseline SD above 0 and at least 3 participants", s.label));
+            }
+            let df = n - 1.0;
+            let j = (ln_gamma(df / 2.0) - 0.5 * (df / 2.0).ln() - ln_gamma((df - 1.0) / 2.0)).exp();
+            let yi = j * (m1 - m2) / sd1;
+            Ok(Effect { yi, vi: 2.0 * (1.0 - r) / n + yi * yi / (2.0 * n) })
+        }
+        Measure::GEN | Measure::HR => {
             let est = need(s.estimate, "estimate")?;
             let z = norm_quantile(0.975);
-            let scale = |v: f64| if s.ratio { v.ln() } else { v };
-            if s.ratio && est <= 0.0 {
+            let ratio = s.ratio || measure == Measure::HR;
+            let scale = |v: f64| if ratio { v.ln() } else { v };
+            if ratio && est <= 0.0 {
                 return Err(format!("{}: a ratio must be above 0", s.label));
             }
             let yi = scale(est);
             let se = match (s.se, s.lower, s.upper) {
                 (Some(se), _, _) if se > 0.0 => se,
-                (_, Some(l), Some(u)) if u > l && (!s.ratio || l > 0.0) => (scale(u) - scale(l)) / (2.0 * z),
+                (_, Some(l), Some(u)) if u > l && (!ratio || l > 0.0) => (scale(u) - scale(l)) / (2.0 * z),
                 _ => return Err(format!("{}: needs a standard error or a 95% interval", s.label)),
             };
             Ok(Effect { yi, vi: se * se })
@@ -383,6 +512,10 @@ pub struct Analysis {
     pub subgroup_test: Option<SubgroupTest>,
     pub leave_one_out: Vec<LeaveOneOut>,
     pub egger: Option<Egger>,
+    /// std-D: how to show values on the outcome's scale ("exp", "tanh", "expit", "ipft", "none")
+    /// and, for "ipft", the harmonic mean of the sample sizes (Miller 1978).
+    pub transform: String,
+    pub harmonic_n: Option<f64>,
 }
 
 /// Egger's regression test: weighted least squares of yi on sei with weights 1/vi
@@ -479,6 +612,8 @@ pub fn analyse(studies: &[StudyData], options: &Options) -> Result<Analysis, Str
         measure: options.measure,
         measure_label: options.measure.label().into(),
         ratio: options.measure.is_ratio() || (options.measure == Measure::GEN && studies.iter().any(|s| s.ratio)),
+        transform: if options.measure.is_ratio() || (options.measure == Measure::GEN && studies.iter().any(|s| s.ratio)) { "exp".into() } else { options.measure.transform().into() },
+        harmonic_n: (options.measure == Measure::PFT && !used.is_empty()).then(|| used.len() as f64 / used.iter().filter_map(|(s, _)| s.n1).map(|n| 1.0 / n).sum::<f64>()),
         studies: studies_out,
         skipped,
         fixed,
@@ -489,6 +624,34 @@ pub fn analyse(studies: &[StudyData], options: &Options) -> Result<Analysis, Str
         leave_one_out,
         egger: egger(&effects),
     })
+}
+
+/// The inverse of the Freeman–Tukey double arcsine for a sample size n (Miller 1978, Am Stat
+/// 32:138; metafor's transf.ipft), clamped to 0 and 1 at the ends of the scale.
+pub fn ipft(x: f64, n: f64) -> f64 {
+    let pft = |p: f64| {
+        let xi = p * n;
+        0.5 * ((xi / (n + 1.0)).sqrt().asin() + ((xi + 1.0) / (n + 1.0)).sqrt().asin())
+    };
+    if x > pft(1.0) {
+        return 1.0;
+    }
+    if x < pft(0.0) {
+        return 0.0;
+    }
+    let s = (2.0 * x).sin();
+    0.5 * (1.0 - (2.0 * x).cos().signum() * (1.0 - (s + (s - 1.0 / s) / n).powi(2)).sqrt())
+}
+
+/// A value on the analysis scale shown on the outcome's scale.
+pub fn back_transform(v: f64, transform: &str, harmonic_n: Option<f64>) -> f64 {
+    match transform {
+        "exp" => v.exp(),
+        "tanh" => v.tanh(),
+        "expit" => 1.0 / (1.0 + (-v).exp()),
+        "ipft" => ipft(v, harmonic_n.unwrap_or(1.0)),
+        _ => v,
+    }
 }
 
 #[cfg(test)]
@@ -667,6 +830,63 @@ mod tests {
         let g = run(&generic, Measure::GEN, Method::Dl, false).main;
         close(g.estimate, -0.714117222073, 1e-9, "generic DL");
         assert!(run(&generic, Measure::GEN, Method::Dl, false).ratio);
+    }
+
+    // std-D: escalc() in metafor 5.2-1 run locally on invented values (inputs in each call):
+    // PCOR (ti, ni, mi), ZCOR/COR (ri, ni), ROM, IRR (x, t), PLO/PFT (xi, ni), SMCR (m1i post,
+    // m2i pre, sd1i pre, ni, ri). Tolerance 1e-12.
+    #[test]
+    fn more_effect_sizes_match_escalc() {
+        let e = |s: StudyData, m: Measure| effect(&StudyData { label: "x".into(), ..s }, m).unwrap();
+        let pc = e(StudyData { t: Some(2.5), df: Some(120.0 - 4.0 - 1.0), ..Default::default() }, Measure::PCOR);
+        close(pc.yi, 0.22703830459324992, 1e-12, "PCOR yi");
+        close(pc.vi, 0.00775486419825479, 1e-12, "PCOR vi");
+        let pc2 = e(StudyData { t: Some(-1.2), df: Some(60.0 - 2.0 - 1.0), ..Default::default() }, Measure::PCOR);
+        close(pc2.vi, 0.0164021697898821, 1e-12, "PCOR vi 2");
+        // Stanley & Doucouliagos' SE: √((1 − r²)/df), checked by arithmetic.
+        let sd = e(StudyData { t: Some(2.5), df: Some(115.0), ..Default::default() }, Measure::PCORSD);
+        close(sd.vi, (1.0 - pc.yi * pc.yi) / 115.0, 1e-15, "PCOR S&D vi");
+        let z = e(StudyData { r: Some(0.3), n1: Some(50.0), ..Default::default() }, Measure::ZCOR);
+        close(z.yi, 0.3095196042031118, 1e-12, "ZCOR yi");
+        close(z.vi, 0.0212765957446809, 1e-12, "ZCOR vi");
+        let c = e(StudyData { r: Some(-0.1), n1: Some(200.0), ..Default::default() }, Measure::COR);
+        close(c.vi, 0.0049251256281407, 1e-12, "COR vi");
+        let rom = e(StudyData { m1: Some(10.0), sd1: Some(2.0), n1: Some(30.0), m2: Some(8.0), sd2: Some(2.5), n2: Some(28.0), ..Default::default() }, Measure::ROM);
+        close(rom.yi, 0.22206635637373356, 1e-12, "ROM yi");
+        close(rom.vi, 0.00482105654761905, 1e-12, "ROM vi");
+        let irr = e(StudyData { e1: Some(0.0), time1: Some(500.0), e2: Some(4.0), time2: Some(480.0), ..Default::default() }, Measure::IRR);
+        close(irr.yi, -2.23804657185647, 1e-12, "IRR yi zero");
+        close(irr.vi, 2.22222222222222, 1e-12, "IRR vi zero");
+        let irr = e(StudyData { e1: Some(12.0), time1: Some(1000.0), e2: Some(20.0), time2: Some(1100.0), ..Default::default() }, Measure::IRR);
+        close(irr.yi, -0.415515443961666, 1e-12, "IRR yi");
+        let plo = e(StudyData { e1: Some(0.0), n1: Some(40.0), ..Default::default() }, Measure::PLO);
+        close(plo.yi, -4.39444915467244, 1e-12, "PLO yi zero");
+        close(plo.vi, 2.02469135802469, 1e-12, "PLO vi zero");
+        let pft = e(StudyData { e1: Some(15.0), n1: Some(60.0), ..Default::default() }, Measure::PFT);
+        close(pft.yi, 0.52826828837943030, 1e-12, "PFT yi");
+        close(pft.vi, 0.00413223140495868, 1e-12, "PFT vi");
+        let smcr = e(StudyData { m1: Some(12.0), m2: Some(10.0), sd1: Some(3.0), n1: Some(25.0), r: Some(0.6), ..Default::default() }, Measure::SMCR);
+        close(smcr.yi, 0.645576822298478, 1e-12, "SMCR yi");
+        close(smcr.vi, 0.040335388669780, 1e-12, "SMCR vi");
+        let hr = e(StudyData { estimate: Some(0.8), lower: Some(0.6), upper: Some(1.1), ..Default::default() }, Measure::HR);
+        close(hr.yi, 0.8f64.ln(), 1e-15, "HR log");
+    }
+
+    // rma() on escalc("PFT"/"PLO", xi = c(15, 3, 40, 8), ni = c(60, 40, 150, 50)) and
+    // transf.ipft.hm()/transf.ilogit() of the estimate and interval, metafor 5.2-1 run locally.
+    #[test]
+    fn proportions_back_transform_like_metafor() {
+        let data: Vec<StudyData> = [(15., 60.), (3., 40.), (40., 150.), (8., 50.)].iter().map(|(x, n)| StudyData { label: "p".into(), e1: Some(*x), n1: Some(*n), ..Default::default() }).collect();
+        let a = run(&data, Measure::PFT, Method::Reml, false);
+        close(a.main.estimate, 0.458958935143211, 1e-8, "PFT pooled");
+        let hn = a.harmonic_n;
+        assert_eq!(a.transform, "ipft");
+        close(back_transform(a.main.estimate, "ipft", hn), 0.191142524551338, 1e-8, "PFT back");
+        close(back_transform(a.main.lower, "ipft", hn), 0.111711692499405, 1e-8, "PFT back lb");
+        close(back_transform(a.main.upper, "ipft", hn), 0.284999257136760, 1e-8, "PFT back ub");
+        let a = run(&data, Measure::PLO, Method::Reml, false);
+        close(back_transform(a.main.estimate, &a.transform, None), 0.200081398974198, 1e-8, "PLO back");
+        close(back_transform(a.main.upper, &a.transform, None), 0.296671397088986, 1e-8, "PLO back ub");
     }
 
     #[test]

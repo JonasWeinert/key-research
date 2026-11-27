@@ -69,6 +69,8 @@ pub struct OutcomeRow {
     pub study: String,
     pub subgroup: Option<String>,
     pub values: BTreeMap<String, Json>,
+    /// The row's place in its table (several estimates per study).
+    pub index: usize,
 }
 
 fn number(v: Option<&Json>) -> Option<f64> {
@@ -93,9 +95,9 @@ pub fn outcome_rows(state: &State, metas: &HashMap<String, RecordMeta>) -> Vec<O
         for form in &state.protocol.forms {
             for f in form.fields().filter(|f| f.role == "outcomes" && f.kind == "table") {
                 let Some((Json::Array(rows), _)) = resolved_value(state, &r.id, &form.id, &f.id) else { continue };
-                for row in rows {
+                for (index, row) in rows.into_iter().enumerate() {
                     let Json::Object(o) = row else { continue };
-                    out.push(OutcomeRow { record: r.id.clone(), study: study.clone(), subgroup: subgroup.clone(), values: o.into_iter().collect() });
+                    out.push(OutcomeRow { record: r.id.clone(), study: study.clone(), subgroup: subgroup.clone(), values: o.into_iter().collect(), index });
                 }
             }
         }
@@ -152,6 +154,13 @@ pub fn study_data(rows: &[OutcomeRow], outcome: &str, timepoint: Option<&str>) -
                 upper: n("upper"),
                 ratio: matches!(measure.as_str(), "RR" | "OR" | "HR"),
                 subgroup: r.subgroup.clone(),
+                // std-D: correlations, t statistics, person-time and the row.
+                r: n("r"),
+                t: n("t"),
+                df: n("df"),
+                time1: n("time1"),
+                time2: n("time2"),
+                row: Some(r.index),
             }
         })
         .collect()
