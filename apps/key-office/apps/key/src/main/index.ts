@@ -1371,16 +1371,17 @@ const dedicatedZoteroWorkspace = () => registry.add(join(workspaceParent, "Zoter
  * else the dedicated "Zotero" workspace as before. */
 async function zoteroWorkspace(workspaceId?: unknown) {
   if (typeof workspaceId === "string" && workspaceId) {
-    const found = (await registry.list()).find((w) => w.id === workspaceId);
+    const found = (await registry.known()).find((w) => w.id === workspaceId);
     if (found) return found;
   }
   return dedicatedZoteroWorkspace();
 }
 /** Every workspace that syncs with Zotero: the dedicated "Zotero" workspace (when it exists)
- * and any other whose host keeps a sync state. */
+ * and any other whose host keeps a sync state. Only asks what is registered: looking
+ * must not create the default workspace (the workspaces window shows a first run as empty). */
 async function zoteroLinkedWorkspaces() {
   const dedicated = await realpath(join(workspaceParent, "Zotero")).catch(() => "");
-  return (await registry.list()).filter((w) => w.root === dedicated || existsSync(join(w.root, ".key", "zotero-sync.sqlite")));
+  return (await registry.known()).filter((w) => w.root === dedicated || existsSync(join(w.root, ".key", "zotero-sync.sqlite")));
 }
 /** Imports the Zotero library into the chosen workspace (by default its own "Zotero" one). */
 async function importZotero(options?: Record<string, unknown>) {
