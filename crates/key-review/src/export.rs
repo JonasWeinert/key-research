@@ -231,6 +231,8 @@ impl Reviews {
                 // std-C: risk of bias and certainty (rob-csv, rob-covariates, grade-csv, sof-csv, sof-md, sof-html).
                 k if crate::certainty::EXPORTS.contains(&k) => crate::certainty::export(state, conn, k, &base).unwrap_or_else(|| Err(format!("Unknown export {k}")))?,
                 // end std-C
+                // The user's own highlights on full texts kept with the review (library_sync.rs).
+                "highlights" => (format!("{base}-my-highlights.csv"), crate::library_sync::highlights_csv(state, &all_metas(conn, review)?.into_iter().map(|m| (m.id.clone(), m)).collect()), "text/csv"),
                 other => return Err(format!("Unknown export {other}")),
             };
             Ok(json!({ "filename": name, "content": content, "mime": mime }))
@@ -541,6 +543,7 @@ pub fn describe(state: &State, e: &Event) -> String {
         "analysis.set" => "Saved an analysis".into(),
         // std-B
         "chase.round" | "conduct.dismiss" | "conduct.retractions" | "ai.prompt" | "ai.audit" | "xpilot.set" | "form.piloted" | "contact.log" => crate::conduct::describe(e),
+        k if crate::library_sync::KINDS.contains(&k) => crate::library_sync::describe(e),
         other => other.into(),
     }
 }

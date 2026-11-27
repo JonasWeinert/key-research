@@ -6,6 +6,7 @@ pub mod derive;
 pub mod events;
 pub mod export;
 pub mod import;
+pub mod library_sync;
 pub mod logic;
 pub mod meta;
 pub mod model;
@@ -58,6 +59,8 @@ pub use store::Reviews;
 mod tests;
 #[cfg(test)]
 mod tests_records;
+#[cfg(test)]
+mod tests_library_sync;
 // std-B
 #[cfg(test)]
 mod tests_std_b;

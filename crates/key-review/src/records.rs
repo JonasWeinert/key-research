@@ -423,11 +423,25 @@ impl Reviews {
                 }
                 let mut fields = Map::new();
                 let mut from = Map::new();
-                // Duplicates first: the longest abstract, the first value of anything else.
+                // The linked library source first: it is the same work.
+                if let Some(source) = r.source_id.as_deref() {
+                    if let Some(lib) = library.source_meta(source) {
+                        for f in &missing {
+                            if let Some(v) = field_value(&lib, f) {
+                                fields.insert(f.to_string(), v);
+                                from.insert(f.to_string(), json!(format!("library:{source}")));
+                            }
+                        }
+                    }
+                }
+                // Then duplicates: the longest abstract, the first value of anything else.
                 for other in group.get(&r.id).into_iter().flatten() {
                     let Some(om) = m.get(other) else { continue };
                     let batch = state.record(other).and_then(|o| state.batch(&o.batch)).map(|b| b.name.clone()).unwrap_or_default();
                     for f in &missing {
+                        if from.get(*f).and_then(Json::as_str).is_some_and(|w| w.starts_with("library:")) {
+                            continue;
+                        }
                         if let Some(v) = field_value(om, f) {
                             let better = match fields.get(*f) {
                                 None => true,

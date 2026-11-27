@@ -90,6 +90,12 @@ pub const KINDS: &[&str] = &[
     "grade.set",
     "grade.order",
     // end std-C
+    // Records linked to the library (library_sync.rs): field choices, rejected matches,
+    // undoable link operations, the user's highlights on review-only full texts.
+    "link.field",
+    "link.reject",
+    "link.op",
+    "highlight.set",
 ];
 
 pub fn now_ms() -> i64 {

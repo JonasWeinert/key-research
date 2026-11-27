@@ -468,6 +468,7 @@ impl Reviews {
             ("dictionary", "extraction/data-dictionary.csv", "What each extraction field means (forms, fields, types, options)."),
             ("outcomes", "extraction/outcomes.csv", "Outcome data with escalc()-style columns."),
             ("audit", "audit/audit-trail.csv", "Every event in the review's log, in words, with time, person and protocol version."),
+            ("highlights", "full-texts/my-highlights.csv", "Highlights and comments made in full texts the review keeps itself."),
         ] {
             add_export(kind, path, what, &mut files);
         }

@@ -149,11 +149,14 @@ pub struct Rules {
     /// The review's marks (evidence, value sources, support) also kept as the user's own
     /// highlights on full texts that are library sources.
     pub mirror_marks: bool,
+    /// Records linked to a library source whose details differ from it: "ask" (show the
+    /// difference), "library" (the library's details win) or "review" (the review keeps its own).
+    pub linked_sync: String,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Self { ta: StageRule::ta(), ft: StageRule::ft(), blind: true, conflicts: "consensus".into(), quote_required: false, extractors: 1, ai_assist: false, suggestions: true, auto_advance: true, source_default: "none".into(), mirror_marks: false }
+        Self { ta: StageRule::ta(), ft: StageRule::ft(), blind: true, conflicts: "consensus".into(), quote_required: false, extractors: 1, ai_assist: false, suggestions: true, auto_advance: true, source_default: "none".into(), mirror_marks: false, linked_sync: "ask".into() }
     }
 }
 

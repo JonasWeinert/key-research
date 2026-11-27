@@ -19,6 +19,10 @@ pub trait Library {
     fn same_work(&self, _meta: &RecordMeta) -> Option<(String, Map<String, Json>)> {
         None
     }
+    /// A linked source's details as a record (library_sync.rs compares them with the record's).
+    fn source_meta(&self, _source_id: &str) -> Option<RecordMeta> {
+        None
+    }
 }
 
 pub struct NoLibrary;

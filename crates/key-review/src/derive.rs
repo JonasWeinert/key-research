@@ -329,6 +329,8 @@ pub struct State {
     pub rob: crate::rob::RobState,
     pub grade: crate::grade::GradeState,
     // end std-C
+    /// Links with the library: field choices, rejected matches, link operations, highlights.
+    pub link: crate::library_sync::LinkState,
 }
 
 #[derive(Deserialize, Default)]
@@ -373,6 +375,7 @@ impl State {
             // std-C
             rob: Default::default(),
             grade: Default::default(),
+            link: Default::default(),
         }
     }
 
@@ -698,6 +701,10 @@ impl State {
                     if let Some(reason) = reason {
                         r.fulltext.reason = reason;
                     }
+                    // Unlinked from its library source (the person said it is not that work).
+                    if p.get("unlink").and_then(Json::as_bool).unwrap_or(false) {
+                        r.source_id = None;
+                    }
                     if let Some(source) = source {
                         r.fulltext.source_id = source.clone();
                         if source.is_some() {
@@ -814,6 +821,7 @@ impl State {
             k if k.starts_with("rob.") => self.rob.apply(e),
             k if k.starts_with("grade.") => self.grade.apply(e),
             // end std-C
+            k if crate::library_sync::KINDS.contains(&k) => self.link.apply(e),
             _ => {}
         }
     }
