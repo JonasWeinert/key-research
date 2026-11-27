@@ -370,6 +370,8 @@ pub struct Batch {
     /// Records per database of a multi-database run: name → count.
     pub per_source: BTreeMap<String, usize>,
     pub db_run_id: String,
+    /// Duplicates the database search removed before the records came here (counted in PRISMA).
+    pub duplicates_removed: usize,
     pub note: String,
     pub at: i64,
     pub actor: String,

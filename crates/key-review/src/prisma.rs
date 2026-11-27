@@ -71,6 +71,9 @@ pub fn compute(state: &State) -> Prisma {
                 &mut p.other_methods
             }
         };
+        if b.group != "other" {
+            p.duplicates += b.duplicates_removed;
+        }
         let name = if b.name.trim().is_empty() { b.file_name.clone() } else { b.name.clone() };
         if !b.per_source.is_empty() {
             for (n, c) in &b.per_source {

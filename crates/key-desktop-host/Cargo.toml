@@ -35,6 +35,7 @@ key-embed = { path = "../key-embed" }
 key-models = { path = "../key-models" }
 key-index = { path = "../key-index" }
 key-zotero = { path = "../key-zotero" }
+key-review = { path = "../key-review" }
 key-reference = { path = "../../extensions/key-reference" }
 opendataloader-pdf = { path = "../opendataloader-pdf-rs", default-features = false, features = ["onnx"] }
 [features]
@@ -47,6 +48,8 @@ hayagriva = { path = "../../vendor/hayagriva" }
 # search; compile it optimised even in debug builds, which the desktop app ships today.
 # The tag manager's analysis and the HTML reference scan run per request.
 [profile.dev.package.key-store]
+opt-level = 3
+[profile.dev.package.key-review]
 opt-level = 3
 [profile.dev.package.libsqlite3-sys]
 opt-level = 3

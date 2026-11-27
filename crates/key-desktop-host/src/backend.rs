@@ -35,6 +35,8 @@ mod feeds;
 mod databases;
 #[path = "models_commands.rs"]
 mod models_commands;
+#[path = "review_commands.rs"]
+mod review_commands;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{
@@ -3135,6 +3137,10 @@ impl Host {
         }
         if command.starts_with("feeds_") || command.starts_with("inbox_") {
             return tokio::task::block_in_place(|| feeds::dispatch(&self.feeds, command, args))
+                .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
+        }
+        if command.starts_with("review_") {
+            return tokio::task::block_in_place(|| review_commands::dispatch(&self.root, &self.library, &self.databases, &self.web, command, args))
                 .unwrap_or_else(|| Err(format!("Unknown Key command: {command}")));
         }
         if command.starts_with("db_") {

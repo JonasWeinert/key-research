@@ -1,0 +1,425 @@
+// Systematic reviews (`review_*`, crates/key-review): the workspace's reviews live in their own
+// SQLite file beside the library. Records come from files, the library (sources, a collection,
+// a filter) and database search runs (through the `db_*` commands, never their internals).
+// The library answers the rules' questions about linked sources (custom properties, files) and
+// gets a source when a record needs its full text.
+use super::databases::Databases;
+use super::library_store::Library;
+use super::web_search::{self, StoreLibrary};
+use crate::ipc::{Output, arg, json_output};
+use key_review::derive::Share;
+use key_review::export::AnalysisRequest;
+use key_review::model::{Batch, Choice, Member, Protocol, RecordMeta, Stage};
+use key_review::views::ListQuery;
+use key_review::{Reviews, import};
+use key_store::{ListQuery as SourceQuery, SourceInput};
+use serde_json::{Map, Value as Json, json};
+use std::path::Path;
+use std::sync::{Arc, OnceLock};
+
+static REVIEWS: OnceLock<Result<Reviews, String>> = OnceLock::new();
+
+fn reviews(root: &Path) -> Result<&'static Reviews, String> {
+    REVIEWS.get_or_init(|| Reviews::open(root)).as_ref().map_err(Clone::clone)
+}
+
+/// The library's view for the rules: custom properties and whether a source has a file.
+struct Lookup<'a>(&'a Library);
+impl key_review::Library for Lookup<'_> {
+    fn properties(&self, source_id: &str) -> Map<String, Json> {
+        self.0.store.source(source_id).ok().flatten().map(|s| s.properties).unwrap_or_default()
+    }
+    fn has_file(&self, source_id: &str) -> bool {
+        self.0.store.source(source_id).ok().flatten().is_some_and(|s| s.file_hash().is_some() || s.field("filePath").is_some())
+    }
+}
+
+fn stage(args: &Json) -> Result<Stage, String> {
+    Stage::parse(args.get("stage").and_then(Json::as_str).unwrap_or("ta"))
+}
+
+fn text<'a>(args: &'a Json, key: &str) -> &'a str {
+    args.get(key).and_then(Json::as_str).unwrap_or("")
+}
+
+fn strings(args: &Json, key: &str) -> Vec<String> {
+    args.get(key).and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default()
+}
+
+/// A database search result row as a review record.
+fn from_db_row(row: &Json) -> RecordMeta {
+    let s = |k: &str| row.get(k).and_then(Json::as_str).unwrap_or("").trim().to_string();
+    let authors = row.get("authors").and_then(Json::as_array).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string).or_else(|| x.get("name").and_then(Json::as_str).map(str::to_string))).collect()).unwrap_or_default();
+    let keywords = row.get("keywords").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
+    let mut extra = Map::new();
+    for key in ["foundBy", "provenance", "issn", "isbn", "publisher"] {
+        if let Some(v) = row.get(key).filter(|v| !v.is_null()) {
+            extra.insert(key.into(), v.clone());
+        }
+    }
+    RecordMeta {
+        id: key_review::events::uuid7(),
+        title: s("title"),
+        abstract_text: s("abstract"),
+        authors,
+        year: row.get("year").and_then(|y| y.as_i64().or_else(|| y.as_str().and_then(|t| t.get(..4)?.parse().ok()))),
+        journal: if s("venue").is_empty() { s("containerTitle") } else { s("venue") },
+        doi: s("doi"),
+        pmid: row.pointer("/ids/pmid").and_then(Json::as_str).unwrap_or("").to_string(),
+        url: s("url"),
+        item_type: match s("recordType").as_str() {
+            "" | "article" | "journal-article" => "journalArticle".into(),
+            other => other.into(),
+        },
+        language: s("language"),
+        keywords,
+        source_id: row.get("inLibrary").and_then(Json::as_str).map(str::to_string),
+        extra,
+        ..Default::default()
+    }
+}
+
+fn batch_from(args: &Json, kind: &str) -> Result<Batch, String> {
+    let mut batch: Batch = serde_json::from_value(args.get("batch").cloned().unwrap_or(json!({}))).map_err(|e| format!("Invalid batch: {e}"))?;
+    batch.kind = kind.into();
+    batch.id = String::new();
+    Ok(batch)
+}
+
+fn call_db(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &StoreLibrary, command: &str, args: Json) -> Result<Json, String> {
+    match databases.dispatch(web, library, command, &args) {
+        Some(Ok(Output::Json(v))) => Ok(v),
+        Some(Ok(_)) => Err("Unexpected answer from database search".into()),
+        Some(Err(e)) => Err(e),
+        None => Err(format!("Database search has no {command}")),
+    }
+}
+
+/// A database search run's records and its PRISMA identification numbers.
+fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &StoreLibrary, run: &str) -> Result<(Batch, Vec<RecordMeta>), String> {
+    let report = call_db(databases, web, library, "db_run", json!({ "runId": run }))?;
+    let mut batch = Batch { kind: "database".into(), group: "databases".into(), db_run_id: run.into(), ..Default::default() };
+    batch.name = report.get("label").and_then(Json::as_str).filter(|l| !l.trim().is_empty()).unwrap_or("Database search").to_string();
+    batch.searched_at = report.get("startedAt").and_then(Json::as_i64).map(|ms| ms.to_string()).unwrap_or_default();
+    if let Some(sources) = report.get("sources").and_then(Json::as_array) {
+        let mut lines = Vec::new();
+        for s in sources {
+            let name = s.get("name").and_then(Json::as_str).or_else(|| s.get("connector").and_then(Json::as_str)).unwrap_or("Database").to_string();
+            let fetched = s.get("fetched").and_then(Json::as_u64).unwrap_or(0) as usize;
+            batch.per_source.insert(name.clone(), fetched);
+            let strategy = s.pointer("/strategy/original").and_then(Json::as_str).or_else(|| s.get("native").and_then(Json::as_str)).unwrap_or("");
+            if !strategy.is_empty() {
+                lines.push(format!("{name}: {strategy}"));
+            }
+        }
+        batch.strategy = lines.join("\n");
+    }
+    if let Ok(strategy) = call_db(databases, web, library, "db_strategy", json!({ "runId": run, "format": "text" })) {
+        if let Some(t) = strategy.get("content").and_then(Json::as_str).filter(|t| !t.trim().is_empty()) {
+            batch.strategy = t.to_string();
+        }
+    }
+    // Every version each database found, so the review's own de-duplication shows the numbers;
+    // a run that is no longer in memory gives its unique records and the duplicates it removed.
+    let mut records = Vec::new();
+    let mut offset = 0;
+    let live = loop {
+        match call_db(databases, web, library, "db_results", json!({ "runId": run, "dedupe": false, "offset": offset, "limit": 2000 })) {
+            Ok(page) => {
+                let rows = page.get("rows").or_else(|| page.get("records")).and_then(Json::as_array).cloned().unwrap_or_default();
+                records.extend(rows.iter().map(from_db_row));
+                let listed = page.get("listed").and_then(Json::as_u64).unwrap_or(0) as usize;
+                offset += rows.len();
+                if rows.is_empty() || offset >= listed {
+                    break true;
+                }
+            }
+            Err(_) => break false,
+        }
+    };
+    if !live {
+        records = report.get("records").and_then(Json::as_array).map(|a| a.iter().map(from_db_row).collect()).unwrap_or_default();
+        batch.duplicates_removed = report.get("duplicatesRemoved").and_then(Json::as_u64).unwrap_or(0) as usize;
+    }
+    batch.count = records.len() + batch.duplicates_removed;
+    if !batch.per_source.is_empty() && !live {
+        // per_source counts what each database returned; keep them as identified.
+        batch.count = batch.per_source.values().sum();
+    }
+    Ok((batch, records))
+}
+
+/// Library sources for records that have none (to find and read their full text): an existing
+/// source when the library has the work already, else a new reference.
+fn link_to_library(library: &Library, reviews: &Reviews, review: &str, ids: &[String], actor: &str) -> Result<Json, String> {
+    let metas = reviews.metas(review, ids)?;
+    let linked: std::collections::HashMap<String, Option<String>> = reviews.read(review, |s, _| Ok(ids.iter().map(|id| (id.clone(), s.record(id).and_then(|r| r.source_id.clone()))).collect()))?;
+    let mut out = Map::new();
+    for id in ids {
+        if let Some(Some(source)) = linked.get(id) {
+            out.insert(id.clone(), json!(source));
+            continue;
+        }
+        let Some(meta) = metas.get(id) else { continue };
+        let work = import::work(meta);
+        let existing = library.store.find_duplicates_for(&[work])?.into_iter().next().unwrap_or_default().into_iter().find(|m| m.kind == key_store::duplicates::MatchKind::Exact).map(|m| m.source_id);
+        let source = match existing {
+            Some(s) => s,
+            None => {
+                let mut input = SourceInput { kind: "reference".into(), ..Default::default() };
+                let mut put = |k: &str, v: &str| {
+                    if !v.trim().is_empty() {
+                        input.fields.insert(k.into(), json!(v));
+                    }
+                };
+                put("itemType", if meta.item_type.is_empty() { "journalArticle" } else { &meta.item_type });
+                put("title", &meta.title);
+                put("abstract", &meta.abstract_text);
+                put("containerTitle", &meta.journal);
+                put("volume", &meta.volume);
+                put("issue", &meta.issue);
+                put("pages", &meta.pages);
+                put("doi", &meta.doi);
+                put("pmid", &meta.pmid);
+                put("url", &meta.url);
+                put("language", &meta.language);
+                if let Some(y) = meta.year {
+                    input.fields.insert("date".into(), json!(y.to_string()));
+                    input.fields.insert("year".into(), json!(y));
+                }
+                input.creators = meta
+                    .authors
+                    .iter()
+                    .map(|a| match a.split_once(',') {
+                        Some((f, g)) => key_store::Creator { family: Some(f.trim().into()), given: Some(g.trim().into()), literal: None, role: "author".into(), person_id: None },
+                        None => key_store::Creator { family: None, given: None, literal: Some(a.clone()), role: "author".into(), person_id: None },
+                    })
+                    .collect();
+                input.origin = Some("review".into());
+                library.store.insert_sources(vec![input])?.into_iter().next().ok_or("Could not add the record to the library")?
+            }
+        };
+        reviews.fulltext(review, id, None, None, Some(Some(&source)), actor)?;
+        out.insert(id.clone(), json!(source));
+    }
+    library.indexer.wake();
+    Ok(Json::Object(out))
+}
+
+pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web: &web_search::WebSearch, command: &str, args: &Json) -> Option<Result<Output, String>> {
+    let reviews = match reviews(root) {
+        Ok(r) => r,
+        Err(e) => return Some(Err(format!("Reviews are not available: {e}"))),
+    };
+    let lookup = Lookup(library);
+    let review = || arg::<String>(args, "reviewId");
+    let actor = || -> Result<String, String> { arg::<String>(args, "actor").map_err(|_| "Choose who is screening".to_string()) };
+    let result: Result<Json, String> = (|| {
+        Ok(match command {
+            "review_list" => json!(reviews.list_reviews()?),
+            "review_create" => {
+                let protocol: Option<Protocol> = match args.get("template").and_then(Json::as_str) {
+                    Some(t) if !t.trim().is_empty() => Some(key_review::export::read_template(t)?),
+                    _ => None,
+                };
+                let (id, owner) = reviews.create(text(args, "name"), text(args, "ownerName"), protocol)?;
+                json!({ "reviewId": id, "actor": owner })
+            }
+            "review_get" => reviews.summary(&review()?, text(args, "viewer"))?,
+            "review_rename" => {
+                reviews.rename(&review()?, text(args, "name"), &actor()?)?;
+                json!(true)
+            }
+            "review_archive" => {
+                reviews.archive(&review()?, args.get("archived").and_then(Json::as_bool).unwrap_or(true), &actor()?)?;
+                json!(true)
+            }
+            "review_delete" => {
+                reviews.delete(&review()?)?;
+                json!(true)
+            }
+            "review_team_save" => {
+                reviews.save_team(&review()?, arg::<Vec<Member>>(args, "members")?, &actor()?)?;
+                json!(true)
+            }
+            "review_protocol_impact" => json!(reviews.protocol_impact(&review()?, &arg::<Protocol>(args, "protocol")?, &lookup)?),
+            "review_protocol_save" => json!(reviews.save_protocol(&review()?, arg::<Protocol>(args, "protocol")?, text(args, "note"), &actor()?, args.get("rescreen").and_then(Json::as_bool).unwrap_or(false), &lookup)?),
+            "review_template_read" => json!(key_review::export::read_template(text(args, "text"))?),
+            "review_form_templates" => json!(key_review::templates::form_templates()),
+            "review_import_file" => {
+                let parsed = import::parse_file(text(args, "text"), Some(text(args, "fileName")).filter(|f| !f.is_empty()))?;
+                let mut batch = batch_from(args, "file")?;
+                if batch.file_name.is_empty() {
+                    batch.file_name = text(args, "fileName").into();
+                }
+                if batch.name.is_empty() {
+                    batch.name = batch.file_name.clone();
+                }
+                let report = reviews.import(&review()?, batch, parsed.records, &actor()?, &lookup)?;
+                json!({ "report": report, "format": parsed.format, "warnings": parsed.warnings.iter().take(20).collect::<Vec<_>>() })
+            }
+            "review_preview_file" => {
+                let parsed = import::parse_file(text(args, "text"), Some(text(args, "fileName")).filter(|f| !f.is_empty()))?;
+                json!({ "format": parsed.format, "count": parsed.records.len(), "sample": parsed.records.iter().take(3).map(|r| json!({ "title": r.title, "byline": r.byline() })).collect::<Vec<_>>(), "warnings": parsed.warnings.len() })
+            }
+            "review_import_library" => {
+                let mut query: SourceQuery = serde_json::from_value(args.get("query").cloned().unwrap_or(json!({}))).map_err(|e| format!("Invalid query: {e}"))?;
+                let ids = strings(args, "ids");
+                if !ids.is_empty() {
+                    query.ids = Some(ids);
+                }
+                let mut records = Vec::new();
+                query.offset = 0;
+                query.limit = Some(500);
+                loop {
+                    let page = library.store.list_sources(&query)?;
+                    records.extend(page.items.iter().map(import::from_source));
+                    match page.next_offset {
+                        Some(next) if next > query.offset && records.len() < 50_000 => query.offset = next,
+                        _ => break,
+                    }
+                }
+                let mut batch = batch_from(args, "library")?;
+                if batch.name.is_empty() {
+                    batch.name = "Key library".into();
+                }
+                json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+            }
+            "review_db_runs" => {
+                let store_library = StoreLibrary { library, root };
+                call_db(databases, web, &store_library, "db_runs", json!({ "limit": args.get("limit").and_then(Json::as_u64).unwrap_or(20) }))?
+            }
+            "review_import_db_run" => {
+                let store_library = StoreLibrary { library, root };
+                let (mut batch, records) = database_run(databases, web, &store_library, &arg::<String>(args, "runId")?)?;
+                if let Some(name) = args.pointer("/batch/name").and_then(Json::as_str).filter(|n| !n.trim().is_empty()) {
+                    batch.name = name.into();
+                }
+                if records.is_empty() {
+                    return Err("This search run has no records any more: run it again from Database search".into());
+                }
+                json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+            }
+            "review_import_records" => {
+                let records: Vec<RecordMeta> = arg::<Vec<RecordMeta>>(args, "records")?.into_iter().map(|mut r| {
+                    r.id = key_review::events::uuid7();
+                    r
+                }).collect();
+                json!({ "report": reviews.import(&review()?, batch_from(args, "other")?, records, &actor()?, &lookup)? })
+            }
+            "review_batch_remove" => {
+                reviews.remove_batch(&review()?, text(args, "batchId"), &actor()?)?;
+                json!(true)
+            }
+            "review_pairs" => reviews.pairs(&review()?, args.get("offset").and_then(Json::as_u64).unwrap_or(0) as usize, args.get("limit").and_then(Json::as_u64).unwrap_or(50) as usize)?,
+            "review_pair_resolve" => {
+                reviews.resolve_pair(&review()?, text(args, "a"), text(args, "b"), text(args, "choice"), args.get("keep").and_then(Json::as_str), &actor()?)?;
+                json!(true)
+            }
+            "review_records" => reviews.list(&review()?, text(args, "viewer"), &arg::<ListQuery>(args, "query")?, &lookup)?,
+            "review_queue" => json!(reviews.queue(&review()?, text(args, "viewer"), stage(args)?, text(args, "filter"))?),
+            "review_record" => reviews.record_view(&review()?, text(args, "recordId"), text(args, "viewer"), stage(args)?, &lookup)?,
+            "review_decide" => {
+                let value: Choice = arg(args, "value")?;
+                let mut ids = strings(args, "recordIds");
+                if ids.is_empty() {
+                    ids.push(arg::<String>(args, "recordId")?);
+                }
+                let evidence: Vec<Json> = arg::<Option<Vec<Json>>>(args, "evidence")?.unwrap_or_default();
+                json!(reviews.decide(&review()?, &ids, stage(args)?, value, strings(args, "reasons"), text(args, "note"), evidence, &actor()?)?)
+            }
+            "review_undo" => json!(reviews.undo(&review()?, &actor()?)?.map(|(record, stage)| json!({ "recordId": record, "stage": stage }))),
+            "review_retract" => {
+                reviews.retract(&review()?, text(args, "recordId"), text(args, "eventId"), &actor()?)?;
+                json!(true)
+            }
+            "review_resolve" => {
+                reviews.resolve(&review()?, text(args, "recordId"), stage(args)?, arg(args, "value")?, strings(args, "reasons"), text(args, "note"), &actor()?)?;
+                json!(true)
+            }
+            "review_reopen" => {
+                reviews.reopen(&review()?, text(args, "recordId"), stage(args)?, &actor()?)?;
+                json!(true)
+            }
+            "review_note" => {
+                reviews.note(&review()?, text(args, "recordId"), text(args, "text"), args.get("noteId").and_then(Json::as_str), &actor()?)?;
+                json!(true)
+            }
+            "review_labels" => {
+                reviews.labels(&review()?, &strings(args, "recordIds"), &strings(args, "add"), &strings(args, "remove"), &actor()?)?;
+                json!(true)
+            }
+            "review_flags_clear" => {
+                reviews.clear_flags(&review()?, &strings(args, "recordIds"), stage(args)?, &actor()?)?;
+                json!(true)
+            }
+            "review_fulltext" => {
+                let source = args.get("sourceId").map(|v| v.as_str());
+                reviews.fulltext(&review()?, text(args, "recordId"), args.get("status").and_then(Json::as_str), args.get("reason").and_then(Json::as_str), source, &actor()?)?;
+                json!(true)
+            }
+            "review_link_library" => link_to_library(library, reviews, &review()?, &strings(args, "recordIds"), &actor()?)?,
+            "review_pilot_create" => json!(reviews.pilot_create(&review()?, stage(args)?, args.get("size").and_then(Json::as_u64).unwrap_or(20) as usize, strings(args, "reviewers"), text(args, "name"), args.get("seed").and_then(Json::as_u64), &actor()?)?),
+            "review_pilot_set" => {
+                reviews.pilot_set_open(&review()?, text(args, "pilotId"), args.get("open").and_then(Json::as_bool).unwrap_or(false), &actor()?)?;
+                json!(true)
+            }
+            "review_assign" => json!(reviews.assign(&review()?, stage(args)?, text(args, "mode"), arg::<Vec<Share>>(args, "reviewers")?, args.get("double").and_then(Json::as_f64).unwrap_or(0.0), args.get("seed").and_then(Json::as_u64), &actor()?)?.mode),
+            "review_agreement" => reviews.agreement(&review()?, stage(args)?, args.get("pilotId").and_then(Json::as_str))?,
+            "review_prisma" => json!(reviews.prisma(&review()?)?),
+            "review_studies" => reviews.studies(&review()?, text(args, "viewer"))?,
+            "review_extraction" => reviews.extraction_view(&review()?, text(args, "recordId"), text(args, "viewer"))?,
+            "review_extract" => {
+                reviews.extract(
+                    &review()?,
+                    text(args, "recordId"),
+                    text(args, "formId"),
+                    text(args, "fieldId"),
+                    args.get("value").cloned().unwrap_or(Json::Null),
+                    text(args, "quote"),
+                    args.get("page").and_then(Json::as_i64),
+                    args.get("sourceId").and_then(Json::as_str),
+                    args.get("suggested").and_then(Json::as_bool).unwrap_or(false),
+                    args.get("final").and_then(Json::as_bool).unwrap_or(false),
+                    &actor()?,
+                )?;
+                json!(true)
+            }
+            "review_outcomes" => json!(reviews.outcome_choices(&review()?)?),
+            "review_analyse" => reviews.analyse(&review()?, &arg::<AnalysisRequest>(args, "request")?)?,
+            "review_analysis_save" => {
+                reviews.save_analysis(&review()?, args.get("analysis").cloned().unwrap_or(Json::Null), &actor()?)?;
+                json!(true)
+            }
+            "review_export" => reviews.export(&review()?, text(args, "kind"), text(args, "viewer"))?,
+            "review_import_review" => reviews.import_review_file(text(args, "text"))?,
+            "review_audit" => {
+                let id = review()?;
+                let offset = args.get("offset").and_then(Json::as_u64).unwrap_or(0) as usize;
+                let limit = args.get("limit").and_then(Json::as_u64).unwrap_or(100).min(500) as usize;
+                reviews.read(&id, |state, conn| {
+                    let (events, total) = key_review::store::events_page(conn, &id, offset, limit, None)?;
+                    let rows: Vec<Json> = events
+                        .iter()
+                        .map(|e| json!({ "id": e.id, "at": e.at, "actor": e.actor, "actorName": state.member_name(&e.actor), "kind": e.kind, "recordId": e.record_id, "version": state.versions.iter().find(|v| v.id == e.version).map(|v| v.number), "what": key_review::export::describe(state, e) }))
+                        .collect();
+                    Ok(json!({ "events": rows, "total": total }))
+                })?
+            }
+            "review_ai_request" => {
+                let id = review()?;
+                let record = text(args, "recordId").to_string();
+                let stage = stage(args)?;
+                let meta = reviews.metas(&id, std::slice::from_ref(&record))?.remove(&record).ok_or("This record no longer exists")?;
+                reviews.read(&id, |state, _| Ok(key_review::ai::screening_request(&state.protocol, stage, &meta)))?
+            }
+            "review_ai_answer" => {
+                let suggestion = key_review::ai::parse_answer(text(args, "content"), text(args, "model"))?;
+                reviews.ai_suggest(&review()?, text(args, "recordId"), stage(args)?, suggestion.clone(), "ai")?;
+                suggestion
+            }
+            _ => return Err(format!("Unknown Key command: {command}")),
+        })
+    })();
+    Some(result.and_then(json_output))
+}

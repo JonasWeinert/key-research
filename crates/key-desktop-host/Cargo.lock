@@ -2336,6 +2336,7 @@ dependencies = [
  "key-pdfium",
  "key-processing",
  "key-reference",
+ "key-review",
  "key-safe-http",
  "key-semantic-search",
  "key-store",
@@ -2439,6 +2440,17 @@ dependencies = [
  "key-safe-http",
  "serde_json",
  "url",
+]
+
+[[package]]
+name = "key-review"
+version = "0.1.0"
+dependencies = [
+ "key-biblio",
+ "key-store",
+ "rusqlite",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
