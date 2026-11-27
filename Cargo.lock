@@ -4629,6 +4629,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "key-review"
+version = "0.1.0"
+dependencies = [
+ "key-biblio",
+ "key-store",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "key-safe-http"
 version = "0.1.0"
 dependencies = [

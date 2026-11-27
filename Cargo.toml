@@ -9,6 +9,7 @@ members = [
     "crates/key-models",
     "crates/key-index",
     "crates/key-zotero",
+    "crates/key-review",
     "experiments/gpui-pdf-reader",
     "crates/key-editor-core",
     "crates/key-editor-gpui",
