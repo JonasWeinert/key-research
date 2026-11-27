@@ -169,7 +169,7 @@ describe("Zotero sheet", () => {
     expect(view.textContent).toContain("Restart Zotero to finish");
     expect(button(view, "Restart Zotero")).toBeTruthy();
     // The probe asks the Zotero workspace's host, where a saved pairing lives.
-    expect(invoke).toHaveBeenCalledWith("store_zotero_plugin_probe", {}, "zw");
+    expect(invoke).toHaveBeenCalledWith("store_zotero_plugin_probe", expect.objectContaining({ tokenFrom: expect.any(Array) }), "zw");
 
     connection = "ok";
     await click(button(view, "Check again"));
@@ -193,7 +193,7 @@ describe("Zotero sheet", () => {
     expect(view.textContent).toContain("Pair Key with Zotero");
     await type(view.querySelector('input[aria-label="Pairing code"]'), "abc");
     await click(button(view, "Pair"));
-    expect(invoke).toHaveBeenCalledWith("store_zotero_plugin_probe", { token: "abc" }, "zw");
+    expect(invoke).toHaveBeenCalledWith("store_zotero_plugin_probe", expect.objectContaining({ token: "abc" }), "zw");
     expect(view.textContent).toContain("Connected to Zotero");
   });
 
