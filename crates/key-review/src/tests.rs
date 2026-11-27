@@ -26,6 +26,7 @@ fn setup() -> (Reviews, String, String, String, String) {
     p.rules.ta.reviewers = 2;
     p.rules.ft.reviewers = 1;
     p.rules.conflicts = "third".into();
+    p.criteria = crate::templates::suggested_criteria(&p.question);
     reviews.save_protocol(&id, p, "", &owner, false, &NoLibrary).unwrap();
     (reviews, id, owner, "b".into(), "c".into())
 }
@@ -76,11 +77,14 @@ fn screening_workflow_with_blind_conflicts_and_resolution() {
     assert_eq!(&undone.0, &records[1]);
     assert_eq!(reviews.queue(&id, &b, Stage::Ta, "").unwrap().len(), 4);
 
-    // Rules: Maybe off at full text, one reason required.
+    // Rules: Maybe off at full text; excluding names the one criterion it fails.
     let ft = reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec![], "", vec![], &a);
-    assert!(ft.unwrap_err().contains("one exclusion reason"));
+    assert!(ft.unwrap_err().contains("criterion it fails"));
+    assert!(reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["no-such".into()], "", vec![], &a).is_err());
     assert!(reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Maybe, vec![], "", vec![], &a).is_err());
-    reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["r-population".into()], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["c-population".into()], "", vec![], &a).unwrap();
+    let view = reviews.record_view(&id, first, &a, Stage::Ft, &NoLibrary).unwrap();
+    assert_eq!(view["mine"]["reasons"], json!(["c-population"]));
 
     let list = reviews.list(&id, &a, &ListQuery { stage: Some(Stage::Ta), filter: "conflicts".into(), ..Default::default() }, &NoLibrary).unwrap();
     assert_eq!(list["total"], 0);
@@ -102,10 +106,10 @@ fn versions_linked_rules_and_prisma() {
     let mut p = reviews.read(&id, |s, _| Ok(s.protocol.clone())).unwrap();
     p.criteria.push(Criterion {
         id: "c-year".into(),
-        kind: "include".into(),
         label: "Published 2000 or later".into(),
-        reason_id: Some("r-publication".into()),
-        link: Some(MetadataLink { conditions: vec![Condition { field: "year".into(), op: "ge".into(), value: json!(2000) }], all: true, effect: "suggest".into() }),
+        reason: "Published before 2000".into(),
+        stages: vec![Stage::Ta],
+        link: Some(MetadataLink { conditions: vec![Condition { field: "year".into(), op: "ge".into(), value: json!(2000) }], all: true, effect: "suggest".into(), fails_when: false }),
         ..Default::default()
     });
     assert!(reviews.save_protocol(&id, p.clone(), "", &a, true, &NoLibrary).is_err());
@@ -134,11 +138,9 @@ fn versions_linked_rules_and_prisma() {
     let mut p = reviews.read(&id, |s, _| Ok(s.protocol.clone())).unwrap();
     p.criteria.push(Criterion {
         id: "c-old".into(),
-        kind: "exclude".into(),
-        label: "Before 1990".into(),
+        label: "Published 1990 or later".into(),
         stages: vec![Stage::Ta],
-        reason_id: Some("r-other".into()),
-        link: Some(MetadataLink { conditions: vec![Condition { field: "year".into(), op: "lt".into(), value: json!(1990) }], all: true, effect: "auto".into() }),
+        link: Some(MetadataLink { conditions: vec![Condition { field: "year".into(), op: "ge".into(), value: json!(1990) }], all: true, effect: "auto".into(), fails_when: false }),
         ..Default::default()
     });
     // The 1987 survey is decided already, so the rule does not touch it; a new old record gets it.
@@ -152,7 +154,7 @@ fn versions_linked_rules_and_prisma() {
     assert_eq!(ft.len(), 4);
     assert!(reviews.fulltext(&id, &ft[0], Some("notRetrieved"), None, None, &a).is_err());
     reviews.fulltext(&id, &ft[0], Some("notRetrieved"), Some("Not available from the library"), None, &a).unwrap();
-    reviews.decide(&id, &[ft[1].clone()], Stage::Ft, Choice::Exclude, vec!["r-design".into()], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[ft[1].clone()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", vec![], &a).unwrap();
     for r in &ft[2..] {
         reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Include, vec![], "", vec![], &a).unwrap();
     }
@@ -186,7 +188,7 @@ fn versions_linked_rules_and_prisma() {
     }
     let template = reviews.export(&id, "template", &a).unwrap();
     let t = crate::export::read_template(template["content"].as_str().unwrap()).unwrap();
-    assert_eq!(t.criteria.len(), 2);
+    assert_eq!(t.criteria.len(), 12, "ten suggested and two added");
 }
 
 #[test]
@@ -354,4 +356,103 @@ fn a_stricter_rule_applies_from_then_on() {
     // The record decided under version 1 stays included; the one decided under version 2 waits.
     assert_eq!(s["stages"]["ta"]["included"], 1);
     assert_eq!(s["stages"]["ta"]["partial"], 1);
+}
+
+
+/// A review written before criteria and reasons were one list: its reasons become criteria (the
+/// one a criterion named collapses into it), old decisions resolve to the criteria, PRISMA counts
+/// the same reasons, and the migration is recorded once as an event, not by rewriting history.
+#[test]
+fn old_reviews_merge_reasons_into_criteria() {
+    let review = "0190a000-0000-7000-8000-000000000001";
+    let ev = |n: u64, kind: &str, actor: &str, record: Option<&str>, payload: Json| -> Json {
+        json!({ "id": format!("0190a000-0000-7000-8000-{n:012}"), "reviewId": review, "at": 1_700_000_000_000u64 + n, "actor": actor, "device": "old", "kind": kind, "version": "0190a000-0000-7000-8000-000000000003", "recordId": record, "payload": payload })
+    };
+    let old_protocol = json!({
+        "rules": { "ta": { "reviewers": 1, "reasons": "none", "maybe": true }, "ft": { "reviewers": 1, "reasons": "one", "maybe": false }, "blind": true, "conflicts": "consensus", "extractors": 1, "suggestions": true },
+        "criteria": [
+            { "id": "c-animal", "kind": "exclude", "label": "Animal studies", "stages": ["ta", "ft"], "reasonId": "r-population" },
+            { "id": "c-rct", "kind": "include", "label": "Randomised controlled trial", "stages": ["ta", "ft"] }
+        ],
+        "reasons": [
+            { "id": "r-design", "label": "Wrong study design" },
+            { "id": "r-population", "label": "Wrong population" },
+            { "id": "r-custom", "label": "Not in English" }
+        ]
+    });
+    let records = json!([{ "id": "rec-1", "title": "Mice on wheels" }, { "id": "rec-2", "title": "A cohort of walkers" }, { "id": "rec-3", "title": "Un essai" }]);
+    let mut events = vec![
+        ev(1, "review.create", "m1", None, json!({ "name": "Old review" })),
+        ev(2, "team.set", "m1", None, json!({ "members": [{ "id": "m1", "name": "Ana", "roles": ["owner", "reviewer"] }] })),
+        ev(3, "protocol.set", "m1", None, json!({ "protocol": old_protocol, "note": "Created" })),
+        ev(4, "batch.add", "m1", None, json!({ "batch": { "id": "b1", "kind": "file", "group": "databases", "name": "Db", "count": 3 } })),
+        ev(5, "records.add", "system", None, json!({ "batchId": "b1", "records": records })),
+    ];
+    for (n, rec) in ["rec-1", "rec-2", "rec-3"].iter().enumerate() {
+        events.push(ev(10 + n as u64, "decision", "m1", Some(rec), json!({ "stage": "ta", "value": "include", "reasons": [] })));
+    }
+    events.push(ev(20, "decision", "m1", Some("rec-1"), json!({ "stage": "ft", "value": "exclude", "reasons": ["r-population"] })));
+    events.push(ev(21, "decision", "m1", Some("rec-2"), json!({ "stage": "ft", "value": "exclude", "reasons": ["r-design"] })));
+    events.push(ev(22, "decision", "m1", Some("rec-3"), json!({ "stage": "ft", "value": "exclude", "reasons": ["r-custom"] })));
+    let file = json!({ "format": "key-review", "version": 1, "events": events }).to_string();
+    let reviews = Reviews::in_memory().unwrap();
+    reviews.import_review_file(&file).unwrap();
+    let protocol = reviews.read(review, |s, _| Ok(s.protocol.clone())).unwrap();
+    assert!(protocol.reasons.is_empty());
+    let order: Vec<&str> = protocol.criteria.iter().map(|c| c.id.as_str()).collect();
+    // The old reasons' order is the hierarchy: design, then the animal criterion (it gave
+    // "Wrong population"), then the custom reason; the RCT criterion gave no reason and comes last.
+    assert_eq!(order, ["c-design", "c-animal", "c-custom", "c-rct"]);
+    let animal = protocol.criterion("c-animal").unwrap();
+    assert_eq!(animal.label, "Not animal studies");
+    assert_eq!(animal.reason_text(), "Wrong population");
+    assert_eq!(animal.element, "population");
+    assert_eq!(protocol.criterion("c-custom").unwrap().reason_text(), "Not in English");
+    assert_eq!(protocol.criterion("c-rct").unwrap().reason_text(), "Not met: randomised controlled trial");
+    // PRISMA counts by the same wording as before.
+    let p = reviews.prisma(review).unwrap();
+    let names: Vec<(String, usize)> = p.main.excluded_reasons.iter().map(|n| (n.name.clone(), n.count)).collect();
+    assert_eq!(names, [("Wrong study design".to_string(), 1), ("Wrong population".to_string(), 1), ("Not in English".to_string(), 1)]);
+    // Old decisions name the criteria now.
+    let view = reviews.record_view(review, "rec-1", "m1", Stage::Ft, &NoLibrary).unwrap();
+    assert_eq!(view["mine"]["reasons"], json!(["c-animal"]));
+    // The migration is two events (an alias map and an amended protocol), written once.
+    let logged = reviews.events(review).unwrap();
+    assert_eq!(logged.iter().filter(|e| e.kind == "criteria.alias").count(), 1);
+    assert_eq!(logged.len(), events.len() + 2);
+    assert_eq!(reviews.summary(review, "m1").unwrap()["versionNumber"], 1);
+    let again = Reviews::in_memory().unwrap();
+    again.import_review_file(&reviews.export(review, "review", "m1").unwrap()["content"].as_str().unwrap().to_string()).unwrap();
+    assert_eq!(again.events(review).unwrap().len(), logged.len());
+    assert_eq!(again.prisma(review).unwrap(), p);
+    // Picking a criterion as the reason works on the migrated review.
+    reviews.decide(review, &["rec-3".into()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", vec![], "m1").unwrap();
+    assert_eq!(reviews.prisma(review).unwrap().main.excluded_reasons[0].count, 2);
+    // An old template reads the same way, and a new one round-trips.
+    let old_template = json!({ "format": "key-review-template", "version": 1, "protocol": old_protocol }).to_string();
+    let t = crate::export::read_template(&old_template).unwrap();
+    assert_eq!(t.criteria.len(), 4);
+    let text = crate::export::template_json(&t).unwrap();
+    assert!(!text.contains("\"reasons\": ["), "no separate reasons list is written");
+    assert_eq!(crate::export::read_template(&text).unwrap().criteria, t.criteria);
+}
+
+#[test]
+fn different_criteria_are_not_a_conflict() {
+    let (reviews, id, a, b, _) = setup();
+    import_ris(&reviews, &id, &a);
+    let r = ids(&reviews, &id)[0].clone();
+    for who in [&a, &b] {
+        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", vec![], who).unwrap();
+    }
+    let mut p = reviews.read(&id, |s, _| Ok(s.protocol.clone())).unwrap();
+    p.rules.ft.reviewers = 2;
+    reviews.save_protocol(&id, p, "Two reviewers at full text", &a, false, &NoLibrary).unwrap();
+    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec!["c-population".into()], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", vec![], &b).unwrap();
+    let view = reviews.record_view(&id, &r, &a, Stage::Ft, &NoLibrary).unwrap();
+    assert_eq!(view["status"]["name"], "excluded");
+    assert_eq!(view["reasonsDiffer"], true);
+    // PRISMA reports the criterion highest in the list.
+    assert_eq!(reviews.prisma(&id).unwrap().main.excluded_reasons[0].name, "Wrong population");
 }

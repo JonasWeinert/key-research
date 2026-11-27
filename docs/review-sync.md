@@ -17,7 +17,7 @@ Cloudflare. **Nothing here is deployed or configured anywhere: it is a design on
   "kind": "decision",
   "version": "0193c1e0-1111-7000-8000-000000000002",
   "recordId": "0193c1e5-2222-7000-8000-000000000003",
-  "payload": { "stage": "ta", "value": "exclude", "reasons": ["r-population"], "note": "", "evidence": [] }
+  "payload": { "stage": "ta", "value": "exclude", "reasons": ["c-population"], "note": "", "evidence": [] }
 }
 ```
 
@@ -46,13 +46,14 @@ workspace that has the review already adds the events it lacks — the same merg
 | `review.rename` | `{ name }` |
 | `review.archive` | `{ archived }` |
 | `protocol.set` | `{ protocol, note, amend }`: the whole protocol; `amend` while no decision exists under the current version |
+| `criteria.alias` | `{ aliases: { oldReasonId: criterionId } }`: written once when a review from before criteria and reasons were one list is opened |
 | `team.set` | `{ members: [{ id, name, roles, initials }] }` |
 | `batch.add` | `{ batch: { id, kind, group, name, fileName, strategy, searchedAt, count, perSource, dbRunId, duplicatesRemoved, note } }` |
 | `batch.remove` | `{ batchId }` |
 | `records.add` | `{ batchId, records: [RecordMeta …] }` (≤ 500 per event) |
 | `dedup.candidates` | `{ pairs: [{ a, b, score, reason }] }` |
 | `dedup.set` | `{ duplicateOf, auto }` or `{ distinctFrom }` (record in `recordId`) |
-| `decision` | `{ stage, value, reasons, note, evidence: [{ quote, page, annotationId }] }` |
+| `decision` | `{ stage, value, reasons, note, evidence: [{ quote, page, annotationId }] }`; `reasons` are the ids of the criteria it fails (old reason ids resolve through `criteria.alias`) |
 | `decision.retract` | `{ target }`: the id of the decision or resolution taken back |
 | `resolve` | `{ stage, value, reasons, note, auto? }`: a final decision (conflict resolved, or a rule's) |
 | `note` | `{ text, noteId? }` |
@@ -127,11 +128,11 @@ a supervisor) can screen in a browser.
 
 A small static app (served by the Worker) for title/abstract and full-text screening:
 
-- Needs: the protocol (criteria, reasons, keywords, rules), the records it is assigned (metadata
+- Needs: the protocol (criteria, keywords, rules), the records it is assigned (metadata
   and abstract from `records.add`), its own decisions, and resolved conflicts. Derived state is
   computed in the browser by the same fold, compiled from `crates/key-review` to WebAssembly
   (the crate has no I/O in `derive.rs`, `rules.rs`, `stats.rs`), so web and Mac agree exactly.
-- Keyboard-first like Key: I / E / M, reasons by number, undo, notes, labels.
+- Keyboard-first like Key: I / E / M, the failed criterion by number, undo, notes, labels.
 - Full text: a link to the DOI and a place to upload the reviewer's own PDF to their browser
   only; quotes typed or pasted with a page number.
 - Writes events with `device` = the browser's id and `actor` = the signed-in account.

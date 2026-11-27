@@ -34,6 +34,7 @@ pub const KINDS: &[&str] = &[
     "review.rename",
     "review.archive",
     "protocol.set",
+    "criteria.alias",
     "team.set",
     "batch.add",
     "batch.remove",

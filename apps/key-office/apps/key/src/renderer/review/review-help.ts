@@ -11,7 +11,7 @@ export const REVIEW_HELP = {
       "In Key you import what your searches found, screen titles and abstracts, read the full texts of what is left, extract data from the included studies and, if they are alike enough, pool their results in a meta-analysis.",
       "Key counts everything as you go and draws the PRISMA 2020 flow diagram journals ask for.",
     ],
-    steps: ["Setup: write the question and the criteria", "Sources: import the records your searches found", "Title & abstract: include, exclude or maybe", "Full text: read and decide, with a reason", "Extraction and Analysis: collect the data and pool it"],
+    steps: ["Setup: write the question and the criteria", "Sources: import the records your searches found", "Title & abstract: include, exclude or maybe", "Full text: read and decide, naming the criterion it fails", "Extraction and Analysis: collect the data and pool it"],
     links: [{ label: "PRISMA 2020 statement", url: "https://www.prisma-statement.org/prisma-2020" }],
   },
   "review.screening": {
@@ -26,7 +26,7 @@ export const REVIEW_HELP = {
     kind: "explain",
     title: "Full-text screening",
     body: [
-      "Read each report that passed title and abstract screening and decide against every criterion. Excluding needs a reason, which PRISMA reports.",
+      "Read each report that passed title and abstract screening and check it against every criterion. Excluding names the criterion it fails, which PRISMA reports.",
       "Find full text adds the record to your library and looks for an open-access PDF, or opens the publisher's page through your library's access. Reports you cannot get are marked not retrieved.",
     ],
   },
@@ -61,29 +61,21 @@ export const REVIEW_HELP = {
     kind: "explain",
     title: "Eligibility criteria",
     body: [
-      "Inclusion criteria say what a study must have; exclusion criteria what rules it out. Give each a short label and guidance for borderline cases.",
-      "Each criterion can name the exclusion reason a record gets when it fails, and the stages it applies at. Changing criteria after screening started makes a new version and can flag affected decisions for another look.",
+      "A criterion is a rule a study must meet. When you exclude a study you pick the criterion it fails; that is the reason PRISMA reports.",
+      "Criteria are grouped by the parts of your question. Start from the suggestions, rewrite them in your own words, and give guidance for borderline cases. Each has a short reason for reports, such as Wrong population.",
+      "The order matters: when a study fails several criteria, PRISMA reports the first. Changing criteria after screening started makes a new version and can flag earlier decisions for another look.",
     ],
   },
-  "review.criteria.hint": { kind: "hint", text: "Short labels screeners can apply at a glance; put the detail in the guidance." },
+  "review.criteria.hint": { kind: "hint", text: "One list: each criterion is a rule to meet, and failing it is the reason for excluding. The first failed, top to bottom, is reported." },
   "review.criteria.link": {
     kind: "explain",
     title: "Criteria linked to metadata",
     body: [
       "Some criteria can be read from a record's details: publication year, document type, language, whether it has an abstract, a custom property of its library source, or a Key formula.",
-      "Linked criteria suggest an exclusion beside each record, with the rule as the reason. Exclude automatically applies it to undecided records as a labelled, undoable decision by Rules, which PRISMA counts as marked ineligible by automation tools.",
+      "A linked criterion a record fails suggests excluding it, with the criterion as the reason. Exclude automatically applies it to undecided records as a labelled, undoable decision by Rules, which PRISMA counts as marked ineligible by automation tools.",
     ],
-    example: "Year is at least 2000; Language is one of en, de; Formula: {hasAbstract}",
+    example: "Met when: Year is at least 2000; Language is one of en, de; Formula: {hasAbstract}",
   },
-  "review.reasons": {
-    kind: "explain",
-    title: "Exclusion reasons",
-    body: [
-      "Full-text exclusions need reasons for the PRISMA diagram and the table of excluded studies.",
-      "The order is a hierarchy: when a report fails several criteria, PRISMA reports the first reason in this list, so put the reasons that are quickest to check first.",
-    ],
-  },
-  "review.reasons.order": { kind: "hint", text: "Order matters: when several reasons apply, PRISMA counts the one highest in the list." },
   "review.keywords": {
     kind: "explain",
     title: "Highlighted words",

@@ -12,10 +12,11 @@ All logic is Rust (`crates/key-review`), exposed by the host as `review_*` comma
 ## Principles
 
 - **A solo reviewer starts screening within a minute.** A new review has sensible defaults: one
-  reviewer per stage, a "Maybe" choice, reasons required at full text only, a starter set of
-  exclusion reasons. Import a file or a library collection and press Title & abstract.
+  reviewer per stage, a "Maybe" choice, the failed criterion named at full text only, and
+  suggested criteria for the question's parts, added in one click. Import a file or a library
+  collection and press Title & abstract.
 - **A Cochrane team can tighten every rule.** Two or more independent reviewers per stage, blind
-  mode, conflicts resolved by consensus or by a third reviewer, reasons at both stages ("one",
+  mode, conflicts resolved by consensus or by a third reviewer, failed criteria named at both stages ("one",
   "all that apply" or "none"), quotes required for extracted values, pilot rounds with agreement
   statistics before the main round.
 - **Nothing silent.** Rules linked to metadata pre-suggest a decision with the rule shown as the
@@ -49,12 +50,13 @@ Event kinds (payload fields in `docs/review-sync.md`):
 | kind | what |
 |---|---|
 | `review.create`, `review.rename`, `review.archive` | the review itself |
-| `protocol.set` | the whole protocol (question, rules, criteria, reasons, forms, keywords) with a change note; a new version unless `amend` (allowed while no decision was made under the current version) |
+| `protocol.set` | the whole protocol (question, rules, criteria, forms, keywords) with a change note; a new version unless `amend` (allowed while no decision was made under the current version) |
+| `criteria.alias` | old exclusion reason ids → the criteria they became (reviews from before criteria and reasons were one list) |
 | `team.set` | reviewer profiles and roles (owner, reviewer, tie-breaker) |
 | `batch.add`, `batch.remove` | an import: where from (library, file, database run, other method), PRISMA group, strategy, counts |
 | `records.add` | up to 500 records of a batch (metadata snapshot) |
 | `dedup.set` | a record is a duplicate of another (auto exact, or a reviewer's choice), or `distinct` |
-| `decision` | one reviewer's include / exclude / maybe at a stage, reasons, note, evidence, `auto` rule |
+| `decision` | one reviewer's include / exclude / maybe at a stage, the criteria it fails (`reasons`), note, evidence, `auto` rule |
 | `decision.retract` | undo of a decision event |
 | `resolve` | the final decision of a conflict (consensus or tie-breaker) |
 | `note`, `labels` | a reviewer's note, labels on a record |
@@ -81,19 +83,38 @@ required reviewers decided) — and then only conflicts are shown, to people who
 ## Protocol and versioning
 
 The protocol is one JSON document: question (PICO, PECO, SPIDER or free text), registration id
-and notes, rules per stage, criteria, exclusion reasons (ordered: the hierarchy picks the reason
-PRISMA reports when several apply), highlight keywords, extraction forms. Every saved change makes
+and notes, rules per stage, criteria (ordered: the first failed criterion is the reason PRISMA
+reports), highlight keywords, extraction forms. Every saved change makes
 a new version with a note; decisions record the version they were made under. Saving a change to
 criteria offers to flag earlier decisions made under older versions for re-screening (only
 decisions that a changed or removed criterion could have affected; reviewers see a
 "Re-screen" filter).
 
-**Criteria** have a label, guidance, kind (inclusion / exclusion), stages, an optional linked
-exclusion reason, and an optional **metadata link**: conditions on document type, year, language,
-has abstract / full text / DOI, any field, any custom property of the linked library source, or a
-Key formula. When the link matches, the criterion's *effect* applies: `suggest` (default; a chip
-"Suggested: exclude — Published before 2000") or `auto` (applied as a decision by the "rules"
-actor, visible and undoable).
+**Criteria are the reasons.** There is one list. A criterion is a rule a study must meet, stated
+once ("Adults with type 2 diabetes"); excluding a study means choosing the criterion (or
+criteria, per the stage's rule: one, all that apply, none) it fails, and that criterion is the
+reason PRISMA reports. Each has the part of the question it belongs to (population,
+intervention or exposure, comparator, outcome, study design; sample, phenomenon, evaluation,
+research type for SPIDER; other: language, dates, publication type, duplicates, full text), a
+short reason wording for reports ("Wrong population", derived from the statement unless
+edited), guidance, the stages it is checked at, and an optional **metadata link**: conditions on
+document type, year, language, has abstract / full text / DOI, any field, any custom property of
+the linked library source, or a Key formula, saying when it is met. A record that fails a linked
+criterion gets the *effect*: `suggest` (default; "Suggested: exclude — Not met: Year is 2000 or
+later") or `auto` (applied as a decision by the "rules" actor, visible and undoable). Setup
+offers suggested criteria for each part of the question, with the question's own words as their
+guidance.
+
+Two reviewers who both exclude, for different criteria, are not in conflict: the record is
+excluded either way and PRISMA reports the criterion highest in the list. Full-text screening
+shows the difference so whoever may resolve can settle the reason.
+
+Reviews from before criteria and reasons were one list are migrated when first opened: a reason
+a criterion named collapses into it, other reasons become criteria (Key's defaults under their
+part of the question, the rest under Other), exclusion criteria are restated as what a study must
+meet, and the old reasons' order stays the hierarchy. The log is not rewritten: a
+`criteria.alias` event records which old reason id became which criterion, and an amended
+`protocol.set` the protocol as it now reads, so old decisions resolve to criteria.
 
 ## Splits: pilots and assignment
 
@@ -111,7 +132,7 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
 
 - **Overview**: the PRISMA 2020 flow diagram from real numbers (export SVG/PNG/CSV), stage
   progress, what to do next, agreement.
-- **Setup**: question, team and rules, criteria editor, reasons, keywords, versions (with notes)
+- **Setup**: question, team and rules, criteria (by part of the question, with suggestions), keywords, versions (with notes)
   and the audit trail. Template save/load (JSON).
 - **Sources**: import batches (file drop: RIS, BibTeX, EndNote XML, PubMed .nbib, CSV; library
   selection, collection or smart filter; database search runs with their strategies and counts;
@@ -119,11 +140,11 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   be inspected or removed. De-duplication: exact duplicates are removed on import (counted), likely
   ones wait in a pair review (keep both / mark duplicate).
 - **Title & abstract**: one record at a time, keyboard first (I include, E exclude, M maybe,
-  1–9 reasons, N note, ⌘Z undo, J/K or arrows next / previous), keyword highlighting, rule and AI
+  1–9 the failed criterion, N note, ⌘Z undo, J/K or arrows next / previous), keyword highlighting, rule and AI
   suggestions, progress. A list mode with filters (undecided, mine, conflicts, maybe, keyword,
   suggested, re-screen, label) and batch decisions. A conflicts view to resolve.
 - **Full text**: queue (awaiting full text, to assess, conflicts, done); the PDF in Key's reader
-  beside the decision panel; exclusion reasons per the rules; highlights from the reader can be
+  beside the decision panel; the failed criterion per the rules; highlights from the reader can be
   attached as evidence. Retrieval tracking: find PDF, mark "not retrieved" with a reason.
 - **Extraction**: form builder (sections; text, long text, number, choice, multi-choice, date,
   yes/no, table / repeating group; guidance, required, quote required), templates (study
