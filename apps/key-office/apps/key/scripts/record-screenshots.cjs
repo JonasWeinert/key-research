@@ -4,10 +4,16 @@
 // scene is captured at 1440×860 points (2× on a Retina Mac) with the reader and browser views
 // composited in, reduced to 256 dithered colours with ImageMagick when it is installed, and
 // written to assets/readme/ (or --out). The library and the reader are also taken in dark mode.
-// Dates in the app ("Today", "Saved 26 Nov") are the day of the run. Run after
-// `npm run build -w @key/electron`, with KEY_HOST_EXECUTABLE set as for the smokes:
+// Dates in the app ("Today", "Saved 26 Nov") are the day of the run. Database search uses the
+// sample engine and Fill with AI a mock provider on the same local server. Before each capture
+// the pointer moves to the empty end of the tab strip, so no hover card or tint is left over.
+// A scene that fails or writes nothing is listed at the end and the run exits non-zero: an old
+// image is never kept silently. Run after `npm run build -w @key/electron`, with
+// KEY_HOST_EXECUTABLE set as for the smokes (and KEY_MODEL_DIR for reading mode):
 //
-//   node scripts/record-screenshots.cjs [--only=library,reader] [--out=dir] [--keep]
+//   node scripts/record-screenshots.cjs [--only=library,batch-edit] [--out=dir] [--keep]
+//
+// Scene names are the image names without "key-" (see SCENES); an unknown name is an error.
 const { _electron: electron } = require("playwright-core");
 const { mkdtemp, mkdir, writeFile, rm } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
@@ -18,7 +24,18 @@ const { tmpdir } = require("node:os");
 const demo = require("./screenshot-demo.cjs");
 
 const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split("=")[1];
+// Every scene, named after its image (key-<name>.png, plus key-<name>-dark.png where taken).
+const SCENES = [
+  "library", "reader", "note", "search", "web-search", "relation-map", "browser", "web-page", "tags", "batch-edit",
+  "inbox", "settings-citations", "zotero", "formula", "database-search", "reading-mode", "tab-switcher", "ai-fill", "review",
+  "duplicates", "canvas",
+];
 const only = (arg("only") || "").split(",").filter(Boolean);
+const unknown = only.filter((name) => !SCENES.includes(name));
+if (unknown.length) {
+  console.error(`Unknown scene(s): ${unknown.join(", ")}. Scenes: ${SCENES.join(", ")}`);
+  process.exit(2);
+}
 const want = (name) => !only.length || only.includes(name);
 const OUT = path.resolve(arg("out") || path.resolve(__dirname, "../../../../../assets/readme"));
 const WIDTH = 1440;
@@ -115,6 +132,28 @@ function serve(pdfs) {
       if (m && pdfs[m[1]]) return send(pdfs[m[1]], "application/pdf", 200, headers);
     }
     if (host === "blog.methods-notebook.example" && url.pathname === "/vague-plans") return send(savedPageHtml());
+    // A mock OpenAI-compatible provider for Fill with AI: the answer follows the abstract it
+    // was sent, with a quote from it as evidence. No real provider is ever asked.
+    if (url.pathname === "/v1/models") return json({ data: [{ id: "demo-small" }, { id: "demo-large" }] });
+    if (url.pathname === "/v1/chat/completions") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      const parsed = JSON.parse(body || "{}");
+      const prompt = parsed.messages?.find((m) => m.role === "user")?.content ?? "";
+      const text = prompt.split("Source material:")[1] ?? prompt;
+      const value = /survey/i.test(text)
+        ? "Survey"
+        : /simulat/i.test(text)
+          ? "Simulation study"
+          : /re-analys|analysis path/i.test(text)
+            ? "Re-analysis of data"
+            : /review of|projects/i.test(text)
+              ? "Review"
+              : "Other";
+      const quote = (text.match(/\] Abstract\n([^\n]+)/)?.[1] ?? "").split(" ").slice(0, 7).join(" ");
+      const answer = { value, confidence: 0.84, evidence: quote ? [{ passage: "P2", quote }] : [] };
+      return json({ model: parsed.model, choices: [{ message: { content: JSON.stringify(answer) } }], usage: { prompt_tokens: 410, completion_tokens: 28 } });
+    }
     send(page("Not found", "<h1>Not found</h1>"), undefined, 404);
   });
   return new Promise((r) => server.listen(0, "127.0.0.1", () => r(server)));
@@ -207,6 +246,8 @@ function optimise(file) {
       KEY_FEEDS_ALLOW_LOOPBACK: "1",
       KEY_FEEDS_START_DELAY_MS: "500",
       KEY_FEEDS_TICK_MS: "1500",
+      // Database search runs on the built-in sample engine (made-up counts and works).
+      KEY_DB_SEARCH_MOCK: "1",
       // Anything not mocked fails instead of reaching the network.
       HTTPS_PROXY: "http://127.0.0.1:9",
       HTTP_PROXY: "http://127.0.0.1:9",
@@ -239,14 +280,20 @@ function optimise(file) {
       for (const p of pages()) await p.emulateMedia({ colorScheme: next }).catch(() => {});
       await wait(450);
     };
-    const shot = async (name) => {
+    const shot = async (name, opts = {}) => {
       const file = path.join(OUT, `${name}.png`);
       // Toasts ("Saved to your library", "Following …") have their moment and go.
       await until(async () => !(await shell.locator(".kx-toast").count()), "toasts to go", 10000).catch(() => {});
       // Background work in the status bar ("Looking up references · 8 of 9") finishes first.
       const busy = /Looking up|Indexing|Analysing|Analyzing|Importing|Checking|Saving/;
       await until(async () => !busy.test((await shell.getByRole("contentinfo", { name: "Status" }).innerText().catch(() => "")) || ""), "background work to settle", 60000).catch(() => {});
-      await wait(200);
+      // The pointer rests on the empty end of the tab strip, so no row keeps a hover card or a
+      // hover tint (the reader and browser views keep their own pointer).
+      if (!opts.keepPointer) {
+        await shell.mouse.move(WIDTH - 340, 8);
+        await until(async () => !(await shell.locator(".kx-hover-card, .kx-peek-card, [data-hover-card]").count()), "hover cards to close", 3000).catch(() => {});
+      }
+      await wait(300);
       await writeFile(file, await capture(app, shell, scheme));
       optimise(file);
       written.push(file);
@@ -465,26 +512,32 @@ function optimise(file) {
       await settings.getByRole("button", { name: section, exact: true }).click();
       await wait(600);
     };
-    const both = async (name, before) => {
+    const both = async (name, before, opts) => {
       await theme("light");
       if (before) await before();
-      await shot(name);
+      await shot(name, opts);
       await theme("dark");
       if (before) await before();
-      await shot(`${name}-dark`);
+      await shot(`${name}-dark`, opts);
       await theme("light");
     };
-    const one = async (name, before) => {
+    const one = async (name, before, opts) => {
       if (before) await before();
-      await shot(name);
+      await shot(name, opts);
     };
 
     // ── Scenes ── (one failing scene is reported and the others still run)
     const failed = [];
+    const ran = new Set();
     const scene = async (name, body) => {
+      if (!SCENES.includes(name)) throw Error(`Scene ${name} is missing from SCENES`);
       if (!want(name)) return;
+      ran.add(name);
+      const before = written.length;
       try {
         await body();
+        // A scene that returns without writing an image would leave an old file in place.
+        if (written.length === before) throw Error("wrote no image");
       } catch (error) {
         failed.push(name);
         console.error(`Scene ${name} failed:`, error.message.split("\n")[0]);
@@ -574,12 +627,15 @@ function optimise(file) {
     });
 
     // (d) Search: filters as tokens, marks in titles and details; then the web beside it.
-    await scene("search", async () => {
+    const openSearch = async () => {
       await closeAll();
       await tabAction("open-content", { section: "search", workspaceId: ws.id });
       const tab = shell.locator(".kx-search-page");
       await tab.waitFor();
-      const field = tab.getByRole("combobox", { name: "Search everything" });
+      return { tab, field: tab.getByRole("combobox", { name: "Search everything" }) };
+    };
+    await scene("search", async () => {
+      const { tab, field } = await openSearch();
       await field.click();
       await field.pressSequentially("brenner", { delay: 30 });
       await shell.locator(".kx-suggest-item", { hasText: "Lukas Brenner" }).first().click();
@@ -588,30 +644,43 @@ function optimise(file) {
       await tab.locator(".kx-found-hit").first().waitFor();
       await wait(2000);
       await one("key-search");
-      if (want("web") || !only.length) {
-        await tab.locator(".kx-token").first().getByRole("button").first().click().catch(() => {});
-        await field.fill("replication effect sizes");
-        await field.press("Escape");
-        await tab.locator('.kx-web-pill button[data-kind="web"]').click();
-        const web = tab.locator(".kx-web");
-        await web.locator(".kx-web-hit").first().waitFor();
-        await web.locator(".kx-web-skeleton").waitFor({ state: "detached" }).catch(() => {});
-        const hit = web.locator(".kx-web-hit", { hasText: "Hidden moderators" });
-        await hit.locator(".kx-found-open").click();
-        await tab.locator(".kx-web-preview .kx-web-preview-title").waitFor();
-        await wait(1200);
-        await one("key-web-search");
-        await shell.keyboard.press("Escape");
-      }
+    });
+    await scene("web-search", async () => {
+      const { tab, field } = await openSearch();
+      await field.click();
+      await field.fill("replication effect sizes");
+      await field.press("Escape");
+      await tab.locator('.kx-web-pill button[data-kind="web"]').click();
+      const web = tab.locator(".kx-web");
+      await web.locator(".kx-web-hit").first().waitFor();
+      await web.locator(".kx-web-skeleton").waitFor({ state: "detached" }).catch(() => {});
+      const hit = web.locator(".kx-web-hit", { hasText: "Hidden moderators" });
+      await hit.locator(".kx-found-open").click();
+      await tab.locator(".kx-web-preview .kx-web-preview-title").waitFor();
+      await wait(1200);
+      await one("key-web-search");
+      await shell.keyboard.press("Escape");
     });
 
     // (e) A topic's page with its relation map.
-    await scene("map", async () => {
+    await scene("relation-map", async () => {
       await closeAll();
       await tabAction("open-content", { section: "topic", workspaceId: ws.id, entityId: "T1", title: "Reproducibility in Science" });
       const mapBox = shell.locator(".kx-entity-page:visible .kx-map");
       await mapBox.locator(".kx-map-node.kx-map-center").waitFor();
       await mapBox.scrollIntoViewIfNeeded();
+      // Scrolled just past the page's title (not half through it), the map's foot in view.
+      await mapBox.evaluate((map) => {
+        const page = map.closest(".kx-entity-page");
+        const title = page?.querySelector("h1");
+        let scroller = map.parentElement;
+        while (scroller && scroller.scrollHeight <= scroller.clientHeight + 1) scroller = scroller.parentElement;
+        if (!scroller || !title) return;
+        const top = title.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + scroller.scrollTop + 8;
+        const need = map.getBoundingClientRect().bottom - scroller.getBoundingClientRect().top + scroller.scrollTop - scroller.clientHeight + 12;
+        if (need > scroller.scrollTop) scroller.scrollTop = Math.max(need, top);
+        else if (title.getBoundingClientRect().top < scroller.getBoundingClientRect().top) scroller.scrollTop = top;
+      });
       await shell.mouse.move(5, 5);
       await wait(1500);
       await one("key-relation-map");
@@ -631,6 +700,9 @@ function optimise(file) {
       await until(async () => (await shell.evaluate(() => window.key.proxies("get"))).proxies[0], "the remembered proxy");
       await closeAll();
       await open(`http://${demo.ARTICLE_HOST}/articles/91`);
+      // The mock journal lets anyone in, so Key loads it directly and offers the proxy instead.
+      await until(async () => (await activeView())?.web?.proxy?.via || (await shell.getByRole("button", { name: "Use proxy" }).count()), "the page or the proxy offer");
+      if (!(await activeView())?.web?.proxy?.via) await shell.getByRole("button", { name: "Use proxy" }).click();
       await until(async () => (await activeView())?.web?.proxy?.via, "the page through the proxy");
       await until(async () => (await activeView())?.web?.article?.doi, "the article detected");
       await shell.locator(".key-web-article").first().waitFor();
@@ -639,7 +711,7 @@ function optimise(file) {
     });
 
     // (g) A saved web page, highlighted and commented in the web page reader.
-    await scene("webpage", async () => {
+    await scene("web-page", async () => {
       await closeAll();
       await tabAction("open-url", { url: "http://blog.methods-notebook.example/vague-plans" });
       const save = shell.locator(".key-web-bar .key-web-save", { hasText: "Save to library" });
@@ -707,18 +779,22 @@ function optimise(file) {
     });
 
     // (i) Editing several sources at once.
-    await scene("batch", async () => {
+    await scene("batch-edit", async () => {
       await closeAll();
       await tabAction("open-content", { section: "sources", workspaceId: ws.id });
       await shell.getByRole("heading", { name: "All sources", exact: true }).waitFor();
-      await shell.getByRole("button", { name: "List", exact: true }).click().catch(() => {});
-      const row = (n) => shell.locator(".kx-row", { hasText: demo.byN(n)[1] }).first();
+      await shell.getByRole("button", { name: "Table", exact: true }).click().catch(() => {});
+      const row = (n) => shell.locator(".kx-table-row", { hasText: demo.byN(n)[1] }).first();
       await row(3).click();
       for (const n of [7, 12, 9]) await row(n).click({ modifiers: ["Meta"] });
-      const editor = shell.getByLabel("4 sources", { exact: true });
-      await editor.getByRole("heading", { name: "4 sources" }).waitFor();
+      // Four selected: the details panel gives way to the selection panel and its overview.
+      const panel = shell.getByLabel("4 sources selected", { exact: true });
+      await panel.getByRole("heading", { name: "4 sources selected" }).waitFor();
+      await panel.locator(".kx-selection-loading").waitFor({ state: "detached" }).catch(() => {});
+      await panel.locator(".kx-selection-facts").waitFor();
       await wait(1000);
       await one("key-batch-edit");
+      await shell.keyboard.press("Escape");
     });
 
     // (j) The Inbox: a followed journal's new articles.
@@ -728,13 +804,16 @@ function optimise(file) {
       await row.click();
       const inbox = shell.locator(".kx-inbox");
       await inbox.getByRole("heading", { name: "Nothing followed yet" }).waitFor();
-      await inbox.getByRole("button", { name: "Add a feed…" }).click();
+      await inbox.getByRole("button", { name: /Feeds & alerts/ }).click();
       const sheet = shell.getByRole("dialog", { name: "Feeds and alerts" });
+      await sheet.waitFor();
       // The feed is read by the library host, which reaches the mock by its loopback address.
-      await sheet.getByLabel("Feed or page address").fill(`${mock}/feed.xml`);
-      await sheet.getByRole("button", { name: "Follow", exact: true }).click();
-      await sheet.locator(".kx-feeds-row").first().waitFor();
-      await sheet.getByRole("button", { name: "Close" }).click();
+      await sheet.getByLabel("Follow a journal, author, topic or search").fill(`${mock}/feed.xml`);
+      const follow = sheet.getByRole("button", { name: "Follow", exact: true });
+      await until(async () => (await follow.count()) && (await follow.isEnabled()), "the feed's preview");
+      await follow.click();
+      await sheet.getByRole("button", { name: "Following", exact: true }).waitFor().catch(() => {});
+      await shell.keyboard.press("Escape");
       await sheet.waitFor({ state: "detached" });
       await inbox.locator(".kx-inbox-list > li").nth(3).waitFor({ timeout: 60000 });
       await inbox.locator(".kx-inbox-list > li").first().click();
@@ -743,7 +822,7 @@ function optimise(file) {
     });
 
     // (k) Settings: citation styles with a live preview.
-    await scene("settings", async () => {
+    await scene("settings-citations", async () => {
       await closeAll();
       await tabAction("open-content", { section: "sources", workspaceId: ws.id });
       await shell.locator(".kx-table-row, .kx-row", { hasText: demo.byN(1)[1] }).first().click();
@@ -766,6 +845,286 @@ function optimise(file) {
       await wait(800);
       await one("key-zotero");
       await shell.keyboard.press("Escape");
+    });
+
+    // (n) The formula builder: an if() built from blocks, its preview on the library's sources.
+    await scene("formula", async () => {
+      await closeAll();
+      await tabAction("open-content", { section: "sources", workspaceId: ws.id });
+      await shell.getByRole("heading", { name: "All sources", exact: true }).waitFor();
+      await shell.getByRole("button", { name: "Table", exact: true }).click().catch(() => {});
+      await shell.getByRole("button", { name: "Columns", exact: true }).click();
+      await shell.getByRole("button", { name: "New property…" }).click();
+      const sheet = shell.getByRole("dialog", { name: "New property", exact: true });
+      await sheet.waitFor();
+      await sheet.getByRole("textbox", { name: "Property name" }).fill("Era");
+      await sheet.getByRole("button", { name: /Formula/ }).click();
+      const builder = shell.getByRole("dialog", { name: "Formula builder", exact: true });
+      await builder.getByRole("region", { name: "Start from an example" }).locator(".kx-fb-template").first().waitFor();
+      await builder.getByRole("button", { name: "Start from scratch" }).click();
+      const side = builder.getByRole("complementary", { name: "Formula reference" });
+      await side.locator('[data-ref="if"]').click();
+      await builder.locator(".kx-fb-tree .kx-fb-group[data-kind='fn']").first().waitFor();
+      const number = builder.getByRole("textbox", { name: "Number" });
+      await number.fill("2020");
+      await number.press("Enter");
+      const texts = builder.getByRole("textbox", { name: "Text" });
+      await texts.nth(0).fill("Recent");
+      await texts.nth(0).press("Enter");
+      await texts.nth(1).fill("Earlier");
+      await texts.nth(1).press("Enter");
+      await builder.locator(".kx-fb-summary", { hasText: 'if({Year} > 2020, "Recent", "Earlier")' }).waitFor();
+      await builder.getByRole("tablist", { name: "Show as" }).getByRole("tab", { name: "Coloured label", exact: true }).click();
+      await builder.locator(".kx-fb-rows .kx-fv-badge").nth(3).waitFor();
+      // The reference explains the function under the pointer.
+      await side.locator('[data-ref="if"]').hover();
+      await side.locator(".kx-fb-detail").first().waitFor().catch(() => {});
+      // The list opens at the functions, not part-way through a property.
+      await side.locator(".kx-fb-side-list").evaluate((list) => {
+        const head = [...list.querySelectorAll("h3, h4, [role=heading], .kx-fb-side-head")].find((h) => /Functions/.test(h.textContent ?? ""));
+        if (head) list.scrollTop = head.offsetTop - list.offsetTop - 6;
+      }).catch(() => {});
+      await shell.evaluate(() => document.activeElement?.blur?.());
+      await wait(600);
+      await both("key-formula", undefined, { keepPointer: true });
+      for (let i = 0; i < 3 && (await shell.getByRole("dialog").count()); i++) {
+        await shell.keyboard.press("Escape");
+        await wait(300);
+      }
+      const discard = shell.getByRole("button", { name: /Discard/ });
+      if (await discard.count()) await discard.first().click();
+    });
+
+    // (o) Database search: a nested Boolean query typed as text, read into blocks, translated
+    // for each database (on the sample engine: no network).
+    await scene("database-search", async () => {
+      await closeAll();
+      await tabAction("open-content", { section: "databases", workspaceId: ws.id });
+      const db = shell.getByRole("region", { name: "Database search" });
+      await db.waitFor();
+      await db.getByRole("tablist", { name: "Edit the search as" }).getByRole("tab", { name: "Blocks", exact: true }).click();
+      const concepts = db.locator(".kx-db-concept");
+      // A comma ends a term. Concept 2 nests: (replication OR reproducib*) NOT protocol.
+      const first = concepts.first().getByRole("textbox", { name: /Add a term/ });
+      for (const w of ["preregistration,", "registered report*,"]) await first.fill(w);
+      await db.getByRole("button", { name: "Add concept" }).click();
+      await concepts.nth(1).getByRole("textbox", { name: /Name of concept 2/ }).fill("Replication", { timeout: 3000 }).catch(() => {});
+      const second = concepts.nth(1).getByRole("textbox", { name: /Add a term/ });
+      for (const w of ["replication,", "reproducib*,", "protocol,"]) await second.fill(w);
+      await concepts.first().getByRole("textbox", { name: /Name of concept 1/ }).fill("Preregistration", { timeout: 3000 }).catch(() => {});
+      await concepts.nth(1).locator(".kx-db-joiner").nth(1).click();
+      await shell.getByRole("dialog", { name: "Operator" }).getByRole("menuitemradio", { name: /NOT/ }).click();
+      await concepts.nth(1).locator(".kx-db-group").waitFor();
+      await db.locator('.kx-db-how-item[data-connector="pubmed"] .kx-db-native').waitFor();
+      await shell.waitForFunction(() => /NOT protocol/.test(document.querySelector('.kx-db-how-item[data-connector="pubmed"] .kx-db-native')?.textContent ?? ""));
+      await shell.waitForFunction(() => /\d/.test(document.querySelector('.kx-db-how-item[data-connector="openalex"] .kx-db-how-count')?.textContent ?? ""), undefined, { timeout: 30000 }).catch(() => {});
+      await shell.evaluate(() => document.activeElement?.blur?.());
+      await wait(800);
+      await both("key-database-search");
+    });
+
+    // (p) Reading mode: the paper reflowed as text from its stored structure.
+    await scene("reading-mode", async () => {
+      await closeAll();
+      const source = await call("store_source", { id: ids[1] });
+      await until(async () => (await call("store_reflow_document", { hash: source.fileHash ?? source.hash })).status === "ready", "the paper's structure", 240000);
+      const pdf = await openPdf(1);
+      await pdf.getByRole("button", { name: "Reading mode", exact: true }).click();
+      await pdf.locator(".kx-reading-article").waitFor();
+      // At the top in both themes (a theme change reflows the text).
+      const top = async () => {
+        await pdf.evaluate(() => document.querySelector(".kx-reading-scroll")?.scrollTo({ top: 0, behavior: "instant" }));
+        await pdf.mouse.move(5, 600);
+        await wait(1200);
+      };
+      await both("key-reading-mode", top);
+      await pdf.getByRole("button", { name: "Reading mode", exact: true }).click().catch(() => {});
+    });
+
+    // (q) Ctrl-Tab: every open tab, most recent first, held open while Control is down.
+    await scene("tab-switcher", async () => {
+      await closeAll();
+      await tabAction("open-content", { section: "sources", workspaceId: ws.id });
+      await shell.getByRole("heading", { name: "All sources", exact: true }).waitFor();
+      await shell.locator(".kx-nav-item", { hasText: "Argument map" }).first().click();
+      await shell.locator(".kx-canvas").waitFor();
+      await tabAction("open-content", { section: "note", workspaceId: ws.id, noteId: chapterNote.id, title: "Chapter 2: what preregistration changes" });
+      await shell.locator(".kx-note-page .ProseMirror").last().waitFor();
+      await tabAction("open-content", { section: "search", workspaceId: ws.id });
+      await shell.locator(".kx-search-page").waitFor();
+      await openPdf(1);
+      await wait(800);
+      const send = (events) =>
+        app.evaluate(async ({ BrowserWindow }, events) => {
+          const contents = BrowserWindow.getAllWindows()[0].webContents;
+          contents.focus();
+          for (const e of events) contents.sendInputEvent(e);
+        }, events);
+      await shell.bringToFront();
+      await shell.mouse.click(WIDTH - 340, 8);
+      await send([
+        { type: "keyDown", keyCode: "Control", modifiers: ["control"] },
+        { type: "keyDown", keyCode: "Tab", modifiers: ["control"] },
+        { type: "keyUp", keyCode: "Tab", modifiers: ["control"] },
+      ]);
+      await shell.locator(".kx-switcher-row").nth(3).waitFor();
+      await wait(500);
+      await one("key-tab-switcher");
+      await send([{ type: "keyDown", keyCode: "Escape", modifiers: ["control"] }, { type: "keyUp", keyCode: "Control" }]);
+      await shell.locator(".kx-switcher").waitFor({ state: "detached" }).catch(() => {});
+    });
+
+    // (r) Fill with AI: a property filled from each source's abstract by a mock provider,
+    // the answers waiting for review with the passage each came from.
+    await scene("ai-fill", async () => {
+      await closeAll();
+      await openSettings("AI assistant");
+      await settings.getByRole("radio", { name: /Other \(OpenAI-compatible\)/ }).click();
+      await settings.getByRole("textbox", { name: "Server address" }).fill(`${mock}/v1`);
+      await settings.getByRole("button", { name: "Save address" }).click();
+      await settings.locator("[data-ai-test]", { hasText: "answered" }).waitFor();
+      await settings.getByRole("combobox", { name: "Another model" }).selectOption("demo-small");
+      await settings.locator("[data-ai-ready]").waitFor();
+      await shell.keyboard.press("Escape");
+      await settings.waitFor({ state: "detached" });
+      await call("workspace_save_attribute", { name: "Study design", config: { type: "select", options: ["Survey", "Re-analysis of data", "Simulation study", "Review", "Interview study", "Other"] } });
+      await tabAction("open-content", { section: "sources", workspaceId: ws.id });
+      await shell.getByRole("heading", { name: "All sources", exact: true }).waitFor();
+      await shell.getByRole("button", { name: "Table", exact: true }).click().catch(() => {});
+      const row = (n) => shell.locator(".kx-table-row", { hasText: demo.byN(n)[1] }).first();
+      await row(2).click();
+      for (const n of [3, 9, 5]) await row(n).click({ modifiers: ["Meta"] });
+      await shell.getByRole("button", { name: /Fill with AI/ }).first().click();
+      const sheet = shell.getByRole("dialog", { name: "Fill a property" });
+      await sheet.waitFor();
+      await sheet.locator('[data-recipe="Study design"]').click();
+      await sheet.getByRole("button", { name: "Continue" }).click();
+      await sheet.getByRole("button", { name: "Continue" }).click();
+      await sheet.getByRole("button", { name: "Continue" }).click();
+      await sheet.getByRole("button", { name: /^Test on/ }).click();
+      await sheet.locator(".kx-fill-item[data-status=proposed]").first().waitFor({ timeout: 60000 });
+      await sheet.getByRole("button", { name: "Continue" }).click();
+      await sheet.getByRole("button", { name: /^Fill \d+ source/ }).click();
+      await sheet.locator('.kx-fill-review[data-status="done"]').waitFor({ timeout: 60000 });
+      await sheet.locator(".kx-fill-item[data-status=proposed]").nth(3).waitFor();
+      // One answer shows the passage it came from.
+      await sheet.locator(".kx-fill-item").first().getByRole("button", { name: "Evidence" }).click().catch(() => {});
+      await sheet.locator(".kx-fill-quote").first().waitFor({ timeout: 5000 }).catch(() => {});
+      await wait(800);
+      await both("key-ai-fill");
+      // Accepted, so later scenes do not show proposals waiting in the status bar.
+      await sheet.getByRole("button", { name: /^Accept all/ }).click();
+      await sheet.locator(".kx-fill-message", { hasText: /Saved/ }).waitFor();
+      await until(async () => !/proposals? to review/.test((await shell.getByRole("contentinfo", { name: "Status" }).innerText().catch(() => "")) || ""), "the proposals to be accepted", 10000).catch(() => {});
+      await sheet.locator(".kx-sheet-close").click().catch(() => shell.keyboard.press("Escape"));
+      await sheet.waitFor({ state: "detached" }).catch(() => {});
+    });
+
+    // (s) A systematic review with invented records: criteria, screening with a rule's
+    // suggestion, the meta-analysis and the PRISMA diagram.
+    await scene("review", async () => {
+      await closeAll();
+      const STUDIES = [
+        ["Walking groups and blood pressure in older adults: a randomised trial", "Rivera, Ana", 2016, "10.5555/walk.1", "We randomised 240 adults aged over 65 to weekly walking groups or usual care. Systolic blood pressure fell more with walking."],
+        ["Walking groups and blood pressure in older adults: a randomised trial", "Rivera, Ana", 2016, "10.5555/walk.1", "The same record from a second database."],
+        ["Stretching breaks at work: a cluster randomised trial", "Larsen, Ben", 2019, "10.5555/stretch.2", "Offices were randomised to stretching breaks. Back pain at six months was lower in stretching offices."],
+        ["Exercise habits in rats fed a high-salt diet", "Lind, Cara", 2015, "10.5555/rats.3", "Rats exercised on wheels; blood pressure was measured weekly."],
+        ["Cycling to school and fitness in children", "Haas, Dev", 2021, "10.5555/cycle.4", "A cohort of children who cycled to school had higher fitness scores."],
+        ["Yoga for chronic low back pain: a randomised trial", "Moreau, Eli", 2018, "10.5555/yoga.5", "Adults with chronic low back pain were randomised to yoga or a booklet. Pain improved more with yoga."],
+        ["Tai chi and balance in older people: randomised controlled trial", "Ito, Fay", 2017, "10.5555/taichi.6", "Older people were randomised to tai chi or stretching. Falls were fewer with tai chi."],
+        ["A survey of gym membership", "Berg, Gus", 1987, "", "A survey of 400 gym members about their habits."],
+        ["Pilates versus usual care for neck pain: a randomised trial", "Silva, Hana", 2020, "10.5555/pilates.8", "Adults with neck pain were randomised to pilates or usual care."],
+        ["Editorial: why we should all walk more", "Kerr, Ian", 2022, "10.5555/ed.9", "An editorial on walking."],
+        ["Aquatic exercise for knee osteoarthritis: a randomised trial", "Novak, Jon", 2019, "10.5555/aqua.10", "Adults with knee osteoarthritis were randomised to pool exercise or education."],
+      ];
+      const risFile = path.join(temp, "pubmed-search.ris");
+      await writeFile(risFile, STUDIES.map(([title, author, year, d, abstract]) => ["TY  - JOUR", `TI  - ${title}`, `AU  - ${author}`, `PY  - ${year}`, d && `DO  - ${d}`, `AB  - ${abstract}`, "JO  - Journal of Invented Examples", "ER  - "].filter(Boolean).join("\n")).join("\n"));
+      const dismissNotices = async () => {
+        for (const notice of await shell.locator(".kx-rv-notice").all()) await notice.click({ position: { x: 4, y: 4 } }).catch(() => {});
+      };
+      await shell.getByRole("navigation", { name: "Systematic reviews" }).getByRole("button", { name: "Reviews", exact: true }).click();
+      const create = shell.getByRole("dialog", { name: "New systematic review" });
+      await create.waitFor();
+      await create.getByRole("textbox", { name: "Review name" }).fill("Exercise for pain and blood pressure");
+      await create.getByRole("textbox", { name: "Your name" }).fill("Mei Tanaka");
+      await create.getByRole("button", { name: "Create review" }).click();
+      await shell.getByRole("heading", { name: "Exercise for pain and blood pressure" }).waitFor();
+      const reviewId = (await call("review_list")).find((r) => r.name === "Exercise for pain and blood pressure")?.id ?? (await call("review_list"))[0].id;
+      const summary = () => call("review_get", { reviewId, viewer: "" });
+      await shell.getByRole("tab", { name: /Sources/ }).click();
+      await shell.locator(".kx-rv-sources input[type=file]").setInputFiles(risFile);
+      const importSheet = shell.getByRole("dialog", { name: "Import records" });
+      await importSheet.getByText("11 records", { exact: true }).waitFor();
+      await importSheet.getByRole("textbox", { name: "Search strategy" }).fill("(exercise OR walking OR yoga) AND (randomised OR randomized)");
+      await importSheet.getByRole("button", { name: /Import 11 records/ }).click();
+      await shell.getByText(/1 duplicate removed/).first().waitFor();
+      let s = await summary();
+      const protocol = s.protocol;
+      protocol.keywords = { include: ["randomi*", "trial"], exclude: ["rats", "editorial", "survey"] };
+      protocol.criteria = [
+        { id: "c-rct", kind: "include", label: "Randomised controlled trial", guidance: "Individually or cluster randomised.", stages: ["ta", "ft"], reasonId: "r-design", link: null },
+        { id: "c-year", kind: "include", label: "Published 2000 or later", guidance: "", stages: ["ta"], reasonId: "r-publication", link: { conditions: [{ field: "year", op: "ge", value: 2000 }], all: true, effect: "suggest" } },
+        { id: "c-animal", kind: "exclude", label: "Animal studies", guidance: "", stages: ["ta", "ft"], reasonId: "r-population", link: null },
+      ];
+      protocol.forms.push((await call("review_form_templates")).find((f) => f.id === "f-outcomes"));
+      await call("review_protocol_save", { reviewId, protocol, note: "", actor: s.team[0].id, rescreen: false });
+      // Setup: the criteria, one linked to the publication year.
+      await shell.getByRole("tab", { name: /Setup/ }).click();
+      await shell.getByRole("button", { name: "Criteria", exact: false }).first().click();
+      await shell.locator(".kx-rv-criterion").nth(2).waitFor();
+      await shell.locator(".kx-rv-criterion").nth(1).getByRole("button", { name: "Show details" }).click();
+      await dismissNotices();
+      await shell.evaluate(() => document.activeElement?.blur?.());
+      await wait(500);
+      await one("key-review-setup");
+      // Title and abstract screening with the keyboard, stopping at the rule's suggestion.
+      await shell.getByRole("tab", { name: /Title & abstract/ }).click();
+      const title = shell.locator(".kx-rv-record-title");
+      await title.waitFor();
+      for (let i = 0; i < 10; i++) {
+        const t = await title.textContent();
+        if (/survey of gym/.test(t)) break;
+        await shell.keyboard.press(/rats|Editorial|Cycling/.test(t) ? "e" : /Pilates/.test(t) ? "m" : "i");
+        await shell.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b, t);
+      }
+      await shell.locator(".kx-rv-suggestion").getByText("Not met: Year is 2000 or later").waitFor();
+      await dismissNotices();
+      await wait(500);
+      await one("key-review-screening");
+      for (let i = 0; i < 10 && !(await shell.locator(".kx-rv-done").count()); i++) {
+        const t = await title.textContent();
+        await shell.keyboard.press(/rats|Editorial|survey|Cycling/.test(t) ? "e" : /Pilates/.test(t) ? "m" : "i");
+        await shell.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), t);
+      }
+      // Full text: everything left goes in, but for Pilates (wrong outcome).
+      await shell.getByRole("tab", { name: /Full text/ }).click();
+      await title.waitFor();
+      for (let i = 0; i < 12 && !(await shell.locator(".kx-rv-done").count()); i++) {
+        const t = await title.textContent();
+        if (/Pilates/.test(t)) {
+          await shell.keyboard.press("e");
+          await shell.locator(".kx-rv-reasons[data-picking]").waitFor();
+          await shell.keyboard.press("2");
+        } else await shell.keyboard.press("i");
+        await shell.waitForFunction((b) => document.querySelector(".kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), t);
+      }
+      s = await summary();
+      const studies = (await call("review_studies", { reviewId, viewer: s.team[0].id })).studies;
+      const data = [[12, 120, 20, 118], [8, 60, 15, 62], [30, 150, 41, 149], [5, 40, 9, 42], [14, 98, 19, 101]];
+      for (const [i, st] of studies.entries()) {
+        const [e1, n1, e2, n2] = data[i % data.length];
+        await call("review_extract", { reviewId, recordId: st.id, formId: "f-outcomes", fieldId: "outcomes", value: [{ outcome: "Pain persisting", type: "Dichotomous", e1, n1, e2, n2 }], quote: "Table 2", page: 5, actor: s.team[0].id });
+      }
+      await shell.getByRole("tab", { name: /Analysis/ }).click();
+      await shell.locator(".kx-forest").waitFor();
+      await dismissNotices();
+      await wait(600);
+      await one("key-review-analysis");
+      await shell.getByRole("tab", { name: "Overview" }).click();
+      await shell.getByRole("img", { name: "PRISMA 2020 flow diagram" }).waitFor();
+      await dismissNotices();
+      await wait(600);
+      await one("key-review-prisma");
     });
 
     // (i) Duplicates review. Last but one: the duplicate stays in the library afterwards.
@@ -804,8 +1163,12 @@ function optimise(file) {
       await one("key-canvas");
     });
 
+    for (const name of only) if (!ran.has(name) && !failed.includes(name)) failed.push(name);
     console.log(JSON.stringify({ ok: !failed.length, failed, temp, written: written.map((f) => path.basename(f)) }, null, 1));
-    if (failed.length) process.exitCode = 1;
+    if (failed.length) {
+      console.error(`\nFAILED: ${failed.length} scene(s) did not finish (their images may be missing or old): ${failed.join(", ")}`);
+      process.exitCode = 1;
+    }
   } catch (error) {
     if (shell) await shell.screenshot({ path: path.join(temp, "failure.png") }).catch(() => {});
     console.error("Artifacts in", temp);
