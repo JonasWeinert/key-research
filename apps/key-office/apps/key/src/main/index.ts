@@ -2106,6 +2106,8 @@ function selectTab(index: number) {
   if (!w || !tab) return;
   w.state = activateWorkspaceTab(w.state, tab.id);
   layout(w);
+  // Keys follow the tab; left on a view now hidden, focus could land in another group's view.
+  focusShown(w);
 }
 /** Ctrl-Tab: the window's tabs in most-recently-used order (main/tab-switcher.ts). */
 const tabSwitcher = new TabSwitcher<ShellWindow>({
