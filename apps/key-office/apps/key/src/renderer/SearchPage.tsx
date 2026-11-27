@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { EMPTY_FIND, FIND_KINDS, KIND_LABEL, kindOf, onPendingFind, sidebarFilter, takePendingFind, useFind, type FindKind, type FindResult, type FindState } from "./global-search";
 import { Icon } from "./icons";
 import { openItemAt } from "./item-actions";
+import { openWebSearchHit } from "./web-page-open";
 import { bridge, type Invoke } from "./library-api";
 import SearchField from "./search-suggest";
 import { FoundHit, byItem, type ItemGroup } from "./search-results";
@@ -192,6 +193,11 @@ export default function SearchPage({ invoke, workspaceId, active, viewId }: { in
         query: state.text,
         beside: true,
       });
+      return;
+    }
+    // A passage of a saved web page opens its reader there, lit up.
+    if (entry.kind === "source" && entry.sourceKind === "web" && (entry.passageText || entry.snippet)) {
+      void openWebSearchHit(workspaceId, entry, newTab ? {} : { placement: "split", fromViewId: viewId });
       return;
     }
     openItemAt(entry, newTab ? "tab" : "split", entry.title, workspaceId, invoke);

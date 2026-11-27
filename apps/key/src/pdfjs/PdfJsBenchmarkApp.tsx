@@ -355,7 +355,7 @@ export class PdfJsTileController {
           // (as a side panel closes) must not be undone by the new layout.
           const state = this.currentViewState();
           this.updateLayout();
-          this.restoreViewState(state);
+          this.restoreAfterLayout(state);
         });
       });
       this.resizeObserver.observe(this.scroll);
@@ -374,7 +374,7 @@ export class PdfJsTileController {
         const changed = host.baseWidth !== viewport.width || host.baseHeight !== viewport.height;
         host.page = page; host.baseWidth = viewport.width; host.baseHeight = viewport.height;
         this.loadedPages.add(index);
-        if (changed) { this.updateLayout(); this.restoreViewState(state); }
+        if (changed) { this.updateLayout(); this.restoreAfterLayout(state); }
         return page;
       }).finally(() => this.pageLoads.delete(index));
       this.pageLoads.set(index, pending);
@@ -529,6 +529,15 @@ export class PdfJsTileController {
       horizontalFraction:
         horizontalMaximum > 0 ? this.scroll.scrollLeft / horizontalMaximum : 0,
     };
+  }
+
+  /** After a new layout: a reader at the very top stays there (the place it keeps is 32%
+   *  down the view, which a new width would otherwise move down the first page). */
+  private restoreAfterLayout(state: PdfJsViewState) {
+    const atTop = this.scroll.scrollTop <= 1;
+    if (!atTop) return this.restoreViewState(state);
+    this.restoreViewState({ ...state, pageIndex: 0, pageOffsetFraction: 0 });
+    this.scroll.scrollTop = 0;
   }
 
   restoreViewState(state: PdfJsViewState) {

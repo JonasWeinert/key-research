@@ -706,9 +706,199 @@ impl<V: Default> Ordered<V> {
     }
 }
 
+// ── What one analysis keeps for the next ─────────────────────────────────────
+
+/// The tags and items as the last analysis saw them, and the work done on them: after a
+/// change only the tags it touched (and their neighbours) are compared, counted, read and
+/// planned again; everything else comes from here. Results are the same as a fresh run.
+#[derive(Default)]
+pub struct AnalysisCache {
+    primed: bool,
+    /// Tag name → count.
+    tags: HashMap<String, usize>,
+    /// Item id → its tag names.
+    items: HashMap<String, Vec<String>>,
+    tree: Map<String, Json>,
+    /// Near spellings found, by name pair, with the link's confidence (pairs not here
+    /// were compared and are not alike).
+    spelled: HashMap<(String, String), f64>,
+    /// Items holding both tags (ordered pairs, as counted).
+    together: HashMap<(String, String), usize>,
+    /// A theme candidate's word counts, with a hash of what they were read from.
+    docs: HashMap<String, (u64, HashMap<String, usize>)>,
+    /// Planned changes by suggestion id.
+    plans: HashMap<String, (TagPlan, Option<PlannedChange>)>,
+}
+
+/// How much of the last analysis had to be done again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct AnalysisStats {
+    /// Tags whose items, count or place in the tree changed (all of them on a first run).
+    pub touched: usize,
+    /// Spelling pairs compared afresh.
+    pub compared: usize,
+    /// Items whose tag pairs were counted again.
+    pub recounted: usize,
+    /// Theme candidates whose words were read again.
+    pub read: usize,
+    /// Suggestions planned again.
+    pub planned: usize,
+}
+
+const MAX_TOGETHER: usize = 60;
+
+fn count_pairs(together: &mut HashMap<(String, String), usize>, names: &[String], add: bool) {
+    if names.len() > MAX_TOGETHER {
+        return;
+    }
+    for x in names {
+        for y in names {
+            if x == y {
+                continue;
+            }
+            let key = (x.clone(), y.clone());
+            if add {
+                *together.entry(key).or_insert(0) += 1;
+            } else if let Some(c) = together.get_mut(&key) {
+                *c -= 1;
+                if *c == 0 {
+                    together.remove(&key);
+                }
+            }
+        }
+    }
+}
+
+impl AnalysisCache {
+    /// Compares the index with the last one seen and returns the folded names of the tags
+    /// that changed (`None` on a first run: everything is new). Recounts the tag pairs of
+    /// changed items and forgets verdicts about changed tags.
+    fn update(&mut self, index: &TagIndex, stats: &mut AnalysisStats) -> Option<HashSet<String>> {
+        let names: Vec<&str> = index.tags.iter().map(|t| t.name.as_str()).collect();
+        let item_names = |item: &TagItem| -> Vec<String> { item.tags.iter().filter_map(|&t| names.get(t)).map(|n| n.to_string()).collect() };
+        if !self.primed {
+            self.primed = true;
+            self.together.clear();
+            self.items.clear();
+            for item in &index.items {
+                let own = item_names(item);
+                count_pairs(&mut self.together, &own, true);
+                self.items.insert(item.id.clone(), own);
+            }
+            stats.recounted = index.items.len();
+            stats.touched = index.tags.len();
+            self.tags = index.tags.iter().map(|t| (t.name.clone(), t.count)).collect();
+            self.tree = index.tree.clone();
+            self.spelled.clear();
+            return None;
+        }
+        let mut touched: HashSet<String> = HashSet::new();
+        let mut seen: HashSet<&str> = HashSet::new();
+        for item in &index.items {
+            seen.insert(item.id.as_str());
+            let own = item_names(item);
+            match self.items.get(&item.id) {
+                Some(old) if *old == own => continue,
+                Some(old) => {
+                    let old = old.clone();
+                    touched.extend(old.iter().map(|t| fold(t.trim())));
+                    count_pairs(&mut self.together, &old, false);
+                }
+                None => {}
+            }
+            touched.extend(own.iter().map(|t| fold(t.trim())));
+            count_pairs(&mut self.together, &own, true);
+            self.items.insert(item.id.clone(), own);
+            stats.recounted += 1;
+        }
+        let gone: Vec<String> = self.items.keys().filter(|id| !seen.contains(id.as_str())).cloned().collect();
+        for id in gone {
+            if let Some(old) = self.items.remove(&id) {
+                touched.extend(old.iter().map(|t| fold(t.trim())));
+                count_pairs(&mut self.together, &old, false);
+                stats.recounted += 1;
+            }
+        }
+        let now: HashMap<String, usize> = index.tags.iter().map(|t| (t.name.clone(), t.count)).collect();
+        for (name, count) in &now {
+            if self.tags.get(name) != Some(count) {
+                touched.insert(fold(name.trim()));
+            }
+        }
+        touched.extend(self.tags.keys().filter(|name| !now.contains_key(*name)).map(|name| fold(name.trim())));
+        // A tag that moved in the tree, and its parents before and after.
+        let parent = |meta: Option<&Json>| meta.and_then(|m| m.get("parent")).and_then(Json::as_str).map(|p| fold(p.trim()));
+        for name in index.tree.keys().chain(self.tree.keys()) {
+            let (old, new) = (self.tree.get(name), index.tree.get(name));
+            if old != new {
+                touched.insert(fold(name.trim()));
+                touched.extend(parent(old));
+                touched.extend(parent(new));
+            }
+        }
+        self.tags = now;
+        self.tree = index.tree.clone();
+        self.spelled.retain(|(a, b), _| !touched.contains(&fold(a.trim())) && !touched.contains(&fold(b.trim())));
+        stats.touched = touched.len();
+        Some(touched)
+    }
+}
+
+/// Every tag name a plan reads.
+fn plan_names(plan: &TagPlan) -> Vec<&str> {
+    match plan {
+        TagPlan::Merge { from, to } => from.iter().map(String::as_str).chain([to.as_str()]).collect(),
+        TagPlan::Nest { parent, children, rename_parent } => [parent.as_str()].into_iter().chain(children.iter().map(String::as_str)).chain(rename_parent.as_deref()).collect(),
+        TagPlan::Hierarchy { splits } => splits.iter().flat_map(|s| [s.tag.as_str()].into_iter().chain(s.path.iter().map(String::as_str))).collect(),
+        TagPlan::Property { values, .. } => values.iter().map(|(t, _)| t.as_str()).collect(),
+        TagPlan::Delete { tags } | TagPlan::Unnest { tags } | TagPlan::Color { tags, .. } => tags.iter().map(String::as_str).collect(),
+        TagPlan::Rename { tag, to } => vec![tag.as_str(), to.as_str()],
+    }
+}
+
+/// Whether two tags are near spellings of one another, and how sure that is.
+fn spelled_alike(na: &Normal, nb: &Normal, ca: usize, cb: usize) -> Option<f64> {
+    let digits = |s: &str| s.chars().filter(char::is_ascii_digit).collect::<String>();
+    let (sa, sb) = (&na.squash, &nb.squash);
+    // Different numbers are different things (2019 / 2020, phase 1 / phase 2).
+    if digits(sa) != digits(sb) {
+        return None;
+    }
+    let short = len16(sa).min(len16(sb));
+    if short < 5 {
+        return None;
+    }
+    // A whole word more or less is a different tag ("to read" / "read").
+    let wa: HashSet<&String> = na.words.iter().collect();
+    let wb: HashSet<&String> = nb.words.iter().collect();
+    if wa.len() != wb.len() && (wa.is_subset(&wb) || wb.is_subset(&wa)) {
+        return None;
+    }
+    let distance = edit_distance(sa, sb, 2);
+    let allowed = if short >= 10 { 2 } else { 1 };
+    if distance > allowed || jaro_winkler(sa, sb) < 0.9 {
+        return None;
+    }
+    // A one-letter difference between two common words (policy / police) is no typo:
+    // only offered when one of them is rare.
+    let (lo, hi) = (ca.min(cb) as f64, ca.max(cb) as f64);
+    let rare = lo <= 2f64.max(hi / 8.0);
+    if !rare && short < 8 {
+        return None;
+    }
+    Some(if distance == 1 { 0.75 } else { 0.6 })
+}
+
 // ── The analysis ─────────────────────────────────────────────────────────────
 
 pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggestion> {
+    let mut cache = AnalysisCache::default();
+    let touched = cache.update(index, &mut AnalysisStats::default());
+    analyze(index, options, &mut cache, touched.as_ref(), &mut AnalysisStats::default())
+}
+
+fn analyze(index: &TagIndex, options: &AnalysisOptions, cache: &mut AnalysisCache, touched: Option<&HashSet<String>>, stats: &mut AnalysisStats) -> Vec<Suggestion> {
+    let changed = |name: &str| touched.is_none_or(|t| t.contains(&fold(name.trim())));
     let tags = &index.tags;
     let items = &index.items;
     let n = tags.len();
@@ -807,7 +997,16 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
         }
     }
     let mut compared: HashSet<(usize, usize)> = HashSet::new();
-    let digits = |s: &str| s.chars().filter(char::is_ascii_digit).collect::<String>();
+    // Pairs of tags that did not change keep their verdict; only changed tags are compared.
+    let fresh: Vec<bool> = tags.iter().map(|t| changed(&t.name)).collect();
+    let known: HashMap<(usize, usize), f64> = cache
+        .spelled
+        .iter()
+        .filter_map(|((x, y), &c)| {
+            let (a, b) = (*by_name.get(x.as_str())?, *by_name.get(y.as_str())?);
+            Some(((a.min(b), a.max(b)), c))
+        })
+        .collect();
     for (_, block) in &blocks.entries {
         if block.len() < 2 || block.len() > 400 {
             continue;
@@ -818,34 +1017,20 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
                 if uf.find(a) == uf.find(b) || !compared.insert((a, b)) {
                     continue;
                 }
-                let (sa, sb) = (&normals[a].squash, &normals[b].squash);
-                // Different numbers are different things (2019 / 2020, phase 1 / phase 2).
-                if digits(sa) != digits(sb) {
-                    continue;
+                let verdict = if !fresh[a] && !fresh[b] {
+                    known.get(&(a.min(b), a.max(b))).copied()
+                } else {
+                    stats.compared += 1;
+                    let v = spelled_alike(&normals[a], &normals[b], counts[a], counts[b]);
+                    if let Some(c) = v {
+                        let pair = if tags[a].name <= tags[b].name { (tags[a].name.clone(), tags[b].name.clone()) } else { (tags[b].name.clone(), tags[a].name.clone()) };
+                        cache.spelled.insert(pair, c);
+                    }
+                    v
+                };
+                if let Some(confidence) = verdict {
+                    link(&mut uf, a, b, confidence, "Spelled almost the same".into());
                 }
-                let short = len16(sa).min(len16(sb));
-                if short < 5 {
-                    continue;
-                }
-                // A whole word more or less is a different tag ("to read" / "read").
-                let wa: HashSet<&String> = normals[a].words.iter().collect();
-                let wb: HashSet<&String> = normals[b].words.iter().collect();
-                if wa.len() != wb.len() && (wa.is_subset(&wb) || wb.is_subset(&wa)) {
-                    continue;
-                }
-                let distance = edit_distance(sa, sb, 2);
-                let allowed = if short >= 10 { 2 } else { 1 };
-                if distance > allowed || jaro_winkler(sa, sb) < 0.9 {
-                    continue;
-                }
-                // A one-letter difference between two common words (policy / police) is no typo:
-                // only offered when one of them is rare.
-                let (lo, hi) = (counts[a].min(counts[b]) as f64, counts[a].max(counts[b]) as f64);
-                let rare = lo <= 2f64.max(hi / 8.0);
-                if !rare && short < 8 {
-                    continue;
-                }
-                link(&mut uf, a, b, if distance == 1 { 0.75 } else { 0.6 }, "Spelled almost the same".into());
             }
         }
     }
@@ -1056,21 +1241,9 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
     }
 
     // 5. Co-occurrence: tags that always travel together, and tags that sit inside another.
-    let mut pair: HashMap<(usize, usize), usize> = HashMap::new();
-    for item in items {
-        let own = &item.tags;
-        if own.len() > 60 {
-            continue;
-        }
-        for x in 0..own.len() {
-            for y in 0..own.len() {
-                if x != y && own[x] < n && own[y] < n {
-                    *pair.entry((own[x], own[y])).or_insert(0) += 1;
-                }
-            }
-        }
-    }
-    let mut pairs: Vec<((usize, usize), usize)> = pair.into_iter().collect();
+    // Counted once and then kept up to date item by item (AnalysisCache::update).
+    let mut pairs: Vec<((usize, usize), usize)> =
+        cache.together.iter().filter_map(|((x, y), &both)| Some(((*by_name.get(x.as_str())?, *by_name.get(y.as_str())?), both))).collect();
     pairs.sort_unstable();
     let mut nested_child: HashSet<usize> = HashSet::new();
     let mut parents: BTreeMap<usize, (usize, f64, usize)> = BTreeMap::new();
@@ -1154,26 +1327,47 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
     candidates.truncate(1500);
     let mut docs: Vec<HashMap<String, usize>> = Vec::with_capacity(candidates.len());
     let mut df: HashMap<String, usize> = HashMap::new();
+    let mut kept_docs: HashMap<String, (u64, HashMap<String, usize>)> = HashMap::new();
     for &i in &candidates {
-        let mut doc: HashMap<String, usize> = HashMap::new();
-        for w in &normals[i].words {
-            if len16(w) >= 3 && !stop(w) {
-                *doc.entry(w.clone()).or_insert(0) += 3;
+        // Read again only when the tag or the items it is read from changed.
+        let source = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            tags[i].name.hash(&mut h);
+            for &x in holders[i].iter().take(40) {
+                items[x].id.hash(&mut h);
+                items[x].title.hash(&mut h);
             }
-        }
-        for &h in holders[i].iter().take(40) {
-            let title = fold(items[h].title.as_deref().unwrap_or_default());
-            for w in title.split(|c: char| !c.is_alphabetic()) {
-                if len16(w) >= 4 && !stop(w) {
-                    *doc.entry(spelling(&singular(w))).or_insert(0) += 1;
+            h.finish()
+        };
+        let doc = match cache.docs.remove(&tags[i].name) {
+            Some((hash, doc)) if hash == source => doc,
+            _ => {
+                stats.read += 1;
+                let mut doc: HashMap<String, usize> = HashMap::new();
+                for w in &normals[i].words {
+                    if len16(w) >= 3 && !stop(w) {
+                        *doc.entry(w.clone()).or_insert(0) += 3;
+                    }
                 }
+                for &h in holders[i].iter().take(40) {
+                    let title = fold(items[h].title.as_deref().unwrap_or_default());
+                    for w in title.split(|c: char| !c.is_alphabetic()) {
+                        if len16(w) >= 4 && !stop(w) {
+                            *doc.entry(spelling(&singular(w))).or_insert(0) += 1;
+                        }
+                    }
+                }
+                doc
             }
-        }
+        };
+        kept_docs.insert(tags[i].name.clone(), (source, doc.clone()));
         for w in doc.keys() {
             *df.entry(w.clone()).or_insert(0) += 1;
         }
         docs.push(doc);
     }
+    cache.docs = kept_docs;
     let d_count = docs.len().max(1) as f64;
     let vectors: Vec<Vec<(String, f64)>> = docs
         .iter()
@@ -1280,12 +1474,35 @@ pub fn analyze_tags(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggesti
 
 /// The analysis with each suggestion's change planned against the same index.
 pub fn suggestions_with_changes(index: &TagIndex, options: &AnalysisOptions) -> Vec<Suggestion> {
-    let mut list = analyze_tags(index, options);
+    suggestions_cached(index, options, &mut AnalysisCache::default()).0
+}
+
+/// The same, reusing what `cache` kept from the last run: only the tags that changed since
+/// (and their neighbours: tags sharing a spelling block, an item or a branch of the tree)
+/// are compared, read and planned again.
+pub fn suggestions_cached(index: &TagIndex, options: &AnalysisOptions, cache: &mut AnalysisCache) -> (Vec<Suggestion>, AnalysisStats) {
+    let mut stats = AnalysisStats::default();
+    let touched = cache.update(index, &mut stats);
+    let mut list = analyze(index, options, cache, touched.as_ref(), &mut stats);
     let context = PlanContext::new(index);
+    let affected = |plan: &TagPlan| {
+        let Some(touched) = &touched else { return true };
+        plan_names(plan).into_iter().any(|name| touched.contains(&fold(name.trim())) || context.ancestors(name).iter().any(|a| touched.contains(&fold(a.trim()))))
+    };
+    let mut plans: HashMap<String, (TagPlan, Option<PlannedChange>)> = HashMap::with_capacity(list.len());
     for s in &mut list {
-        s.change = context.plan(&s.plan).ok();
+        s.change = match cache.plans.remove(&s.id) {
+            Some((plan, change)) if plan == s.plan && !affected(&s.plan) => change,
+            _ => {
+                stats.planned += 1;
+                context.plan(&s.plan).ok()
+            }
+        };
+        plans.insert(s.id.clone(), (s.plan.clone(), s.change.clone()));
     }
-    list
+    // Only this run's plans: one left out now could miss a change before it comes back.
+    cache.plans = plans;
+    (list, stats)
 }
 
 const DISMISSED_KEY: &str = "ui.tagManager.dismissed";
@@ -1303,7 +1520,9 @@ impl Store {
             None => self.meta(DISMISSED_KEY)?.and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok()).unwrap_or_default(),
         };
         let properties = self.property_definitions()?.into_iter().filter_map(|d| serde_json::from_value::<PropertyInfo>(d).ok()).collect();
-        Ok(suggestions_with_changes(&index, &AnalysisOptions { dismissed: dismissed.into_iter().collect(), properties, max_themes }))
+        let options = AnalysisOptions { dismissed: dismissed.into_iter().collect(), properties, max_themes };
+        let mut cache = self.tag_analysis.lock().map_err(|_| "Tag analysis is unavailable".to_string())?;
+        Ok(suggestions_cached(&index, &options, &mut cache).0)
     }
 
     /// One plan (from a suggestion or the manager's own panels) as the store operation and

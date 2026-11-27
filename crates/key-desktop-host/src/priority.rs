@@ -32,6 +32,7 @@ const INTERACTIVE: &[&str] = &[
     "store_selection_overview",
     // Reading mode: a highlight made in the text (store_reflow_document is a foreground read).
     "store_reflow_locate",
+    "store_power_continue",
 ];
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
@@ -46,6 +47,7 @@ const BACKGROUND: &[&str] = &[
     "store_retractions_seen", "web_key_usage", "web_options", "db_options", "feeds_refresh", "feeds_counts", "feeds_environment", "feeds_retention", "feeds_purge",
     "workspace_scan_linked_folder", "pdfjs_companion_list", "host_can_suspend", "store_fill_run_next", "store_fill_run_answer", "store_fill_auto_candidates",
     "store_fill_sync",
+    "store_power_state", "store_power_status",
 ];
 
 /// Network or long work: never interactive, and bounded in flight by the bridge.

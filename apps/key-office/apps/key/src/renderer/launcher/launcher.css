@@ -156,8 +156,26 @@ html.kx-vibrancy .kx-launcher-side {
   box-shadow: inset 0.5px 0 0 var(--kx-line-strong);
 }
 .kx-launcher-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 14px 16px 10px;
   -webkit-app-region: drag;
+}
+.kx-launcher-header .kx-launcher-search {
+  flex: 1;
+}
+.kx-launcher-explain,
+.kx-launcher-keys-help {
+  -webkit-app-region: no-drag;
+}
+.kx-launcher-keys > span {
+  white-space: nowrap;
+}
+.kx-launcher-keys-help {
+  display: inline-flex;
+  gap: 12px;
+  margin-left: auto;
 }
 .kx-launcher-search {
   display: flex;
@@ -305,7 +323,9 @@ html.kx-vibrancy .kx-launcher-side {
 }
 .kx-launcher-keys {
   display: flex;
-  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
   padding: 8px 18px 10px;
   box-shadow: inset 0 0.5px 0 var(--kx-line);
   color: var(--kx-text-3);

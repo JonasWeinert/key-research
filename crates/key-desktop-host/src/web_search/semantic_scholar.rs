@@ -188,7 +188,7 @@ mod tests {
         let page = parse_page(&fixture("s2-search.json"));
         assert_eq!(page.cursor.as_deref(), Some("3"));
         let [attention, bert, gpt] = page.results.as_slice() else { panic!("three papers") };
-        assert_eq!(attention.provider_id, "204e3073870fae3d05bcbc2f6a8e263d9b72e776");
+        assert_eq!((attention.provider.as_str(), attention.provider_id.as_str()), ("s2", "204e3073870fae3d05bcbc2f6a8e263d9b72e776"));
         assert_eq!(attention.authors, ["Ashish Vaswani", "Noam M. Shazeer"]);
         assert_eq!(attention.venue.as_deref(), Some("Neural Information Processing Systems"));
         assert_eq!(attention.doi, None);

@@ -489,6 +489,8 @@ pub struct Store {
     /// Sources a read worked out because their stored formula values were stale: the
     /// formula worker stores these first (formula_values.rs).
     formula_first: Arc<Mutex<Vec<String>>>,
+    /// What the last tag analysis found, so the next one redoes only what changed.
+    tag_analysis: Arc<Mutex<tag_analysis::AnalysisCache>>,
 }
 
 /// Read-only connections: a user's list or search never waits for one background query.
@@ -577,7 +579,7 @@ impl Store {
                 Ok(reader)
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default(), formula_first: Default::default() })
+        Ok(Self { root, conn: Arc::new(priority::PriorityPool::single(conn)), reader: Arc::new(priority::PriorityPool::new(readers)), duplicates: Default::default(), formula_first: Default::default(), tag_analysis: Default::default() })
     }
 
     pub fn root(&self) -> &Path {

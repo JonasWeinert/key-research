@@ -14,7 +14,7 @@ import { GlobalDrawer } from "./GlobalDrawer";
 import { Icon } from "./icons";
 import type { Invoke } from "./library-api";
 import { fold, plural, type PropertyInfo, type Suggestion, type SuggestionKind, type TagIndex } from "./tag-analysis";
-import { ancestors, applyLocally, buildTree, planChange, sortTree, visibleRows, type ApplyResult, type ManagerPlan, type PlannedChange, type TagNode, type TagSort, type TagTree } from "./tag-plan";
+import { ancestors, applyPrediction, buildTree, planChange, sortTree, visibleRows, type ApplyResult, type ManagerPlan, type PlannedChange, type TagNode, type TagSort, type TagTree } from "./tag-plan";
 import "./tag-manager.css";
 import { Explain, FirstUseTip } from "./explain";
 
@@ -176,7 +176,8 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     exitTo.current = new Map(operations.flatMap((op) => op.replace.filter((r) => r.to.length).map((r) => [key(r.from), key(r.to[0])] as [string, string])));
     setTouched(new Set(changes.flatMap((c) => c.lines.flatMap((l) => [key(l.before), ...(l.after ? [key(l.after.split(" › ").pop() ?? l.after)] : [])]))));
     settle();
-    if (before) setIndex(applyLocally(before, operations));
+    // The host's prediction moves the tree at once; its index after applying replaces it.
+    if (before) setIndex(applyPrediction(before, changes.flatMap((c) => (c.predicted ? [c.predicted] : []))));
     // Nested tags show under their parent.
     const parents = operations.flatMap((op) => Object.values(op.tree).flatMap((meta) => (meta?.parent ? [key(meta.parent)] : [])));
     if (parents.length) setExpanded((old) => new Set([...old, ...parents]));
@@ -259,7 +260,7 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     await shown;
     setPending((old) => new Set([...old].filter((id) => !ids.includes(id))));
     if (ok) setLeaving((old) => new Map([...old, ...ids.map((id, i) => [id, i] as [string, number])]));
-    else if (ids.length === 1) setCardErrors((old) => ({ ...old, [ids[0]]: "Could not apply this. The tags may have changed." }));
+    else if (ids.length === 1) setCardErrors((old) => ({ ...old, [ids[0]]: "Could not apply this: the tags changed since it was suggested. The list updates in a moment." }));
   };
 
   // ── Selection ──

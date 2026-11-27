@@ -354,6 +354,8 @@ impl Library {
                     "backfill": self.store.backfill_status()?,
                     "vectors": self.store.vector_count()?,
                     "counts": counts,
+                    // Bulk indexing held on battery (power.rs).
+                    "power": super::power::status(self),
                 }))
             })(),
             // The renderer reports what the user is working with, so indexing follows them.
@@ -576,7 +578,8 @@ impl Library {
                     .or_else(|| super::cite_check::dispatch(self, command, args))
                     .or_else(|| super::biblio_commands::dispatch(self, command, args, root))
                     .or_else(|| super::export_commands::dispatch(self, command, args, root))
-                    .or_else(|| super::workspace_settings::dispatch(self, command, args));
+                    .or_else(|| super::workspace_settings::dispatch(self, command, args))
+                    .or_else(|| super::power::dispatch(self, command, args));
             }
         };
         Some(result)

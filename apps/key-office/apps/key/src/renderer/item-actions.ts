@@ -9,6 +9,7 @@ import { itemFromHref, itemHref, markdownToPlainText, type DraggedItem, type Ite
 import { noteSources } from "./note-sources";
 import { belowContent, layoutCards, normalizeDoc } from "./canvas/model";
 import { describeLinkedFile, openLinkedFile } from "./linked-files";
+import { couldNot } from "../shared/plain-error";
 
 export type Placement = "tab" | "split" | "here";
 
@@ -312,7 +313,7 @@ export async function copyCitation(invoke: Invoke, workspaceId: string, items: I
     await writeRichClipboard({ text: text.join("\n\n"), html: html.join(""), rtf: rtfDocument(rtf) });
     toast(cited.length === 1 ? "Citation copied" : `${cited.length} citations copied`);
   } catch (e) {
-    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
+    toast(couldNot("format the citation", e));
   }
 }
 
@@ -330,7 +331,7 @@ export async function copyInTextCitation(invoke: Invoke, workspaceId: string, it
     await writeRichClipboard({ text: c.text, html: c.html, rtf: rtfDocument([c.rtf]) });
     toast("In-text citation copied");
   } catch (e) {
-    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
+    toast(couldNot("format the citation", e));
   }
 }
 
@@ -344,7 +345,7 @@ export async function copyCollectionBibliography(invoke: Invoke, workspaceId: st
     await writeRichClipboard({ text: bib.entries.map((e) => e.text).join("\n\n"), html: bib.html, rtf: bib.rtf });
     toast(bib.entries.length === 1 ? "Bibliography copied (1 reference)" : `Bibliography copied (${bib.entries.length} references)`);
   } catch (e) {
-    toast(`Could not format the bibliography: ${String(e).replace(/^Error: /, "")}`);
+    toast(couldNot("format the bibliography", e));
   }
 }
 

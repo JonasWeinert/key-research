@@ -39,6 +39,8 @@ mod models_commands;
 mod formula_worker;
 #[path = "reflow_commands.rs"]
 mod reflow_commands;
+#[path = "power.rs"]
+mod power;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{

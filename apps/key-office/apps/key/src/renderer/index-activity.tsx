@@ -88,12 +88,17 @@ export function ActivityPanel({
   activity,
   modelReady,
   onPause,
+  onContinue,
+  power,
   backfill,
   references,
 }: {
   activity: IndexActivity;
   modelReady: boolean;
   onPause: (paused: boolean) => void;
+  /** On battery: run bulk indexing anyway until the Mac is plugged in. */
+  onContinue?: () => void;
+  power?: LibraryStatus["power"];
   backfill?: LibraryStatus["backfill"];
   /** The source whose references are being found or looked up now. */
   references?: LibraryStatus["references"];
@@ -106,7 +111,7 @@ export function ActivityPanel({
     <div className="kx-activity-panel">
       <header>
         <div>
-          <strong>{activity.paused ? "Indexing paused" : left ? "Making your library searchable" : references ? "Analysing references" : "All caught up"}</strong>
+          <strong>{activity.paused ? "Indexing paused" : activity.held && left ? heldLabel(power) : left ? "Making your library searchable" : references ? "Analysing references" : "All caught up"}</strong>
           <span>
             {total ? `${activity.batchDone.toLocaleString()} of ${total.toLocaleString()} sources` : "Every source is searchable"}
             {eta && !activity.paused ? ` · ${eta}` : ""}
@@ -117,7 +122,13 @@ export function ActivityPanel({
             </span>
           )}
         </div>
-        {(left > 0 || activity.paused || older > 0) && (
+        {activity.held && !activity.paused && onContinue && (
+          <button className="kx-activity-pause" onClick={onContinue}>
+            <Icon name="play" size={12} />
+            Continue anyway
+          </button>
+        )}
+        {(left > 0 || activity.paused || older > 0) && !(activity.held && !activity.paused) && (
           <button className="kx-activity-pause" onClick={() => onPause(!activity.paused)}>
             <Icon name={activity.paused ? "play" : "pause"} size={12} />
             {activity.paused ? "Resume" : "Pause"}
@@ -158,7 +169,11 @@ export function ActivityPanel({
         </section>
       )}
       <p className="kx-activity-note">
-        {activity.vectorsPending > 0 && !modelReady
+        {activity.held && !activity.paused
+          ? power?.held === "low-power"
+            ? "Low Power Mode is on, so Key waits to index the rest. Sources you open or select are still indexed. Change this in Workspace Settings › Indexing & lookups."
+            : "To save battery, Key waits to index the rest until this Mac is plugged in. Sources you open or select are still indexed. Change this in Workspace Settings › Indexing & lookups."
+          : activity.vectorsPending > 0 && !modelReady
           ? `${activity.vectorsPending.toLocaleString()} passages are searchable by words now and gain meaning search once the search model is ready.`
           : "Sources you open, select or scroll to are indexed first."}
       </p>
@@ -166,12 +181,16 @@ export function ActivityPanel({
   );
 }
 
+/** Why bulk indexing waits: on battery, or in Low Power Mode. */
+export const heldLabel = (power?: LibraryStatus["power"]) => (power?.held === "low-power" ? "Indexing paused in Low Power Mode" : "Indexing paused on battery");
+
 /** Older PDFs still to identify or look up in the background. */
 export const olderSources = (backfill?: LibraryStatus["backfill"]) => (backfill ? backfill.identify + backfill.lookup : 0);
 
 /** The status bar's line for the batch: "Indexing · 12 left · about 3 min", and its progress. */
-export function activityLabel(activity: IndexActivity): { label: string; fraction?: number } {
+export function activityLabel(activity: IndexActivity, power?: LibraryStatus["power"]): { label: string; fraction?: number } {
   if (activity.paused) return { label: "Indexing paused" };
+  if (activity.held && !activity.reading && !activity.embedding) return { label: heldLabel(power) };
   const { left, eta } = remaining(activity);
   return {
     label: `Indexing · ${left.toLocaleString()} left${eta ? ` · ${eta.replace(" left", "")}` : ""}`,
@@ -187,21 +206,24 @@ export function ActivityBanner({ status, minimum = 1, onPause }: { status?: Libr
   if (left < minimum && !activity.paused) return null;
   const current = activity.reading ?? activity.embedding;
   const fraction = activity.batchTotal ? activity.batchDone / activity.batchTotal : 0;
+  const held = !!activity.held && !activity.paused && !current;
   return (
     <section className="kx-activity-banner" role="status" aria-label="Indexing progress">
       <ProgressRing fraction={fraction} size={30} />
       <div className="kx-activity-banner-text">
         <strong>
-          {activity.paused ? "Indexing paused" : "Making your library searchable"}
+          {activity.paused ? "Indexing paused" : held ? heldLabel(status?.power) : "Making your library searchable"}
           <span>
             {activity.batchDone.toLocaleString()} of {activity.batchTotal.toLocaleString()}
-            {eta && !activity.paused ? ` · ${eta}` : ""}
+            {eta && !activity.paused && !held ? ` · ${eta}` : ""}
           </span>
         </strong>
         {current && !activity.paused ? (
           <small>
             {stageLabel(current)} · <em>{current.title || "Untitled"}</em>
           </small>
+        ) : held ? (
+          <small>The rest waits until this Mac is plugged in; sources you open are still indexed. Click the status bar to continue anyway.</small>
         ) : (
           <small>Search covers each source as soon as it finishes.</small>
         )}

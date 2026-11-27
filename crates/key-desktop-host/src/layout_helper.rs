@@ -124,12 +124,24 @@ pub fn maybe_run_layout_helper() -> Option<i32> {
         eprintln!("usage: {FLAG} INPUT OUTPUT [--model PATH]");
         return Some(2);
     };
-    // The helper runs at the class of the indexing that asked (its threads inherit the QoS).
-    if let Some(class) = env::var(CLASS_ENV).ok().as_deref().and_then(key_store::priority::Class::parse) {
+    // The helper runs at the class of the indexing that asked. A thread's QoS is not passed
+    // on to the threads it starts (ps -M showed the worker and the model's threads at the
+    // default priority), so the worker sets it again, and background work also lowers the
+    // whole process (nice 10), which reaches the layout model's own threads.
+    let class = env::var(CLASS_ENV).ok().as_deref().and_then(key_store::priority::Class::parse);
+    if let Some(class) = class {
         key_store::priority::set_thread_class(class);
+        if class >= key_store::priority::Class::Background {
+            key_embed::set_process_nice(std::process::id(), 10);
+        }
     }
     // PDFium gets a thread with a generous stack; deep structure trees recurse.
-    let worker = std::thread::Builder::new().stack_size(64 << 20).spawn(move || run(&input, &output, model));
+    let worker = std::thread::Builder::new().stack_size(64 << 20).spawn(move || {
+        if let Some(class) = class {
+            key_store::priority::set_thread_class(class);
+        }
+        run(&input, &output, model)
+    });
     match worker.map_err(|e| e.to_string()).and_then(|w| w.join().map_err(|_| "layout helper panicked".to_string())) {
         Ok(Ok(())) => Some(0),
         Ok(Err(error)) | Err(error) => {

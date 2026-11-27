@@ -30,6 +30,9 @@ pub struct Own {
     pub find_pdf_on_add: Option<bool>,
     #[serde(default)]
     pub add_from_source: Option<String>,
+    /// Bulk indexing on battery (power.rs): "low" (the default), "battery" or "never".
+    #[serde(default)]
+    pub battery: Option<String>,
 }
 
 pub fn own(store: &Store) -> Own {
@@ -89,6 +92,7 @@ fn resolved(store: &Store) -> Result<Json, String> {
             "lookups": own.lookups.unwrap_or(app_lookups),
             "findPdfOnAdd": own.find_pdf_on_add.unwrap_or(false),
             "addFromSource": own.add_from_source.clone().unwrap_or_else(|| "ask".into()),
+            "battery": own.battery.clone().unwrap_or_else(|| "low".into()),
         },
     }))
 }
@@ -120,6 +124,13 @@ fn update(store: &Store, patch: &Json) -> Result<Own, String> {
                 }
                 own.add_from_source = Some(mode);
             }
+            "battery" => {
+                let mode = text(Some(value));
+                if mode.as_ref().is_some_and(|m| !super::power::MODES.contains(&m.as_str())) {
+                    return Err("Choose when indexing pauses on battery".into());
+                }
+                own.battery = mode;
+            }
             _ => return Err(format!("Unknown workspace setting {key}")),
         }
     }
@@ -135,6 +146,7 @@ pub fn dispatch(library: &Library, command: &str, args: &Json) -> Option<Result<
             if let Some(patch) = arg::<Option<Json>>(args, "patch")? {
                 let own = update(&library.store, &patch)?;
                 library.openalex.set_own_auto(own.lookups);
+                super::power::apply(library);
             }
             json_output(resolved(&library.store)?)
         })(),

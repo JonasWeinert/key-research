@@ -18,7 +18,8 @@ import { FoundHit, byItem, type ItemGroup } from "./search-results";
 import type { Found } from "./unified-search";
 import type { Command } from "./Palette";
 import { fuzzyScore } from "./note-editor/fuzzy";
-import { openItemAt, toast } from "./item-actions";
+import { openItemAt, shellContext, toast } from "./item-actions";
+import { openWebSearchHit } from "./web-page-open";
 import { quickLook, useItemInfo, ItemHeader, ItemBody } from "./item-ui";
 import { useWebSearch, openWebLink, errorText, type WebHit, type WebSearchState } from "./web-search";
 import { useWebAdd, WebAddButton, type WebAdd } from "./WebAddButton";
@@ -200,6 +201,7 @@ export default function SearchPopup({ invoke, workspaceId, label, placeholder, s
   const openFound = (found: Found, beside: boolean) => {
     remember(workspaceId, state.text, found);
     onClose();
+    if (found.kind === "source" && found.sourceKind === "web" && (found.passageText || found.snippet)) return void openWebSearchHit(workspaceId, found, beside ? { placement: "split", fromViewId: shellContext().viewId } : {});
     openItemAt(found, beside ? "split" : "tab", found.title, workspaceId, invoke);
   };
   const activate = (row: Row | undefined, how: { beside?: boolean } = {}) => {

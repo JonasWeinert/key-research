@@ -4,6 +4,7 @@ import { ContextMenu } from "./DatabaseView";
 import { Icon, type IconName } from "./icons";
 import { setItemDrag } from "./item-links";
 import { toast } from "./item-actions";
+import { EmptyState } from "./explain";
 import { itemAttrs } from "./item-ui";
 import type { Invoke } from "./library-api";
 import {
@@ -399,8 +400,10 @@ export default function WorkspaceSection({
       <nav className="kx-tree kx-workspace-tree" role="tree" aria-label="Workspace">
         {top.map((key) => row(key, 0))}
         {view.filter === "all" && <LinkedFolders invoke={invoke} workspaceId={workspaceId} />}
-        {workspaceId && !entries.length && <p className="key-sidebar-hint">No notes, canvases or pages yet. Create one, or link a folder, with +.</p>}
-        {workspaceId && view.filter !== "all" && !!entries.length && !top.some(visible) && <p className="key-sidebar-hint">Nothing of this kind yet.</p>}
+        {workspaceId && !entries.length && (
+          <EmptyState help="empty.notes-list" icon="note" compact className="kx-notes-empty" action={{ label: "New note", icon: "plus", onClick: () => void onNewNote() }} />
+        )}
+        {workspaceId && view.filter !== "all" && !!entries.length && !top.some(visible) && <p className="key-sidebar-hint">Nothing of this kind yet. Show all in the section’s menu to see everything.</p>}
         {/* The rest of the section takes a row dropped at the end of the top level. */}
         <div className="kx-workspace-end" data-drop={drop?.key === "@end" ? "after" : undefined} {...dropProps(null)} />
       </nav>

@@ -11,6 +11,7 @@ import type { PageScan, ScholarlyArticle } from "./scan";
 import type { WebTabState } from "./tab";
 import { webUrl } from "./urls";
 import { properUrlOf, withLibraryAccess } from "./proxy-service";
+import { couldNot } from "../../shared/plain-error";
 
 /** The part of a browser tab's record these actions read and write. */
 export interface PageRecord {
@@ -187,7 +188,7 @@ export class PageActions {
       if (back && !contents.isDestroyed()) contents.navigationHistory.goBack();
     } catch (error) {
       console.warn("Key browser: an embedded PDF did not open", url.slice(0, 200), error);
-      this.deps.emit("browser-notice", { message: `Could not open the PDF on this page: ${String(error).replace(/^Error: /, "")}` });
+      this.deps.emit("browser-notice", { message: couldNot("open the PDF on this page", error) });
     }
   }
 }

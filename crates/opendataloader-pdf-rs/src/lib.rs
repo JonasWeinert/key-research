@@ -152,6 +152,21 @@ fn convert_internal(
     if options.xml_input.is_some() {
         anyhow::bail!("XML support is not compiled in; enable the `xml` Cargo feature");
     }
+    // The layout model runs first, on its own: its session (most of the helper's memory)
+    // is gone before the page extraction builds its structures, so the two never peak
+    // together (about 0.3 GB less on a long paper; scripts/bench-host.cjs).
+    #[cfg(feature = "onnx")]
+    let detections = match options.onnx_model.as_deref() {
+        Some(model_path) => {
+            let before = profiler.as_deref().map(Profiler::start);
+            let found = onnx_layout::detect_document(path, options.password.as_deref(), options.pages.as_deref(), model_path)?;
+            if let (Some(profiler), Some(before)) = (profiler.as_deref_mut(), before) {
+                profiler.record("onnx_layout", before);
+            }
+            Some(found)
+        }
+        None => None,
+    };
     let before = profiler.as_deref().map(Profiler::start);
     let mut structure = tagged_pdf::inspect(path, options.password.as_deref()).ok();
     if let (Some(profiler), Some(before)) = (profiler.as_deref_mut(), before) {
@@ -227,17 +242,11 @@ fn convert_internal(
         profiler.record("tagged_table_reconciliation", before);
     }
     #[cfg(feature = "onnx")]
-    if let Some(model_path) = options.onnx_model.as_deref() {
+    if let Some(detections) = detections.as_ref() {
         let before = profiler.as_deref().map(Profiler::start);
-        let detections = onnx_layout::detect_document(
-            path,
-            options.password.as_deref(),
-            options.pages.as_deref(),
-            model_path,
-        )?;
-        onnx_layout::reconcile(&mut pages, &detections);
+        onnx_layout::reconcile(&mut pages, detections);
         if let (Some(profiler), Some(before)) = (profiler.as_deref_mut(), before) {
-            profiler.record("onnx_layout_and_reconciliation", before);
+            profiler.record("onnx_layout_reconciliation", before);
         }
     }
     let before = profiler.as_deref().map(Profiler::start);

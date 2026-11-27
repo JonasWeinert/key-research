@@ -314,6 +314,7 @@ export function StatusBar({
   const fill = useFillStatus(invoke, workspaceId);
   const [fillRun, setFillRun] = useState<string>();
   const pauseIndexing = (paused: boolean) => void invoke("store_index_control", { action: paused ? "pause" : "resume" }, workspaceId).catch(() => {});
+  const continueOnBattery = () => void invoke("store_power_continue", {}, workspaceId).catch(() => {});
 
   const dom = activeViewId ? domItems.get(activeViewId) : undefined;
   const viewItems = activeViewId ? (dom?.items ?? native[activeViewId] ?? []) : [];
@@ -323,7 +324,7 @@ export function StatusBar({
   const toggle = (key: string, anchor: HTMLElement, label: string) => setPopover((open) => (open?.key === key ? undefined : { key, anchor, label }));
   useEffect(() => setPopover((open) => (open?.key.startsWith("view:") ? undefined : open)), [activeViewId]);
   const workPanel = status?.activity ? (
-    <ActivityPanel activity={status.activity} modelReady={status.model.state === "ready"} onPause={pauseIndexing} backfill={status.backfill} references={status.references} />
+    <ActivityPanel activity={status.activity} modelReady={status.model.state === "ready"} onPause={pauseIndexing} onContinue={continueOnBattery} power={status.power} backfill={status.backfill} references={status.references} />
   ) : undefined;
   const popoverContent = popover?.key === "work" ? workPanel : popover?.key.startsWith("view:") ? dom?.popover?.(popover.key.slice(5)) : undefined;
   const invokeView = (item: StatusItem, anchor: HTMLElement) => {
@@ -449,12 +450,15 @@ function workItem(status: LibraryStatus | undefined): StatusItem | undefined {
   const download = modelsWorkItem(status.models);
   if (download && !(activity && isActive(activity))) return download;
   if (activity && (isActive(activity) || (activity.paused && olderSources(status.backfill) > 0))) {
-    const { label, fraction } = activityLabel(activity);
+    const { label, fraction } = activityLabel(activity, status.power);
+    const held = activity.held && !activity.paused && !activity.reading && !activity.embedding;
     return {
       id: "work",
       label,
-      ...(activity.paused ? { icon: "pause" } : fraction === undefined ? { busy: true } : { progress: fraction }),
-      title: activity.paused
+      ...(activity.paused || held ? { icon: "pause" } : fraction === undefined ? { busy: true } : { progress: fraction }),
+      title: held
+        ? "Key waits to index the rest to save power; sources you open are still indexed. Click for Continue anyway."
+        : activity.paused
         ? "Indexing is paused. Search works on what is already indexed. Resume in Settings › Search & indexing."
         : `Reading ${activity.reading?.title ?? activity.embedding?.title ?? "your sources"} so search can find it. This runs on this Mac.`,
       priority: 90,
