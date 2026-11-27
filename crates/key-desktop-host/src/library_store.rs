@@ -114,6 +114,7 @@ impl Library {
         openalex.set_backfill_gate(move || !gate.is_paused() && !gate.is_busy());
         super::biblio_commands::start_watcher(store.clone());
         super::export_commands::start_watcher(store.clone());
+        super::formula_worker::start(store.clone());
         let idle = indexer.clone();
         let hygiene = super::hygiene::Hygiene::start(store.clone(), openalex.clone(), move || !idle.is_paused() && !idle.is_busy());
         Ok(Self { store, indexer, references, openalex, hygiene, zotero: Default::default(), zotero_progress: Default::default() })

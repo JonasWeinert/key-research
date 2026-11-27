@@ -3,6 +3,26 @@
   position: relative;
   min-width: 100%;
 }
+/* A group's header in a grouped table or list: its value and how many rows it has. */
+.kx-db-group-head {
+  display: flex;
+  position: absolute;
+  inset: 0 0 auto;
+  box-sizing: border-box;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 100%;
+  padding: 0 14px 6px;
+  box-shadow: inset 0 -1px 0 var(--kx-line);
+  background: var(--kx-bg);
+  color: var(--kx-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.kx-db-group-head .kx-count {
+  color: var(--kx-text-3);
+  font-weight: 400;
+}
 
 /* ── Table ─────────────────────────────────────────────── */
 .kx-table-head,
@@ -83,6 +103,11 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.kx-db-head-icon {
+  margin-right: 4px;
+  color: var(--kx-text-3);
+  vertical-align: -1px;
 }
 .kx-db-pin-mark {
   flex: none;

@@ -10,6 +10,8 @@ export interface Source extends CitableSource {
   properties: Record<string, unknown>;
   /** Formula properties' values, computed by the host: a value or `{ error }`. */
   formulaValues?: Record<string, unknown>;
+  /** In a grouped list: the value of the field it is grouped by. */
+  groupValue?: unknown;
   collections: string[];
   starred: boolean;
   indexStatus: string;
@@ -234,6 +236,8 @@ export interface SourcePage {
   total: number;
   nextOffset: number | null;
   counts: Counts;
+  /** With `group`: every group of the view in order, with its size. */
+  groups?: { value: unknown; count: number }[];
 }
 export interface Facet {
   value: string;

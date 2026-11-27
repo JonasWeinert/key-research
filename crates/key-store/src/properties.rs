@@ -118,6 +118,7 @@ impl Store {
         )
         .map_err(e)?;
         sync_options(&tx, name)?;
+        crate::formula_values::sync(&tx)?;
         tx.commit().map_err(e)
     }
 
@@ -223,6 +224,8 @@ impl Store {
         }
         tx.execute("UPDATE property_provenance SET name = ?2 WHERE name = ?1", params![name, new_name]).map_err(e)?;
         crate::fill_cells::rename_property(&tx, name, new_name)?;
+        crate::formula_values::rename(&tx, name, new_name)?;
+        crate::formula_values::sync(&tx)?;
         tx.commit().map_err(e)?;
         drop(db);
         let definition = self.property_definitions()?.into_iter().find(|d| d["name"] == new_name).unwrap_or(json!({"name": new_name}));
@@ -233,6 +236,7 @@ impl Store {
     pub fn delete_property(&self, name: &str, delete_values: bool) -> Result<usize> {
         let db = self.db()?;
         db.execute("DELETE FROM property_definitions WHERE name = ?", [name]).map_err(e)?;
+        crate::formula_values::sync(&db)?;
         if !delete_values {
             return Ok(0);
         }

@@ -1,9 +1,7 @@
 // What a formula reads on a source (fields, custom properties, other formulas, counts from
-// related tables) and where formula values go: `formulaValues` on listed sources, the editor's
-// preview, and the SQL function `key_formula_value(name, id)` that sorting, filtering and
-// grouping use. That function reads a per-library cache of every source's formula values,
-// rebuilt (on a connection of its own) when the library's signature changes, so a sort over
-// 20,000 sources evaluates each formula once rather than once per comparison.
+// related tables), the editor's preview and analysis, and the SQL for a property's value that
+// sorting, filtering and grouping use. Formula properties' values are stored per source and
+// kept up to date incrementally in formula_values.rs, so those are indexed reads.
 use crate::formula::{FormulaError, Names, Scope, Value, analyze, evaluate, evaluate_node, from_json, parse, references, tokenize, Tok};
 use crate::formula_catalog::{CORE, FIELDS, catalog, field, normalize};
 use crate::{Creator, Result, Source, Store, e};
@@ -12,8 +10,6 @@ use rusqlite::{Connection, OptionalExtension, types::ValueRef};
 use serde_json::{Map, Value as Json, json};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 /// Values from other tables that some fields need.
 #[derive(Default)]
@@ -72,10 +68,19 @@ impl Env {
         let fields = formulas.iter().flat_map(|(_, f)| references(f)).filter_map(|r| field(&r).map(|f| f.id)).collect();
         Env { formulas, index, fields }
     }
+    pub(crate) fn len(&self) -> usize {
+        self.formulas.len()
+    }
+    pub(crate) fn name(&self, index: usize) -> &str {
+        &self.formulas[index].0
+    }
+    pub(crate) fn text(&self, index: usize) -> &str {
+        &self.formulas[index].1
+    }
     fn needs(&self, id: &str) -> bool {
         self.fields.contains(id)
     }
-    fn find(&self, name: &str) -> Option<usize> {
+    pub(crate) fn find(&self, name: &str) -> Option<usize> {
         self.index.get(&name.to_lowercase()).copied().or_else(|| {
             let key = normalize(name);
             self.formulas.iter().position(|(n, _)| normalize(n) == key)
@@ -98,7 +103,7 @@ impl<'a> SourceScope<'a> {
     }
 
     /// The value of formula property `index` here (each once; a loop is an error).
-    fn formula(&self, index: usize) -> std::result::Result<Value, String> {
+    pub(crate) fn formula(&self, index: usize) -> std::result::Result<Value, String> {
         if let Some(v) = self.memo.borrow().get(&index) {
             return v.clone();
         }
@@ -219,7 +224,7 @@ pub fn source_context(source: &Source) -> Map<String, Json> {
     context(&source.properties, Some(source.title()), year, page_count, &source.creators, source.field("containerTitle"))
 }
 
-fn json_result(result: std::result::Result<Value, String>) -> Json {
+pub(crate) fn json_result(result: std::result::Result<Value, String>) -> Json {
     match result {
         Ok(v) => v.to_json(),
         Err(error) => json!({ "error": error }),
@@ -243,26 +248,6 @@ pub fn definitions(db: &Connection) -> Result<Vec<(String, String)>> {
     rows.collect::<std::result::Result<_, _>>().map_err(e)
 }
 
-/// Puts each formula property's value on the sources as `formulaValues` (what the table,
-/// details and exports show).
-pub fn decorate(db: &Connection, sources: &mut [Source]) -> Result<()> {
-    let formulas = definitions(db)?;
-    if formulas.is_empty() || sources.is_empty() {
-        return Ok(());
-    }
-    let env = Env::new(formulas);
-    let ids: Vec<String> = sources.iter().map(|s| s.id.clone()).collect();
-    let related = Related::load(db, &env, Some(&ids))?;
-    for source in sources {
-        let values: Map<String, Json> = {
-            let scope = SourceScope::new(source, &related, &env);
-            (0..env.formulas.len()).map(|i| (env.formulas[i].0.clone(), json_result(scope.formula(i)))).collect()
-        };
-        source.fields.insert("formulaValues".into(), Json::Object(values));
-    }
-    Ok(())
-}
-
 /// A formula's value on source `id` (with the workspace's formulas and related counts).
 pub(crate) fn evaluate_on(db: &Connection, id: &str, formula: &str) -> std::result::Result<Value, FormulaError> {
     let none = |m: String| FormulaError { message: m, hint: None, start: 0, end: 0 };
@@ -275,7 +260,7 @@ pub(crate) fn evaluate_on(db: &Connection, id: &str, formula: &str) -> std::resu
     evaluate_node(&node, &SourceScope::new(&source, &related, &env))
 }
 
-fn sql_value(value: Value) -> rusqlite::types::Value {
+pub(crate) fn sql_value(value: Value) -> rusqlite::types::Value {
     use rusqlite::types::Value as Sql;
     match value {
         Value::Null => Sql::Null,
@@ -287,76 +272,10 @@ fn sql_value(value: Value) -> rusqlite::types::Value {
     }
 }
 
-/// Every source's formula values for SQL, rebuilt when the library changes.
-pub struct FormulaCache {
-    root: PathBuf,
-    inner: Mutex<CacheInner>,
-}
-
-#[derive(Default)]
-struct CacheInner {
-    conn: Option<Connection>,
-    signature: String,
-    values: HashMap<String, Arc<HashMap<String, rusqlite::types::Value>>>,
-}
-
-type Column = Arc<HashMap<String, rusqlite::types::Value>>;
-
-impl FormulaCache {
-    pub fn new(root: PathBuf) -> Arc<Self> {
-        Arc::new(FormulaCache { root, inner: Mutex::default() })
-    }
-
-    /// The values of formula `name` for every source, up to date.
-    fn column(&self, name: &str) -> std::result::Result<Column, String> {
-        let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
-        if inner.conn.is_none() {
-            let conn = Connection::open(self.root.join("key.db")).map_err(e)?;
-            conn.execute_batch("PRAGMA query_only=1; PRAGMA busy_timeout=5000;").map_err(e)?;
-            inner.conn = Some(conn);
-        }
-        let conn = inner.conn.as_ref().ok_or("No connection")?;
-        // Any commit by another connection changes `data_version`; this one never writes.
-        let version: i64 = conn.query_row("PRAGMA data_version", [], |r| r.get(0)).map_err(e)?;
-        let signature = format!("{version}|{}", crate::formula::today());
-        if signature != inner.signature {
-            inner.values = Self::compute(conn)?;
-            inner.signature = signature;
-        }
-        let key = name.to_lowercase();
-        Ok(inner.values.get(&key).cloned().or_else(|| {
-            let wanted = normalize(name);
-            inner.values.iter().find(|(k, _)| normalize(k) == wanted).map(|(_, v)| v.clone())
-        }).unwrap_or_default())
-    }
-
-    fn compute(conn: &Connection) -> Result<HashMap<String, Column>> {
-        let formulas = definitions(conn)?;
-        if formulas.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let env = Env::new(formulas);
-        let related = Related::load(conn, &env, None)?;
-        let mut columns: Vec<HashMap<String, rusqlite::types::Value>> = vec![HashMap::new(); env.formulas.len()];
-        let mut statement = conn.prepare(&format!("{} WHERE s.merged_into IS NULL", crate::select_sources())).map_err(e)?;
-        let rows = statement.query_map([], crate::read_source).map_err(e)?;
-        for row in rows {
-            let source = row.map_err(e)?;
-            let scope = SourceScope::new(&source, &related, &env);
-            for (i, column) in columns.iter_mut().enumerate() {
-                if let Ok(value) = scope.formula(i) {
-                    column.insert(source.id.clone(), sql_value(value));
-                }
-            }
-        }
-        Ok(env.formulas.iter().zip(columns).map(|((name, _), column)| (name.to_lowercase(), Arc::new(column))).collect())
-    }
-}
-
 /// `key_formula(formula, properties, title, year, page_count, creators, container_title)`:
-/// the older per-row form (kept for saved SQL); `key_formula_value(name, id)`: a formula
-/// property's value on a source, from the cache. Both are NULL when the formula fails.
-pub fn register(db: &Connection, cache: &Arc<FormulaCache>) -> Result<()> {
+/// the older per-row form (kept for saved SQL); NULL when the formula fails. Formula
+/// properties' values are stored in `formula_values` (formula_values.rs).
+pub fn register(db: &Connection) -> Result<()> {
     db.create_scalar_function("key_formula", 7, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx: &Context| {
         let text = |i: usize| -> Option<String> {
             match ctx.get_raw(i) {
@@ -377,24 +296,6 @@ pub fn register(db: &Connection, cache: &Arc<FormulaCache>) -> Result<()> {
         let context = context(&properties, text(2).as_deref(), int(3), int(4), &creators, text(6).as_deref());
         Ok(evaluate(&formula, &context).map_or(rusqlite::types::Value::Null, sql_value))
     })
-    .map_err(e)?;
-    let cache = cache.clone();
-    db.create_scalar_function("key_formula_value", 2, FunctionFlags::SQLITE_UTF8, move |ctx: &Context| {
-        // The column is looked up once per statement (it is attached to the constant name).
-        let column: Arc<Column> = match ctx.get_aux::<Column>(0)? {
-            Some(column) => column,
-            None => {
-                let name = ctx.get::<String>(0)?;
-                let column = cache.column(&name).map_err(|m| rusqlite::Error::UserFunctionError(m.into()))?;
-                ctx.set_aux(0, column)?
-            }
-        };
-        let id = match ctx.get_raw(1) {
-            ValueRef::Text(t) => std::str::from_utf8(t).unwrap_or(""),
-            _ => return Ok(rusqlite::types::Value::Null),
-        };
-        Ok(column.get(id).cloned().unwrap_or(rusqlite::types::Value::Null))
-    })
     .map_err(e)
 }
 
@@ -405,7 +306,7 @@ pub fn property_sql(name: &str) -> String {
     let literal = name.replace('\'', "''");
     format!(
         "(CASE WHEN (SELECT json_extract(config, '$.type') FROM property_definitions WHERE name = '{literal}') = 'formula' \
-         THEN key_formula_value('{literal}', s.id) \
+         THEN (SELECT v.value FROM formula_values v WHERE v.property = '{literal}' AND v.source_id = s.id) \
          ELSE json_extract(s.properties, '$.\"{path}\"') END)"
     )
 }

@@ -1,6 +1,7 @@
 // A database view over any kind of row (sources now; notes and records later):
 // virtualized grid, list and table layouts, a toolbar to switch between them, and
-// table columns the user can show, hide, reorder, resize and pin, sorted on several levels.
+// table columns the user can show, hide, reorder, resize and pin, sorted on several levels
+// and (in table and list layouts) grouped under headers.
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { createPortal } from "react-dom";
 import { useDismiss } from "@key-reader/ui/dismiss";
@@ -42,8 +43,10 @@ export interface DatabaseColumn<T> {
   /** The sort field this column sorts by; unsortable without one. */
   sortField?: string;
   numeric?: boolean;
-  /** Shown before the label (e.g. ƒ for calculated properties). */
+  /** Shown before the label. */
   mark?: string;
+  /** An icon before the label (a formula's). */
+  icon?: IconName;
   render: (row: T) => ReactNode;
   /** Adds "Edit property…" to the column's menu. */
   onEdit?: () => void;
@@ -85,6 +88,7 @@ export function DatabaseToolbar<T>({
   sortFields,
   layouts = ["grid", "list", "table"],
   columnFooter,
+  groupFields,
 }: {
   state: DatabaseViewState;
   onChange: (patch: Partial<DatabaseViewState>) => void;
@@ -94,9 +98,12 @@ export function DatabaseToolbar<T>({
   layouts?: DatabaseLayout[];
   /** Extra items under the column list, like "New property…". */
   columnFooter?: ReactNode;
+  /** What the rows can be grouped by; no Group menu without. */
+  groupFields?: [string, string][];
 }) {
   return (
     <>
+      {groupFields && state.layout !== "grid" && <GroupMenu group={state.group} fields={groupFields} onChange={(group) => onChange({ group })} />}
       <SortMenu sorts={state.sorts} fields={sortFields} onChange={(sorts) => onChange({ sorts })} />
       {state.layout === "table" && <ColumnMenu columns={columns} settings={state} onChange={onChange} footer={columnFooter} />}
       <div className="kx-segmented" role="group" aria-label="Layout">
@@ -136,6 +143,37 @@ function Popover({
         </div>
       )}
     </div>
+  );
+}
+
+/** Group by: none or one field; rows then come under a header per value. */
+function GroupMenu({ group, fields, onChange }: { group?: string; fields: [string, string][]; onChange: (group: string | undefined) => void }) {
+  const current = fields.find(([id]) => id === group);
+  return (
+    <Popover
+      label="Group"
+      className="kx-group-popover"
+      summary={
+        <>
+          <Icon name="layers" size={14} />
+          <span>{current ? current[1] : "Group"}</span>
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          <button role="menuitemradio" aria-checked={!current} onClick={() => (onChange(undefined), close())}>
+            <Icon name="check" size={12} style={{ visibility: current ? "hidden" : undefined }} /> No grouping
+          </button>
+          <hr />
+          {fields.map(([id, name]) => (
+            <button key={id} role="menuitemradio" aria-checked={id === group} onClick={() => (onChange(id), close())}>
+              <Icon name="check" size={12} style={{ visibility: id === group ? undefined : "hidden" }} /> {name}
+            </button>
+          ))}
+        </>
+      )}
+    </Popover>
   );
 }
 
@@ -336,7 +374,13 @@ interface Props<T> {
   renderCard: (row: T, state: RowState) => ReactNode;
   /** The visible range changed (indices into `rows`), for paging and prefetch. */
   onRange?: (first: number, last: number) => void;
+  /** Grouped rows (they arrive ordered by group): each row's group, and its header. */
+  groupOf?: (row: T) => string;
+  renderGroup?: (key: string, row: T) => ReactNode;
 }
+
+type Slot = { header: string; row: number } | { header?: undefined; row: number };
+const GROUP_HEAD = 34;
 
 const TABLE_ROW = 34;
 const CARD_MIN = 158;
@@ -364,6 +408,8 @@ function DatabaseViewInner<T>(
     listRowHeight = 58,
     renderCard,
     onRange,
+    groupOf,
+    renderGroup,
   }: Props<T>,
   ref: React.Ref<DatabaseViewHandle>,
 ) {
@@ -379,12 +425,25 @@ function DatabaseViewInner<T>(
   }, []);
   const layout = state.layout;
   const perRow = layout === "grid" ? Math.max(1, Math.floor((width - GRID_PAD * 2 + CARD_GAP) / (CARD_MIN + CARD_GAP))) : 1;
-  const count = layout === "grid" ? Math.ceil(rows.length / perRow) : rows.length;
+  // With groups, a header slot goes before the first row of each.
+  const slots = useMemo<Slot[] | undefined>(() => {
+    if (!groupOf || layout === "grid") return undefined;
+    const out: Slot[] = [];
+    let previous: string | undefined;
+    rows.forEach((row, index) => {
+      const key = groupOf(row);
+      if (index === 0 || key !== previous) out.push({ header: key, row: index });
+      out.push({ row: index });
+      previous = key;
+    });
+    return out;
+  }, [rows, groupOf, layout]);
+  const count = slots ? slots.length : layout === "grid" ? Math.ceil(rows.length / perRow) : rows.length;
   const size = layout === "grid" ? CARD_HEIGHT : layout === "table" ? TABLE_ROW : listRowHeight;
   const virtualizer = useVirtualizer({
     count,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => size,
+    estimateSize: (index) => (slots?.[index]?.header !== undefined ? GROUP_HEAD : size),
     overscan: layout === "grid" ? 3 : 12,
     paddingStart: layout === "grid" ? 14 : 0,
     scrollMargin: 0,
@@ -392,18 +451,20 @@ function DatabaseViewInner<T>(
   useEffect(() => {
     virtualizer.measure();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, perRow, size]);
+  }, [layout, perRow, size, slots]);
+  const slotOf = (index: number) => (slots ? Math.max(0, slots.findIndex((s) => s.header === undefined && s.row === index)) : Math.floor(index / perRow));
   useImperativeHandle(
     ref,
     () => ({
-      scrollToIndex: (index) => virtualizer.scrollToIndex(Math.floor(index / perRow), { align: "auto" }),
+      scrollToIndex: (index) => virtualizer.scrollToIndex(slotOf(index), { align: "auto" }),
       focus: () => scrollRef.current?.focus(),
     }),
-    [virtualizer, perRow],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [virtualizer, perRow, slots],
   );
   const items = virtualizer.getVirtualItems();
-  const first = items.length ? items[0].index * perRow : 0;
-  const last = items.length ? Math.min(rows.length - 1, (items[items.length - 1].index + 1) * perRow - 1) : -1;
+  const first = !items.length ? 0 : slots ? (slots[items[0].index]?.row ?? 0) : items[0].index * perRow;
+  const last = !items.length ? -1 : slots ? (slots[items[items.length - 1].index]?.row ?? -1) : Math.min(rows.length - 1, (items[items.length - 1].index + 1) * perRow - 1);
   const latestRange = useRef(onRange);
   latestRange.current = onRange;
   useEffect(() => {
@@ -459,8 +520,15 @@ function DatabaseViewInner<T>(
                   </div>
                 );
               }
-              const row = rows[item.index];
+              const slot = slots?.[item.index];
+              const row = rows[slot ? slot.row : item.index];
               if (!row) return null;
+              if (slot?.header !== undefined)
+                return (
+                  <div key={`group:${slot.header}`} className="kx-db-group-head" role="presentation" style={{ transform: `translateY(${item.start}px)`, height: GROUP_HEAD, width: table ? tableWidth : undefined }}>
+                    {renderGroup ? renderGroup(slot.header, row) : slot.header}
+                  </div>
+                );
               if (layout === "list") return <ListSlot key={rowId(row)}>{renderListRow(row, item.start, { selected: isSelected(row), focused: isFocused(row) })}</ListSlot>;
               return (
                 <div
@@ -627,6 +695,7 @@ function TableHead<T>({
           >
             {r.pinned && <Icon name="pin" size={10} className="kx-db-pin-mark" />}
             <span className="kx-db-head-label">
+              {r.column.icon && <Icon name={r.column.icon} size={11} className="kx-db-head-icon" />}
               {r.column.mark}
               {r.column.label}
             </span>

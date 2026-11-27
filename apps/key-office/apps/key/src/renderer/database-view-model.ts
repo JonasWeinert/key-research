@@ -17,6 +17,8 @@ export interface DatabaseViewState {
   /** In display order; columns not listed keep their default place after these. */
   columns: ColumnSetting[];
   sorts: SortLevel[];
+  /** A field the rows are grouped by (table and list layouts). */
+  group?: string;
 }
 export interface ColumnDefaults {
   id: string;

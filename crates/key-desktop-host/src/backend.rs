@@ -35,6 +35,8 @@ mod feeds;
 mod databases;
 #[path = "models_commands.rs"]
 mod models_commands;
+#[path = "formula_worker.rs"]
+mod formula_worker;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{

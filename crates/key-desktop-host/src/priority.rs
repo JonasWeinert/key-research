@@ -33,7 +33,7 @@ const INTERACTIVE: &[&str] = &[
 
 /// Polls behind what is on screen (the status bar, progress): after the user's own work, but
 /// not starved by bulk work, or progress would look frozen.
-const VISIBLE: &[&str] = &["store_status", "store_zotero_progress", "pdfjs_companion_snapshot"];
+const VISIBLE: &[&str] = &["store_status", "store_zotero_progress", "pdfjs_companion_snapshot", "store_formula_status"];
 
 /// Nobody waits on these: timers, syncs, bulk imports and maintenance.
 const BACKGROUND: &[&str] = &[
