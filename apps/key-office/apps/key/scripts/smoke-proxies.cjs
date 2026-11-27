@@ -254,6 +254,12 @@ async function fixturesIn(temp) {
     const entry = await until(async () => (await app.evaluate(() => globalThis.keyBrowser.temp.list())).find((e) => e.url.endsWith("/pdf/2.pdf")), "the downloaded PDF");
     report.download = { url: entry.url, referrer: entry.referrer };
     assert(entry.url === "http://journal.test/pdf/2.pdf" && entry.referrer === "http://journal.test/article", "the temporary PDF has proper URLs");
+    // The reader opens (and takes the front) a moment after the download is listed: wait for it,
+    // or it lands on top of the tab the next step opens.
+    await until(async () => {
+      const view = await activeView();
+      return view?.kind === "pdf" && view.temp;
+    }, "the downloaded PDF open in the reader");
 
     // 5. Undo: this tab goes to the journal itself, and stays there.
     await open("http://journal.test/article");
