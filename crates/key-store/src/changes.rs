@@ -7,8 +7,9 @@
 // Kinds: a metadata field's name as the app calls it (`title`, `year`, `containerTitle`,
 // `doi`, `readState`, … see `KINDS`), `creators`, `tags`, `starred`, `kind`, `property:<name>`
 // (a custom property, as stored), `files` (file path, hash, type or size), `text` (its text
-// was read again), `collections` (membership, or a collection it is in was renamed), `notes`,
-// `highlights`, `reading` (opened or read), `cited` (a source in the library now cites it, or
+// was read again), `collections` (membership, or a collection it is in was renamed), `notes` and
+// `highlights` (added, removed, moved or edited),
+// `reading` (opened or read), `cited` (a source in the library now cites it, or
 // stopped), `references` (its references matched the library differently), `trashed`,
 // `merged`, `added` (a new source) and `removed` (deleted).
 use crate::{Result, e};
@@ -62,11 +63,11 @@ fn log(id: &str, kind: &str) -> String {
     format!("INSERT INTO source_input_changes(source_id, kind) SELECT {id}, '{kind}' WHERE {id} IS NOT NULL;")
 }
 
-const TRIGGERS: [&str; 17] = [
+const TRIGGERS: [&str; 19] = [
     "source_changes_insert", "source_changes_update", "source_changes_delete", "source_changes_file", "source_changes_unfile", "source_changes_collection_name",
     "source_changes_note_add", "source_changes_note_remove", "source_changes_note_move", "source_changes_highlight_add", "source_changes_highlight_remove",
     "source_changes_reading_add", "source_changes_reading_change", "source_changes_reading_remove", "source_changes_cite_add", "source_changes_cite_remove",
-    "source_changes_cite_match",
+    "source_changes_cite_match", "source_changes_note_edit", "source_changes_highlight_edit",
 ];
 
 fn triggers(db: &Connection) -> Result<String> {
@@ -102,7 +103,9 @@ fn triggers(db: &Connection) -> Result<String> {
          CREATE TRIGGER source_changes_note_add AFTER INSERT ON notes BEGIN {} END;
          CREATE TRIGGER source_changes_note_remove AFTER DELETE ON notes BEGIN {} END;
          CREATE TRIGGER source_changes_note_move AFTER UPDATE OF source_id ON notes WHEN OLD.source_id IS NOT NEW.source_id BEGIN {} {} END;
+         CREATE TRIGGER source_changes_note_edit AFTER UPDATE OF title, body ON notes WHEN OLD.title IS NOT NEW.title OR OLD.body IS NOT NEW.body BEGIN {} END;
          CREATE TRIGGER source_changes_highlight_add AFTER INSERT ON annotations BEGIN {} END;
+         CREATE TRIGGER source_changes_highlight_edit AFTER UPDATE OF payload ON annotations WHEN OLD.payload IS NOT NEW.payload BEGIN {} END;
          CREATE TRIGGER source_changes_highlight_remove AFTER DELETE ON annotations BEGIN {} END;
          CREATE TRIGGER source_changes_reading_add AFTER INSERT ON source_reading BEGIN {} END;
          CREATE TRIGGER source_changes_reading_change AFTER UPDATE ON source_reading BEGIN {} END;
@@ -118,6 +121,8 @@ fn triggers(db: &Connection) -> Result<String> {
         log("OLD.source_id", "notes"),
         log("OLD.source_id", "notes"),
         log("NEW.source_id", "notes"),
+        log("NEW.source_id", "notes"),
+        log("NEW.source_id", "highlights"),
         log("NEW.source_id", "highlights"),
         log("OLD.source_id", "highlights"),
         log("NEW.source_id", "reading"),
@@ -230,7 +235,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open(dir.path()).unwrap();
         let db = || store.db().unwrap();
-        // Consumers start at the latest change.
+        // Only this test's consumers hold the log back; they start at the latest change.
+        forget(&db(), "formulas").unwrap();
         cursor(&db(), "a").unwrap();
         cursor(&db(), "b").unwrap();
         let input: SourceInput = serde_json::from_value(json!({"kind": "reference", "title": "One", "properties": {"Score": 1, "Keep": "x"}})).unwrap();
@@ -267,6 +273,23 @@ mod tests {
         assert!(changes.iter().any(|c| c.kind == "property:Keep"), "{changes:?}");
         assert_eq!(changes.last().map(|c| c.kind.as_str()), Some("removed"));
         assert!(complete_since(&db(), last).unwrap());
+    }
+
+    #[test]
+    fn edited_notes_and_highlights_are_logged_only_when_they_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let id = store.insert_source(serde_json::from_value(json!({"kind": "reference", "title": "A"})).unwrap()).unwrap().id;
+        let note = store.save_note(None, Some(&id), "", "Body", None).unwrap();
+        store.db().unwrap().execute("INSERT INTO annotations(id, source_id, payload, updated_at) VALUES ('h1', ?1, '{}', 0)", [&id]).unwrap();
+        cursor(&store.db().unwrap(), "c").unwrap();
+        store.save_note(Some(&note.id), Some(&id), "", "Changed", None).unwrap();
+        store.db().unwrap().execute("UPDATE annotations SET payload = '{\"color\":\"red\"}', updated_at = 1 WHERE id = 'h1'", []).unwrap();
+        // The same values again: nothing.
+        store.db().unwrap().execute("UPDATE notes SET body = body, updated_at = 2 WHERE id = ?1", [&note.id]).unwrap();
+        store.db().unwrap().execute("UPDATE annotations SET payload = payload, updated_at = 2 WHERE id = 'h1'", []).unwrap();
+        let changes = read_since(&store.db().unwrap(), "c", 10).unwrap();
+        assert_eq!(kinds(&changes), vec![(id.as_str(), "highlights"), (id.as_str(), "notes")]);
     }
 
     #[test]
