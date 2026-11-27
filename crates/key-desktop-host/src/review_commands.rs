@@ -96,7 +96,9 @@ fn call_db(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &St
 }
 
 /// A database search run's records and its PRISMA identification numbers.
-fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &StoreLibrary, run: &str) -> Result<(Batch, Vec<RecordMeta>), String> {
+/// `keys` (the run's work keys) keeps only those works, every version of each.
+fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library: &StoreLibrary, run: &str, keys: &[String]) -> Result<(Batch, Vec<RecordMeta>), String> {
+    let wanted = |row: &&Json| keys.is_empty() || row.get("key").and_then(Json::as_str).is_some_and(|k| keys.iter().any(|w| w == k));
     let report = call_db(databases, web, library, "db_run", json!({ "runId": run }))?;
     let mut batch = Batch { kind: "database".into(), group: "databases".into(), db_run_id: run.into(), ..Default::default() };
     batch.name = report.get("label").and_then(Json::as_str).filter(|l| !l.trim().is_empty()).unwrap_or("Database search").to_string();
@@ -127,7 +129,7 @@ fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library
         match call_db(databases, web, library, "db_results", json!({ "runId": run, "dedupe": false, "offset": offset, "limit": 2000 })) {
             Ok(page) => {
                 let rows = page.get("rows").or_else(|| page.get("records")).and_then(Json::as_array).cloned().unwrap_or_default();
-                records.extend(rows.iter().map(from_db_row));
+                records.extend(rows.iter().filter(wanted).map(from_db_row));
                 let listed = page.get("listed").and_then(Json::as_u64).unwrap_or(0) as usize;
                 offset += rows.len();
                 if rows.is_empty() || offset >= listed {
@@ -138,8 +140,14 @@ fn database_run(databases: &Arc<Databases>, web: &web_search::WebSearch, library
         }
     };
     if !live {
-        records = report.get("records").and_then(Json::as_array).map(|a| a.iter().map(from_db_row).collect()).unwrap_or_default();
-        batch.duplicates_removed = report.get("duplicatesRemoved").and_then(Json::as_u64).unwrap_or(0) as usize;
+        records = report.get("records").and_then(Json::as_array).map(|a| a.iter().filter(wanted).map(from_db_row).collect()).unwrap_or_default();
+        if keys.is_empty() {
+            batch.duplicates_removed = report.get("duplicatesRemoved").and_then(Json::as_u64).unwrap_or(0) as usize;
+        }
+    }
+    if !keys.is_empty() {
+        // A selection: the run's per-database totals are not what was sent.
+        batch.per_source.clear();
     }
     batch.count = records.len() + batch.duplicates_removed;
     if !batch.per_source.is_empty() && !live {
@@ -325,7 +333,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             }
             "review_import_db_run" => {
                 let store_library = StoreLibrary { library, root };
-                let (mut batch, records) = database_run(databases, web, &store_library, &arg::<String>(args, "runId")?)?;
+                let (mut batch, records) = database_run(databases, web, &store_library, &arg::<String>(args, "runId")?, &strings(args, "keys"))?;
                 if let Some(name) = args.pointer("/batch/name").and_then(Json::as_str).filter(|n| !n.trim().is_empty()) {
                     batch.name = name.into();
                 }
