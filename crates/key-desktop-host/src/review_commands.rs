@@ -349,6 +349,22 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 }).collect();
                 json!({ "report": reviews.import(&review()?, batch_from(args, "other")?, records, &actor()?, &lookup)? })
             }
+            // The Inbox's "Send to review…": works not in the library, from their feed metadata.
+            "review_import_inbox" => {
+                let mut records = Vec::new();
+                for work in library.store.inbox_works(&strings(args, "ids"))? {
+                    let input: SourceInput = serde_json::from_value(work).map_err(|e| format!("Invalid work: {e}"))?;
+                    records.push(import::from_input(&input));
+                }
+                if records.is_empty() {
+                    return Err("These works are no longer in the Inbox".into());
+                }
+                let mut batch = batch_from(args, "other")?;
+                if batch.name.is_empty() {
+                    batch.name = "Inbox".into();
+                }
+                json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
+            }
             "review_batch_remove" => {
                 reviews.remove_batch(&review()?, text(args, "batchId"), &actor()?)?;
                 json!(true)
