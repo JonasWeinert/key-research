@@ -112,7 +112,7 @@ const assert = require("node:assert/strict");
     await settings.getByRole("heading", { name: "Storage" }).waitFor();
     await shot(page, "8c-settings-services");
     await nav.getByRole("button", { name: "AI assistant" }).click();
-    await settings.getByRole("textbox", { name: "Model" }).waitFor();
+    await settings.getByRole("radiogroup", { name: "AI provider" }).getByRole("radio").first().waitFor();
     await shot(page, "9-settings-ai");
     // Arrow keys move through the sections; the search narrows them and opens the first match.
     await nav.getByRole("button", { name: "AI assistant" }).focus();
