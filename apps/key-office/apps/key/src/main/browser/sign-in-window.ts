@@ -12,6 +12,7 @@ import { chmod, mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { CdpPipe } from "./cdp-pipe";
+import { isIdentityUrl } from "./sign-in-entry";
 
 export type ChromiumId = "chrome" | "edge" | "brave" | "chromium" | "vivaldi";
 export interface ChromiumApp {
@@ -30,10 +31,7 @@ const CHROMIUM_APPS: Array<{ id: ChromiumId; name: string; bundle: string }> = [
   { id: "chromium", name: "Chromium", bundle: "org.chromium.Chromium" },
 ];
 
-/** Sign-in services and the usual names of a university's own sign-in pages. */
-const IDENTITY_HOST =
-  /(^|\.)(login\.microsoftonline\.com|login\.microsoft\.com|login\.live\.com|account\.live\.com|accounts\.google\.com|okta\.com|oktapreview\.com|okta-emea\.com|auth0\.com|onelogin\.com|duosecurity\.com|pingone\.com|pingidentity\.com|myopenathens\.net|openathens\.net|appleid\.apple\.com|idp\.apple\.com)$|(^|\.)(idp|sso|login|signin|auth|shibboleth|adfs|cas|wayf|weblogin)[0-9-]*\./i;
-export const isIdentityHost = (host: string) => IDENTITY_HOST.test(host);
+export { isIdentityHost } from "./sign-in-entry";
 
 const run = (file: string, args: string[]) =>
   new Promise<string>((done) => execFile(file, args, { timeout: 5000 }, (error, stdout) => done(error ? "" : String(stdout))));
@@ -131,6 +129,10 @@ export interface SignInWindowOptions {
   headless?: boolean;
   virtualAuthenticator?: boolean;
   settleMs?: number;
+  /** A window kept open to use a site in (it never ends by itself on a site's page). */
+  keep?: boolean;
+  /** Every page and frame address the window loads (for a debug trace). */
+  onHop?(url: string): void;
 }
 
 /** One open sign-in window. `ended` resolves once it is signed in, closed or failed. */
@@ -147,12 +149,12 @@ export class SignInWindow {
   private mainTarget = "";
   private mainSession = "";
   private settle?: ReturnType<typeof setTimeout>;
-  private readonly identity: (host: string) => boolean;
+  private readonly identity: (url: string) => boolean;
 
   private constructor(private readonly options: SignInWindowOptions) {
     this.ended = new Promise((resolve) => (this.end = resolve));
     const extra = new Set([...(options.identityHosts ?? [])].map((h) => h.toLowerCase()));
-    this.identity = (host) => isIdentityHost(host) || extra.has(host);
+    this.identity = (url) => isIdentityUrl(url, extra);
   }
 
   static async open(options: SignInWindowOptions) {
@@ -251,19 +253,15 @@ export class SignInWindow {
       return undefined;
     }
     this.hosts.add(host);
-    if (this.identity(host)) this.visitedSignIn = true;
+    if (this.identity(url)) this.visitedSignIn = true;
+    this.options.onHop?.(url);
     return host;
   }
 
   /** Signed in: it went through the sign-in pages and is now on a site that is not one. */
   private verdict(): WindowEnd {
-    let host = "";
-    try {
-      host = new URL(this.lastUrl).hostname.toLowerCase();
-    } catch {
-      /* no page yet */
-    }
-    return this.visitedSignIn && host && !this.identity(host) ? { kind: "signed-in", url: this.lastUrl } : { kind: "closed" };
+    const page = /^https?:/i.test(this.lastUrl);
+    return this.visitedSignIn && page && !this.identity(this.lastUrl) ? { kind: "signed-in", url: this.lastUrl } : { kind: "closed" };
   }
 
   private async event(method: string, params: Record<string, any>, sessionId?: string) {
@@ -292,6 +290,7 @@ export class SignInWindow {
       if (!host) return;
       this.lastUrl = url;
       clearTimeout(this.settle);
+      if (this.options.keep) return;
       // Settled on a site after the sign-in pages (no further redirect for a moment): done.
       this.settle = setTimeout(() => {
         const verdict = this.verdict();
@@ -303,7 +302,10 @@ export class SignInWindow {
   /** The window's cookies for these hosts. */
   async cookies(hosts: Iterable<string>) {
     const { cookies } = await this.pipe.send<{ cookies: CdpCookie[] }>("Storage.getCookies");
-    return signInCookies(cookies ?? [], hosts);
+    const list = [...hosts].map((h) => h.toLowerCase());
+    const all = (cookies ?? []).filter((c) => c.name && cookieMatches(c.domain, list));
+    // Partitioned cookies (kept for one site inside another) have no equivalent Key can set.
+    return { cookies: signInCookies(all, list), partitioned: all.filter((c) => c.partitionKey) };
   }
 
   /** Brings the window to the front: restores it if it was minimised, makes it the browser's

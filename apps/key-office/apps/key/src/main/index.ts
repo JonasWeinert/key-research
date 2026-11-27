@@ -672,6 +672,7 @@ registerNativeKind("web", {
         }
       },
       initialUrl: web.url,
+      openerUrl: record.referrerUrl,
       window: () => record.host?.window,
     });
     return tab;
@@ -3375,6 +3376,11 @@ else
         shell(event.sender.id);
         await signInService?.forget();
       });
+      ipcMain.handle("key:sign-in-host", (event, host: unknown, choice: unknown) => {
+        shell(event.sender.id);
+        signInService?.setHost(String(host ?? ""), choice === "window" || choice === "here" ? choice : null);
+        return signInService?.info();
+      });
       ipcMain.handle("key:clear-browsing-data", async (event) => {
         shell(event.sender.id);
         await clearBrowsingData();
@@ -3510,7 +3516,7 @@ else
             if (p.op === "reload") view.view.webContents.reload();
             else if (p.op === "add-article") await browserPages.addArticle(view);
             else if (String(p.op).startsWith("proxy-")) await proxyService?.op(view.view.webContents, view.web?.url ?? "", p.op as ProxyOp);
-            else if (String(p.op).startsWith("signin-")) await signInService?.op(view.view.webContents, p.op as SignInOp);
+            else if (String(p.op).startsWith("signin-")) await signInService?.op(view.view.webContents, p.op as SignInOp, typeof p.url === "string" ? p.url : undefined);
             else if (p.op === "open-article" && view.articleState?.sourceId) await openSourcePage(w, { workspaceId: w.workspaceId, sourceId: view.articleState.sourceId });
             return snapshot(w);
           }

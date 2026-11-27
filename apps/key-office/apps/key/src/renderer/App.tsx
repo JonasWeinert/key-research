@@ -1213,7 +1213,7 @@ export default function App() {
                   <SignInCard
                     card={card}
                     style={{ left: rect.x, top: rect.y - TAB_STRIP_HEIGHT + WEB_BAR_HEIGHT + banner, width: rect.width, height: Math.max(0, rect.height - WEB_BAR_HEIGHT - banner) }}
-                    onPage={(op) => action("web-page", { viewId: v.id, op })}
+                    onPage={(op, url) => action("web-page", { viewId: v.id, op, url })}
                   />
                 )}
               </Fragment>
