@@ -17,7 +17,8 @@ import { pngBlob, saveFile, svgMarkup } from "../charts/export";
 import { plural } from "./review-api";
 import { certaintyApi, type CertaintyApi, type RobAssessment, type RobDomain, type RobEvidence, type RobLevel, type RobOverview, type RobTool } from "./review-certainty-api";
 import { Btn, MenuButton, Segmented, Toggle, errorText, useLoad } from "./review-ui";
-import type { ReaderSelectionAction, ReviewReaderHandle } from "./review-reader";
+import type { ReaderMark, ReaderMarkMenu, ReaderSelectionAction, ReaderSelectionMode, ReviewReaderHandle } from "./review-reader";
+import { MarksLegend, flashRow, useMarksShown } from "./review-marks";
 import type { StageProps } from "./ReviewPage";
 import "./review-rob.css";
 
@@ -202,9 +203,41 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
     },
     [capi, study, result, viewer, r, run, notify],
   );
-  const actions = useMemo<ReaderSelectionAction[]>(
-    () => [{ id: "rob-support", label: focusDomain ? `Use as support for ${focusDomain.name}` : "Use as support…", title: "Keep this passage, with its place, as support for the domain in focus", run: (p) => addEvidence(focusDomain, p) }],
-    [focusDomain, addEvidence],
+  // The selection menu (SelectionMenu.tsx): the domain in focus first (S, or Enter), then every
+  // domain by its number; the passages kept as support are marks in the page.
+  const actions = useMemo<ReaderSelectionAction[]>(() => {
+    const domains = a?.tool.domains ?? [];
+    return [
+      ...(focusDomain ? [{ id: "rob-support", label: `Use as support for ${focusDomain.name}`, prefix: focusDomain.short, title: "Keep this passage, with its place, as support for the domain in focus", icon: "quote" as const, tone: "evidence" as const, key: "s", run: (p: { text: string; page: number; rects: number[][] }) => addEvidence(focusDomain, p) }] : []),
+      ...domains
+        .filter((d) => d.id !== focusDomain?.id)
+        .map((d, i) => ({ id: `rob-support-${d.id}`, label: d.name, prefix: d.short, title: `Keep this passage as support for ${d.name}`, tone: "evidence" as const, runLabel: "Support", key: i < 9 ? String(i + 1) : undefined, run: (p: { text: string; page: number; rects: number[][] }) => addEvidence(d, p) })),
+    ];
+  }, [a, focusDomain, addEvidence]);
+  const robMode = useMemo<ReaderSelectionMode>(() => ({ id: "rob", label: "Use as support", filter: (a?.tool.domains.length ?? 0) > 5 ? "Filter domains" : undefined, hint: focusDomain ? "S the domain in focus · numbers another" : "Numbers pick the domain" }), [a, focusDomain]);
+  const [marksShown, setMarksShown] = useMarksShown();
+  const marks = useMemo<ReaderMark[]>(() => {
+    if (!a || !marksShown) return [];
+    const name = (id: string) => a.tool.domains.find((d) => d.id === id)?.name ?? id;
+    return a.mine.evidence.filter((e) => e.text && e.page != null).map((e) => ({ id: `rob|${e.id}`, page: e.page ?? -1, rects: e.rects ?? [], text: e.text, tone: "evidence", label: `Support: ${name(e.domain)}` }));
+  }, [a, marksShown]);
+  const markActions = useCallback(
+    (mark: ReaderMark): ReaderMarkMenu | null => {
+      const e = a?.mine.evidence.find((x) => `rob|${x.id}` === mark.id);
+      if (!a || !e) return null;
+      flashRow(`.kx-rob-domain[data-domain="${e.domain}"]`);
+      return {
+        title: mark.label,
+        mode: { id: "rob-mark", label: mark.label },
+        actions: [
+          ...a.tool.domains
+            .filter((d) => d.id !== e.domain)
+            .map((d, i) => ({ id: `rob-move-${d.id}`, label: `Support for ${d.name} instead`, prefix: d.short, key: i < 9 ? String(i + 1) : undefined, run: () => void capi.evidence(study, result, { id: e.id, domain: e.domain }, viewer, true).then(() => addEvidence(d, { text: e.text, page: e.page ?? -1, rects: e.rects ?? [] })) })),
+          { id: "rob-mark-remove", label: "Remove this support", icon: "trash" as const, tone: "danger" as const, secondary: true, key: "backspace", run: () => void run(capi.evidence(study, result, { id: e.id, domain: e.domain }, viewer, true), "Support removed") },
+        ],
+      };
+    },
+    [a, capi, study, result, viewer, run, addEvidence],
   );
   // Keyboard.
   useEffect(() => {
@@ -266,7 +299,7 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
   }, [cursor]);
 
   if (!a || !r) return <div className="kx-rv-loading" aria-busy="true" />;
-  const show = (e: RobEvidence) => reader.current?.show(Math.max(0, e.page), e.text);
+  const show = (e: RobEvidence) => reader.current?.showMark(`rob|${e.id}`) || reader.current?.show(Math.max(0, e.page), e.text);
   const levelOf = (id?: string) => a.tool.levels.find((l) => l.id === id);
   const studyRow = props.overview.studies.find((s) => s.id === study);
   const toolUsed = studyRow?.results.some((x) => x.progress !== "notStarted");
@@ -283,7 +316,21 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
             </div>
           </header>
           <Suspense fallback={<div className="kx-rv-reader" aria-busy="true" />}>
-            <ReviewReader ref={reader} api={api} recordId={study} version={version} title={r.meta.title} mime={mime} actions={actions} onError={(t) => notify(t, "error")} />
+            <ReviewReader
+              ref={reader}
+              api={api}
+              recordId={study}
+              version={version}
+              title={r.meta.title}
+              mime={mime}
+              sourceId={r.fulltext.file ? null : r.sourceId}
+              invoke={(command, args) => props.invoke(command, args as Record<string, unknown>, props.workspaceId)}
+              actions={actions}
+              mode={robMode}
+              marks={marks}
+              markActions={markActions}
+              onError={(t) => notify(t, "error")}
+            />
           </Suspense>
         </section>
       ) : (
@@ -330,6 +377,7 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
             {a.blind && !a.canSeeOthers ? " Blind: others' judgements show once everyone has finished." : ""}
           </p>
         )}
+        {mime && <MarksLegend kinds={["evidence"]} shown={marksShown} onShown={setMarksShown} count={a.mine.evidence.length} />}
         {domains.map((d) => {
           const isOverall = d.id === "overall";
           const mine = a.mine.judgements[d.id];
@@ -341,7 +389,7 @@ function Assess(props: StageProps & { capi: CertaintyApi; study: string; result:
           const evidence = a.mine.evidence.filter((e) => e.domain === d.id);
           const judgementRow = rowOf(d.id);
           return (
-            <fieldset key={d.id} className="kx-rv-xsection kx-rob-domain" data-conflict={conflict || undefined} data-focus={at?.domain === d.id || undefined}>
+            <fieldset key={d.id} className="kx-rv-xsection kx-rob-domain" data-domain={d.id} data-conflict={conflict || undefined} data-focus={at?.domain === d.id || undefined}>
               <legend>
                 {!isOverall && <span className="kx-rob-short">{d.short}</span>}
                 {d.name}
