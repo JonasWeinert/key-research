@@ -151,6 +151,12 @@ impl Reviews {
         protocol.validate()?;
         let saved = self.write(review, |state, conn, b| {
             let new_version = state.decisions_under(&state.version) > 0;
+            // std-A: a registered protocol changes only by an amendment with a reason.
+            let amendment = crate::protocol_doc::locked(state) && !crate::protocol_doc::relevant_changes(&state.protocol, &protocol).is_empty();
+            let new_version = new_version || amendment;
+            if amendment && note.trim().is_empty() {
+                return Err("Give the reason for this amendment: the protocol is registered, so the change is listed as a deviation from it".into());
+            }
             if new_version && note.trim().is_empty() {
                 return Err("Say what changed: decisions were made under the current version".into());
             }
@@ -686,7 +692,9 @@ fn impact(state: &State, conn: &Connection, protocol: &Protocol, library: &dyn L
     let ft = affected(state, conn, protocol, Stage::Ft, library)?;
     let old: Vec<Criterion> = state.protocol.criteria.iter().map(|c| Criterion { link: None, ..c.clone() }).collect();
     let new: Vec<Criterion> = protocol.criteria.iter().map(|c| Criterion { link: None, ..c.clone() }).collect();
-    Ok(ChangeImpact { new_version: state.decisions_under(&state.version) > 0, ta: ta.len(), ft: ft.len(), basis: if old != new { "criteria".into() } else { "linked".into() } })
+    // std-A: after registration a change the protocol states is an amendment (a new version).
+    let amendment = crate::protocol_doc::locked(state) && !crate::protocol_doc::relevant_changes(&state.protocol, protocol).is_empty();
+    Ok(ChangeImpact { new_version: state.decisions_under(&state.version) > 0 || amendment, ta: ta.len(), ft: ft.len(), basis: if old != new { "criteria".into() } else { "linked".into() } })
 }
 
 /// Records per reviewer, for the assignment preview.

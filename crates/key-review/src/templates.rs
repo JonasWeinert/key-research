@@ -139,6 +139,7 @@ pub fn default_protocol() -> Protocol {
         label_keys: [("Background".to_string(), "b".to_string()), ("Check later".to_string(), "l".to_string())].into_iter().collect(),
         forms: vec![characteristics_form()],
         shortcuts: Default::default(),
+        plan: Default::default(),
     }
 }
 

@@ -321,6 +321,8 @@ pub struct State {
     pub alias_recorded: bool,
     /// Retracted decision event ids (so a replay of a retract before its target still works).
     retracted: HashSet<String>,
+    // std-A: registration, checklist notes and PRISMA-S details (reporting.rs).
+    pub reporting: crate::reporting::Reporting,
 }
 
 #[derive(Deserialize, Default)]
@@ -359,6 +361,8 @@ impl State {
             migrated: false,
             alias_recorded: false,
             retracted: HashSet::new(),
+            // std-A
+            reporting: Default::default(),
         }
     }
 
@@ -788,6 +792,11 @@ impl State {
                 if !p.get("deleted").and_then(Json::as_bool).unwrap_or(false) {
                     self.analyses.push(p.clone());
                 }
+            }
+            // std-A: registration, checklist notes, PRISMA-S details (reporting.rs).
+            k if crate::reporting::KINDS.contains(&k) => {
+                let version = self.version.clone();
+                self.reporting.apply(e, &version);
             }
             _ => {}
         }

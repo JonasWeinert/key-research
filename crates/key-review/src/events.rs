@@ -64,6 +64,12 @@ pub const KINDS: &[&str] = &[
     "study.link",
     "extract.complete",
     "analysis.set",
+    // std-A: protocol registration, checklist notes, PRISMA-S search details
+    "protocol.register",
+    "checklist.note",
+    "search.source",
+    "search.peer_review",
+    "search.prior",
 ];
 
 pub fn now_ms() -> i64 {

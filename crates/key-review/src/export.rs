@@ -212,6 +212,11 @@ impl Reviews {
                 "template" => (format!("{base}-template.json"), template_json(&state.protocol)?, "application/json"),
                 "dictionary" => (format!("{base}-data-dictionary.csv"), crate::logic::dictionary(&state.protocol).iter().map(|r| csv_line(r)).collect::<String>(), "text/csv"),
                 "fulltext-csv" => (format!("{base}-full-texts-needed.csv"), crate::records::fulltext_csv(state, &all_metas(conn, review)?.into_iter().map(|m| (m.id.clone(), m)).collect()), "text/csv"),
+                // std-A: reporting documents (checklist, methods draft, protocol, PRISMA-S report)
+                k if crate::reporting_hooks::EXPORTS.contains(&k) => {
+                    let (n, c, m) = crate::reporting_hooks::export(state, k)?;
+                    (n, c, m)
+                }
                 other => return Err(format!("Unknown export {other}")),
             };
             Ok(json!({ "filename": name, "content": content, "mime": mime }))
@@ -254,7 +259,7 @@ pub fn read_template(text: &str) -> Result<Protocol> {
     Ok(protocol)
 }
 
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let s: String = name.chars().map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' }).collect();
     let s = s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
     if s.is_empty() { "review".into() } else { s.chars().take(60).collect() }

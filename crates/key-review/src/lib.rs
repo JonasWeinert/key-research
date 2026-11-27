@@ -17,6 +17,13 @@ pub mod stats;
 pub mod store;
 pub mod templates;
 pub mod views;
+// std-A: reporting (PRISMA 2020 checklist, protocol, PRISMA-S search report)
+pub mod checklist;
+pub mod protocol_doc;
+pub mod report_text;
+pub mod reporting;
+pub mod reporting_hooks;
+pub mod search_report;
 
 pub use ops::{Library, NoLibrary};
 pub use store::Reviews;
@@ -25,3 +32,6 @@ pub use store::Reviews;
 mod tests;
 #[cfg(test)]
 mod tests_records;
+// std-A
+#[cfg(test)]
+mod tests_reporting;

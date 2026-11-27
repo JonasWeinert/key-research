@@ -134,6 +134,8 @@ impl Reviews {
                 "filledAbstracts": state.records.iter().filter(|r| r.filled.contains_key("abstractText")).count(),
                 "otherReasons": crate::records::other_reasons(state).into_iter().filter(|(_, n)| *n >= 2).map(|(text, count)| json!({ "text": text, "count": count })).collect::<Vec<_>>(),
                 "fulltexts": { "need": crate::records::needing_full_text(state).len(), "have": state.records.iter().filter(|r| state.eligible(r, Stage::Ft) && r.has_full_text()).count() },
+                // std-A: registration lock, review type
+                "reporting": crate::protocol_doc::summary_json(state),
             }))
         })
     }
