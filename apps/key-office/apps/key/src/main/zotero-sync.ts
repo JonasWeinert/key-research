@@ -49,14 +49,21 @@ export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
   let delay = FIRST;
   let timer: NodeJS.Timeout | undefined;
   let running = false;
+  /** The run going on now: a wake during it runs again after it (a workspace just set up
+   * is not left to the next timer). */
+  let current: Promise<void> | undefined;
   let lastRun = 0;
 
   const schedule = () => {
     clearTimeout(timer);
     timer = setTimeout(() => void tick(), delay);
   };
-  const tick = async (force = false) => {
-    if (running) return;
+  const tick = (force = false): Promise<void> => {
+    if (running) return current ?? Promise.resolve();
+    current = run(force);
+    return current;
+  };
+  const run = async (force: boolean) => {
     running = true;
     lastRun = Date.now();
     try {
@@ -91,7 +98,10 @@ export function startZoteroPluginSync(deps: ZoteroSyncDeps) {
       schedule();
     }
   };
-  const wake = () => tick(true);
+  const wake = async () => {
+    if (running) await current;
+    await tick(true);
+  };
 
   app.on("browser-window-focus", () => {
     if (Date.now() - lastRun < 5_000) return;

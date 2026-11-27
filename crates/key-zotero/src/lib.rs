@@ -146,10 +146,18 @@ pub fn default_data_dir() -> Option<PathBuf> {
     fallback.join("zotero.sqlite").is_file().then_some(fallback)
 }
 
+/// Zotero's profiles: KEY_ZOTERO_PROFILE_ROOT (automated checks use a fake one, so the real
+/// profile is never read), else Zotero's own folder.
+fn profiles_dir() -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("KEY_ZOTERO_PROFILE_ROOT").filter(|r| !r.is_empty()) {
+        return Some(PathBuf::from(root).join("Profiles"));
+    }
+    Some(PathBuf::from(std::env::var_os("HOME")?).join("Library/Application Support/Zotero/Profiles"))
+}
+
 /// A string pref from Zotero's profile (prefs.js).
 pub(crate) fn pref(name: &str) -> Option<String> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    let profiles = home.join("Library/Application Support/Zotero/Profiles");
+    let profiles = profiles_dir()?;
     let prefix = format!("user_pref(\"{name}\", \"");
     for entry in std::fs::read_dir(&profiles).ok()?.flatten() {
         let Ok(prefs) = std::fs::read_to_string(entry.path().join("prefs.js")) else { continue };
@@ -164,8 +172,7 @@ pub(crate) fn pref(name: &str) -> Option<String> {
 
 /// An integer pref from Zotero's profile (prefs.js).
 pub(crate) fn pref_int(name: &str) -> Option<i64> {
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    let profiles = home.join("Library/Application Support/Zotero/Profiles");
+    let profiles = profiles_dir()?;
     let prefix = format!("user_pref(\"{name}\", ");
     for entry in std::fs::read_dir(&profiles).ok()?.flatten() {
         let Ok(prefs) = std::fs::read_to_string(entry.path().join("prefs.js")) else { continue };

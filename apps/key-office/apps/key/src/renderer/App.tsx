@@ -1332,6 +1332,8 @@ export default function App() {
         <ZoteroImportSheet
           invoke={invoke}
           workspaceId={workspaceId}
+          // The window's own workspace: another one syncing already is not this one's setup.
+          target={workspaceId ?? undefined}
           onClose={() => setZoteroSheet(false)}
           onDone={(workspace, report, mode) => {
             toast(mode === "sync" ? `“${workspace.name}” is now in sync with Zotero` : `Imported ${report.items.toLocaleString()} items from Zotero into “${workspace.name}”`);

@@ -68,7 +68,7 @@ const library = (pdf) => ({
   ],
 });
 
-(async () => {
+async function single() {
   const temp = await mkdtemp(path.join(tmpdir(), "key-zotero-sync-"));
   const zotero = path.join(temp, "Zotero");
   await mkdir(path.join(zotero, "storage/ATTAAAAA"), { recursive: true });
@@ -142,8 +142,13 @@ const library = (pdf) => ({
       const list = Array.isArray(index) ? index : (index?.sources ?? index?.items ?? []);
       return list.find((s) => s.originKey === key);
     };
+    // The sheet sets up the window's own workspace: here the dedicated "Zotero" one (as the
+    // workspaces window's "Import from Zotero…" opens it).
+    const dedicated = await page.evaluate(() => window.key.zoteroWorkspace());
     const openSheet = async () => {
-      await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), ws.id);
+      await page.evaluate((id) => window.key.tabAction("switch-workspace", { workspaceId: id }), dedicated.id);
+      await page.waitForTimeout(300);
+      await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), dedicated.id);
       await page.locator('summary[aria-label="More ways to add"]').click();
       await page.getByRole("button", { name: "Import from Zotero…" }).click();
       await sheet.waitFor();
@@ -360,6 +365,221 @@ const library = (pdf) => ({
     await app.close();
     await mock.close().catch(() => {});
   }
+}
+
+/** A fixture Zotero library (zotero.sqlite, its storage and the mock plugin) and a fake Zotero
+ * profile; the real ones are never read. */
+async function fixture(prefix) {
+  const temp = await mkdtemp(path.join(tmpdir(), prefix));
+  const zotero = path.join(temp, "Zotero");
+  await mkdir(path.join(zotero, "storage/ATTAAAAA"), { recursive: true });
+  const pdf = path.join(zotero, "storage/ATTAAAAA/paper.pdf");
+  await copyFile(path.resolve(__dirname, "../../../../../tests/fixtures/interaction.pdf"), pdf);
+  execFileSync("python3", ["-I", "-c", "import sqlite3, sys; db = sqlite3.connect(sys.argv[1]); db.executescript(sys.argv[2]); db.commit()", path.join(zotero, "zotero.sqlite"), SCHEMA]);
+  const zoteroRoot = path.join(temp, "zotero-profiles");
+  const profile = path.join(zoteroRoot, "Profiles/fake.default");
+  await mkdir(profile, { recursive: true });
+  await writeFile(path.join(zoteroRoot, "profiles.ini"), "[Profile0]\nName=default\nIsRelative=1\nPath=Profiles/fake.default\nDefault=1\n");
+  // Without the pairing code in prefs.js: it is typed once and carried to every workspace.
+  await writeFile(path.join(profile, "prefs.js"), 'user_pref("extensions.lastAppVersion", "9.0.6");\n');
+  const shots = path.join(temp, "shots");
+  await mkdir(shots);
+  return { temp, zotero, pdf, zoteroRoot, shots };
+}
+
+/** Several workspaces keep the same Zotero library in sync, with nested and overlapping
+ * scopes set up in either order, from the sheet (in the workspace's own window) and from
+ * Workspace Settings: each gets its own scope, and Zotero's changes reach every workspace
+ * whose scope holds them. */
+async function workspaces() {
+  const { temp, zotero, pdf, zoteroRoot, shots } = await fixture("key-zotero-workspaces-");
+  const mock = await startMockZotero({ library: library(pdf) });
+  const app = await electron.launch({
+    executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
+    args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
+    env: {
+      ...process.env,
+      KEY_SKIP_ONBOARDING: "1",
+      KEY_USER_DATA: path.join(temp, "profile"),
+      KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
+      KEY_ZOTERO_DATA_DIR: zotero,
+      KEY_ZOTERO_PORT: String(mock.port),
+      KEY_ZOTERO_PROFILE_ROOT: zoteroRoot,
+      KEY_ZOTERO_APP: path.join(temp, "NoZotero.app"),
+    },
+  });
+  const report = { shots };
+  try {
+    const page = await app.firstWindow();
+    page.setDefaultTimeout(20000);
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await page.getByRole("region", { name: "Home", exact: true }).waitFor();
+    const [home] = await page.evaluate(() => window.key.workspaces());
+    // Three more workspaces, added through the workspaces window without opening them.
+    const opening = app.waitForEvent("window", (w) => w.url().includes("launcher.html"));
+    await page.evaluate(() => window.key.launcher("show"));
+    const launcher = await opening;
+    for (const name of ["Alpha", "Beta", "Gamma"]) {
+      await mkdir(path.join(temp, "elsewhere", name), { recursive: true });
+      await launcher.evaluate((p) => window.key.launcher("add-folder", { path: p, open: false }), path.join(temp, "elsewhere", name));
+    }
+    await launcher.close().catch(() => {});
+    const all = await page.evaluate(() => window.key.workspaces());
+    const byName = (name) => all.find((w) => w.name === name);
+    const [alpha, beta, gamma] = ["Alpha", "Beta", "Gamma"].map(byName);
+    assert.ok(alpha && beta && gamma, "the workspaces are registered");
+    const keysOf = async (w, scope) => {
+      const index = await page.evaluate(({ id, scope }) => window.key.invoke("store_sources", scope ? { scope } : {}, id), { id: w.id, scope });
+      const list = Array.isArray(index) ? index : (index?.sources ?? index?.items ?? []);
+      return list.filter((s) => s.originKey && !s.trashedAt).map((s) => s.originKey).sort();
+    };
+    const sheet = page.locator(".kx-zotero-import");
+    const status = page.getByRole("contentinfo", { name: "Status" }).locator('[data-status-item="zotero"]');
+    const into = async (w) => {
+      await page.evaluate((id) => window.key.tabAction("switch-workspace", { workspaceId: id }), w.id);
+      await page.waitForFunction((name) => document.querySelector('[data-status-item="workspace"]')?.textContent?.includes(name) ?? true, w.name).catch(() => {});
+      await page.evaluate((id) => window.key.tabAction("open-content", { section: "sources", workspaceId: id }), w.id);
+      await page.waitForTimeout(400);
+    };
+    const pick = async (names) => {
+      await sheet.getByRole("tab", { name: "Collections" }).click();
+      await sheet.getByRole("button", { name: "Expand all" }).click();
+      for (const name of names) await sheet.getByRole("checkbox", { name, exact: true }).check();
+    };
+    const finish = async (w) => {
+      await sheet.getByText(/Connected to Zotero/).waitFor();
+      await sheet.getByRole("button", { name: "Start syncing" }).click();
+      await sheet.getByText(`“${w.name}” is in sync with Zotero`).waitFor();
+      await sheet.getByRole("button", { name: "Done" }).click();
+      await sheet.waitFor({ state: "detached" }).catch(() => {});
+    };
+    // The library list of the window's workspace shows the items, without a reload.
+    const listed = async (titles) => {
+      for (const title of titles) await page.locator("[data-content-view]").getByText(title, { exact: true }).first().waitFor({ timeout: 20000 });
+    };
+    const fromSheet = async (w, names, shot) => {
+      await into(w);
+      await page.locator('summary[aria-label="More ways to add"]').click();
+      await page.getByRole("button", { name: "Import from Zotero…" }).click();
+      await sheet.waitFor();
+      // The sheet sets up the window's own workspace, not another one that syncs already.
+      await page.getByRole("heading", { name: "Bring in your Zotero library" }).waitFor();
+      await sheet.getByText(`into “${w.name}”`).first().waitFor();
+      if (shot) await sheet.screenshot({ path: path.join(shots, `${shot}.png`) });
+      await sheet.getByRole("radio", { name: /Keep in sync/ }).click();
+      await sheet.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("heading", { name: "Keep in sync with Zotero" }).waitFor();
+      return names ? pick(names) : undefined;
+    };
+    const fromSettings = async (w, names) => {
+      await into(w);
+      await page.evaluate((id) => window.dispatchEvent(new CustomEvent("key:open-settings-section", { detail: { window: "workspace", section: "zotero", workspaceId: id } })), w.id);
+      const group = page.locator(".kx-settings-group", { has: page.getByText(`Keep “${w.name}” in sync`) }).last();
+      await group.getByRole("button", { name: "Set up…" }).click();
+      await page.getByRole("heading", { name: "Keep in sync with Zotero" }).waitFor();
+      if (names) await pick(names);
+    };
+    const closeSettings = async () => {
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(300);
+    };
+
+    // 1. The home workspace syncs one sub-collection (narrow first), paired with a code.
+    await fromSheet(home, ["Chapter 2"], "w1-mode-light");
+    await sheet.getByText("Pair Key with Zotero").waitFor();
+    await sheet.getByRole("textbox", { name: "Pairing code" }).fill(mock.token);
+    await sheet.getByRole("button", { name: "Pair" }).click();
+    await finish(home);
+    assert.deepEqual(await keysOf(home), ["ITEMAAAA"]);
+    await listed(["Health versus income"]);
+    // 2. Alpha syncs the whole library (encompassing, later), through its own window's sheet:
+    // the pairing code comes along.
+    await fromSheet(alpha, null);
+    await finish(alpha);
+    assert.deepEqual(await keysOf(alpha), ["ITEMAAAA", "ITEMBBBB", "ITEMCCCC"], "Alpha has the whole library");
+    await listed(["Health versus income", "Reading in groups", "Annual report on literacy"]);
+    // Its status bar item is Alpha's own sync.
+    await page.waitForFunction(() => /\b3 items synced/.test(document.querySelector('[data-status-item="zotero"]')?.getAttribute("title") ?? ""), null, { timeout: 40000 });
+    // 3. Beta syncs a collection the others hold (Thesis, with Chapter 2), from Settings.
+    await fromSettings(beta, ["Thesis"]);
+    await finish(beta);
+    await closeSettings();
+    assert.deepEqual(await keysOf(beta), ["ITEMAAAA"], "Beta has Thesis");
+    // 4. Gamma overlaps: Chapter 2 and Methods.
+    await fromSettings(gamma, ["Chapter 2", "Methods"]);
+    await finish(gamma);
+    await closeSettings();
+    assert.deepEqual(await keysOf(gamma), ["ITEMAAAA", "ITEMBBBB"], "Gamma has Chapter 2 and Methods");
+    await into(gamma);
+    await listed(["Health versus income", "Reading in groups"]);
+    report.setUp = true;
+    // Everything a sync brings for one paper, in each workspace: its PDF, note and highlights.
+    for (const w of [home, alpha, beta, gamma]) {
+      const index = await page.evaluate((id) => window.key.invoke("store_sources", {}, id), w.id);
+      const article = (Array.isArray(index) ? index : (index?.sources ?? index?.items ?? [])).find((s) => s.originKey === "ITEMAAAA");
+      assert.equal(article.fields?.filePath ?? article.filePath, pdf, `${w.name}: the PDF is linked`);
+      const notes = await page.evaluate(({ id, source }) => window.key.invoke("store_notes", { sourceId: source }, id), { id: w.id, source: article.id });
+      const bodies = JSON.stringify(notes);
+      assert.match(bodies, /Bold/, `${w.name}: the note came along`);
+      assert.match(bodies, /A highlighted sentence/, `${w.name}: the highlights came along`);
+    }
+
+    // 5. Changes in Zotero reach every workspace whose scope holds them.
+    mock.edit("ITEMAAAA", (r) => (r.fields.title = "Health and income"));
+    mock.put({ key: "ITEMEEEE", itemType: "journalArticle", fields: { title: "New in chapter two" }, collections: ["COLLCHAP"] });
+    mock.put({ key: "ITEMFFFF", itemType: "book", fields: { title: "New in methods" }, collections: ["COLLMETH"] });
+    await page.evaluate(() => window.key.zoteroPlugin("wake"));
+    const expected = [
+      [home, ["ITEMAAAA", "ITEMEEEE"]],
+      [alpha, ["ITEMAAAA", "ITEMBBBB", "ITEMCCCC", "ITEMEEEE", "ITEMFFFF"]],
+      [beta, ["ITEMAAAA", "ITEMEEEE"]],
+      [gamma, ["ITEMAAAA", "ITEMBBBB", "ITEMEEEE", "ITEMFFFF"]],
+    ];
+    for (const [w, keys] of expected) {
+      for (let i = 0; i < 120 && JSON.stringify(await keysOf(w)) !== JSON.stringify(keys); i++) await page.waitForTimeout(250);
+      assert.deepEqual(await keysOf(w), keys, `${w.name} follows Zotero`);
+    }
+    // The open library (Gamma's) shows them without a reload.
+    await listed(["Health and income", "New in chapter two", "New in methods"]);
+    report.deltas = true;
+
+    // 6. Each workspace's sheet and status item show its own sync.
+    await into(beta);
+    await page.waitForFunction(() => /\b2 items synced/.test(document.querySelector('[data-status-item="zotero"]')?.getAttribute("title") ?? ""), null, { timeout: 40000 });
+    await status.click();
+    await sheet.locator(".kx-zotero-overview").getByText("Keeping in sync").waitFor();
+    await sheet.getByText("“Beta” is kept in sync with Zotero").waitFor();
+    await sheet.locator('.kx-zotero-overview [data-fact="scope"]', { hasText: "Thesis" }).waitFor();
+    await sheet.screenshot({ path: path.join(shots, "w2-overview-beta-light.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(300);
+    await sheet.screenshot({ path: path.join(shots, "w3-overview-beta-dark.png") });
+    await page.keyboard.press("Escape");
+    await page.emulateMedia({ colorScheme: null });
+    report.ownState = true;
+
+    assert.deepEqual(errors, []);
+    report.ok = true;
+    console.log(JSON.stringify(report, null, 2));
+  } catch (e) {
+    await app
+      .windows()[0]
+      ?.screenshot({ path: path.join(temp, "failure.png") })
+      .catch(() => {});
+    console.error(`Failed; screenshots in ${temp}`);
+    throw e;
+  } finally {
+    await app.close();
+    await mock.close().catch(() => {});
+  }
+}
+
+// KEY_SMOKE_PART=single|workspaces runs one part.
+(async () => {
+  const part = process.env.KEY_SMOKE_PART;
+  if (!part || part === "single") await single();
+  if (!part || part === "workspaces") await workspaces();
 })().catch((e) => {
   console.error(e);
   process.exit(1);
