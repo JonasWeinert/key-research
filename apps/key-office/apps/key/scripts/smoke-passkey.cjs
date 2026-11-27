@@ -258,10 +258,12 @@ async function serve() {
     };
     const open = (url) => shell.evaluate((url) => window.key.tabAction("open-url", { url }), url);
     const tabAt = (prefix) => until(() => app.windows().find((p) => p.url().startsWith(prefix)), `a tab at ${prefix}`);
-    const signedIn = async (prefix, what) => {
-      const page = await tabAt(prefix);
-      await until(() => page.evaluate(() => document.getElementById("who")?.textContent).catch(() => ""), what, 30000);
-    };
+    // Some tab at that address shows it is signed in (a popup's opener tab may stay behind).
+    const signedIn = async (prefix, what) =>
+      until(async () => {
+        for (const page of app.windows().filter((p) => p.url().startsWith(prefix)))
+          if (await page.evaluate(() => document.getElementById("who")?.textContent).catch(() => "")) return true;
+      }, what, 30000);
     const waitForWindow = async (what) =>
       until(async () => {
         const s = await signin();
