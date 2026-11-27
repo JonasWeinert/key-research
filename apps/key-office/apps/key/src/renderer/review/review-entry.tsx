@@ -246,8 +246,8 @@ function SendSheet({ invoke, workspaceId, sourceIds, itemIds, onClose }: { invok
     const api = reviewApi(invoke, workspaceId, reviewId);
     const who = await actorFor(api, reviewId, actor);
     const { report } = itemIds
-      ? await invoke<{ report: { added: number; duplicates: number } }>("review_import_inbox", { reviewId, ids: itemIds, batch: { group: "other", name: "Inbox" }, actor: who }, workspaceId)
-      : await api.importLibrary({ ids: sourceIds }, { group: "other", name: "Manual" }, who);
+      ? await invoke<{ report: { added: number; duplicates: number } }>("review_import_inbox", { reviewId, ids: itemIds, batch: { group: "other", name: "Other" }, actor: who }, workspaceId)
+      : await api.importLibrary({ ids: sourceIds }, { group: "databases", name: "" }, who);
     toast(`${plural(report.added, itemIds ? "work" : "source")} sent to the review${report.duplicates ? ` (${report.duplicates} already there)` : ""}`);
   };
   if (creating) return <NewReviewSheet invoke={invoke} workspaceId={workspaceId} onClose={onClose} then={(id, actor) => send(id, actor)} />;
@@ -257,8 +257,8 @@ function SendSheet({ invoke, workspaceId, sourceIds, itemIds, onClose }: { invok
         <h2>Send {itemIds ? plural(itemIds.length, "work") : plural(sourceIds.length, "source")} to a review</h2>
         <p>
           {itemIds
-            ? "They join the review’s records as “other methods: Inbox”, from what their feeds and alerts know of them. Duplicates of records already there are removed."
-            : "They join the review’s records as “other methods: manual”, linked to the library. Duplicates of records already there are removed."}
+            ? "They join the review’s records under other methods, from what their feeds and alerts know of them. Duplicates of records already there are removed."
+            : "They join the review’s records, linked to the library, counted under databases until you name the source in Sources. Duplicates of records already there are removed."}
         </p>
         <ul className="kx-rv-pick">
           {reviews?.map((r) => (

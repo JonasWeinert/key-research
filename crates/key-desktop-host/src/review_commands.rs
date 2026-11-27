@@ -478,10 +478,9 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                         _ => break,
                     }
                 }
-                let mut batch = batch_from(args, "library")?;
-                if batch.name.is_empty() {
-                    batch.name = "Key library".into();
-                }
+                // Where the library's records came from is asked in the sheet; without an answer
+                // they count under databases, "source not specified", until named.
+                let batch = batch_from(args, "library")?;
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }
             "review_db_runs" => {
@@ -516,9 +515,13 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 if records.is_empty() {
                     return Err("These works are no longer in the Inbox".into());
                 }
+                // Alerts from journals and feeds: PRISMA's other methods ("Other").
                 let mut batch = batch_from(args, "other")?;
+                if batch.group.is_empty() {
+                    batch.group = "other".into();
+                }
                 if batch.name.is_empty() {
-                    batch.name = "Inbox".into();
+                    batch.name = "Other".into();
                 }
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }

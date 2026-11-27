@@ -104,7 +104,7 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-sources input[type=file]").first().setInputFiles(file);
     const importSheet = page.getByRole("dialog", { name: "Import records" });
     await importSheet.getByText("11 records", { exact: true }).waitFor();
-    assert.equal(await importSheet.getByRole("textbox", { name: "Database" }).inputValue(), "PubMed");
+    assert.equal(await importSheet.getByRole("combobox", { name: "Database" }).inputValue(), "PubMed");
     await importSheet.getByRole("textbox", { name: "Search strategy" }).fill("(exercise OR walking OR yoga) AND (randomised OR randomized)");
     await shot(page, "03-import-sheet");
     await importSheet.getByRole("button", { name: /Import 11 records/ }).click();
@@ -510,6 +510,37 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await shot(page, "23-setup-migrated");
     await page.getByRole("button", { name: "Versions & audit" }).click();
     await page.getByText("Merged the exclusion reasons into the criteria").waitFor();
+    // The owner's counts: 315 from a PubMed run, 3,402 from the library that an older Key put
+    // under "other methods: Manual", 75 screened (70 excluded). The diagram says 75 of 315,
+    // the old import is offered a fix, and once named it moves to the left column.
+    const counts = (await call("review_create", { name: "Counts (smoke)", ownerName: "Ana Example" })).reviewId;
+    const owner = (await call("review_get", { reviewId: counts, viewer: "" })).team[0].id;
+    const invented = (n, tag) => Array.from({ length: n }, (_, i) => ({ title: `${tag} study ${i} of walking and outcome ${(i * 7919) % 100003}`, authors: [`Author${i}, A.`], year: 2000 + (i % 24), doi: `10.9999/${tag}.${i}`, abstractText: "Invented." }));
+    await call("review_import_records", { reviewId: counts, records: invented(315, "pubmed"), batch: { group: "databases", name: "PubMed" }, actor: owner });
+    await call("review_import_records", { reviewId: counts, records: invented(3402, "library"), batch: { group: "other", name: "Manual" }, actor: owner });
+    const pubmedIds = (await call("review_records", { reviewId: counts, viewer: owner, query: { stage: "ta", filter: "all", text: "pubmed", limit: 1000 } })).rows.map((r) => r.id).slice(0, 75);
+    await call("review_decide", { reviewId: counts, recordIds: pubmedIds.slice(0, 70), stage: "ta", value: "exclude", reasons: [], note: "", actor: owner });
+    await call("review_decide", { reviewId: counts, recordIds: pubmedIds.slice(70), stage: "ta", value: "include", reasons: [], note: "", actor: owner });
+    let pc = await call("review_prisma", { reviewId: counts });
+    assert.deepEqual([pc.identified, pc.screened, pc.screeningPending, pc.screeningExcluded, pc.main.sought, pc.complete], [315, 75, 240, 70, 5, false]);
+    await page.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id, title: "Counts (smoke)" }), { ws: ws.id, id: counts });
+    await page.getByRole("heading", { name: "Counts (smoke)" }).waitFor();
+    await page.getByRole("tab", { name: "Overview" }).click();
+    const diagram = page.locator(".kx-rv-prisma-card .kx-prisma").first();
+    await diagram.getByText("Records screened (n = 75 of 315)").waitFor();
+    await diagram.getByText("240 still to screen").waitFor();
+    await shot(page, "25-prisma-in-progress");
+    await page.getByRole("button", { name: "Where did these come from?" }).click();
+    const originSheet = page.getByRole("dialog", { name: "Where the records came from" });
+    await originSheet.getByRole("radio", { name: "Database" }).click();
+    await originSheet.getByRole("combobox").last().fill("Scopus");
+    await originSheet.getByRole("button", { name: "Save" }).click();
+    await originSheet.waitFor({ state: "detached" });
+    await diagram.getByText("Scopus (n = 3,402)").waitFor();
+    pc = await call("review_prisma", { reviewId: counts });
+    assert.deepEqual([pc.identified, pc.screened, pc.screeningPending, pc.otherMethods.length], [3717, 75, 3642, 0]);
+    await shot(page, "26-prisma-origin-fixed");
+
     // Back to the first review (its tab comes forward).
     await page.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id }), { ws: ws.id, id: reviewId });
     await page.getByRole("heading", { name: "Exercise and health (smoke)" }).waitFor();

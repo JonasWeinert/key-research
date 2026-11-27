@@ -553,7 +553,7 @@ pub fn origins_to_check(state: &State) -> Vec<Json> {
         .filter_map(|b| {
             let records = state.records.iter().filter(|r| r.batch == b.id).count();
             let why = if b.group == "other" && !crate::prisma::OTHER_METHODS.contains(&b.name.as_str()) {
-                format!("“{}” is not one of PRISMA 2020's other methods, so its records are counted beside the databases' screening", if b.name.is_empty() { "Other" } else { &b.name })
+                "PRISMA 2020 has no such method: name the database they came from, or the method (citation searching, websites …)".to_string()
             } else if b.group != "other" && b.per_source.is_empty() && b.name.trim().is_empty() {
                 "The database or register is not named".to_string()
             } else {

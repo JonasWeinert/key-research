@@ -2792,3 +2792,22 @@ td.kx-rv-roles {
 .kx-rv-preview-form li[data-hidden] {
   color: var(--kx-text-3);
 }
+
+/* PRISMA: the figure for publication is drawn off screen; origins to check. */
+.kx-rv-offscreen {
+  position: absolute;
+  left: -20000px;
+  top: 0;
+  width: 1000px;
+  pointer-events: none;
+}
+.kx-rv-origin-bar {
+  margin-bottom: 8px;
+}
+.kx-rv-origin-line {
+  display: block;
+}
+.kx-rv-prisma-wip {
+  margin: 6px 0 0;
+  font-size: 12px;
+}

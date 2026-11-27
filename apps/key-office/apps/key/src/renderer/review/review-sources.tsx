@@ -10,7 +10,7 @@ import { EmptyState, Explain, Hint } from "../explain";
 import { GlobalDialog } from "../GlobalDrawer";
 import { Icon } from "../icons";
 import type { Collection } from "../library-api";
-import { plural, type Batch, type ImportReport, type RecordMeta } from "./review-api";
+import { OTHER_METHODS, plural, type Batch, type ImportReport, type RecordMeta } from "./review-api";
 import { Btn, Confirm, MenuButton, errorText, formatDate, useLoad } from "./review-ui";
 import { DuplicatesView, RecordsTable } from "./review-records";
 import type { StageProps } from "./ReviewPage";
@@ -20,7 +20,114 @@ const GROUPS: [Batch["group"], string, string][] = [
   ["registers", "Register", "Trial and study registers such as ClinicalTrials.gov or the WHO ICTRP"],
   ["other", "Other method", "Citation searching, websites, organisations, experts, hand searching"],
 ];
-const OTHER_METHODS = ["Citation searching", "Websites", "Organisations", "Experts", "Hand searching", "Manual"];
+/** Database and register names to suggest: Key's connectors, then common ones. */
+const KNOWN_SOURCES = ["PubMed", "MEDLINE (Ovid)", "Embase", "Scopus", "Web of Science", "CINAHL", "PsycINFO", "Cochrane CENTRAL", "EconLit", "ERIC", "Google Scholar", "ClinicalTrials.gov", "WHO ICTRP"];
+function useSourceNames(invoke: StageProps["invoke"], workspaceId: string) {
+  const names = useLoad(() => invoke<{ name: string; prisma?: string }[]>("db_connectors", {}, workspaceId).catch(() => []), [workspaceId]);
+  return [...new Set([...(names.value ?? []).map((c) => c.name), ...KNOWN_SOURCES])];
+}
+
+/** Where records came from, the way PRISMA 2020 reports it. */
+export function OriginSheet(props: StageProps & { batchId?: string; onClose: () => void }) {
+  const { api, summary, viewer, notify, onChanged, onClose } = props;
+  const batches = summary.batches.filter((b) => !b.removed);
+  const toCheck = new Set((summary.originsToCheck ?? []).map((o) => o.batchId));
+  const [id, setId] = useState(props.batchId ?? batches.find((b) => toCheck.has(b.batch.id))?.batch.id ?? batches[0]?.batch.id);
+  const current = batches.find((b) => b.batch.id === id)?.batch;
+  const sensible = (b?: Batch): Partial<Batch> => (!b ? { group: "databases", name: "" } : b.group === "other" && !OTHER_METHODS.includes(b.name) ? { group: "databases", name: "" } : { group: b.group, name: b.name });
+  const [origin, setOrigin] = useState<Partial<Batch>>(() => sensible(current));
+  const [error, setError] = useState("");
+  const names = useSourceNames(props.invoke, props.workspaceId);
+  return (
+    <GlobalDialog label="Where the records came from" onClose={onClose}>
+      <form
+        className="kx-rv-dialog"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!id) return;
+          api
+            .batchOrigin(id, (origin.group ?? "databases") as "databases" | "registers" | "other", origin.name ?? "", viewer)
+            .then(() => {
+              notify("PRISMA counts updated", "ok");
+              onChanged();
+              onClose();
+            })
+            .catch((err) => setError(errorText(err)));
+        }}
+      >
+        <h2>Where did these records come from?</h2>
+        <p className="kx-rv-muted">PRISMA 2020 counts records from databases and registers in the left column, where they are screened, and records found by other methods (citation searching, websites …) in the right one.</p>
+        {batches.length > 1 && (
+          <label className="kx-rv-field" data-wide>
+            <span>Import</span>
+            <select
+              className="kx-rv-select"
+              value={id}
+              onChange={(e) => {
+                setId(e.target.value);
+                setOrigin(sensible(batches.find((b) => b.batch.id === e.target.value)?.batch));
+              }}
+            >
+              {batches.map((b) => (
+                <option key={b.batch.id} value={b.batch.id}>
+                  {b.batch.name || b.batch.fileName || "Import"} · {plural(b.records, "record")}
+                  {toCheck.has(b.batch.id) ? " · to check" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <OriginFields batch={origin} onChange={setOrigin} names={names} />
+        {error && <p className="kx-inline-error">{error}</p>}
+        <div className="kx-rv-dialog-actions">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <button type="submit" className="kx-rv-btn" data-primary>
+            Save
+          </button>
+        </div>
+      </form>
+    </GlobalDialog>
+  );
+}
+
+/** Databases, registers or other methods, and the name (a database's, with suggestions). */
+export function OriginFields({ batch, onChange, names }: { batch: Partial<Batch>; onChange: (b: Partial<Batch>) => void; names: string[] }) {
+  const group = batch.group ?? "databases";
+  return (
+    <div className="kx-rv-form">
+      <div className="kx-rv-field" data-wide>
+        <span>Identified via</span>
+        <div className="kx-rv-seg" role="radiogroup" aria-label="Identified via">
+          {GROUPS.map(([gid, label, hint]) => (
+            <button key={gid} type="button" role="radio" aria-checked={group === gid} title={hint} onClick={() => onChange({ ...batch, group: gid, name: gid === "other" ? (OTHER_METHODS.includes(batch.name ?? "") ? batch.name : "Citation searching") : OTHER_METHODS.includes(batch.name ?? "") ? "" : batch.name })}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="kx-rv-field" data-wide>
+        <span>{group === "other" ? "Method" : group === "registers" ? "Register" : "Database"}</span>
+        {group === "other" ? (
+          <select className="kx-rv-select" value={batch.name ?? ""} onChange={(e) => onChange({ ...batch, name: e.target.value })}>
+            {OTHER_METHODS.map((m) => (
+              <option key={m}>{m}</option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input className="kx-rv-input" list="kx-rv-source-names" value={batch.name ?? ""} placeholder={group === "registers" ? "e.g. ClinicalTrials.gov" : "e.g. Scopus — or leave it to name later"} onChange={(e) => onChange({ ...batch, name: e.target.value })} />
+            <datalist id="kx-rv-source-names">
+              {names.map((nm) => (
+                <option key={nm} value={nm} />
+              ))}
+            </datalist>
+          </>
+        )}
+      </label>
+      {group !== "other" && !batch.name?.trim() && <p className="kx-rv-muted kx-rv-field" data-wide>Counted as “Databases — source not specified” until you name it.</p>}
+    </div>
+  );
+}
 
 export function reportText(r: ImportReport) {
   const parts = [`Added ${plural(r.added, "record")}`];
@@ -66,6 +173,7 @@ function Imports(props: StageProps) {
   const [library, setLibrary] = useState(false);
   const [manual, setManual] = useState(false);
   const [removing, setRemoving] = useState<Batch>();
+  const [origin, setOrigin] = useState<string>();
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const runs = useLoad(() => api.dbRuns().catch(() => []), [api]);
@@ -169,6 +277,20 @@ function Imports(props: StageProps) {
           </ul>
         </section>
       )}
+      {summary.originsToCheck?.length > 0 && (
+        <div className="kx-rv-missing-bar kx-rv-origin-bar" role="status">
+          <span>
+            {summary.originsToCheck.map((o) => (
+              <span key={o.batchId} className="kx-rv-origin-line">
+                <strong>{plural(o.records, "record")}</strong> counted as “{o.name}”. {o.why}.
+              </span>
+            ))}
+          </span>
+          <Btn small primary onClick={() => setOrigin(summary.originsToCheck[0].batchId)}>
+            Where did these come from?
+          </Btn>
+        </div>
+      )}
       <section className="kx-rv-section">
         <div className="kx-rv-section-head">
           <h2>Imports</h2>
@@ -214,7 +336,18 @@ function Imports(props: StageProps) {
                     {removed ? "Removed" : formatDate(batch.at)}
                     <small>{actorName}</small>
                   </td>
-                  <td>{!removed && <MenuButton label="Import actions" items={[{ label: "Remove this import…", icon: "trash", danger: true, run: () => setRemoving(batch) }]} />}</td>
+                  <td>
+                    {!removed && (
+                      <MenuButton
+                        label="Import actions"
+                        items={[
+                          { label: "Came from…", icon: "pen", run: () => setOrigin(batch.id) },
+                          null,
+                          { label: "Remove this import…", icon: "trash", danger: true, run: () => setRemoving(batch) },
+                        ]}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -222,6 +355,7 @@ function Imports(props: StageProps) {
         )}
       </section>
       {file && <ImportSheet {...props} file={file} onClose={() => setFile(undefined)} />}
+      {origin && <OriginSheet {...props} batchId={origin} onClose={() => setOrigin(undefined)} />}
       {library && <LibrarySheet {...props} onClose={() => setLibrary(false)} />}
       {manual && <ManualSheet {...props} onClose={() => setManual(false)} />}
       {removing && (
@@ -239,32 +373,11 @@ function Imports(props: StageProps) {
 }
 
 /** Where a batch comes from, in PRISMA's words. */
-function Provenance({ batch, onChange, kind }: { batch: Partial<Batch>; onChange: (b: Partial<Batch>) => void; kind: "file" | "library" | "other" }) {
+function Provenance({ batch, onChange, kind, names }: { batch: Partial<Batch>; onChange: (b: Partial<Batch>) => void; kind: "file" | "library" | "other"; names: string[] }) {
   const group = batch.group ?? "databases";
   return (
     <div className="kx-rv-form">
-      <div className="kx-rv-field">
-        <span>Identified via</span>
-        <div className="kx-rv-seg" role="radiogroup" aria-label="Identified via">
-          {GROUPS.map(([id, label, hint]) => (
-            <button key={id} type="button" role="radio" aria-checked={group === id} title={hint} onClick={() => onChange({ ...batch, group: id, name: id === "other" && !OTHER_METHODS.includes(batch.name ?? "") ? "Citation searching" : batch.name })}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <label className="kx-rv-field">
-        <span>{group === "other" ? "Method" : group === "registers" ? "Register" : "Database"}</span>
-        {group === "other" ? (
-          <select className="kx-rv-select" value={batch.name ?? ""} onChange={(e) => onChange({ ...batch, name: e.target.value })}>
-            {OTHER_METHODS.map((m) => (
-              <option key={m}>{m}</option>
-            ))}
-          </select>
-        ) : (
-          <input className="kx-rv-input" value={batch.name ?? ""} placeholder={group === "registers" ? "e.g. ClinicalTrials.gov" : "e.g. PubMed"} onChange={(e) => onChange({ ...batch, name: e.target.value })} />
-        )}
-      </label>
+      <OriginFields batch={batch} onChange={onChange} names={names} />
       {kind !== "library" && group !== "other" && (
         <>
           <label className="kx-rv-field">
@@ -289,7 +402,8 @@ function guessName(fileName: string, format: string) {
   return fileName.replace(/\.[^.]+$/, "");
 }
 
-function ImportSheet({ api, viewer, notify, onChanged, file, onClose }: StageProps & { file: { name: string; text: string }; onClose: () => void }) {
+function ImportSheet({ api, viewer, notify, onChanged, file, onClose, invoke, workspaceId }: StageProps & { file: { name: string; text: string }; onClose: () => void }) {
+  const names = useSourceNames(invoke, workspaceId);
   const preview = useLoad(() => api.previewFile(file.text, file.name), [file]);
   const [batch, setBatch] = useState<Partial<Batch>>({ group: "databases", name: "", searchedAt: new Date().toISOString().slice(0, 10) });
   const [busy, setBusy] = useState(false);
@@ -337,7 +451,7 @@ function ImportSheet({ api, viewer, notify, onChanged, file, onClose }: StagePro
         ) : (
           <p className="kx-rv-muted">Reading…</p>
         )}
-        <Provenance batch={batch} onChange={setBatch} kind="file" />
+        <Provenance batch={batch} onChange={setBatch} kind="file" names={names} />
         <Hint help="review.import.dedup" />
         {error && <p className="kx-inline-error">{error}</p>}
         <div className="kx-rv-dialog-actions">
@@ -355,7 +469,9 @@ function LibrarySheet({ api, invoke, workspaceId, viewer, notify, onChanged, onC
   const collections = useLoad(() => invoke<Collection[]>("store_collections", {}, workspaceId).catch(() => [] as Collection[]), [workspaceId]);
   const [scope, setScope] = useState("all");
   const [text, setText] = useState("");
-  const [batch, setBatch] = useState<Partial<Batch>>({ group: "other", name: "Manual" });
+  // Records from the library came from a database search most of the time: say which (or later).
+  const [batch, setBatch] = useState<Partial<Batch>>({ group: "databases", name: "" });
+  const names = useSourceNames(invoke, workspaceId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const chosen = collections.value?.find((c) => c.id === scope);
@@ -370,7 +486,7 @@ function LibrarySheet({ api, invoke, workspaceId, viewer, notify, onChanged, onC
           if (scope !== "all") query.collectionId = scope;
           if (text.trim()) query.text = text.trim();
           api
-            .importLibrary({ query }, { ...batch, name: batch.group === "other" ? batch.name : batch.name || "Key library" }, viewer)
+            .importLibrary({ query }, batch, viewer)
             .then(({ report }) => {
               notify(reportText(report), "ok");
               onChanged();
@@ -399,7 +515,7 @@ function LibrarySheet({ api, invoke, workspaceId, viewer, notify, onChanged, onC
             <input className="kx-rv-input" value={text} placeholder="Optional: words, or a smart search like year:2015..2024" onChange={(e) => setText(e.target.value)} />
           </label>
         </div>
-        <Provenance batch={batch} onChange={setBatch} kind="library" />
+        <Provenance batch={batch} onChange={setBatch} kind="library" names={names} />
         {error && <p className="kx-inline-error">{error}</p>}
         <div className="kx-rv-dialog-actions">
           <Btn onClick={onClose}>Cancel</Btn>
@@ -412,7 +528,8 @@ function LibrarySheet({ api, invoke, workspaceId, viewer, notify, onChanged, onC
   );
 }
 
-function ManualSheet({ api, viewer, notify, onChanged, onClose }: StageProps & { onClose: () => void }) {
+function ManualSheet({ api, viewer, notify, onChanged, onClose, invoke, workspaceId }: StageProps & { onClose: () => void }) {
+  const names = useSourceNames(invoke, workspaceId);
   const [record, setRecord] = useState<Partial<RecordMeta> & { authorsText?: string }>({});
   const [batch, setBatch] = useState<Partial<Batch>>({ group: "other", name: "Citation searching" });
   const [error, setError] = useState("");
@@ -462,7 +579,7 @@ function ManualSheet({ api, viewer, notify, onChanged, onClose }: StageProps & {
             <textarea className="kx-rv-input" rows={4} value={record.abstractText ?? ""} onChange={(e) => set("abstractText", e.target.value)} />
           </label>
         </div>
-        <Provenance batch={batch} onChange={setBatch} kind="other" />
+        <Provenance batch={batch} onChange={setBatch} kind="other" names={names} />
         {error && <p className="kx-inline-error">{error}</p>}
         <div className="kx-rv-dialog-actions">
           <Btn onClick={onClose}>Cancel</Btn>

@@ -220,8 +220,10 @@ impl Reviews {
             if batch.count == 0 {
                 batch.count = records.len();
             }
+            // Files and library records mostly come from database searches: counted there (as
+            // "source not specified" until named) unless the import says otherwise.
             if batch.group.is_empty() {
-                batch.group = if batch.kind == "database" { "databases".into() } else { "other".into() };
+                batch.group = if batch.kind == "other" { "other".into() } else { "databases".into() };
             }
             // Compare with the records still in the review (not duplicates, not removed).
             let existing: Vec<RecordMeta> = all_metas(conn, review)?.into_iter().filter(|m| state.record(&m.id).is_some_and(|r| state.active(r))).collect();
