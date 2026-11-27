@@ -399,7 +399,81 @@ pub struct Target {
     /// A table's row: None for a new one.
     pub row: Option<usize>,
     pub new_row: bool,
+    /// The passage fits no value of this field: choosing it keeps the passage as the field's
+    /// source only (its value stays as it is).
+    pub source_only: bool,
     pub score: i32,
+}
+
+/// A passage's words as a value: whitespace as one space, words broken at a line's end joined
+/// ("rando- mised" → "randomised").
+pub fn clean_text(text: &str) -> String {
+    let joined = regex::Regex::new(r"(\p{L})[-\u{00AD}\u{2010}]\s+(\p{Ll})").unwrap().replace_all(text, "$1$2");
+    joined.split_whitespace().collect::<Vec<_>>().join(" ").trim_matches(|c: char| c == '"' || c == '“' || c == '”').to_string()
+}
+
+const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/// The dates a passage names, in order, as ISO dates to the precision given: "2015-03-12",
+/// "12 March 2015" and "March 12, 2015" → 2015-03-12; "March 2015", "2015-03", "03/2015" →
+/// 2015-03; a year alone (1900–2099) → 2015. "between 2012 and 2014" gives two.
+pub fn dates(text: &str) -> Vec<String> {
+    let t = text.to_lowercase().replace(['–', '—'], "-");
+    let month = r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\.?";
+    let year = r"((?:19|20)\d{2})";
+    let m = |name: &str| MONTHS.iter().position(|x| name.starts_with(x)).map(|i| i + 1).unwrap_or(1);
+    let mut found: Vec<(usize, usize, String)> = Vec::new();
+    let mut take = |start: usize, end: usize, value: String, found: &mut Vec<(usize, usize, String)>| {
+        if !found.iter().any(|(a, b, _)| start < *b && *a < end) {
+            found.push((start, end, value));
+        }
+    };
+    let rx = |p: String| regex::Regex::new(&p).unwrap();
+    for c in rx(format!(r"\b{year}-(0[1-9]|1[0-2])(?:-(0[1-9]|[12]\d|3[01]))?\b")).captures_iter(&t) {
+        let all = c.get(0).unwrap();
+        let v = match c.get(3) { Some(d) => format!("{}-{}-{}", &c[1], &c[2], d.as_str()), None => format!("{}-{}", &c[1], &c[2]) };
+        take(all.start(), all.end(), v, &mut found);
+    }
+    for c in rx(format!(r"\b([0-3]?\d)(?:st|nd|rd|th)?\s+{month}\s*,?\s+{year}\b")).captures_iter(&t) {
+        let all = c.get(0).unwrap();
+        take(all.start(), all.end(), format!("{}-{:02}-{:02}", &c[3], m(&c[2]), c[1].parse::<u32>().unwrap_or(1)), &mut found);
+    }
+    for c in rx(format!(r"\b{month}\s+([0-3]?\d)(?:st|nd|rd|th)?,?\s+{year}\b")).captures_iter(&t) {
+        let all = c.get(0).unwrap();
+        take(all.start(), all.end(), format!("{}-{:02}-{:02}", &c[3], m(&c[1]), c[2].parse::<u32>().unwrap_or(1)), &mut found);
+    }
+    for c in rx(format!(r"\b{month}\s*,?\s*{year}\b")).captures_iter(&t) {
+        let all = c.get(0).unwrap();
+        take(all.start(), all.end(), format!("{}-{:02}", &c[2], m(&c[1])), &mut found);
+    }
+    for c in rx(format!(r"\b(0?[1-9]|1[0-2])/{year}\b")).captures_iter(&t) {
+        let all = c.get(0).unwrap();
+        take(all.start(), all.end(), format!("{}-{:02}", &c[2], c[1].parse::<u32>().unwrap_or(1)), &mut found);
+    }
+    for c in rx(format!(r"(^|[^\d.,/])({year})($|[^\d.,%])")).captures_iter(&t) {
+        let y = c.get(2).unwrap();
+        take(y.start(), y.end(), y.as_str().to_string(), &mut found);
+    }
+    found.sort_by_key(|(a, _, _)| *a);
+    let mut out: Vec<String> = Vec::new();
+    for (_, _, v) in found {
+        if !out.contains(&v) {
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// "Start of recruitment" / "End of follow-up": which end of a range a date field holds.
+fn date_end(field: &Field) -> Option<bool> {
+    let l = format!(" {} {} ", field.label.to_lowercase(), field.id.to_lowercase().replace('_', " "));
+    if ["start", "begin", "from", "first", "onset"].iter().any(|w| l.contains(w)) {
+        Some(false)
+    } else if ["end", "until", "finish", "last", "stop", "completion"].iter().any(|w| l.contains(w)) {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 fn display(v: &Json) -> String {
@@ -423,7 +497,8 @@ pub fn targets(req: &TargetsRequest) -> Json {
     let parsed = parse(&req.text);
     let numbers: Vec<f64> = parsed["numbers"].as_array().map(|a| a.iter().filter_map(Json::as_f64).collect()).unwrap_or_default();
     let has_words = req.text.chars().filter(|c| c.is_alphabetic()).count() >= 3;
-    let text = req.text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let text = clean_text(&req.text);
+    let named_dates = dates(&req.text);
     let mut out: Vec<Target> = Vec::new();
     for form in &req.forms {
         let answers: crate::logic::Answers = req.values.iter().filter_map(|(k, v)| k.strip_prefix(&format!("{}/", form.id)).map(|f| (f.to_string(), v.clone()))).collect();
@@ -445,10 +520,12 @@ pub fn targets(req: &TargetsRequest) -> Json {
                     focused,
                     row,
                     new_row,
+                    source_only: false,
                     score: score + if focused { 1000 } else { 0 },
                 };
+                let before = out.len();
                 let fill = |f: &Field, value: Json| Fill { field_id: f.id.clone(), label: f.label.clone(), display: display(&value), value };
-                match field.kind.as_str() {
+                'fit: { match field.kind.as_str() {
                     "number" => {
                         let stat = stat_of(field);
                         let own = stat.and_then(|s| stat_value(&parsed, s));
@@ -456,9 +533,9 @@ pub fn targets(req: &TargetsRequest) -> Json {
                             // A field we cannot name takes the passage's main value.
                             ["mean", "estimate", "n", "events", "percent", "median"].iter().find_map(|k| parsed.get(*k).and_then(Json::as_f64)).or(numbers.first().copied())
                         });
-                        let Some(value) = value else { continue };
+                        let Some(value) = value else { break 'fit };
                         if !focused && own.is_none() && stat.is_some() {
-                            continue;
+                            break 'fit;
                         }
                         let mut fills = vec![fill(field, json!(value))];
                         // Its partners in the same section: "Mean (intervention)" brings "SD (intervention)".
@@ -480,13 +557,31 @@ pub fn targets(req: &TargetsRequest) -> Json {
                         out.push(base(fills, score, None, false, field.label.clone()));
                     }
                     "text" | "longtext" => {
-                        let score = if has_words { 20 + (field.kind == "longtext") as i32 * (text.len() > 80) as i32 * 10 } else { 2 };
+                        if !has_words {
+                            break 'fit;
+                        }
+                        let score = 20 + (field.kind == "longtext") as i32 * (text.len() > 80) as i32 * 10;
                         out.push(base(vec![fill(field, json!(text))], score, None, false, field.label.clone()));
+                    }
+                    "date" => {
+                        let Some(first) = named_dates.first() else { break 'fit };
+                        let last = named_dates.last().unwrap_or(first);
+                        // A range ("between 2012 and 2014") fills its start and its end.
+                        let end = date_end(field);
+                        let own = if end == Some(true) { last } else { first };
+                        let mut fills = vec![fill(field, json!(own))];
+                        if named_dates.len() > 1
+                            && let Some(e) = end
+                            && let Some(partner) = fields.iter().find(|f| f.id != field.id && f.kind == "date" && date_end(f) == Some(!e))
+                        {
+                            fills.push(fill(partner, json!(if e { first } else { last })));
+                        }
+                        out.push(base(fills, 90, None, false, field.label.clone()));
                     }
                     "choice" | "multi" => {
                         let option = closest_option(&field.options, &text);
-                        if option.is_none() && !focused {
-                            continue;
+                        if option.is_none() {
+                            break 'fit;
                         }
                         let value = match (&option, field.kind.as_str()) {
                             (Some(o), "multi") => {
@@ -506,7 +601,7 @@ pub fn targets(req: &TargetsRequest) -> Json {
                         let rows: Vec<Map<String, Json>> = answers.get(&field.id).and_then(Json::as_array).map(|a| a.iter().filter_map(|r| r.as_object().cloned()).collect()).unwrap_or_default();
                         let (cells, score) = row_from(field, &parsed, &numbers, &text);
                         if cells.is_empty() {
-                            continue;
+                            break 'fit;
                         }
                         let fills: Vec<Fill> = cells.iter().map(|(c, v)| fill(c, v.clone())).collect();
                         let group = field.label.clone();
@@ -522,8 +617,15 @@ pub fn targets(req: &TargetsRequest) -> Json {
                             out.push(base(missing, score - 1, Some(i), false, label));
                         }
                     }
-                    "yesno" | "date" if focused => out.push(base(vec![], 1, None, false, field.label.clone())),
                     _ => {}
+                } }
+                // Nothing in the passage fits it: offered further down as "source only".
+                if out.len() == before && field.kind != "table" {
+                    let mut t = base(vec![], -100, None, false, field.label.clone());
+                    t.source_only = true;
+                    t.score = -100;
+                    t.id = format!("{}/source", t.id);
+                    out.push(t);
                 }
             }
         }
@@ -724,12 +826,50 @@ mod tests {
         let t = out["targets"].as_array().unwrap();
         // No count field in Study but participants: total 120 goes there.
         assert!(t.iter().any(|x| x["fieldId"] == "n_total" && x["fills"][0]["value"] == 120.0));
-        assert!(!t.iter().any(|x| x["fieldId"] == "sd_pain"), "no SD in the passage");
+        assert!(t.iter().filter(|x| x["fieldId"] == "sd_pain").all(|x| x["sourceOnly"] == true), "no SD in the passage: its source only");
         let row = t.iter().find(|x| x["newRow"] == true).unwrap();
         assert_eq!(row["fills"].as_array().unwrap().iter().map(|f| f["fieldId"].as_str().unwrap()).collect::<Vec<_>>(), vec!["e1", "n1"]);
         let out = targets(&req("This was a cluster-randomised trial in 12 schools", None, BTreeMap::new()));
         let first = &out["targets"][0];
         assert_eq!((first["fieldId"].as_str(), first["fills"][0]["value"].as_str()), (Some("design"), Some("Cluster randomised trial")));
+    }
+
+    #[test]
+    fn dates_and_words() {
+        assert_eq!(dates("Recruitment ran from March 2015 to 12 June 2016."), vec!["2015-03", "2016-06-12"]);
+        assert_eq!(dates("between 2012 and 2014"), vec!["2012", "2014"]);
+        assert_eq!(dates("2015-03"), vec!["2015-03"]);
+        assert_eq!(dates("on 2015-03-12"), vec!["2015-03-12"]);
+        assert_eq!(dates("June 3, 2019"), vec!["2019-06-03"]);
+        assert_eq!(dates("03/2015"), vec!["2015-03"]);
+        assert!(dates("Uruguay").is_empty());
+        assert!(dates("n = 2015 participants (95% CI 1.2 to 3.4)").len() <= 1);
+        assert!(dates("12.3 (4.5)").is_empty());
+        assert_eq!(clean_text("  a cluster-rando-\n mised   trial "), "a cluster-randomised trial");
+    }
+
+    #[test]
+    fn a_date_field_takes_dates_only_and_both_ends_of_a_range() {
+        use crate::model::Section;
+        let date = |id: &str, label: &str| Field { id: id.into(), label: label.into(), kind: "date".into(), ..Default::default() };
+        let forms = vec![Form {
+            id: "f".into(),
+            name: "Study".into(),
+            kind: "custom".into(),
+            sections: vec![Section { id: "s".into(), title: "Dates".into(), fields: vec![date("start", "Start of recruitment"), date("end", "End of recruitment"), Field { id: "country".into(), label: "Country".into(), kind: "text".into(), ..Default::default() }], ..Default::default() }],
+        }];
+        let r = |text: &str, focus: Option<&str>| targets(&TargetsRequest { text: text.into(), forms: forms.clone(), values: BTreeMap::new(), focus: focus.map(|f| Focus { form_id: "f".into(), field_id: f.into() }) });
+        // "Uruguay" fits the country; the dates only as its source, after everything else.
+        let out = r("Uruguay", Some("start"));
+        let t = out["targets"].as_array().unwrap();
+        assert_eq!(t[0]["fieldId"], "country");
+        let start = t.iter().find(|x| x["fieldId"] == "start").unwrap();
+        assert_eq!((start["sourceOnly"].as_bool(), start["fills"].as_array().unwrap().len()), (Some(true), 0));
+        // A range fills both ends.
+        let out = r("between 2012 and 2014", None);
+        let first = &out["targets"][0];
+        assert_eq!(first["fieldId"], "start");
+        assert_eq!(first["fills"], json!([{ "fieldId": "start", "label": "Start of recruitment", "value": "2012", "display": "2012" }, { "fieldId": "end", "label": "End of recruitment", "value": "2014", "display": "2014" }]));
     }
 
     #[test]
