@@ -3189,3 +3189,10 @@ td.kx-rv-roles {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* A criterion's screening key in Setup. */
+.kx-rv-criterion-keys {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}

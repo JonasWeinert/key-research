@@ -10,6 +10,7 @@ import { ELEMENT_LABEL, ELEMENT_PART, plural, reasonText, type Condition, type C
 import { Btn, MenuButton, Row, Segmented, Toggle, errorText, formatTime, useLoad } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
 import { FormsEditor } from "./review-forms";
+import { boundKeys, criterionKeys } from "./review-session";
 // std-A: the protocol document (PRISMA-P / PROSPERO / OSF), registration and deviations
 import { ProtocolSection } from "./review-protocol";
 import { takeFocus } from "./review-reporting-api";
@@ -474,7 +475,7 @@ function ConditionRow({ c, onChange, onRemove }: { c: Condition; onChange: (c: C
   );
 }
 
-function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, autoOpen }: { c: Criterion; number: number; onChange: (c: Criterion) => void; onRemove: () => void; onMove: (by: number) => void; first: boolean; last: boolean; autoOpen?: boolean }) {
+function CriterionCard({ c, number, keys, onChange, onRemove, onMove, first, last, autoOpen }: { c: Criterion; number: number; keys?: { ta?: string; ft?: string }; onChange: (c: Criterion) => void; onRemove: () => void; onMove: (by: number) => void; first: boolean; last: boolean; autoOpen?: boolean }) {
   const [open, setOpen] = useState(!!autoOpen);
   const link = c.link;
   return (
@@ -483,6 +484,18 @@ function CriterionCard({ c, number, onChange, onRemove, onMove, first, last, aut
         <span className="kx-rv-criterion-number" title="Its place in the order: PRISMA reports the first criterion a study does not meet">
           {number}
         </span>
+        {keys && (keys.ta || keys.ft) && (
+          <span className="kx-rv-criterion-keys" title="Its key while screening (title & abstract, then full text)">
+            {keys.ta === keys.ft || !keys.ft || !keys.ta ? (
+              <kbd>{(keys.ta ?? keys.ft)!.toUpperCase()}</kbd>
+            ) : (
+              <>
+                <kbd>{keys.ta.toUpperCase()}</kbd>
+                <kbd>{keys.ft.toUpperCase()}</kbd>
+              </>
+            )}
+          </span>
+        )}
         <span className="kx-rv-criterion-prefix">Include if</span>
         <input className="kx-rv-input kx-rv-criterion-label" placeholder="what a study must meet, e.g. adults aged 18 or over" value={c.label} onChange={(e) => onChange({ ...c, label: e.target.value })} aria-label="Criterion" autoFocus={autoOpen && !c.label} />
         {c.stages.length === 1 && <span className="kx-rv-pill" data-tone="muted">{c.stages[0] === "ta" ? "Title & abstract" : "Full text"}</span>}
@@ -600,6 +613,12 @@ function CriteriaSection({ draft, change, api, summary }: DraftProps) {
       p.criteria = list;
     });
   const shown = draft.criteria.map((c, i) => ({ c, i }));
+  // Each criterion's key while screening, per stage (the same keys the screening view uses).
+  const keyOf = (c: Criterion, stage: Stage) => {
+    const list = draft.criteria.filter((x) => !x.stages.length || x.stages.includes(stage));
+    const at = list.findIndex((x) => x.id === c.id);
+    return at < 0 ? undefined : criterionKeys(list.length, boundKeys(draft.shortcuts ?? {}, draft.labelKeys ?? {}))[at];
+  };
   const offered = (element: string) =>
     (suggestions.value?.criteria ?? []).filter((s) => s.element === element && !draft.criteria.some((c) => c.id === s.id || reasonText(c).toLowerCase() === reasonText(s).toLowerCase()));
   const part = (element: string) => {
@@ -631,6 +650,7 @@ function CriteriaSection({ draft, change, api, summary }: DraftProps) {
                     key={c.id}
                     c={c}
                     number={i + 1}
+                    keys={{ ta: keyOf(c, "ta"), ft: keyOf(c, "ft") }}
                     first={i === first}
                     last={i === last}
                     autoOpen={c.id === fresh}
