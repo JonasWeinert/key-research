@@ -1,10 +1,10 @@
 // What each filled value was worked out from, and what became of it. A cell (source ×
 // property) keeps the AI's answer (value, recipe and its version, model, the passages it came
 // from and a hash of exactly that material), the value the user typed over it (when they did),
-// a few earlier answers, and whether it is out of date. Triggers note which filled sources
-// changed (their details, PDF text, notes or highlights) in `fill_changes`; `sync` reads only
-// those, works out each recipe's material again and compares hashes, so an edit that leaves
-// a recipe's material alone marks nothing. Cell rows are journaled with the edit that writes
+// a few earlier answers, and whether it is out of date. `sync` follows the shared change log
+// (changes.rs) as consumer "fill", reads only filled sources that changed (their details, PDF
+// text, notes or highlights), works out each recipe's material again and compares hashes, so
+// an edit that leaves a recipe's material alone marks nothing. Cell rows are journaled with the edit that writes
 // them, so undo puts both the value and its record back.
 use crate::fill::{Passage, Recipe, build_request, material, rule_value};
 use crate::{Result, Store, e, now_ms, patch_source_row, refresh_fts};
@@ -27,41 +27,9 @@ pub(crate) fn ensure_schema(db: &Connection) -> Result<()> {
            evidence TEXT NOT NULL DEFAULT '[]', passages TEXT NOT NULL DEFAULT '[]', filled_at INTEGER NOT NULL,
            user_value TEXT, edited_at INTEGER, stale TEXT, stale_at INTEGER, history TEXT NOT NULL DEFAULT '[]',
            PRIMARY KEY (source_id, property));
-         CREATE INDEX IF NOT EXISTS fill_cells_recipe ON fill_cells(recipe_id, stale);
-         CREATE TABLE IF NOT EXISTS fill_changes (source_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
-         CREATE TRIGGER IF NOT EXISTS fill_watch_sources AFTER UPDATE ON sources
-         WHEN EXISTS (SELECT 1 FROM fill_cells WHERE source_id = NEW.id) BEGIN
-           INSERT INTO fill_changes(source_id, at) VALUES (NEW.id, CAST(unixepoch('subsec') * 1000 AS INTEGER)) ON CONFLICT(source_id) DO UPDATE SET at = excluded.at;
-         END;
-         CREATE TRIGGER IF NOT EXISTS fill_watch_sources_gone AFTER DELETE ON sources BEGIN
-           DELETE FROM fill_cells WHERE source_id = OLD.id;
-           DELETE FROM fill_changes WHERE source_id = OLD.id;
-         END;
-         CREATE TRIGGER IF NOT EXISTS fill_watch_chunks_add AFTER INSERT ON chunks
-         WHEN NEW.source_id IS NOT NULL AND EXISTS (SELECT 1 FROM fill_cells WHERE source_id = NEW.source_id) BEGIN
-           INSERT INTO fill_changes(source_id, at) VALUES (NEW.source_id, CAST(unixepoch('subsec') * 1000 AS INTEGER)) ON CONFLICT(source_id) DO UPDATE SET at = excluded.at;
-         END;
-         CREATE TRIGGER IF NOT EXISTS fill_watch_chunks_remove AFTER DELETE ON chunks
-         WHEN OLD.source_id IS NOT NULL AND EXISTS (SELECT 1 FROM fill_cells WHERE source_id = OLD.source_id) BEGIN
-           INSERT INTO fill_changes(source_id, at) VALUES (OLD.source_id, CAST(unixepoch('subsec') * 1000 AS INTEGER)) ON CONFLICT(source_id) DO UPDATE SET at = excluded.at;
-         END;",
+         CREATE INDEX IF NOT EXISTS fill_cells_recipe ON fill_cells(recipe_id, stale);",
     )
-    .map_err(e)?;
-    // Notes and highlights: added, changed or removed.
-    for (table, events) in [("notes", ["INSERT", "UPDATE", "DELETE"]), ("annotations", ["INSERT", "UPDATE", "DELETE"])] {
-        for event in events {
-            let row = if event == "DELETE" { "OLD" } else { "NEW" };
-            db.execute_batch(&format!(
-                "CREATE TRIGGER IF NOT EXISTS fill_watch_{table}_{event} AFTER {event} ON {table}
-                 WHEN {row}.source_id IS NOT NULL AND EXISTS (SELECT 1 FROM fill_cells WHERE source_id = {row}.source_id) BEGIN
-                   INSERT INTO fill_changes(source_id, at) VALUES ({row}.source_id, CAST(unixepoch('subsec') * 1000 AS INTEGER)) ON CONFLICT(source_id) DO UPDATE SET at = excluded.at;
-                 END;",
-                event = event.to_lowercase(),
-            ))
-            .map_err(e)?;
-        }
-    }
-    Ok(())
+    .map_err(e)
 }
 
 fn digest(text: &str) -> String {
@@ -145,6 +113,8 @@ pub(crate) enum UserSide<'a> {
 
 /// Records an answer; the one before it goes to the history.
 pub(crate) fn record_answer(db: &Connection, answer: &NewAnswer, user: UserSide) -> Result<()> {
+    // Follow changes from the first answer on.
+    crate::changes::cursor(db, CONSUMER)?;
     let now = now_ms();
     let before = db
         .query_row(
@@ -206,24 +176,27 @@ pub(crate) fn cell_state(db: &Connection, source: &str, recipe: &Recipe) -> Resu
         .map_err(e)
 }
 
-// The change capture this module reads: (source, when) of filled sources that changed.
-// Kept behind these two functions so the shared `changes` log can replace `fill_changes`.
-fn pending_changes(db: &Connection, limit: usize) -> Result<Vec<(String, i64)>> {
-    let mut statement = db.prepare_cached("SELECT source_id, at FROM fill_changes ORDER BY at LIMIT ?").map_err(e)?;
-    let rows = statement.query_map([limit as i64], |r| Ok((r.get(0)?, r.get(1)?))).map_err(e)?;
-    rows.collect::<std::result::Result<_, _>>().map_err(e)
-}
-
-fn changes_done(db: &Connection, source: &str, at: i64) -> Result<()> {
-    db.execute("DELETE FROM fill_changes WHERE source_id = ?1 AND at <= ?2", params![source, at]).map(|_| ()).map_err(e)
-}
+/// This module's name in the shared change log.
+const CONSUMER: &str = "fill";
+/// Changes that never alter what a recipe reads or a cell's value.
+const IGNORED: &[&str] = &["reading", "cited", "references", "collections", "added", "starred", "readState", "citedByCount", "fwci"];
 
 /// Brings cells up to date with the sources that changed: edits by hand are noted, and an
 /// answer whose material (or recipe) changed is marked out of date. Returns the sources read.
 pub(crate) fn sync(db: &Connection, recipes: &[Recipe], limit: usize) -> Result<usize> {
-    let changed = pending_changes(db, limit)?;
+    let log = crate::changes::read_since(db, CONSUMER, limit)?;
+    let Some(last) = log.last().map(|c| c.seq) else { return Ok(0) };
+    let at = now_ms();
+    let mut changed: Vec<String> = Vec::new();
+    for change in &log {
+        if change.kind == "removed" {
+            db.execute("DELETE FROM fill_cells WHERE source_id = ?", [&change.source_id]).map_err(e)?;
+        } else if !IGNORED.contains(&change.kind.as_str()) && !changed.contains(&change.source_id) {
+            changed.push(change.source_id.clone());
+        }
+    }
     let by_id: HashMap<&str, &Recipe> = recipes.iter().map(|r| (r.id.as_str(), r)).collect();
-    for (source, at) in &changed {
+    for source in &changed {
         crate::priority::yield_if_needed();
         let cells: Vec<(String, String, String, String, Option<String>, Option<i64>, Option<String>, String)> = {
             let mut statement = db
@@ -264,9 +237,9 @@ pub(crate) fn sync(db: &Connection, recipes: &[Recipe], limit: usize) -> Result<
                 (None, None) => {}
             }
         }
-        changes_done(db, source, *at)?;
     }
-    Ok(changed.len())
+    crate::changes::ack(db, CONSUMER, last)?;
+    Ok(log.len())
 }
 
 /// A saved recipe changed: its cells from another version are out of date (or no longer,

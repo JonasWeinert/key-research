@@ -13,6 +13,7 @@ pub mod matching;
 pub mod normalize;
 pub mod fill;
 pub mod fill_cells;
+pub mod changes;
 pub mod formula;
 pub mod formula_catalog;
 mod formula_scope;
@@ -528,6 +529,7 @@ impl Store {
         reading::ensure_schema(&conn)?;
         fill::ensure_schema(&conn)?;
         graph::ensure_people_index(&conn)?;
+        changes::ensure_schema(&conn)?;
         let formula_cache = formula::FormulaCache::new(root.clone());
         formula::register(&conn, &formula_cache)?;
         // The change log only serves the duplicate index (duplicates.rs), which rebuilds when it lags further.
