@@ -168,7 +168,7 @@ Database search builds a query from concepts and their synonyms, with AND, OR, N
 <td width="50%"><img src="assets/readme/key-review-prisma.png" alt="A review's overview with the next step, progress and a PRISMA 2020 flow diagram from its real numbers"/></td>
 </tr>
 <tr>
-<td valign="top"><strong>Screening</strong><br/>One record at a time with the keyboard (I, E, M, the failed criterion's number, ⌘Z), or a list with filters and batch decisions. Blind dual screening, conflicts, pilot rounds with Cohen's kappa.</td>
+<td valign="top"><strong>Screening</strong><br/>One record at a time with the keyboard: E then the criterion not met (or the number first), Other… in your words, label keys, ⌘Z. At full text the PDF opens inside the review: select a passage to mark a criterion as not met and exclude. Blind dual screening, conflicts, pilot rounds with Cohen's kappa.</td>
 <td valign="top"><strong>PRISMA 2020</strong><br/>The flow diagram is drawn from the review's own data and exports as SVG, PNG or CSV.</td>
 </tr>
 <tr>
@@ -177,11 +177,11 @@ Database search builds a query from concepts and their synonyms, with AND, OR, N
 </tr>
 <tr>
 <td valign="top"><strong>Protocol</strong><br/>Question, rules and criteria, versioned with notes. A criterion is a rule a study must meet; excluding names the one it fails, which is the reason PRISMA reports. Suggestions follow the question's parts. Criteria can be linked to metadata (year, type, language, a custom property or a formula) to suggest, or apply visibly, a decision.</td>
-<td valign="top"><strong>Extraction and meta-analysis</strong><br/>Forms with quotes from the reader, dual extraction, risk-of-bias templates; RR, OR, RD, MD and SMD pooled by fixed or random effects (DerSimonian–Laird, REML, Hartung–Knapp), checked against R's metafor.</td>
+<td valign="top"><strong>Extraction and meta-analysis</strong><br/>Values taken from a selection in the full text keep their page and place; questions shown only for some answers; dual extraction, risk-of-bias templates; RR, OR, RD, MD and SMD pooled by fixed or random effects (DerSimonian–Laird, REML, Hartung–Knapp), checked against R's metafor.</td>
 </tr>
 </table>
 
-A review is a tab (sidebar › Reviews, or "New systematic review…" in the command palette). Records come from RIS, BibTeX, EndNote XML, PubMed .nbib and CSV files, the library, Database search runs (with their strategy and counts) or by hand, de-duplicated on import. Every decision is an event in an append-only log, so a review exports as one file and merges back without conflicts; the format and a design for later sync are in `docs/review-sync.md`.
+A review is a tab (sidebar › Reviews, or "New systematic review…" in the command palette). Records come from RIS, BibTeX, EndNote XML, PubMed .nbib and CSV files, the library, Database search runs (with their strategy and counts) or by hand, de-duplicated on import. Missing abstracts are filled from duplicates, the library or online lookups (each noting where from); full texts are found in bulk, matched from dropped PDFs or a CSV of file names, and kept with the review. Every decision is an event in an append-only log, so a review exports as one file and merges back without conflicts; the format and a design for later sync are in `docs/review-sync.md`.
 
 ## Key and Zotero
 

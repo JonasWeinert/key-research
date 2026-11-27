@@ -134,19 +134,60 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   progress, what to do next, agreement.
 - **Setup**: question, team and rules, criteria (by part of the question, with suggestions), keywords, versions (with notes)
   and the audit trail. Template save/load (JSON).
-- **Sources**: import batches (file drop: RIS, BibTeX, EndNote XML, PubMed .nbib, CSV; library
-  selection, collection or smart filter; database search runs with their strategies and counts;
-  other methods: citation searching, registers, websites, organisations, manual). Each batch can
-  be inspected or removed. De-duplication: exact duplicates are removed on import (counted), likely
-  ones wait in a pair review (keep both / mark duplicate).
-- **Title & abstract**: one record at a time, keyboard first (I include, E exclude, M maybe,
-  1–9 the failed criterion, N note, ⌘Z undo, J/K or arrows next / previous), keyword highlighting, rule and AI
-  suggestions, progress. A list mode with filters (undecided, mine, conflicts, maybe, keyword,
-  suggested, re-screen, label) and batch decisions. A conflicts view to resolve.
-- **Full text**: queue (awaiting full text, to assess, conflicts, done); the PDF in Key's reader
-  beside the decision panel; the failed criterion per the rules; highlights from the reader can be
-  attached as evidence. Retrieval tracking: find PDF, mark "not retrieved" with a reason.
-- **Extraction**: form builder (sections; text, long text, number, choice, multi-choice, date,
+- **Sources**: three views. *Records*: every record in one virtualised table (search; filter by
+  import, PRISMA group, stage status, abstract, full text); a record opens to correct its metadata
+  (`record.edit`), remove it by hand or restore it (`record.remove`: PRISMA "removed for other
+  reasons"), or mark it as another report of a study (`study.link`: PRISMA counts reports and
+  studies apart). "Find missing abstracts" fills abstracts, DOI, PMID, year and journal from the
+  record's duplicates in other imports first (the longest abstract), then the same work in the
+  library, then, when asked, OpenAlex/Crossref/PubMed through Key's own lookup; every value is a
+  `record.enrich` event noting where it came from, shown beside it. *Duplicates*: the pairs to
+  check, then every duplicate decision (automatic and by hand) with the record kept, why they
+  matched, who and when; "Not duplicates" splits them, "Merge these…" joins records missed.
+  *Imports*: batches (file drop: RIS, BibTeX, EndNote XML, PubMed .nbib, CSV; library selection,
+  collection or smart filter; database search runs with their strategies and counts, registers in
+  a run counted as registers from the connector's `prisma` kind; other methods), inspected or
+  removed.
+- **Title & abstract**: one record at a time, keyboard first. Per stage and per choice the rules
+  say whether a decision names the criterion not met: no, the first one, or all that apply
+  (`reasons` for Exclude, `maybeReasons` for Maybe). Two routes: E (or M) opens the criteria
+  step, a number picks (and records it when the rule wants the first one and auto-advance is on),
+  Enter records, Esc backs out; or numbers first, then E or M. 0 is "Other…": a text in the
+  reviewer's words, stored on the decision (`other`), reported by PRISMA under "Other" with its
+  words, and offered in Setup as a criterion once it recurs. Label keys (B background, L check
+  later, editable) toggle labels without moving on. N note, ⌘Z/U undo, J/K next / previous. The
+  counter walks the session's own list (`review-session.ts`): "2 of 120" after the first
+  decision, consistent through back, forward and undo. Labels have counts, tabs in the list and a
+  queue of their own; labelled records go to the library from the list. A list mode with filters
+  and batch decisions; a conflicts view to resolve.
+- **Full text**: the record's PDF (or saved page) is the main panel inside the review tab
+  (PdfJsBenchmarkApp embedded, bytes from `review_fulltext_bytes`), a compact header above, the
+  decision in the right sidebar. The reader's selection toolbar carries the review's actions
+  through its `selectionActions` prop: "Does not meet…" / "Meets…" (criterion picker, numbers),
+  "Evidence for include", "Note". A passage marked not met is kept with page and position as
+  evidence (listed beside, a click shows the place) and offers "Exclude and go to next". *Full
+  texts* view: status per record; find in bulk (background, progress); drop many PDFs, matched to
+  records by DOI, title, first author and year (confident / uncertain / unmatched, each
+  changeable); a CSV of records still needing one with an empty filename column, uploaded back
+  with the files and matched by file name with an error per row; the record's page saved as its
+  full text. Files are kept with the review (`reviews/<id>/files/<hash>.<ext>`, `fulltext.set`
+  with a `file`), linked instead when the library has the same file, and added to the library
+  only on "Also add to library". Not retrieved stays a status with a reason.
+- **Extraction**: the study's full text as the main panel, its forms in the sidebar. A selection
+  goes into a field ("Use for ‹field›…": the field last focused, else a picker with type-ahead and
+  numbers); numbers are read the way papers write them (`logic::parse_selection`: mean (SD), n =,
+  %, estimate with CI, events/total) and offered with a confirmation; a table row can be filled
+  from one selection. Every value keeps its source (`sourcePos`: page, boxes, quoted text) as a
+  chip that brings the place back. Per field and as a default: source position not needed /
+  encouraged / required, checked with required answers, quotes and cross-field checks when a form
+  is completed (`extract.complete`), only for the fields shown. "Show when…" rules on fields and
+  sections (is, is not, one of, yes/no, number comparisons, answered / not; all or any), nested to
+  any depth, inside tables on the same row; hidden answers are kept but inactive, not required,
+  blank in exports; circles are refused in plain words. The builder shows a follow-up under its
+  question with the rule as a sentence, adds follow-ups from a choice's option, nests by dragging,
+  and previews which questions sample answers bring up (`review_form_preview`). Exports carry a
+  source column per field and a data dictionary (field, type, options, show-when, checks). Form
+  builder (sections; text, long text, number, choice, multi-choice, date,
   yes/no, table / repeating group; guidance, required, quote required), templates (study
   characteristics, dichotomous / continuous / generic outcomes, RoB 2-style, ROBINS-I-style,
   Newcastle–Ottawa-style — Key's own wording), dual extraction with comparison and consensus,
@@ -165,5 +206,7 @@ under a second (`perf` test in `key-review`).
 
 ## Not yet
 
-Sync and web sharing (designed in `docs/review-sync.md`), study-level grouping of several reports
-beyond a simple "same study as" link.
+Sync and web sharing (designed in `docs/review-sync.md`). Extraction stays per report when
+several reports form one study (PRISMA counts studies and reports apart). Saved web pages show as
+saved, without the reading mode's selection actions until that reader takes them (an iframe with
+its own small toolbar meanwhile). An outcome file RevMan Web imports.

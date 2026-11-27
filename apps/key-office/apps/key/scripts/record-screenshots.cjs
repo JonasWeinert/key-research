@@ -1052,7 +1052,7 @@ function optimise(file) {
       const reviewId = (await call("review_list")).find((r) => r.name === "Exercise for pain and blood pressure")?.id ?? (await call("review_list"))[0].id;
       const summary = () => call("review_get", { reviewId, viewer: "" });
       await shell.getByRole("tab", { name: /Sources/ }).click();
-      await shell.locator(".kx-rv-sources input[type=file]").setInputFiles(risFile);
+      await shell.locator(".kx-rv-sources input[type=file]").first().setInputFiles(risFile);
       const importSheet = shell.getByRole("dialog", { name: "Import records" });
       await importSheet.getByText("11 records", { exact: true }).waitFor();
       await importSheet.getByRole("textbox", { name: "Search strategy" }).fill("(exercise OR walking OR yoga) AND (randomised OR randomized)");
