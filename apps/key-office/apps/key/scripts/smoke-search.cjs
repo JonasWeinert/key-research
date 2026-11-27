@@ -195,6 +195,8 @@ const assert = require("node:assert/strict");
     await page.waitForTimeout(300);
     await shot(page, "smart-citation");
     await search.press("ArrowDown");
+    // Suggestions keep arriving from the host: Enter only once the reading is the one highlighted.
+    await library.locator('.kx-suggest-item[data-detected="true"][aria-selected="true"]').first().waitFor();
     await search.press("Enter");
     await library.locator('.kx-token[data-field="creator"]', { hasText: "Palma" }).waitFor();
     await library.locator('.kx-token[data-field="year"]', { hasText: "2022" }).waitFor();
