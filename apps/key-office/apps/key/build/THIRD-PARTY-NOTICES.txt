@@ -4803,7 +4803,7 @@ THE SOFTWARE.
 2. Rust crates (Key's desktop host)
 ========================================================================
 
-588 crates:
+591 crates:
 
   adler2 2.0.1: 0BSD OR MIT OR Apache-2.0
     https://github.com/oyvindln/adler2
@@ -5753,6 +5753,8 @@ THE SOFTWARE.
     https://github.com/seanmonstar/try-lock
   ttf-parser 0.25.1: MIT OR Apache-2.0
     https://github.com/harfbuzz/ttf-parser
+  typed-path 0.12.4: MIT OR Apache-2.0
+    https://github.com/chipsenkbeil/typed-path
   typeid 1.0.3: MIT OR Apache-2.0
     https://github.com/dtolnay/typeid
   typenum 1.20.1: MIT OR Apache-2.0
@@ -5969,6 +5971,10 @@ THE SOFTWARE.
     https://github.com/unicode-org/icu4x
   zerovec-derive 0.11.7: Unicode-3.0
     https://github.com/unicode-org/icu4x
+  zip 8.6.0: MIT
+    https://github.com/zip-rs/zip2
+  zlib-rs 0.6.9: Zlib
+    https://github.com/trifectatechfoundation/zlib-rs
   zmij 1.0.23: MIT
     https://github.com/dtolnay/zmij
   zstd 0.13.3: MIT
@@ -13431,6 +13437,27 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+[as published by zlib-rs]
+(C) 2024 Trifecta Tech Foundation 
+
+This software is provided 'as-is', without any express or implied
+warranty. In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+
+3. This notice may not be removed or altered from any source distribution.
 
 [as published by zstd]
 The MIT License (MIT)
