@@ -1614,6 +1614,9 @@ interface PdfJsBenchmarkAppProps {
    *  the comment; they follow the marks (changed, removed or taken back with them), and all of
    *  the scope's go when it is turned off. Other scopes' are left alone. */
   mirrorMarks?: { scope: string; note: string; enabled: boolean; marks: ReaderMark[] } | null;
+  /** Where this document's highlights live when the host knows better than the reader (a
+   *  library copy opened inside another view): load and save them there. */
+  annotationStore?: { load(): Promise<ReaderAnnotation[]>; save(annotations: ReaderAnnotation[], deleted: string[]): Promise<void> } | null;
   /** While set, the next finished selection goes straight here, with no menu (a field's "pick"). */
   pickSelection?: ((passage: ReaderPassage) => void) | null;
   /** Opens a cited work in the library when the host has it there (the citation card's action). */
@@ -1753,6 +1756,7 @@ function PdfJsBenchmarkApp({
   marks: hostMarks,
   markActions,
   mirrorMarks,
+  annotationStore,
   pickSelection,
   referenceInLibrary,
   libraryWorks,
@@ -1798,6 +1802,8 @@ function PdfJsBenchmarkApp({
   const hostMarksRef = useRef(hostMarks);
   hostMarksRef.current = hostMarks;
   const selectedPassageRef = useRef<() => ReaderPassage | null>(() => null);
+  const annotationStoreRef = useRef(annotationStore);
+  annotationStoreRef.current = annotationStore;
   const [commentDraft, setCommentDraft] = useState<CommentDraft | null>(null);
   const [commentEditorExpanded, setCommentEditorExpanded] = useState(false);
   const [commentAnchorRect, setCommentAnchorRect] = useState<DOMRect | null>(null);
@@ -2074,7 +2080,7 @@ function PdfJsBenchmarkApp({
           }
         },
       );
-      const restored = await loadCanonicalAnnotations(companion.id);
+      const restored = annotationStoreRef.current ? await annotationStoreRef.current.load().catch(() => loadCanonicalAnnotations(companion.id)) : await loadCanonicalAnnotations(companion.id);
       if (generation !== loadGenerationRef.current) return;
       setAnnotations(restored);
       annotationSnapshotRef.current = restored;
@@ -2395,7 +2401,8 @@ function PdfJsBenchmarkApp({
     annotationSnapshotRef.current = next;
     setAnnotations(next);
     setStatus('Saving annotation…');
-    void saveCanonicalAnnotations(documentId, next, [...deletedAnnotationsRef.current]).then(() => { if (documentIdRef.current === documentId) setStatus('Annotation saved'); }).catch(error => { if (documentIdRef.current === documentId) setStatus(`Annotation not saved: ${String(error)}`); });
+    const store = annotationStoreRef.current;
+    void (store ? store.save(next, [...deletedAnnotationsRef.current]) : saveCanonicalAnnotations(documentId, next, [...deletedAnnotationsRef.current])).then(() => { if (documentIdRef.current === documentId) setStatus('Annotation saved'); }).catch(error => { if (documentIdRef.current === documentId) setStatus(`Annotation not saved: ${String(error)}`); });
     overlayRef.current?.setAnnotations(next);
   }, []);
 

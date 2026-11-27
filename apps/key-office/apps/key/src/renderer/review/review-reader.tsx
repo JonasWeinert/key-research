@@ -4,7 +4,7 @@
 // (@key-reader/ui/SelectionMenu.tsx): its actions, a mode (screening or extraction: the review's
 // actions first) and its marks (evidence and value sources, drawn apart from the user's own
 // highlights). The reader itself knows nothing about reviews.
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import PdfJsBenchmarkApp, { type PdfReaderHandle, type ReaderFollowUp, type ReaderMark, type ReaderMarkMenu, type ReaderPassage, type ReaderSelectionAction, type ReaderSelectionActions, type ReaderSelectionMode } from "@key-reader/pdfjs/PdfJsBenchmarkApp";
 import { SelectionMenu } from "@key-reader/ui/SelectionMenu";
 import { findQuote, markAt, paintTextMarks, textMarkStyles } from "@key-reader/ui/text-marks";
@@ -17,6 +17,9 @@ import type { ReviewApi } from "./review-api";
 import { errorText } from "./review-ui";
 
 export type { ReaderFollowUp, ReaderMark, ReaderMarkMenu, ReaderPassage, ReaderSelectionAction, ReaderSelectionActions, ReaderSelectionMode };
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReaderAnnotationLike = any;
 
 export interface ReviewReaderHandle {
   /** Brings a passage into view (page 0-based) and lights it up. */
@@ -58,6 +61,17 @@ export const ReviewReader = forwardRef<ReviewReaderHandle, Props>(function Revie
   const [typography] = useTypography();
   const [notice, setNotice] = useState("");
   const canRead = !!sourceId && !!invoke && !mime.includes("html");
+  // A library source's highlights are the library's: made here, they are there too.
+  const annotationStore = useMemo(
+    () =>
+      sourceId && invoke
+        ? {
+            load: () => invoke<ReaderAnnotationLike[]>("library_annotations", { hash: sourceId }),
+            save: (annotations: ReaderAnnotationLike[], deleted: string[]) => invoke<void>("library_apply_annotations", { hash: sourceId, upserts: annotations, deleted }),
+          }
+        : null,
+    [sourceId, invoke],
+  );
   useImperativeHandle(ref, () => ({
     show(p, quote) {
       if (readingAt) setReadingAt(null);
@@ -118,6 +132,7 @@ export const ReviewReader = forwardRef<ReviewReaderHandle, Props>(function Revie
           marks={marks}
           markActions={markActions}
           mirrorMarks={sourceId && mirror ? mirror : null}
+          annotationStore={annotationStore}
           pickSelection={readingAt ? null : pickSelection}
         />
         {readingAt && invoke && sourceId && (
