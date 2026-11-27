@@ -103,6 +103,8 @@ pub struct RecState {
     pub removed: Option<String>,
     /// Another report of the study this record is (its first report's id).
     pub study_of: Option<String>,
+    /// Where it was found, when that differs from its import: (PRISMA group, name).
+    pub origin: Option<(String, String)>,
     /// Fields filled in from elsewhere: field → where from.
     pub filled: BTreeMap<String, String>,
 }
@@ -441,6 +443,30 @@ impl State {
                     }
                 }
                 self.alias_recorded = true;
+            }
+            "batch.set" => {
+                // Where an import's records came from, named afterwards.
+                let id = text("batchId");
+                if let Some(b) = self.batches.iter_mut().find(|b| b.id == id) {
+                    if let Some(g) = p.get("group").and_then(Json::as_str) {
+                        b.group = g.to_string();
+                    }
+                    if let Some(n) = p.get("name").and_then(Json::as_str) {
+                        b.name = n.to_string();
+                    }
+                }
+            }
+            "record.origin" => {
+                let ids: Vec<String> = p.get("recordIds").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
+                let origin = match (p.get("group").and_then(Json::as_str), p.get("name").and_then(Json::as_str)) {
+                    (Some(g), Some(n)) if !g.is_empty() => Some((g.to_string(), n.to_string())),
+                    _ => None,
+                };
+                for id in ids {
+                    if let Some(r) = self.record_mut(&id) {
+                        r.origin = origin.clone();
+                    }
+                }
             }
             "batch.classify" => {
                 let id = text("batchId");

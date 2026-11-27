@@ -260,6 +260,34 @@ impl Reviews {
         })
     }
 
+    /// Where an import's records came from (PRISMA: databases, registers or other methods, and
+    /// the database or method's name), set or corrected after the import.
+    pub fn set_batch_origin(&self, review: &str, batch: &str, group: &str, name: &str, actor: &str) -> Result<()> {
+        if !["databases", "registers", "other"].contains(&group) {
+            return Err("Choose databases, registers or other methods".into());
+        }
+        self.write(review, |state, _, b| {
+            state.batch(batch).ok_or("This import no longer exists")?;
+            Ok((vec![b.event("batch.set", actor, None, json!({ "batchId": batch, "group": group, "name": name.trim() }))], ()))
+        })
+    }
+
+    /// Where some records came from, when it differs from their import (None: as their import).
+    pub fn set_record_origin(&self, review: &str, ids: &[String], origin: Option<(&str, &str)>, actor: &str) -> Result<()> {
+        if let Some((g, _)) = origin {
+            if !["databases", "registers", "other"].contains(&g) {
+                return Err("Choose databases, registers or other methods".into());
+            }
+        }
+        self.write(review, |state, _, b| {
+            for id in ids {
+                state.record(id).ok_or("This record no longer exists")?;
+            }
+            let (g, n) = origin.map(|(g, n)| (g, n.trim())).unwrap_or(("", ""));
+            Ok((vec![b.event("record.origin", actor, None, json!({ "recordIds": ids, "group": g, "name": n }))], ()))
+        })
+    }
+
     pub fn remove_batch(&self, review: &str, batch: &str, actor: &str) -> Result<()> {
         self.write(review, |state, _, b| {
             if state.batch(batch).is_none() {

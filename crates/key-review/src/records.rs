@@ -433,16 +433,19 @@ impl Reviews {
         })
     }
 
-    /// Values found by an open lookup (OpenAlex, Crossref, PubMed) for one record: only fields it
-    /// lacks are written, each marked with where it came from.
-    pub fn enrich_from(&self, review: &str, record: &str, found: Map<String, Json>, from: &str, actor: &str) -> Result<usize> {
+    /// Values found by a lookup (OpenAlex, Crossref, PubMed) for one record, each marked with
+    /// where it came from: only fields it lacks, or (`replace`, values the reviewer accepted from a
+    /// side-by-side comparison) those too.
+    pub fn enrich_from(&self, review: &str, record: &str, found: Map<String, Json>, from: &str, replace: bool, actor: &str) -> Result<usize> {
         self.write(review, |state, conn, b| {
             state.record(record).ok_or("This record no longer exists")?;
             let meta = metas(conn, review, &[record.to_string()])?.remove(record).ok_or("This record has no metadata")?;
             let mut fields = Map::new();
             let mut whence = Map::new();
             for (k, v) in found {
-                if FILLABLE.contains(&k.as_str()) && field_value(&meta, &k).is_none() && !crate::logic::is_empty(Some(&v)) {
+                let allowed = FILLABLE.contains(&k.as_str()) || (replace && ["title", "authors", "url", "keywords"].contains(&k.as_str()));
+                let open = replace || field_value(&meta, &k).is_none();
+                if allowed && open && !crate::logic::is_empty(Some(&v)) {
                     whence.insert(k.clone(), json!(from));
                     fields.insert(k, v);
                 }

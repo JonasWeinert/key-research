@@ -55,6 +55,8 @@ pub const KINDS: &[&str] = &[
     "ai.suggest",
     "record.remove",
     "batch.classify",
+    "batch.set",
+    "record.origin",
     "record.edit",
     "record.enrich",
     "study.link",

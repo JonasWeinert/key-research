@@ -522,6 +522,17 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 }
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }
+            // Where an import's records (or some records) came from, for PRISMA.
+            "review_batch_origin" => {
+                reviews.set_batch_origin(&review()?, text(args, "batchId"), text(args, "group"), text(args, "name"), &actor()?)?;
+                json!(true)
+            }
+            "review_record_origin" => {
+                let group = text(args, "group");
+                let origin = (!group.is_empty()).then(|| (group, text(args, "name")));
+                reviews.set_record_origin(&review()?, &strings(args, "recordIds"), origin, &actor()?)?;
+                json!(true)
+            }
             "review_batch_remove" => {
                 reviews.remove_batch(&review()?, text(args, "batchId"), &actor()?)?;
                 json!(true)
@@ -660,7 +671,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             // Values an open lookup found for one record (only what it lacks is written).
             "review_enrich" => {
                 let found = args.get("fields").and_then(Json::as_object).cloned().unwrap_or_default();
-                json!({ "filled": reviews.enrich_from(&review()?, text(args, "recordId"), found, text(args, "from"), &actor()?)? })
+                json!({ "filled": reviews.enrich_from(&review()?, text(args, "recordId"), found, text(args, "from"), args.get("replace").and_then(Json::as_bool).unwrap_or(false), &actor()?)? })
             }
             // Full texts.
             "review_fulltexts" => reviews.fulltext_status(&review()?)?,
