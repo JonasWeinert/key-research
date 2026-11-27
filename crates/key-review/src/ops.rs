@@ -15,6 +15,10 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 pub trait Library {
     fn properties(&self, source_id: &str) -> Map<String, Json>;
     fn has_file(&self, source_id: &str) -> bool;
+    /// The library's copy of the same work (by DOI, PMID or title): its id and properties.
+    fn same_work(&self, _meta: &RecordMeta) -> Option<(String, Map<String, Json>)> {
+        None
+    }
 }
 
 pub struct NoLibrary;
@@ -41,7 +45,9 @@ fn member_check(state: &State, actor: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_reasons(protocol: &Protocol, stage: Stage, value: Choice, reasons: &[String]) -> Result<()> {
+/// Checks the criteria a decision names (and its "Other" text) against the stage's rule for that
+/// choice: none (nothing asked), first (exactly one: a criterion, or Other), all (at least one).
+pub fn validate_reasons(protocol: &Protocol, stage: Stage, value: Choice, reasons: &[String], other: &str) -> Result<()> {
     let rule = protocol.rules.stage(stage);
     if value == Choice::Maybe && !rule.maybe {
         return Err(format!("\"Maybe\" is turned off for {}", stage.label().to_lowercase()));
@@ -51,15 +57,15 @@ fn validate_reasons(protocol: &Protocol, stage: Stage, value: Choice, reasons: &
             return Err("That criterion is not one of this stage's criteria".into());
         }
     }
-    // With no criteria yet there is nothing to choose from.
-    if value == Choice::Exclude && protocol.criteria_at(stage).next().is_some() {
-        match rule.reasons.as_str() {
-            "one" if reasons.len() != 1 => return Err("Choose the criterion it fails".into()),
-            "all" if reasons.is_empty() => return Err("Choose the criteria it fails".into()),
-            _ => {}
-        }
+    let given = reasons.len() + usize::from(!other.trim().is_empty());
+    let word = if value == Choice::Maybe { "maybe" } else { "excluding" };
+    // With no criteria yet there is nothing to choose from, but Other still can be written.
+    match rule.asks(value) {
+        "first" if given == 0 && protocol.criteria_at(stage).next().is_some() => Err(format!("When {word}, choose the criterion it does not meet (or Other)")),
+        "first" if given > 1 => Err("Choose one: the first criterion it does not meet".into()),
+        "all" if given == 0 && protocol.criteria_at(stage).next().is_some() => Err(format!("When {word}, choose every criterion it does not meet (or Other)")),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 #[derive(Serialize, Debug, Default)]
@@ -141,7 +147,7 @@ impl Reviews {
     /// else an amendment. With `rescreen`, decided records the change affects are flagged.
     pub fn save_protocol(&self, review: &str, mut protocol: Protocol, note: &str, actor: &str, rescreen: bool, library: &dyn Library) -> Result<ProtocolSaved> {
         // A protocol in the old shape (criteria plus separate reasons) is read as criteria only.
-        let aliases = protocol.migrate();
+        let aliases = protocol.normalize();
         protocol.validate()?;
         let saved = self.write(review, |state, conn, b| {
             let new_version = state.decisions_under(&state.version) > 0;
@@ -268,10 +274,11 @@ impl Reviews {
 
     /// One reviewer's decision.
     #[allow(clippy::too_many_arguments)]
-    pub fn decide(&self, review: &str, ids: &[String], stage: Stage, value: Choice, reasons: Vec<String>, note: &str, evidence: Vec<Json>, actor: &str) -> Result<Vec<String>> {
+    pub fn decide(&self, review: &str, ids: &[String], stage: Stage, value: Choice, reasons: Vec<String>, other: &str, note: &str, evidence: Vec<Json>, actor: &str) -> Result<Vec<String>> {
+        let other = other.trim();
         self.write(review, |state, _, b| {
             member_check(state, actor)?;
-            validate_reasons(&state.protocol, stage, value, &reasons)?;
+            validate_reasons(&state.protocol, stage, value, &reasons, other)?;
             let mut events = Vec::new();
             for id in ids {
                 let r = state.record(id).ok_or("This record no longer exists")?;
@@ -282,12 +289,12 @@ impl Reviews {
                     _ => {}
                 }
                 if let Some(mine) = r.mine(stage, actor) {
-                    if mine.value == value && mine.reasons == reasons && mine.note == note && evidence.is_empty() {
+                    if mine.value == value && mine.reasons == reasons && mine.other == other && mine.note == note && evidence.is_empty() {
                         continue;
                     }
                 }
-                let reasons = if value == Choice::Exclude { reasons.clone() } else { Vec::new() };
-                events.push(b.event("decision", actor, Some(id), json!({ "stage": stage, "value": value, "reasons": reasons, "note": note, "evidence": evidence })));
+                let (reasons, other) = if value == Choice::Include { (Vec::new(), "") } else { (reasons.clone(), other) };
+                events.push(b.event("decision", actor, Some(id), json!({ "stage": stage, "value": value, "reasons": reasons, "other": other, "note": note, "evidence": evidence })));
             }
             let ids = events.iter().map(|e: &Event| e.id.clone()).collect();
             Ok((events, ids))
@@ -328,20 +335,20 @@ impl Reviews {
     }
 
     /// The final decision on a conflict (or over an automatic one).
-    pub fn resolve(&self, review: &str, record: &str, stage: Stage, value: Choice, reasons: Vec<String>, note: &str, actor: &str) -> Result<()> {
+    pub fn resolve(&self, review: &str, record: &str, stage: Stage, value: Choice, reasons: Vec<String>, other: &str, note: &str, actor: &str) -> Result<()> {
         self.write(review, |state, _, b| {
             member_check(state, actor)?;
             let m = state.member(actor).unwrap();
             if !m.can_resolve(&state.protocol.rules) {
                 return Err("A tie-breaker resolves conflicts in this review".into());
             }
-            validate_reasons(&state.protocol, stage, value, &reasons)?;
+            validate_reasons(&state.protocol, stage, value, &reasons, other)?;
             let r = state.record(record).ok_or("This record no longer exists")?;
             if state.status(r, stage) == Status::NotEligible {
                 return Err(format!("This record is not at {}", stage.label().to_lowercase()));
             }
-            let reasons = if value == Choice::Exclude { reasons } else { Vec::new() };
-            Ok((vec![b.event("resolve", actor, Some(record), json!({ "stage": stage, "value": value, "reasons": reasons, "note": note }))], ()))
+            let (reasons, other) = if value == Choice::Include { (Vec::new(), "") } else { (reasons, other.trim()) };
+            Ok((vec![b.event("resolve", actor, Some(record), json!({ "stage": stage, "value": value, "reasons": reasons, "other": other, "note": note }))], ()))
         })
     }
 
@@ -492,20 +499,36 @@ impl Reviews {
 
     /// One reviewer's value for a field.
     #[allow(clippy::too_many_arguments)]
-    pub fn extract(&self, review: &str, record: &str, form: &str, field: &str, value: Json, quote: &str, page: Option<i64>, source: Option<&str>, suggested: bool, final_value: bool, actor: &str) -> Result<()> {
+    pub fn extract(&self, review: &str, record: &str, form: &str, field: &str, value: Json, quote: &str, page: Option<i64>, source: Option<&str>, source_pos: Option<Json>, suggested: bool, final_value: bool, actor: &str) -> Result<()> {
         self.write(review, |state, _, b| {
             member_check(state, actor)?;
             let f = state.protocol.forms.iter().find(|f| f.id == form).ok_or("This form no longer exists")?;
             let def = f.fields().find(|x| x.id == field).ok_or("This field no longer exists")?;
             let empty = matches!(&value, Json::Null) || value.as_str().is_some_and(|s| s.trim().is_empty()) || value.as_array().is_some_and(|a| a.is_empty());
-            if !empty && !suggested && (state.protocol.rules.quote_required || def.quote) && quote.trim().is_empty() {
-                return Err(format!("{}: add a quote from the paper (the rules ask for one)", def.label));
-            }
+            // Quotes and source positions are asked for when the form is completed
+            // (`complete_form`), so a value can be typed first and its place picked after.
+            let _ = empty;
             if def.kind == "number" && !empty && value.as_f64().is_none() && value.as_str().and_then(|s| s.trim().parse::<f64>().ok()).is_none() {
                 return Err(format!("{}: enter a number", def.label));
             }
             let kind = if final_value { "extract.final" } else { "extract.value" };
-            Ok((vec![b.event(kind, actor, Some(record), json!({ "formId": form, "fieldId": field, "value": value, "quote": quote, "page": page, "sourceId": source, "suggested": suggested }))], ()))
+            Ok((vec![b.event(kind, actor, Some(record), json!({ "formId": form, "fieldId": field, "value": value, "quote": quote, "page": page, "sourceId": source, "sourcePos": source_pos, "suggested": suggested }))], ()))
+        })
+    }
+
+    /// Marks a study's form done for `actor`, after checking what it still lacks (only shown
+    /// fields count: required answers, quotes, source positions, cross-field checks).
+    pub fn complete_form(&self, review: &str, record: &str, form: &str, actor: &str) -> Result<()> {
+        self.write(review, |state, _, b| {
+            member_check(state, actor)?;
+            let f = state.protocol.forms.iter().find(|f| f.id == form).ok_or("This form no longer exists")?;
+            let found = crate::logic::issues(f, &given_for(state, record, form, actor), &state.protocol.rules);
+            if !found.is_empty() {
+                let list: Vec<String> = found.iter().take(4).map(|i| i.message.clone()).collect();
+                let more = if found.len() > 4 { format!(" and {} more", found.len() - 4) } else { String::new() };
+                return Err(format!("Not complete yet: {}{more}", list.join("; ")));
+            }
+            Ok((vec![b.event("extract.complete", actor, Some(record), json!({ "formId": form }))], ()))
         })
     }
 
@@ -590,6 +613,27 @@ pub fn assignment_counts(state: &State, stage: Stage) -> HashMap<String, usize> 
         }
         for who in state.assigned(&r.id, stage) {
             *out.entry(who).or_default() += 1;
+        }
+    }
+    out
+}
+
+/// A reviewer's answers to one form of one study, for the completeness check: the agreed value
+/// where there is one, else theirs.
+pub fn given_for(state: &State, record: &str, form: &str, actor: &str) -> std::collections::BTreeMap<String, crate::logic::Given> {
+    let mut out = std::collections::BTreeMap::new();
+    let Some(ex) = state.extraction.get(record) else { return out };
+    for ((f, field), values) in &ex.values {
+        if f != form {
+            continue;
+        }
+        if let Some(x) = values.get(actor) {
+            out.insert(field.clone(), crate::logic::Given { value: x.value.clone(), quote: !x.quote.trim().is_empty(), source: x.source_pos.is_some() });
+        }
+    }
+    for ((f, field), x) in &ex.finals {
+        if f == form {
+            out.insert(field.clone(), crate::logic::Given { value: x.value.clone(), quote: !x.quote.trim().is_empty(), source: x.source_pos.is_some() });
         }
     }
     out

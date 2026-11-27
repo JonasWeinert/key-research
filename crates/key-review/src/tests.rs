@@ -52,18 +52,18 @@ fn screening_workflow_with_blind_conflicts_and_resolution() {
     let first = &records[0];
 
     // Ana includes, Ben has not decided: blind, so Ben sees nothing of Ana's.
-    reviews.decide(&id, &[first.clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[first.clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
     let seen = reviews.record_view(&id, first, &b, Stage::Ta, &NoLibrary).unwrap();
     assert_eq!(seen["others"], json!([]));
     assert_eq!(seen["status"]["name"], "partial");
     // Ben excludes: a conflict, now visible to both.
-    reviews.decide(&id, &[first.clone()], Stage::Ta, Choice::Exclude, vec![], "", vec![], &b).unwrap();
+    reviews.decide(&id, &[first.clone()], Stage::Ta, Choice::Exclude, vec![], "", "", vec![], &b).unwrap();
     let seen = reviews.record_view(&id, first, &b, Stage::Ta, &NoLibrary).unwrap();
     assert_eq!(seen["status"]["name"], "conflict");
     assert_eq!(seen["others"].as_array().unwrap().len(), 1);
     // Only the tie-breaker (or owner) resolves under "third".
-    assert!(reviews.resolve(&id, first, Stage::Ta, Choice::Include, vec![], "", &b).is_err());
-    reviews.resolve(&id, first, Stage::Ta, Choice::Include, vec![], "Agreed in meeting", &c).unwrap();
+    assert!(reviews.resolve(&id, first, Stage::Ta, Choice::Include, vec![], "", "", &b).is_err());
+    reviews.resolve(&id, first, Stage::Ta, Choice::Include, vec![], "", "Agreed in meeting", &c).unwrap();
     let s = reviews.summary(&id, &a).unwrap();
     assert_eq!(s["stages"]["ta"]["included"], 1);
     assert_eq!(s["stages"]["ft"]["eligible"], 1);
@@ -71,18 +71,18 @@ fn screening_workflow_with_blind_conflicts_and_resolution() {
     // The queue for Ben skips what he decided; undo brings his last decision back.
     let queue = reviews.queue(&id, &b, Stage::Ta, "").unwrap();
     assert_eq!(queue.len(), 4);
-    reviews.decide(&id, &[records[1].clone()], Stage::Ta, Choice::Maybe, vec![], "", vec![], &b).unwrap();
+    reviews.decide(&id, &[records[1].clone()], Stage::Ta, Choice::Maybe, vec![], "", "", vec![], &b).unwrap();
     assert_eq!(reviews.queue(&id, &b, Stage::Ta, "").unwrap().len(), 3);
     let undone = reviews.undo(&id, &b).unwrap().unwrap();
     assert_eq!(&undone.0, &records[1]);
     assert_eq!(reviews.queue(&id, &b, Stage::Ta, "").unwrap().len(), 4);
 
     // Rules: Maybe off at full text; excluding names the one criterion it fails.
-    let ft = reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec![], "", vec![], &a);
-    assert!(ft.unwrap_err().contains("criterion it fails"));
-    assert!(reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["no-such".into()], "", vec![], &a).is_err());
-    assert!(reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Maybe, vec![], "", vec![], &a).is_err());
-    reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["c-population".into()], "", vec![], &a).unwrap();
+    let ft = reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec![], "", "", vec![], &a);
+    assert!(ft.unwrap_err().contains("criterion it does not meet"));
+    assert!(reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["no-such".into()], "", "", vec![], &a).is_err());
+    assert!(reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Maybe, vec![], "", "", vec![], &a).is_err());
+    reviews.decide(&id, &[first.clone()], Stage::Ft, Choice::Exclude, vec!["c-population".into()], "", "", vec![], &a).unwrap();
     let view = reviews.record_view(&id, first, &a, Stage::Ft, &NoLibrary).unwrap();
     assert_eq!(view["mine"]["reasons"], json!(["c-population"]));
 
@@ -99,7 +99,7 @@ fn versions_linked_rules_and_prisma() {
     let records = ids(&reviews, &id);
     for r in &records {
         for who in [&a, &b] {
-            reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", vec![], who).unwrap();
+            reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], who).unwrap();
         }
     }
     // A change after decisions needs a note and makes version 3 (1 created, 2 our rules).
@@ -124,11 +124,11 @@ fn versions_linked_rules_and_prisma() {
     assert_eq!(view["suggestions"][0]["rule"], "Not met: Year is 2000 or later");
     assert_eq!(view["flagged"], true);
     // Deciding again clears the flag; the decision records version 2.
-    reviews.decide(&id, &[records[2].clone()], Stage::Ta, Choice::Exclude, vec![], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[records[2].clone()], Stage::Ta, Choice::Exclude, vec![], "", "", vec![], &a).unwrap();
     let view = reviews.record_view(&id, &records[2], &a, Stage::Ta, &NoLibrary).unwrap();
     assert_eq!(view["flagged"], false);
     assert_eq!(view["mine"]["versionNumber"], 2);
-    reviews.decide(&id, &[records[2].clone()], Stage::Ta, Choice::Exclude, vec![], "", vec![], &b).unwrap();
+    reviews.decide(&id, &[records[2].clone()], Stage::Ta, Choice::Exclude, vec![], "", "", vec![], &b).unwrap();
 
     // Records identified by other methods, one duplicate of the first database.
     let other = crate::import::parse_file("TY  - JOUR\nTI  - Yoga for back pain: a randomised trial\nAU  - Moreau, Eli\nPY  - 2018\nDO  - 10.9999/yoga.5\nER  - \nTY  - JOUR\nTI  - Dancing and balance\nAU  - Ito, Fay\nPY  - 2020\nER  - \n", None).unwrap();
@@ -154,9 +154,9 @@ fn versions_linked_rules_and_prisma() {
     assert_eq!(ft.len(), 4);
     assert!(reviews.fulltext(&id, &ft[0], Some("notRetrieved"), None, None, &a).is_err());
     reviews.fulltext(&id, &ft[0], Some("notRetrieved"), Some("Not available from the library"), None, &a).unwrap();
-    reviews.decide(&id, &[ft[1].clone()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[ft[1].clone()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", "", vec![], &a).unwrap();
     for r in &ft[2..] {
-        reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Include, vec![], "", vec![], &a).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Include, vec![], "", "", vec![], &a).unwrap();
     }
     let p = reviews.prisma(&id).unwrap();
     assert_eq!(p.identified, 7, "{p:?}");
@@ -200,8 +200,8 @@ fn concurrent_devices_merge_without_conflict() {
     let laptop = Reviews::in_memory().unwrap();
     laptop.import_review_file(file["content"].as_str().unwrap()).unwrap();
     let records = ids(&reviews, &id);
-    reviews.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
-    laptop.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &b).unwrap();
+    reviews.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+    laptop.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &b).unwrap();
     laptop.note(&id, &records[1], "Check the population", None, &b).unwrap();
     let from_laptop = laptop.events(&id).unwrap();
     let from_desk = reviews.events(&id).unwrap();
@@ -223,9 +223,9 @@ fn pilots_assignment_and_agreement() {
     let pilot = reviews.pilot_create(&id, Stage::Ta, 4, vec![a.clone(), b.clone()], "", Some(7), &a).unwrap();
     assert_eq!(pilot.records.len(), 4);
     for (i, r) in pilot.records.iter().enumerate() {
-        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
         let v = if i == 0 { Choice::Exclude } else { Choice::Include };
-        reviews.decide(&id, &[r.clone()], Stage::Ta, v, vec![], "", vec![], &b).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ta, v, vec![], "", "", vec![], &b).unwrap();
     }
     let ag = reviews.agreement(&id, Stage::Ta, Some(&pilot.id)).unwrap();
     assert_eq!(ag["overall"]["n"], 4);
@@ -252,12 +252,14 @@ fn extraction_and_meta_analysis_from_extracted_outcomes() {
     // Three BCG trials (metafor's dat.bcg rows 1–3) as extracted outcome data.
     let data = [(4., 123., 11., 139.), (6., 306., 29., 303.), (3., 231., 11., 220.)];
     for (r, (e1, n1, e2, n2)) in records.iter().zip(data) {
-        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
-        reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Include, vec![], "", vec![], &a).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Include, vec![], "", "", vec![], &a).unwrap();
         let row = json!([{ "outcome": "Tuberculosis", "type": "Dichotomous", "e1": e1, "n1": n1, "e2": e2, "n2": n2 }]);
-        // The outcomes table asks for a quote.
-        assert!(reviews.extract(&id, r, "f-outcomes", "outcomes", row.clone(), "", None, None, false, false, &a).is_err());
-        reviews.extract(&id, r, "f-outcomes", "outcomes", row, "Table 2", Some(4), None, false, false, &a).unwrap();
+        // The outcomes table asks for a quote: the form cannot be completed without one.
+        reviews.extract(&id, r, "f-outcomes", "outcomes", row.clone(), "", None, None, None, false, false, &a).unwrap();
+        assert!(reviews.complete_form(&id, r, "f-outcomes", &a).unwrap_err().contains("quote"));
+        reviews.extract(&id, r, "f-outcomes", "outcomes", row, "Table 2", Some(4), None, None, false, false, &a).unwrap();
+        reviews.complete_form(&id, r, "f-outcomes", &a).unwrap();
     }
     let choices = reviews.outcome_choices(&id).unwrap();
     assert_eq!(choices.len(), 1);
@@ -306,7 +308,7 @@ fn perf_twenty_thousand_records() {
     let all = ids(&reviews, &id);
     let t = Instant::now();
     for r in all.iter().take(5000) {
-        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Exclude, vec![], "", vec![], &a).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Exclude, vec![], "", "", vec![], &a).unwrap();
     }
     let decide_ms = t.elapsed().as_millis();
     let events = reviews.events(&id).unwrap();
@@ -332,7 +334,7 @@ fn perf_twenty_thousand_records() {
     assert_eq!(queue.len(), 15000);
     let t = Instant::now();
     let view: Json = reviews.record_view(&id, &queue[0], &a, Stage::Ta, &NoLibrary).unwrap();
-    reviews.decide(&id, &[queue[0].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[queue[0].clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
     let record_ms = t.elapsed().as_millis();
     assert!(view["meta"]["title"].as_str().is_some());
     eprintln!("20k records: import {import_ms} ms, 5000 decisions {decide_ms} ms, replay {replay_ms} ms, summary {summary_ms} ms, list {list_ms} ms, search {search_ms} ms, queue {queue_ms} ms, record+decide {record_ms} ms");
@@ -347,11 +349,11 @@ fn a_stricter_rule_applies_from_then_on() {
     let parsed = crate::import::parse_file(RIS, None).unwrap();
     reviews.import(&id, Batch { kind: "file".into(), group: "databases".into(), name: "Db".into(), ..Default::default() }, parsed.records, &a, &NoLibrary).unwrap();
     let records = ids(&reviews, &id);
-    reviews.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[records[0].clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
     let mut p = reviews.read(&id, |s, _| Ok(s.protocol.clone())).unwrap();
     p.rules.ta.reviewers = 2;
     reviews.save_protocol(&id, p, "Two reviewers from now on", &a, false, &NoLibrary).unwrap();
-    reviews.decide(&id, &[records[1].clone()], Stage::Ta, Choice::Include, vec![], "", vec![], &a).unwrap();
+    reviews.decide(&id, &[records[1].clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], &a).unwrap();
     let s = reviews.summary(&id, &a).unwrap();
     // The record decided under version 1 stays included; the one decided under version 2 waits.
     assert_eq!(s["stages"]["ta"]["included"], 1);
@@ -426,7 +428,7 @@ fn old_reviews_merge_reasons_into_criteria() {
     assert_eq!(again.events(review).unwrap().len(), logged.len());
     assert_eq!(again.prisma(review).unwrap(), p);
     // Picking a criterion as the reason works on the migrated review.
-    reviews.decide(review, &["rec-3".into()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", vec![], "m1").unwrap();
+    reviews.decide(review, &["rec-3".into()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", "", vec![], "m1").unwrap();
     assert_eq!(reviews.prisma(review).unwrap().main.excluded_reasons[0].count, 2);
     // An old template reads the same way, and a new one round-trips.
     let old_template = json!({ "format": "key-review-template", "version": 1, "protocol": old_protocol }).to_string();
@@ -443,13 +445,13 @@ fn different_criteria_are_not_a_conflict() {
     import_ris(&reviews, &id, &a);
     let r = ids(&reviews, &id)[0].clone();
     for who in [&a, &b] {
-        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", vec![], who).unwrap();
+        reviews.decide(&id, &[r.clone()], Stage::Ta, Choice::Include, vec![], "", "", vec![], who).unwrap();
     }
     let mut p = reviews.read(&id, |s, _| Ok(s.protocol.clone())).unwrap();
     p.rules.ft.reviewers = 2;
     reviews.save_protocol(&id, p, "Two reviewers at full text", &a, false, &NoLibrary).unwrap();
-    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec!["c-population".into()], "", vec![], &a).unwrap();
-    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", vec![], &b).unwrap();
+    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec!["c-population".into()], "", "", vec![], &a).unwrap();
+    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec!["c-design".into()], "", "", vec![], &b).unwrap();
     let view = reviews.record_view(&id, &r, &a, Stage::Ft, &NoLibrary).unwrap();
     assert_eq!(view["status"]["name"], "excluded");
     assert_eq!(view["reasonsDiffer"], true);

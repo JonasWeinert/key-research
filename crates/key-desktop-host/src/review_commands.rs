@@ -32,6 +32,96 @@ impl key_review::Library for Lookup<'_> {
     fn has_file(&self, source_id: &str) -> bool {
         self.0.store.source(source_id).ok().flatten().is_some_and(|s| s.file_hash().is_some() || s.field("filePath").is_some())
     }
+    /// The library's copy of the same work, with the fields a review record may lack.
+    fn same_work(&self, meta: &RecordMeta) -> Option<(String, Map<String, Json>)> {
+        let found = self.0.store.find_duplicates_for(&[import::work(meta)]).ok()?.into_iter().next()?;
+        let id = found.into_iter().find(|m| m.kind == key_store::duplicates::MatchKind::Exact)?.source_id;
+        let source = self.0.store.source(&id).ok()??;
+        let mut out = Map::new();
+        for (from, to) in [("abstract", "abstractText"), ("doi", "doi"), ("pmid", "pmid"), ("containerTitle", "journal"), ("volume", "volume"), ("issue", "issue"), ("pages", "pages"), ("language", "language")] {
+            if let Some(v) = source.field(from).filter(|v| !v.trim().is_empty()) {
+                out.insert(to.into(), json!(v));
+            }
+        }
+        if let Some(y) = source.fields.get("year").and_then(|y| y.as_i64().or_else(|| y.as_str().and_then(|t| t.get(..4)?.parse().ok()))) {
+            out.insert("year".into(), json!(y));
+        }
+        Some((id, out))
+    }
+}
+
+/// Where the review keeps the full texts it holds itself (not library sources).
+fn files_dir(root: &Path, review: &str) -> std::path::PathBuf {
+    root.join("reviews").join(review).join("files")
+}
+
+fn extension(name: &str, mime: &str) -> String {
+    let ext = Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    match ext.as_str() {
+        "pdf" | "html" | "htm" | "epub" | "docx" | "txt" => ext,
+        _ if mime.contains("html") => "html".into(),
+        _ => "pdf".into(),
+    }
+}
+
+fn mime_of(ext: &str) -> &'static str {
+    match ext {
+        "html" | "htm" => "text/html",
+        "epub" => "application/epub+zip",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "txt" => "text/plain",
+        _ => "application/pdf",
+    }
+}
+
+/// A full text for a record: linked when the library already has the file (same content),
+/// else copied into the review's own files. A temporary file handed over (a found PDF, a page
+/// snapshot) is removed with its folder once copied.
+fn attach_full_text(root: &Path, library: &Library, reviews: &Reviews, review: &str, record: &str, path: &Path, name: &str, origin: &str, owned_temp: bool, actor: &str) -> Result<Json, String> {
+    if !path.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
+    let hash = key_index::file_hash(path)?;
+    let name = if name.trim().is_empty() { path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default() } else { name.to_string() };
+    let result = if let Some(source) = library.store.source_by_hash(&hash)?.filter(|s| s.trashed_at.is_none()) {
+        reviews.fulltext(review, record, Some("retrieved"), None, Some(Some(&source.id)), actor)?;
+        json!({ "linked": source.id, "hash": hash })
+    } else {
+        let ext = extension(&name, "");
+        let dir = files_dir(root, review);
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Could not keep the file: {e}"))?;
+        let stored = dir.join(format!("{hash}.{ext}"));
+        if !stored.is_file() {
+            std::fs::copy(path, &stored).map_err(|e| format!("Could not keep the file: {e}"))?;
+        }
+        let size = std::fs::metadata(&stored).map(|m| m.len()).unwrap_or(0);
+        let file = key_review::derive::FileRef { hash: hash.clone(), name, mime: mime_of(&ext).into(), size, origin: origin.into() };
+        reviews.attach_file(review, record, file.clone(), actor)?;
+        json!({ "file": file, "hash": hash })
+    };
+    if owned_temp {
+        if let Some(parent) = path.parent().filter(|p| p.starts_with(std::env::temp_dir()) && *p != std::env::temp_dir()) {
+            let _ = std::fs::remove_dir_all(parent);
+        }
+    }
+    Ok(result)
+}
+
+/// The path of a record's full text: the review's own file, else its library source's.
+fn full_text_path(root: &Path, library: &Library, reviews: &Reviews, review: &str, record: &str) -> Result<(std::path::PathBuf, String), String> {
+    let (file, source) = reviews.read(review, |s, _| {
+        let r = s.record(record).ok_or("This record no longer exists")?;
+        Ok((r.fulltext.file.clone(), r.source_id.clone()))
+    })?;
+    if let Some(f) = file {
+        let ext = extension(&f.name, &f.mime);
+        return Ok((files_dir(root, review).join(format!("{}.{ext}", f.hash)), f.mime));
+    }
+    let source = source.ok_or("This record has no full text yet")?;
+    let s = library.store.source(&source)?.ok_or("Its library source no longer exists")?;
+    let path = s.file_path().ok_or("Its library source has no file yet")?;
+    let mime = s.field("mime").unwrap_or("application/pdf").to_string();
+    Ok((path, mime))
 }
 
 fn stage(args: &Json) -> Result<Stage, String> {
@@ -251,6 +341,14 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
         Ok(r) => r,
         Err(e) => return Some(Err(format!("Reviews are not available: {e}"))),
     };
+    // The file itself, for the reader inside the review.
+    if command == "review_fulltext_bytes" {
+        return Some((|| {
+            let id = arg::<String>(args, "reviewId")?;
+            let (path, _) = full_text_path(root, library, reviews, &id, text(args, "recordId"))?;
+            std::fs::read(&path).map(Output::Binary).map_err(|e| format!("Could not read the full text: {e}"))
+        })());
+    }
     let lookup = Lookup(library);
     let review = || arg::<String>(args, "reviewId").or_else(|_| arg::<String>(args, "id"));
     let actor = || -> Result<String, String> { arg::<String>(args, "actor").map_err(|_| "Choose who is screening".to_string()) };
@@ -392,7 +490,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                     ids.push(arg::<String>(args, "recordId")?);
                 }
                 let evidence: Vec<Json> = arg::<Option<Vec<Json>>>(args, "evidence")?.unwrap_or_default();
-                json!(reviews.decide(&review()?, &ids, stage(args)?, value, strings(args, "reasons"), text(args, "note"), evidence, &actor()?)?)
+                json!(reviews.decide(&review()?, &ids, stage(args)?, value, strings(args, "reasons"), text(args, "other"), text(args, "note"), evidence, &actor()?)?)
             }
             "review_undo" => json!(reviews.undo(&review()?, &actor()?)?.map(|(record, stage)| json!({ "recordId": record, "stage": stage }))),
             "review_retract" => {
@@ -400,7 +498,7 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 json!(true)
             }
             "review_resolve" => {
-                reviews.resolve(&review()?, text(args, "recordId"), stage(args)?, arg(args, "value")?, strings(args, "reasons"), text(args, "note"), &actor()?)?;
+                reviews.resolve(&review()?, text(args, "recordId"), stage(args)?, arg(args, "value")?, strings(args, "reasons"), text(args, "other"), text(args, "note"), &actor()?)?;
                 json!(true)
             }
             "review_reopen" => {
@@ -445,11 +543,75 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                     text(args, "quote"),
                     args.get("page").and_then(Json::as_i64),
                     args.get("sourceId").and_then(Json::as_str),
+                    args.get("sourcePos").filter(|v| !v.is_null()).cloned(),
                     args.get("suggested").and_then(Json::as_bool).unwrap_or(false),
                     args.get("final").and_then(Json::as_bool).unwrap_or(false),
                     &actor()?,
                 )?;
                 json!(true)
+            }
+            "review_complete_form" => {
+                reviews.complete_form(&review()?, text(args, "recordId"), text(args, "formId"), &actor()?)?;
+                json!(true)
+            }
+            // A selection in the reader read as numbers ("12.3 (4.5)", "n = 120", "45%", CI).
+            "review_parse_selection" => key_review::logic::parse_selection(text(args, "text")),
+            // Records: removed and restored by hand, corrected, grouped into studies.
+            "review_records_remove" => {
+                reviews.remove_records(&review()?, &strings(args, "recordIds"), args.get("removed").and_then(Json::as_bool).unwrap_or(true), text(args, "reason"), &actor()?)?;
+                json!(true)
+            }
+            "review_record_edit" => {
+                let fields = args.get("fields").and_then(Json::as_object).cloned().unwrap_or_default();
+                reviews.edit_record(&review()?, text(args, "recordId"), fields, &actor()?)?;
+                json!(true)
+            }
+            "review_study_link" => {
+                reviews.link_study(&review()?, text(args, "recordId"), args.get("studyOf").and_then(Json::as_str).filter(|s| !s.is_empty()), &actor()?)?;
+                json!(true)
+            }
+            "review_duplicates" => reviews.duplicates(&review()?)?,
+            // Missing abstracts (DOI …): the record's duplicates, then the library.
+            "review_fill_missing" => json!(reviews.fill_missing(&review()?, &lookup, &actor()?)?),
+            // Values an open lookup found for one record (only what it lacks is written).
+            "review_enrich" => {
+                let found = args.get("fields").and_then(Json::as_object).cloned().unwrap_or_default();
+                json!({ "filled": reviews.enrich_from(&review()?, text(args, "recordId"), found, text(args, "from"), &actor()?)? })
+            }
+            // Full texts.
+            "review_fulltexts" => reviews.fulltext_status(&review()?)?,
+            "review_fulltext_match" => json!(reviews.match_dropped(&review()?, &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
+            "review_fulltext_csv_read" => json!(reviews.read_csv(&review()?, text(args, "text"), &arg::<Vec<key_review::records::DroppedFile>>(args, "files")?)?),
+            "review_fulltext_attach" => {
+                let path = std::path::PathBuf::from(arg::<String>(args, "path")?);
+                attach_full_text(root, library, reviews, &review()?, text(args, "recordId"), &path, text(args, "name"), text(args, "origin"), args.get("ownedTemp").and_then(Json::as_bool).unwrap_or(false), &actor()?)?
+            }
+            "review_fulltext_detach" => {
+                let id = review()?;
+                let record = text(args, "recordId");
+                let linked = reviews.read(&id, |s, _| Ok(s.record(record).is_some_and(|r| r.fulltext.file.is_none() && r.source_id.is_some())))?;
+                if linked {
+                    reviews.fulltext(&id, record, Some("sought"), None, Some(None), &actor()?)?;
+                } else {
+                    reviews.detach_file(&id, record, &actor()?)?;
+                }
+                json!(true)
+            }
+            "review_fulltext_info" => {
+                let id = review()?;
+                let (path, mime) = full_text_path(root, library, reviews, &id, text(args, "recordId"))?;
+                json!({ "path": path, "mime": mime, "exists": path.is_file() })
+            }
+            // "Also add to library": the review's file becomes a library source too.
+            "review_fulltext_to_library" => {
+                let id = review()?;
+                let record = text(args, "recordId");
+                let (path, _) = full_text_path(root, library, reviews, &id, record)?;
+                let added = library.import_file(&path, None, root, None)?;
+                let source = added.get("id").and_then(Json::as_str).ok_or("Could not add the file to the library")?.to_string();
+                reviews.fulltext(&id, record, Some("retrieved"), None, Some(Some(&source)), &actor()?)?;
+                library.indexer.wake();
+                json!({ "sourceId": source })
             }
             "review_outcomes" => json!(reviews.outcome_choices(&review()?)?),
             "review_analyse" => reviews.analyse(&review()?, &arg::<AnalysisRequest>(args, "request")?)?,

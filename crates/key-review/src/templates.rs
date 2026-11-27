@@ -18,7 +18,7 @@ fn guided(mut f: Field, guidance: &str) -> Field {
 }
 
 fn section(id: &str, title: &str, fields: Vec<Field>) -> Section {
-    Section { id: id.into(), title: title.into(), guidance: String::new(), fields }
+    Section { id: id.into(), title: title.into(), guidance: String::new(), fields, show_when: None }
 }
 
 /// A suggested criterion: element, id, what a study must meet, the reason's wording, stages.
@@ -136,6 +136,7 @@ pub fn default_protocol() -> Protocol {
         reasons: Vec::new(),
         keywords: Keywords::default(),
         labels: vec!["Background".into(), "Check later".into()],
+        label_keys: [("Background".to_string(), "b".to_string()), ("Check later".to_string(), "l".to_string())].into_iter().collect(),
         forms: vec![characteristics_form()],
         shortcuts: Default::default(),
     }
@@ -217,7 +218,7 @@ pub fn outcomes_form() -> Form {
         id: "f-outcomes".into(),
         name: "Outcome data".into(),
         kind: "outcomes".into(),
-        sections: vec![Section {
+        sections: vec![Section { show_when: None,
             id: "s-outcomes".into(),
             title: "Outcomes".into(),
             guidance: "One row per outcome and time point. Dichotomous: events and totals per group. Continuous: mean, SD and number per group. Generic: an estimate with its standard error or 95% interval (ratios as ratios)."
@@ -228,7 +229,7 @@ pub fn outcomes_form() -> Form {
 }
 
 fn domain(id: &str, title: &str, summary: &str, options: &[&str]) -> Section {
-    Section {
+    Section { show_when: None,
         id: format!("s-{id}"),
         title: title.into(),
         guidance: summary.into(),
@@ -280,7 +281,7 @@ pub fn nos_form() -> Form {
         name: "Quality (Newcastle–Ottawa style, cohort studies)".into(),
         kind: "rob".into(),
         sections: vec![
-            Section {
+            Section { show_when: None,
                 id: "s-selection".into(),
                 title: "Selection".into(),
                 guidance: "Up to four stars.".into(),
@@ -291,13 +292,13 @@ pub fn nos_form() -> Form {
                     item("sel_absent", "Outcome absent at the start", ""),
                 ],
             },
-            Section {
+            Section { show_when: None,
                 id: "s-comparability".into(),
                 title: "Comparability".into(),
                 guidance: "Up to two stars: the most important factor, and any additional factor.".into(),
                 fields: vec![choice("comparability", "Cohorts comparable by design or analysis", &["2 stars", "1 star", "No star"])],
             },
-            Section {
+            Section { show_when: None,
                 id: "s-outcome".into(),
                 title: "Outcome".into(),
                 guidance: "Up to three stars.".into(),
@@ -307,7 +308,7 @@ pub fn nos_form() -> Form {
                     item("out_adequacy", "Follow-up complete, or losses unlikely to bias", ""),
                 ],
             },
-            Section { id: "s-total".into(), title: "Total".into(), guidance: String::new(), fields: vec![field("nos_total", "Total stars (0–9)", "number")] },
+            Section { show_when: None, id: "s-total".into(), title: "Total".into(), guidance: String::new(), fields: vec![field("nos_total", "Total stars (0–9)", "number")] },
         ],
     }
 }

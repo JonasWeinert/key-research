@@ -25,6 +25,8 @@ pub struct Column {
     pub assessed: usize,
     pub excluded: usize,
     pub excluded_reasons: Vec<Named>,
+    /// The words written under "Other", with how often.
+    pub other_reasons: Vec<Named>,
     pub included: usize,
     /// Assessed but not decided yet.
     pub pending: usize,
@@ -86,6 +88,8 @@ pub fn compute(state: &State) -> Prisma {
     p.identified = p.databases.iter().chain(&p.registers).map(|n| n.count).sum();
     let mut reasons_main: BTreeMap<String, usize> = BTreeMap::new();
     let mut reasons_other: BTreeMap<String, usize> = BTreeMap::new();
+    let mut included_studies: std::collections::HashSet<String> = Default::default();
+    let mut studies: std::collections::HashSet<String> = Default::default();
     for r in &state.records {
         if state.removed_batches.contains(&r.batch) {
             continue;
@@ -93,7 +97,11 @@ pub fn compute(state: &State) -> Prisma {
         let other = other_group.contains(r.batch.as_str());
         if !state.active(r) {
             if !other {
-                p.duplicates += 1;
+                if r.removed.is_some() && r.dup_of.is_none() {
+                    p.removed_other += 1;
+                } else {
+                    p.duplicates += 1;
+                }
             }
             continue;
         }
@@ -128,13 +136,27 @@ pub fn compute(state: &State) -> Prisma {
             Status::Final { value: Choice::Include, .. } => {
                 column.assessed += 1;
                 column.included += 1;
+                included_studies.insert(state.study_id(r).to_string());
             }
             Status::Final { value: Choice::Exclude, .. } => {
                 column.assessed += 1;
                 column.excluded += 1;
                 let reasons = state.final_reasons(r, Stage::Ft);
                 let top = state.protocol.top_reason(&reasons).cloned();
-                let label = top.map(|id| state.protocol.reason_label(&id)).unwrap_or_else(|| "No criterion given".into());
+                let texts = state.final_other(r, Stage::Ft);
+                let label = match top {
+                    Some(id) => state.protocol.reason_label(&id),
+                    None if !texts.is_empty() => "Other".into(),
+                    None => "No criterion given".into(),
+                };
+                if label == "Other" {
+                    for t in texts {
+                        add(&mut column.other_reasons, &t, 1);
+                    }
+                }
+                if !other {
+                    studies.insert(state.study_id(r).to_string());
+                }
                 *(if other { &mut reasons_other } else { &mut reasons_main }).entry(label).or_default() += 1;
             }
             _ => {
@@ -145,7 +167,7 @@ pub fn compute(state: &State) -> Prisma {
     }
     let order = |map: BTreeMap<String, usize>| -> Vec<Named> {
         let mut v: Vec<Named> = map.into_iter().map(|(name, count)| Named { name, count }).collect();
-        let pos = |n: &Named| state.protocol.criteria.iter().position(|c| c.reason_text() == n.name).unwrap_or(usize::MAX);
+        let pos = |n: &Named| state.protocol.criteria.iter().position(|c| c.reason_text() == n.name).unwrap_or(if n.name == "Other" { usize::MAX - 1 } else { usize::MAX });
         v.sort_by_key(pos);
         v
     };
@@ -153,8 +175,10 @@ pub fn compute(state: &State) -> Prisma {
     p.other.excluded_reasons = order(reasons_other);
     p.main.identified = p.identified;
     p.other.identified = p.other_methods.iter().map(|n| n.count).sum();
-    p.studies_included = p.main.included + p.other.included;
-    p.reports_included = p.studies_included;
+    // Several reports of one study count once as a study.
+    let _ = studies;
+    p.reports_included = p.main.included + p.other.included;
+    p.studies_included = included_studies.len();
     p
 }
 
@@ -181,6 +205,9 @@ pub fn csv(p: &Prisma) -> String {
         rows.push((format!("{prefix}Reports excluded"), c.excluded.to_string()));
         for r in &c.excluded_reasons {
             rows.push((format!("{prefix}Reports excluded: {}", r.name), r.count.to_string()));
+        }
+        for r in &c.other_reasons {
+            rows.push((format!("{prefix}Reports excluded: Other: {}", r.name), r.count.to_string()));
         }
         rows.push((format!("{prefix}Reports awaiting assessment"), c.pending.to_string()));
     };

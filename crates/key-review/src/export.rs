@@ -208,6 +208,8 @@ impl Reviews {
                 "audit" => (format!("{base}-audit.csv"), audit_csv(state, conn)?, "text/csv"),
                 "review" => (format!("{base}.keyreview.json"), serde_json::to_string_pretty(&json!({ "format": "key-review", "version": FORMAT, "review": state.info, "exportedBy": viewer, "events": load_events(conn, review)? })).map_err(|e| e.to_string())?, "application/json"),
                 "template" => (format!("{base}-template.json"), template_json(&state.protocol)?, "application/json"),
+                "dictionary" => (format!("{base}-data-dictionary.csv"), crate::logic::dictionary(&state.protocol).iter().map(|r| csv_line(r)).collect::<String>(), "text/csv"),
+                "fulltext-csv" => (format!("{base}-full-texts-needed.csv"), crate::records::fulltext_csv(state, &all_metas(conn, review)?.into_iter().map(|m| (m.id.clone(), m)).collect()), "text/csv"),
                 other => return Err(format!("Unknown export {other}")),
             };
             Ok(json!({ "filename": name, "content": content, "mime": mime }))
@@ -245,7 +247,7 @@ pub fn read_template(text: &str) -> Result<Protocol> {
         _ => return Err("This is not a review template".into()),
     };
     let mut protocol: Protocol = serde_json::from_value(p).map_err(|e| format!("The template is damaged: {e}"))?;
-    protocol.migrate();
+    protocol.normalize();
     protocol.validate()?;
     Ok(protocol)
 }
@@ -277,7 +279,7 @@ fn reason_labels(state: &State, ids: &[String]) -> String {
 fn screening_csv(state: &State, conn: &rusqlite::Connection) -> Result<String> {
     let metas = all_metas(conn, &state.info.id)?;
     let reviewers: Vec<&Member> = state.team.iter().collect();
-    let mut head = vec!["Record ID", "Title", "Authors", "Year", "Journal", "DOI", "PMID", "Import", "Duplicate of", "Title/abstract", "Title/abstract criteria not met", "Full text", "Full-text criteria not met", "Full text retrieval"].into_iter().map(String::from).collect::<Vec<_>>();
+    let mut head = vec!["Record ID", "Title", "Authors", "Year", "Journal", "DOI", "PMID", "Import", "Duplicate of", "Title/abstract", "Title/abstract criteria not met", "Full text", "Full-text criteria not met", "Full text retrieval", "Other (title/abstract)", "Other (full text)", "Removed by hand", "Report of study", "Filled in from"].into_iter().map(String::from).collect::<Vec<_>>();
     for m in &reviewers {
         head.push(format!("Title/abstract: {}", m.name));
         head.push(format!("Full text: {}", m.name));
@@ -304,6 +306,11 @@ fn screening_csv(state: &State, conn: &rusqlite::Connection) -> Result<String> {
             status_label(&ft).into(),
             reason_labels(state, &state.final_reasons(r, Stage::Ft)),
             r.fulltext.status.clone(),
+            state.final_other(r, Stage::Ta).join("; "),
+            state.final_other(r, Stage::Ft).join("; "),
+            r.removed.clone().unwrap_or_default(),
+            r.study_of.clone().unwrap_or_default(),
+            r.filled.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("; "),
         ];
         for m in &reviewers {
             for stage in [Stage::Ta, Stage::Ft] {
@@ -323,17 +330,58 @@ fn included_metas<'a>(state: &'a State, conn: &rusqlite::Connection) -> Result<(
     Ok((included, metas(conn, &state.info.id, &ids)?))
 }
 
+/// The source a value was taken from: "p. 4: “quote”".
+pub fn source_text(x: &crate::derive::Extracted) -> String {
+    let page = x.page.or_else(|| x.source_pos.as_ref().and_then(|p| p.get("page")).and_then(Json::as_i64).filter(|p| *p >= 0).map(|p| p + 1));
+    let quote = if x.quote.trim().is_empty() { x.source_pos.as_ref().and_then(|p| p.get("text")).and_then(Json::as_str).unwrap_or("").to_string() } else { x.quote.clone() };
+    match (page, quote.trim()) {
+        (Some(p), "") => format!("p. {p}"),
+        (Some(p), q) => format!("p. {p}: “{q}”"),
+        (None, "") => String::new(),
+        (None, q) => format!("“{q}”"),
+    }
+}
+
+/// The value used for a study with where it came from.
+fn resolved_entry<'a>(state: &'a State, record: &str, form: &str, field: &str) -> Option<&'a crate::derive::Extracted> {
+    let ex = state.extraction.get(record)?;
+    let key = (form.to_string(), field.to_string());
+    ex.finals.get(&key).or_else(|| ex.values.get(&key)?.iter().find(|(who, _)| who.as_str() != "ai").map(|(_, v)| v))
+}
+
+/// The fields each study's agreed answers show (others are "not applicable").
+fn shown_fields(state: &State, record: &str, form: &Form) -> std::collections::HashSet<String> {
+    let answers: crate::logic::Answers = form.fields().filter_map(|f| resolved_value(state, record, &form.id, &f.id).map(|(v, _)| (f.id.clone(), v))).collect();
+    crate::logic::visible_fields(form, &answers)
+}
+
 fn extraction_wide(state: &State, conn: &rusqlite::Connection) -> Result<String> {
     let (included, m) = included_metas(state, conn)?;
     let fields: Vec<(&Form, &Field)> = state.protocol.forms.iter().flat_map(|f| f.fields().map(move |x| (f, x))).collect();
+    // A source column for fields whose rule asks for one or where any study has one.
+    let with_source: Vec<bool> = fields
+        .iter()
+        .map(|(f, x)| x.quote || state.protocol.rules.quote_required || crate::logic::source_rule(x, &state.protocol.rules) != "none" || included.iter().any(|r| resolved_entry(state, &r.id, &f.id, &x.id).is_some_and(|e| !source_text(e).is_empty())))
+        .collect();
     let mut head = vec!["Study".to_string(), "Record ID".into(), "Title".into(), "Year".into(), "DOI".into()];
-    head.extend(fields.iter().map(|(f, x)| format!("{}: {}", f.name, x.label)));
+    for ((f, x), src) in fields.iter().zip(&with_source) {
+        head.push(format!("{}: {}", f.name, x.label));
+        if *src {
+            head.push(format!("{}: {} (source)", f.name, x.label));
+        }
+    }
     let mut out = csv_line(&head);
     for r in included {
         let meta = m.get(&r.id);
         let mut cells = vec![study_label(state, meta, &r.id), r.id.clone(), meta.map(|x| x.title.clone()).unwrap_or_default(), r.year.map(|y| y.to_string()).unwrap_or_default(), meta.map(|x| x.doi.clone()).unwrap_or_default()];
-        for (f, x) in &fields {
-            cells.push(resolved_value(state, &r.id, &f.id, &x.id).map(|(v, conflict)| if conflict { format!("{} (reviewers differ)", value_text(&v)) } else { value_text(&v) }).unwrap_or_default());
+        let shown: HashMap<&str, std::collections::HashSet<String>> = state.protocol.forms.iter().map(|f| (f.id.as_str(), shown_fields(state, &r.id, f))).collect();
+        for ((f, x), src) in fields.iter().zip(&with_source) {
+            // Not applicable for this study (hidden by its answers): blank.
+            let applies = shown.get(f.id.as_str()).is_some_and(|s| s.contains(&x.id));
+            cells.push(if applies { resolved_value(state, &r.id, &f.id, &x.id).map(|(v, conflict)| if conflict { format!("{} (reviewers differ)", value_text(&v)) } else { value_text(&v) }).unwrap_or_default() } else { String::new() });
+            if *src {
+                cells.push(if applies { resolved_entry(state, &r.id, &f.id, &x.id).map(source_text).unwrap_or_default() } else { String::new() });
+            }
         }
         out.push_str(&csv_line(&cells));
     }
@@ -342,19 +390,21 @@ fn extraction_wide(state: &State, conn: &rusqlite::Connection) -> Result<String>
 
 fn extraction_long(state: &State, conn: &rusqlite::Connection) -> Result<String> {
     let (included, m) = included_metas(state, conn)?;
-    let mut out = csv_line(&["study", "record_id", "form", "field", "row", "column", "value", "reviewer", "agreed", "quote", "page"].map(String::from));
+    let mut out = csv_line(&["study", "record_id", "form", "field", "row", "column", "value", "reviewer", "agreed", "quote", "page", "source", "applies"].map(String::from));
     for r in included {
         let study = study_label(state, m.get(&r.id), &r.id);
         let Some(ex) = state.extraction.get(&r.id) else { continue };
         for form in &state.protocol.forms {
+            let shown = shown_fields(state, &r.id, form);
             for f in form.fields() {
+                let applies = if shown.contains(&f.id) { "yes" } else { "no" };
                 let key = (form.id.clone(), f.id.clone());
                 let mut entries: Vec<(String, &crate::derive::Extracted, bool)> = ex.values.get(&key).map(|v| v.iter().filter(|(who, _)| who.as_str() != "ai").map(|(who, x)| (state.member_name(who), x, false)).collect()).unwrap_or_default();
                 if let Some(fin) = ex.finals.get(&key) {
                     entries.push(("agreed".into(), fin, true));
                 }
                 for (who, x, agreed) in entries {
-                    let base = |row: &str, column: &str, value: String| csv_line(&[study.clone(), r.id.clone(), form.name.clone(), f.label.clone(), row.into(), column.into(), value, who.clone(), if agreed { "yes".into() } else { "no".into() }, x.quote.clone(), x.page.map(|p| p.to_string()).unwrap_or_default()]);
+                    let base = |row: &str, column: &str, value: String| csv_line(&[study.clone(), r.id.clone(), form.name.clone(), f.label.clone(), row.into(), column.into(), value, who.clone(), if agreed { "yes".into() } else { "no".into() }, x.quote.clone(), x.page.map(|p| p.to_string()).unwrap_or_default(), source_text(x), applies.into()]);
                     match (&x.value, f.kind.as_str()) {
                         (Json::Array(rows), "table") => {
                             for (i, row) in rows.iter().enumerate() {

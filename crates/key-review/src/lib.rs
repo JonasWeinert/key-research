@@ -6,10 +6,12 @@ pub mod derive;
 pub mod events;
 pub mod export;
 pub mod import;
+pub mod logic;
 pub mod meta;
 pub mod model;
 pub mod ops;
 pub mod prisma;
+pub mod records;
 pub mod rules;
 pub mod stats;
 pub mod store;
@@ -21,3 +23,5 @@ pub use store::Reviews;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_records;

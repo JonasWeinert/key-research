@@ -18,6 +18,9 @@ pub struct Decision {
     pub note: String,
     pub version: String,
     pub evidence: Vec<Json>,
+    /// "Other": the reason in the reviewer's words when no criterion fits.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub other: String,
     /// The criterion that applied it automatically.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto: Option<String>,
@@ -30,7 +33,21 @@ pub struct FullText {
     pub status: String,
     pub reason: String,
     pub source_id: Option<String>,
+    /// A file kept with the review for this record (not in the library).
+    pub file: Option<FileRef>,
     pub at: i64,
+}
+
+/// A full text kept with the review: `reviews/<review>/files/<hash>.<ext>` beside the library.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FileRef {
+    pub hash: String,
+    pub name: String,
+    pub mime: String,
+    pub size: u64,
+    /// How it came: upload | match | csv | browser | snapshot | find
+    pub origin: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -64,6 +81,10 @@ pub struct RecState {
     pub pos: usize,
     pub dup_of: Option<String>,
     pub dup_auto: bool,
+    /// Why it matched, who decided and when.
+    pub dup_reason: String,
+    pub dup_by: String,
+    pub dup_at: i64,
     pub distinct: BTreeSet<String>,
     /// Decision events still in force, oldest first.
     pub decisions: [Vec<Decision>; 2],
@@ -77,6 +98,13 @@ pub struct RecState {
     pub source_id: Option<String>,
     pub has_abstract: bool,
     pub year: Option<i64>,
+    /// Removed by hand (not with its import): out of screening, counted by PRISMA as removed
+    /// for other reasons.
+    pub removed: Option<String>,
+    /// Another report of the study this record is (its first report's id).
+    pub study_of: Option<String>,
+    /// Fields filled in from elsewhere: field → where from.
+    pub filled: BTreeMap<String, String>,
 }
 
 impl RecState {
@@ -95,6 +123,9 @@ impl RecState {
     }
     pub fn resolution(&self, stage: Stage) -> Option<&Decision> {
         self.resolutions[stage.index()].last()
+    }
+    pub fn has_full_text(&self) -> bool {
+        self.fulltext.file.is_some() || (self.source_id.is_some() && self.fulltext.status == "retrieved")
     }
 }
 
@@ -201,6 +232,9 @@ pub struct Extracted {
     /// From AI pre-fill (a suggestion the reviewer accepted or not).
     #[serde(default)]
     pub suggested: bool,
+    /// Where in the document it was taken from: { hash, page, rects, text }.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_pos: Option<Json>,
 }
 
 /// One record's extraction: per (form, field) each reviewer's value, and the agreed one.
@@ -208,6 +242,8 @@ pub struct Extracted {
 pub struct RecExtraction {
     pub values: BTreeMap<(String, String), BTreeMap<String, Extracted>>,
     pub finals: BTreeMap<(String, String), Extracted>,
+    /// Forms marked complete, by whom (a later change to one of their values reopens it).
+    pub completed: BTreeMap<String, BTreeSet<String>>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -290,6 +326,7 @@ struct DecisionPayload {
     reasons: Vec<String>,
     note: String,
     evidence: Vec<Json>,
+    other: String,
     auto: Option<String>,
 }
 
@@ -372,9 +409,11 @@ impl State {
             "review.archive" => self.info.archived = p.get("archived").and_then(Json::as_bool).unwrap_or(true),
             "protocol.set" => {
                 if let Ok(mut protocol) = serde_json::from_value::<Protocol>(p.get("protocol").cloned().unwrap_or(Json::Null)) {
+                    protocol.rules.ta.reasons = protocol.rules.ta.asks(Choice::Exclude).to_string();
+                    protocol.rules.ft.reasons = protocol.rules.ft.asks(Choice::Exclude).to_string();
                     // A protocol from before criteria and reasons were one list.
                     if protocol.is_legacy() {
-                        let aliases = protocol.migrate();
+                        let aliases = protocol.normalize();
                         self.migrated = true;
                         for (from, to) in aliases {
                             self.aliases.entry(from).or_insert(to);
@@ -402,6 +441,43 @@ impl State {
                     }
                 }
                 self.alias_recorded = true;
+            }
+            "record.remove" => {
+                let ids: Vec<String> = p.get("recordIds").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(str::to_string).collect()).unwrap_or_default();
+                let removed = p.get("removed").and_then(Json::as_bool).unwrap_or(true);
+                let why = p.get("reason").and_then(Json::as_str).unwrap_or("Removed by hand").to_string();
+                for id in ids {
+                    if let Some(r) = self.record_mut(&id) {
+                        r.removed = removed.then(|| why.clone());
+                    }
+                }
+            }
+            "record.edit" | "record.enrich" => {
+                let Some(id) = e.record_id.clone() else { return };
+                let Some(Json::Object(fields)) = p.get("fields") else { return };
+                let from = p.get("from").and_then(Json::as_object).cloned().unwrap_or_default();
+                let enrich = e.kind == "record.enrich";
+                if let Some(r) = self.record_mut(&id) {
+                    for (k, v) in fields {
+                        match k.as_str() {
+                            "abstractText" => r.has_abstract = v.as_str().is_some_and(|s| !s.trim().is_empty()),
+                            "year" => r.year = v.as_i64(),
+                            _ => {}
+                        }
+                        if enrich {
+                            r.filled.insert(k.clone(), from.get(k).and_then(Json::as_str).unwrap_or("").to_string());
+                        } else {
+                            r.filled.remove(k);
+                        }
+                    }
+                }
+            }
+            "study.link" => {
+                let Some(id) = e.record_id.clone() else { return };
+                let of = p.get("studyOf").and_then(Json::as_str).map(str::to_string).filter(|o| *o != id);
+                if let Some(r) = self.record_mut(&id) {
+                    r.study_of = of;
+                }
             }
             "team.set" => {
                 if let Ok(team) = serde_json::from_value::<Vec<Member>>(p.get("members").cloned().unwrap_or(Json::Null)) {
@@ -475,10 +551,18 @@ impl State {
                     }
                 } else {
                     let of = p.get("duplicateOf").and_then(Json::as_str).map(str::to_string);
+                    let why = p.get("reason").and_then(Json::as_str).map(str::to_string);
                     if of.as_deref() != Some(id.as_str()) {
+                        let by = e.actor.clone();
                         if let Some(r) = self.record_mut(&id) {
+                            if let Some(other) = &of {
+                                r.distinct.remove(other);
+                            }
                             r.dup_of = of;
                             r.dup_auto = auto;
+                            r.dup_reason = why.unwrap_or_default();
+                            r.dup_by = by;
+                            r.dup_at = e.at;
                         }
                     }
                 }
@@ -491,7 +575,7 @@ impl State {
                 }
                 // Reasons are criterion ids; old decisions name old reason ids, resolved here.
                 let reasons = d.reasons.into_iter().map(|r| self.aliases.get(&r).cloned().unwrap_or(r)).collect();
-                let decision = Decision { event: e.id.clone(), at: e.at, reviewer: e.actor.clone(), value, reasons, note: d.note, version: e.version.clone(), evidence: d.evidence, auto: d.auto };
+                let decision = Decision { other: d.other.trim().to_string(), event: e.id.clone(), at: e.at, reviewer: e.actor.clone(), value, reasons, note: d.note, version: e.version.clone(), evidence: d.evidence, auto: d.auto };
                 let resolve = e.kind == "resolve";
                 let Some(id) = e.record_id.clone() else { return };
                 if let Some(r) = self.record_mut(&id) {
@@ -550,7 +634,11 @@ impl State {
                 let status = p.get("status").and_then(Json::as_str).map(str::to_string);
                 let reason = p.get("reason").and_then(Json::as_str).map(str::to_string);
                 let source = p.get("sourceId").map(|v| v.as_str().map(str::to_string));
+                let file = p.get("file").map(|f| serde_json::from_value::<FileRef>(f.clone()).ok().filter(|f| !f.hash.is_empty()));
                 if let Some(r) = self.record_mut(&id) {
+                    if let Some(file) = file {
+                        r.fulltext.file = file;
+                    }
                     if let Some(s) = status {
                         r.fulltext.status = s;
                     }
@@ -609,13 +697,21 @@ impl State {
                     page: p.get("page").and_then(Json::as_i64),
                     source_id: p.get("sourceId").and_then(Json::as_str).map(str::to_string),
                     suggested: p.get("suggested").and_then(Json::as_bool).unwrap_or(false),
+                    source_pos: p.get("sourcePos").filter(|v| !v.is_null()).cloned(),
                 };
                 let entry = self.extraction.entry(id).or_default();
                 if e.kind == "extract.final" {
                     entry.finals.insert(key, value);
                 } else {
+                    if let Some(who) = entry.completed.get_mut(&key.0) {
+                        who.remove(&e.actor);
+                    }
                     entry.values.entry(key).or_default().insert(e.actor.clone(), value);
                 }
+            }
+            "extract.complete" => {
+                let Some(id) = e.record_id.clone() else { return };
+                self.extraction.entry(id).or_default().completed.entry(text("formId")).or_default().insert(e.actor.clone());
             }
             "ai.suggest" => {
                 let (Some(stage), Some(id)) = (stage(), e.record_id.clone()) else { return };
@@ -641,7 +737,7 @@ impl State {
 
     /// Not removed with its batch and not a duplicate of a record still in the review.
     pub fn active(&self, r: &RecState) -> bool {
-        if self.removed_batches.contains(&r.batch) {
+        if self.removed_batches.contains(&r.batch) || r.removed.is_some() {
             return false;
         }
         match &r.dup_of {
@@ -744,6 +840,25 @@ impl State {
             }
         }
         reasons
+    }
+
+    /// The "Other" texts behind a final exclusion (the resolution's, else every reviewer's).
+    pub fn final_other(&self, r: &RecState, stage: Stage) -> Vec<String> {
+        if let Some(res) = r.resolution(stage) {
+            return (!res.other.is_empty()).then(|| res.other.clone()).into_iter().collect();
+        }
+        let mut out: Vec<String> = Vec::new();
+        for d in r.current(stage).into_iter().filter(|d| d.value == Choice::Exclude && !d.other.is_empty()) {
+            if !out.contains(&d.other) {
+                out.push(d.other.clone());
+            }
+        }
+        out
+    }
+
+    /// The study a record reports (its own id, or the first report's).
+    pub fn study_id<'a>(&self, r: &'a RecState) -> &'a str {
+        r.study_of.as_deref().unwrap_or(&r.id)
     }
 
     /// Reviewers agree to exclude but chose different criteria. Not a conflict (the record is

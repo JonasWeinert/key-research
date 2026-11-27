@@ -79,18 +79,42 @@ impl Default for Question {
 pub struct StageRule {
     /// Independent reviewers each record needs (1 or more).
     pub reviewers: u32,
-    /// Exclusion reasons: none | one | all (all that apply, at least one).
+    /// When excluding, the criteria not met: none (not asked) | first (the one, the first it
+    /// fails) | all (every one it fails, at least one). "one" in older files means "first".
     pub reasons: String,
+    /// The same for Maybe.
+    pub maybe_reasons: String,
     /// Whether "Maybe" is offered.
     pub maybe: bool,
 }
 
 impl StageRule {
     fn ta() -> Self {
-        Self { reviewers: 1, reasons: "none".into(), maybe: true }
+        Self { reviewers: 1, reasons: "none".into(), maybe_reasons: "none".into(), maybe: true }
     }
     fn ft() -> Self {
-        Self { reviewers: 1, reasons: "one".into(), maybe: false }
+        Self { reviewers: 1, reasons: "first".into(), maybe_reasons: "none".into(), maybe: false }
+    }
+    /// What a choice asks for: none | first | all.
+    pub fn asks(&self, value: Choice) -> &str {
+        let rule = match value {
+            Choice::Exclude => self.reasons.as_str(),
+            Choice::Maybe => self.maybe_reasons.as_str(),
+            Choice::Include => "none",
+        };
+        match rule {
+            "one" => "first",
+            "" => "none",
+            other => other,
+        }
+    }
+    fn normalize(&mut self) {
+        if self.reasons == "one" {
+            self.reasons = "first".into();
+        }
+        if self.maybe_reasons.is_empty() {
+            self.maybe_reasons = "none".into();
+        }
     }
 }
 
@@ -117,11 +141,16 @@ pub struct Rules {
     pub ai_assist: bool,
     /// Show the suggestions of criteria linked to metadata.
     pub suggestions: bool,
+    /// Go to the next record as soon as a decision is complete.
+    pub auto_advance: bool,
+    /// Where an extracted value came from in the document: none | encouraged | required, for
+    /// fields that do not set their own.
+    pub source_default: String,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Self { ta: StageRule::ta(), ft: StageRule::ft(), blind: true, conflicts: "consensus".into(), quote_required: false, extractors: 1, ai_assist: false, suggestions: true }
+        Self { ta: StageRule::ta(), ft: StageRule::ft(), blind: true, conflicts: "consensus".into(), quote_required: false, extractors: 1, ai_assist: false, suggestions: true, auto_advance: true, source_default: "none".into() }
     }
 }
 
@@ -286,6 +315,50 @@ pub struct Field {
     /// What the meta-analysis reads: "outcomes" on a table of outcome data, "subgroup" on a field
     /// that names a study's subgroup.
     pub role: String,
+    /// The value's place in the document (page, position, quoted text): "" (the review's
+    /// default) | none | encouraged | required.
+    pub source: String,
+    /// Shown only when this holds (on other fields' answers; inside a table, on the same row).
+    pub show_when: Option<ShowWhen>,
+    /// Checks against other answers ("events at most the total").
+    pub checks: Vec<FieldCheck>,
+}
+
+/// When a field or section is shown.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShowWhen {
+    pub conditions: Vec<FieldCondition>,
+    /// All conditions (true) or any (false).
+    pub all: bool,
+}
+
+impl Default for ShowWhen {
+    fn default() -> Self {
+        Self { conditions: Vec::new(), all: true }
+    }
+}
+
+/// A condition on another field's answer: is | isNot | oneOf | filled | empty | lt | le | gt | ge |
+/// yes | no.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FieldCondition {
+    pub field: String,
+    pub op: String,
+    pub value: Json,
+}
+
+/// A check of this field's answer against a number or another field: lt | le | gt | ge | is | isNot.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FieldCheck {
+    pub op: String,
+    /// Another field (inside a table: a column of the same row) …
+    pub other: Option<String>,
+    /// … or a fixed value.
+    pub value: Json,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -295,6 +368,8 @@ pub struct Section {
     pub title: String,
     pub guidance: String,
     pub fields: Vec<Field>,
+    /// The whole section is shown only when this holds.
+    pub show_when: Option<ShowWhen>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -327,6 +402,8 @@ pub struct Protocol {
     pub reasons: Vec<LegacyReason>,
     pub keywords: Keywords,
     pub labels: Vec<String>,
+    /// A key for each label that has one (Background: b, Check later: l).
+    pub label_keys: BTreeMap<String, String>,
     pub forms: Vec<Form>,
     /// Keyboard shortcuts the reviewer changed (action → key).
     pub shortcuts: BTreeMap<String, String>,
@@ -353,6 +430,20 @@ impl Protocol {
     /// The reason PRISMA reports among `ids`: the first in the criteria's order.
     pub fn top_reason<'a>(&self, ids: &'a [String]) -> Option<&'a String> {
         ids.iter().min_by_key(|id| self.criteria.iter().position(|c| &c.id == *id).unwrap_or(usize::MAX))
+    }
+    /// Reads any older shape: criteria plus reasons, "one" for "first"; answers the old reason
+    /// ids' criteria.
+    pub fn normalize(&mut self) -> BTreeMap<String, String> {
+        self.rules.ta.normalize();
+        self.rules.ft.normalize();
+        if self.rules.source_default.is_empty() {
+            self.rules.source_default = "none".into();
+        }
+        self.migrate()
+    }
+    /// The key that toggles a label, if any.
+    pub fn label_key(&self, label: &str) -> Option<&str> {
+        self.label_keys.get(label).map(String::as_str).filter(|k| !k.is_empty())
     }
     /// Whether this protocol was written before criteria and reasons became one list.
     pub fn is_legacy(&self) -> bool {
@@ -434,8 +525,10 @@ impl Protocol {
             if rule.reviewers == 0 || rule.reviewers > 10 {
                 return Err(format!("{}: choose 1 to 10 reviewers", stage.label()));
             }
-            if !["none", "one", "all"].contains(&rule.reasons.as_str()) {
-                return Err(format!("{}: unknown reason rule", stage.label()));
+            for r in [rule.asks(Choice::Exclude), rule.asks(Choice::Maybe)] {
+                if !["none", "first", "all"].contains(&r) {
+                    return Err(format!("{}: unknown rule for the criteria not met", stage.label()));
+                }
             }
         }
         if !["consensus", "third"].contains(&self.rules.conflicts.as_str()) {
@@ -462,6 +555,28 @@ impl Protocol {
             if f.id.is_empty() || !ids.insert(f.id.clone()) {
                 return Err(format!("Form \"{}\" needs a unique id", f.name));
             }
+            crate::logic::validate_form(f)?;
+        }
+        // Keys: one action each.
+        let mut keys: BTreeMap<String, String> = BTreeMap::new();
+        for (action, fallback) in [("include", "i"), ("exclude", "e"), ("maybe", "m")] {
+            keys.insert(self.shortcuts.get(action).cloned().unwrap_or_else(|| fallback.into()).to_lowercase(), action.into());
+        }
+        for reserved in ["j", "k", "u", "n"] {
+            keys.entry(reserved.into()).or_insert_with(|| "moving between records, undo and notes".into());
+        }
+        for (label, key) in &self.label_keys {
+            let key = key.trim().to_lowercase();
+            if key.is_empty() {
+                continue;
+            }
+            if key.chars().count() != 1 || !key.chars().all(|c| c.is_alphabetic()) {
+                return Err(format!("The key for \"{label}\" must be one letter"));
+            }
+            if let Some(used) = keys.get(&key) {
+                return Err(format!("The key {} is taken by {used}", key.to_uppercase()));
+            }
+            keys.insert(key, format!("the label {label}"));
         }
         Ok(())
     }

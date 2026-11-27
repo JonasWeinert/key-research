@@ -4636,6 +4636,7 @@ version = "0.1.0"
 dependencies = [
  "key-biblio",
  "key-store",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

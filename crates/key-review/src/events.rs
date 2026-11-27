@@ -53,6 +53,11 @@ pub const KINDS: &[&str] = &[
     "extract.value",
     "extract.final",
     "ai.suggest",
+    "record.remove",
+    "record.edit",
+    "record.enrich",
+    "study.link",
+    "extract.complete",
     "analysis.set",
 ];
 
@@ -175,9 +180,10 @@ mod tests {
         assert_eq!(a.len(), 36);
         assert_eq!(&a[14..15], "7");
         assert!(matches!(&a[19..20], "8" | "9" | "a" | "b"));
-        // The time prefix reads back.
+        // The time prefix reads back (later when other tests made newer ids first: ids never go
+        // back in time).
         let hex: String = a.replace('-', "")[..12].to_string();
-        assert_eq!(u64::from_str_radix(&hex, 16).unwrap(), 1_700_000_000_000);
+        assert!(u64::from_str_radix(&hex, 16).unwrap() >= 1_700_000_000_000);
     }
 
     #[test]

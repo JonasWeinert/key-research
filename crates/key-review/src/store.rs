@@ -331,6 +331,8 @@ impl Inner {
                 insert.execute(params![ev.id, ev.review_id, ev.at, ev.actor, ev.device, ev.kind, ev.version, ev.record_id, ev.payload.to_string()]).map_err(e)?;
                 if ev.kind == "records.add" {
                     insert_records(&tx, id, ev, &mut pos)?;
+                } else if ev.kind == "record.edit" || ev.kind == "record.enrich" {
+                    edit_row(&tx, id, ev)?;
                 }
             }
         }
@@ -348,11 +350,29 @@ impl Inner {
         let tx = self.conn.transaction().map_err(e)?;
         tx.execute("DELETE FROM review_records WHERE review_id = ?1", [id]).map_err(e)?;
         let mut pos = 0;
-        for ev in events.iter().filter(|e| e.kind == "records.add") {
-            insert_records(&tx, id, ev, &mut pos)?;
+        for ev in &events {
+            match ev.kind.as_str() {
+                "records.add" => insert_records(&tx, id, ev, &mut pos)?,
+                "record.edit" | "record.enrich" => edit_row(&tx, id, ev)?,
+                _ => {}
+            }
         }
         tx.commit().map_err(e)
     }
+}
+
+/// A record's corrected or filled-in metadata, written to its row (the log keeps both).
+fn edit_row(tx: &Connection, review: &str, ev: &Event) -> Result<()> {
+    let (Some(record), Some(Json::Object(fields))) = (ev.record_id.as_deref(), ev.payload.get("fields")) else { return Ok(()) };
+    let Some(mut meta) = metas(tx, review, &[record.to_string()])?.remove(record) else { return Ok(()) };
+    crate::records::apply_fields(&mut meta, fields);
+    let json = serde_json::to_string(&meta).map_err(e)?;
+    tx.execute(
+        "UPDATE review_records SET title = ?3, abstract = ?4, authors = ?5, year = ?6, journal = ?7, doi = ?8, meta = ?9 WHERE review_id = ?1 AND id = ?2",
+        params![review, record, meta.title, meta.abstract_text, meta.authors.join("; "), meta.year, meta.journal, meta.doi, json],
+    )
+    .map_err(e)?;
+    Ok(())
 }
 
 fn insert_records(tx: &Connection, review: &str, ev: &Event, pos: &mut i64) -> Result<()> {

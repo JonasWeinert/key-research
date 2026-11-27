@@ -61,6 +61,13 @@ pub struct ListQuery {
     pub label: String,
     pub batch: String,
     pub reason: String,
+    /// "yes" | "no": has an abstract / a full text.
+    pub has_abstract: String,
+    pub has_full_text: String,
+    /// The import's group: databases | registers | other.
+    pub group: String,
+    /// "" | sources: every record of the review (the Sources table), whatever its stage.
+    pub scope: String,
     /// pos (import order) | title | year | ai
     pub sort: String,
     pub offset: usize,
@@ -118,6 +125,13 @@ impl Reviews {
                 "analyses": state.analyses,
                 "events": state.events,
                 "labelsInUse": state.records.iter().flat_map(|r| r.labels.iter().cloned()).collect::<std::collections::BTreeSet<_>>(),
+                "labelCounts": label_counts(state),
+                "labelKeys": state.protocol.label_keys,
+                "removedByHand": state.records.iter().filter(|r| r.removed.is_some() && !state.removed_batches.contains(&r.batch)).count(),
+                "missingAbstracts": state.records.iter().filter(|r| state.active(r) && !r.has_abstract).count(),
+                "filledAbstracts": state.records.iter().filter(|r| r.filled.contains_key("abstractText")).count(),
+                "otherReasons": crate::records::other_reasons(state).into_iter().filter(|(_, n)| *n >= 2).map(|(text, count)| json!({ "text": text, "count": count })).collect::<Vec<_>>(),
+                "fulltexts": { "need": crate::records::needing_full_text(state).len(), "have": state.records.iter().filter(|r| state.eligible(r, Stage::Ft) && r.has_full_text()).count() },
             }))
         })
     }
@@ -157,6 +171,11 @@ impl Reviews {
                 "pilot": state.pilot_of(record, stage).map(|p| json!({ "id": p.id, "name": p.name, "open": p.open })),
                 "assigned": state.assigned(record, stage).iter().map(|id| json!({ "id": id, "name": state.member_name(id) })).collect::<Vec<_>>(),
                 "duplicateOf": r.dup_of,
+                "removed": r.removed,
+                "studyOf": r.study_of,
+                "reports": state.records.iter().filter(|o| o.study_of.as_deref() == Some(record)).map(|o| o.id.clone()).collect::<Vec<_>>(),
+                "filled": r.filled,
+                "hasFullText": r.has_full_text(),
             }))
         })
     }
@@ -172,9 +191,21 @@ impl Reviews {
                 .iter()
                 .filter(|r| match q.filter.as_str() {
                     "duplicates" => r.dup_of.is_some() && !state.active(r) && !state.removed_batches.contains(&r.batch),
-                    "removed" => state.removed_batches.contains(&r.batch),
+                    "removed" => state.removed_batches.contains(&r.batch) || r.removed.is_some(),
+                    _ if q.scope == "sources" => !state.removed_batches.contains(&r.batch),
                     _ => state.eligible(r, stage),
                 })
+                .filter(|r| match q.has_abstract.as_str() {
+                    "yes" => r.has_abstract,
+                    "no" => !r.has_abstract,
+                    _ => true,
+                })
+                .filter(|r| match q.has_full_text.as_str() {
+                    "yes" => r.has_full_text(),
+                    "no" => !r.has_full_text(),
+                    _ => true,
+                })
+                .filter(|r| q.group.is_empty() || state.batch(&r.batch).is_some_and(|b| b.group == q.group))
                 .filter(|r| text_hits.as_ref().is_none_or(|h| h.contains(&r.id)))
                 .filter(|r| q.label.is_empty() || r.labels.contains(&q.label))
                 .filter(|r| q.batch.is_empty() || r.batch == q.batch)
@@ -183,6 +214,7 @@ impl Reviews {
                     let s = state.status(r, stage);
                     match q.filter.as_str() {
                         "" | "all" | "duplicates" | "removed" | "suggested" => true,
+                        "active" => state.active(r),
                         "mine" => state.waits_for(r, stage, viewer),
                         "decidedByMe" => r.mine(stage, viewer).is_some(),
                         "undecided" => s == Status::Undecided,
@@ -251,6 +283,14 @@ impl Reviews {
                         "ai": r.ai[stage.index()].as_ref().map(|a| json!({ "value": a.value, "score": a.score })),
                         "duplicateOf": r.dup_of,
                         "batch": r.batch,
+                        "batchName": state.batch(&r.batch).map(|b| b.name.clone()),
+                        "doi": meta.map(|x| x.doi.clone()).unwrap_or_default(),
+                        "removed": r.removed,
+                        "active": state.active(r),
+                        "studyOf": r.study_of,
+                        "filled": r.filled,
+                        "hasFullText": r.has_full_text(),
+                        "statuses": if q.scope == "sources" { json!({ "ta": status_json(&state.status(r, Stage::Ta)), "ft": status_json(&state.status(r, Stage::Ft)) }) } else { Json::Null },
                     })
                 })
                 .collect();
@@ -267,6 +307,8 @@ impl Reviews {
             for r in &state.records {
                 let s = state.status(r, stage);
                 let take = match filter {
+                    // A label's records at this stage, decided or not (to go through them again).
+                    f if f.starts_with("label:") => state.eligible(r, stage) && r.labels.contains(&f[6..]),
                     "conflicts" => s == Status::Conflict,
                     "flagged" => r.flagged[stage.index()].is_some() && state.eligible(r, stage),
                     "maybe" => r.mine(stage, viewer).is_some_and(|d| d.value == Choice::Maybe),
@@ -312,7 +354,22 @@ impl Reviews {
             let ex = state.extraction.get(record);
             let blind = state.protocol.rules.blind;
             let mut fields = Map::new();
+            let mut forms_state = Map::new();
             for form in &state.protocol.forms {
+                // What the viewer's answers show and what the form still lacks.
+                let given = crate::ops::given_for(state, record, &form.id, viewer);
+                let answers: crate::logic::Answers = given.iter().map(|(k, g)| (k.clone(), g.value.clone())).collect();
+                let visible = crate::logic::visible_fields(form, &answers);
+                let issues = crate::logic::issues(form, &given, &state.protocol.rules);
+                let completed = ex.is_some_and(|e| e.completed.get(&form.id).is_some_and(|who| who.contains(viewer)));
+                let label = |id: &str| form.fields().find(|f| f.id == id).map(|f| f.label.clone()).unwrap_or_else(|| id.to_string());
+                let rules: Map<String, Json> = form
+                    .sections
+                    .iter()
+                    .filter_map(|s| s.show_when.as_ref().map(|w| (format!("section:{}", s.id), json!(crate::logic::describe(w, &label)))))
+                    .chain(form.fields().filter_map(|f| f.show_when.as_ref().map(|w| (f.id.clone(), json!(crate::logic::describe(w, &label))))))
+                    .collect();
+                forms_state.insert(form.id.clone(), json!({ "visible": visible, "issues": issues, "completed": completed, "shownWhen": rules }));
                 for f in form.fields() {
                     let key = (form.id.clone(), f.id.clone());
                     let all = ex.and_then(|e| e.values.get(&key));
@@ -321,7 +378,7 @@ impl Reviews {
                     let values = people.as_ref();
                     let mine = values.and_then(|v| v.get(viewer));
                     let others: Vec<Json> = values
-                        .map(|v| v.iter().filter(|(who, _)| who.as_str() != viewer).map(|(who, x)| json!({ "reviewer": who, "reviewerName": state.member_name(who), "value": x.value, "quote": x.quote, "page": x.page })).collect())
+                        .map(|v| v.iter().filter(|(who, _)| who.as_str() != viewer).map(|(who, x)| json!({ "reviewer": who, "reviewerName": state.member_name(who), "value": x.value, "quote": x.quote, "page": x.page, "sourcePos": x.source_pos })).collect())
                         .unwrap_or_default();
                     let differs = values.is_some_and(|v| {
                         let mut it = v.values().map(|x| canonical(&x.value));
@@ -329,6 +386,10 @@ impl Reviews {
                         it.any(|x| Some(x) != first)
                     });
                     let show_others = !blind || mine.is_some();
+                    // A field hidden by the viewer's answers is not compared (its values are kept
+                    // but inactive).
+                    let shown = visible.contains(&f.id);
+                    let differs = differs && shown;
                     fields.insert(
                         format!("{}/{}", form.id, f.id),
                         json!({
@@ -338,11 +399,13 @@ impl Reviews {
                             "final": ex.and_then(|e| e.finals.get(&key)),
                             "suggestion": suggestion,
                             "differs": differs && show_others,
+                            "inactive": !shown && mine.is_some_and(|m| !crate::logic::is_empty(Some(&m.value))),
+                            "source": crate::logic::source_rule(f, &state.protocol.rules),
                         }),
                     );
                 }
             }
-            Ok(json!({ "forms": state.protocol.forms, "values": fields, "extractors": state.protocol.rules.extractors }))
+            Ok(json!({ "forms": state.protocol.forms, "values": fields, "extractors": state.protocol.rules.extractors, "formState": forms_state }))
         })
     }
 
@@ -364,7 +427,9 @@ impl Reviews {
                     let conflicts = ex
                         .map(|e| e.values.iter().filter(|(k, v)| !e.finals.contains_key(*k) && v.iter().filter(|(w, _)| person(w)).map(|(_, x)| canonical(&x.value)).collect::<HashSet<_>>().len() > 1).count())
                         .unwrap_or(0);
-                    let missing = required.iter().filter(|k| !ex.is_some_and(|e| e.finals.contains_key(*k) || e.values.get(*k).is_some_and(|v| v.keys().any(person)))).count();
+                    let _ = &required;
+                    // Only fields the answers show count (a hidden follow-up is not missing).
+                    let missing: usize = state.protocol.forms.iter().map(|f| crate::logic::issues(f, &crate::ops::given_for(state, &r.id, &f.id, viewer), &state.protocol.rules).iter().filter(|i| i.kind == "required").count()).sum();
                     let meta = m.get(&r.id);
                     json!({
                         "id": r.id, "title": meta.map(|x| x.title.clone()).unwrap_or_default(), "byline": meta.map(|x| x.byline()).unwrap_or_default(),
@@ -450,4 +515,15 @@ fn extraction_counts(state: &State, viewer: &str) -> Json {
     let started = included.iter().filter(|r| state.extraction.get(&r.id).is_some_and(|e| e.values.values().any(|v| v.keys().any(|k| k != "ai")))).count();
     let mine = included.iter().filter(|r| state.extraction.get(&r.id).is_some_and(|e| e.values.values().any(|v| v.contains_key(viewer)))).count();
     json!({ "studies": included.len(), "started": started, "mine": mine })
+}
+
+/// How many records in the review carry each label (records still in it).
+pub fn label_counts(state: &State) -> BTreeMap<String, usize> {
+    let mut out = BTreeMap::new();
+    for r in state.records.iter().filter(|r| state.active(r)) {
+        for l in &r.labels {
+            *out.entry(l.clone()).or_default() += 1;
+        }
+    }
+    out
 }
