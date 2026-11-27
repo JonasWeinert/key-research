@@ -38,11 +38,12 @@
 
 - **A PDF reader built for papers.** Highlights and comments are anchored to the text, so they survive zoom and reopening, and each one gets a marker in the margin. Hover an in-text citation to see the work it cites; the reference list sits beside the paper, with what is already in your library marked and the rest one click from being added.
 - **Notes that point back to the source.** Copy a passage as a quote and paste it into a note: the quote links to the exact place in the PDF or web page. Cite a source by typing `@`, or several at once with page numbers from the citation picker, add a bibliography block in the citation style you chose, and let the reference checker flag cited works that are retracted, lack details, or have a published version of a cited preprint in your library.
-- **One search for everything.** Titles, metadata, the full text of every PDF, web page and note, and on-device semantic search. Filters work as tokens: author, journal, topic, tag, collection, year, reading status, citation count.
+- **One search for everything.** Titles, metadata, the full text of every PDF, web page and note, and on-device semantic search. Filters work as tokens: author, journal, topic, tag, collection, year, reading status, citation count. Database search builds one Boolean query from blocks and runs it, translated, on PubMed, OpenAlex and other databases.
 - **Metadata from OpenAlex.** PDFs are identified by the DOI they carry (or by title and authors), and references by DOI, PMID or OpenAlex id. Key fills in authors and institutions, the journal, topics, funders, open-access status and citation counts, and warns when a work has been retracted. People, journals and topics get pages of their own, with relation maps of what goes together.
 - **Find and save papers.** Search OpenAlex and Semantic Scholar from inside Key, and Google Scholar too with your own SerpApi key. The built-in browser saves PDFs and web pages as sources you can annotate, and goes through your library's EZproxy or OpenAthens login. Find PDF looks for an open-access copy of references that have none.
 - **Works with Zotero.** Import a Zotero library once, or keep following it through the Key Sync plugin for Zotero.
 - **Citations and bibliographies.** CSL styles (any `.csl` file or a style from the CSL repository) for Copy Reference and Copy In-Text Citation. BibTeX, BibLaTeX, RIS, CSL-JSON and CSV import and export with stable citation keys, and `.bib` files that update themselves when the library changes.
+- **Properties and formulas.** Add your own typed properties, work values out with formulas built from blocks or typed as text, group the library by any of them, and let Fill with AI read each source and propose a value with the passage it came from, for you to accept.
 - **A tidy library.** Duplicate detection and merging, metadata refresh with a field-by-field review, retraction alerts, batch editing with undo, a tag manager that suggests merges and hierarchies, and file naming rules with an optional readable mirror folder.
 - **Keep up and keep notes elsewhere.** Follow journals, feeds, authors and searches in an Inbox. Reading status follows what you open. Highlights export to Markdown files (for Obsidian or any other vault) without overwriting what you wrote there.
 - **Local by default.** Each workspace is a folder on your Mac with its own SQLite library. Canvases, tabs, splits and several windows let you lay out what you are working on.
@@ -57,6 +58,17 @@
 </p>
 
 The reader draws pages with PDF.js; a native Rust service built on PDFium supplies the exact text, its geometry, search, outlines and links. An on-device layout model recovers headings, reading order and the bibliography, so in-text citations work even in PDFs that do not link them. The rail on the reader's edge shows chapters or page thumbnails, with your highlights marked.
+
+<table>
+<tr>
+<td width="50%"><img src="assets/readme/key-reading-mode.png" alt="Reading mode: a paper reflowed as plain text with its title, authors, abstract and first section"/></td>
+<td width="50%"><img src="assets/readme/key-tab-switcher.png" alt="The tab switcher over the search tab, listing six open tabs, most recent first, with their numbers"/></td>
+</tr>
+<tr>
+<td valign="top"><strong>Reading mode</strong><br/>The paper as reflowed text in your choice of type, built from its layout. Highlights show on their words and your place is kept both ways.</td>
+<td valign="top"><strong>Tab switcher</strong><br/>Hold Control and press Tab to go through your tabs, most recent first; a quick tap goes back to the last one.</td>
+</tr>
+</table>
 
 ### Notes and canvases
 
@@ -100,6 +112,25 @@ Pick any CSL style and language once; Copy Reference (⌘⇧C), Copy In-Text Cit
 
 Semantic search runs EmbeddingGemma through llama.cpp on your Mac. A search of your library stays on it; only the Web results send the query out.
 
+<p align="center">
+  <img src="assets/readme/key-database-search.png" alt="Database search: two concepts joined by AND, the second nesting (replication OR reproducib*) NOT protocol, a plain-language reading of the query, and the query as PubMed and OpenAlex will run it with their counts" width="100%"/>
+</p>
+
+Database search builds a query from concepts and their synonyms, with AND, OR, NOT and brackets as blocks or typed as text, shows how each database will run it and how many works each part finds, and keeps the results, de-duplicated, for the library, the Inbox or a review. The image uses the built-in sample data.
+
+### Properties, formulas and AI fill
+
+<table>
+<tr>
+<td width="50%"><img src="assets/readme/key-formula.png" alt="The formula builder: an if() made of blocks that labels works after 2020 Recent, its preview on the library's sources, and the function reference beside it"/></td>
+<td width="50%"><img src="assets/readme/key-ai-fill.png" alt="Fill with AI: a study design proposed for four sources, each with its confidence, Accept, Edit and Reject, and the passage one answer came from"/></td>
+</tr>
+<tr>
+<td valign="top"><strong>Formulas</strong><br/>Built from blocks or typed, with examples, a reference and a live preview on your own sources. Values are stored, so you can sort, filter and group by them.</td>
+<td valign="top"><strong>Fill with AI</strong><br/>A property filled from each source's metadata, abstract or PDF, tested on a few sources first. Nothing is saved until you accept it, and a value you typed is never proposed over.</td>
+</tr>
+</table>
+
 ### Finding and collecting
 
 <table>
@@ -121,11 +152,11 @@ Semantic search runs EmbeddingGemma through llama.cpp on your Mac. A search of y
 </tr>
 <tr>
 <td width="50%"><img src="assets/readme/key-duplicates.png" alt="Two records of the same paper side by side, with a choice per field before merging"/></td>
-<td width="50%"><img src="assets/readme/key-batch-edit.png" alt="Four sources selected and edited together: shared fields, and tags on some or all of them"/></td>
+<td width="50%"><img src="assets/readme/key-batch-edit.png" alt="Four sources selected: an overview of their years, authors and journals beside the table, and tags and collections on some or all of them"/></td>
 </tr>
 <tr>
 <td valign="top"><strong>Duplicates</strong><br/>Exact and likely duplicates, merged field by field. Links, notes and Zotero identities follow the kept record.</td>
-<td valign="top"><strong>Batch editing</strong><br/>Fields and tags for many sources at once; ⌘Z undoes it.</td>
+<td valign="top"><strong>Batch editing</strong><br/>Select several sources for an overview of them, and change fields and tags for all at once; ⌘Z undoes it.</td>
 </tr>
 </table>
 
