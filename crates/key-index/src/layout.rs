@@ -32,6 +32,15 @@ pub struct LayoutBlock {
     /// A heading's level as the analyser saw it (1 the largest); None for older analyses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub level: Option<u8>,
+    /// What labelled the block when not the analyser: "html" (the article's web page, html_align.rs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// The block is a figure's or a table's caption ("figure" | "table"), as the web page shows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    /// A reference list's lines where each entry starts (from the web page's list).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entries: Vec<u32>,
 }
 
 /// A page's geometry: its size in points and where it shows pictures (figures).
@@ -166,7 +175,7 @@ mod tests {
     use super::*;
 
     fn block(page: i64, kind: &str, text: &str) -> LayoutBlock {
-        LayoutBlock { page, kind: kind.into(), text: text.into(), bounds: [1, 2, 3, 4], sentences: Vec::new(), level: None }
+        LayoutBlock { page, kind: kind.into(), text: text.into(), bounds: [1, 2, 3, 4], sentences: Vec::new(), level: None, ..Default::default() }
     }
 
     #[test]
@@ -200,6 +209,7 @@ mod tests {
             bounds: [0; 4],
             sentences: (0..40).map(|_| sentence(&"Income matters for health in many ways. ".repeat(2))).collect(),
             level: None,
+            ..Default::default()
         };
         let chunks = chunk_layout(&[block(0, "paragraph", "First page."), block(1, "paragraph", "Second page."), long]);
         assert_eq!(chunks[0].page, Some(0));

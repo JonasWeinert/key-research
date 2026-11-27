@@ -14,6 +14,8 @@
 // Files in indexed linked folders are read between sources, a few per round, opened ones
 // first (`prioritize` with `file:<id>`); their vectors also come from the back-fill.
 mod chunk;
+pub mod html_align;
+pub mod landing;
 mod layout;
 mod links;
 mod note;

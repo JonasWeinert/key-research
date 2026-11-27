@@ -196,6 +196,7 @@ fn page_blocks(page: &Page, rotation: u16) -> Vec<LayoutBlock> {
                 Block::Heading { level, .. } => Some(*level),
                 _ => None,
             },
+            ..Default::default()
         })
         .collect()
 }
