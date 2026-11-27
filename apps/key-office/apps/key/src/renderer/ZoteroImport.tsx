@@ -91,6 +91,23 @@ export function ZoteroImport({ invoke, workspaceId, target, onClose, onDone, onB
   /** Zotero's library proxies go to Key's browser too (not part of the host's options). */
   const [proxies, setProxies] = useState(true);
   const request = useMemo(() => optionsOf(choice), [choice]);
+  /** The workspace this sets up (by name), and the others: a pairing code one of them saved
+   * serves this one too (Zotero has one code). */
+  const [into, setInto] = useState<{ name?: string; others: string[] }>({ others: [] });
+  useEffect(() => {
+    let live = true;
+    void bridge()
+      .workspaces?.()
+      .then((all) => {
+        if (!live) return;
+        const own = target ? all.find((w) => w.id === target) : all.find((w) => /\/Zotero$/.test(w.root));
+        setInto({ name: own?.name ?? (target ? undefined : "Zotero"), others: all.filter((w) => w.id !== own?.id).map((w) => w.root) });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [target]);
   const changing = !!current && mode === "sync";
 
   // What is set up already, read from the target workspace (the Zotero workspace by default;
@@ -182,8 +199,11 @@ export function ZoteroImport({ invoke, workspaceId, target, onClose, onDone, onB
 
   // Sync: whether Zotero runs with the plugin, checked again until it does.
   const probeNow = async (given?: string) => {
-    const zotero = (await bridge().workspaces?.().catch(() => []))?.find((w) => /\/Zotero$/.test(w.root));
-    const answer = await invoke<ZoteroProbe>("store_zotero_plugin_probe", given ? { token: given } : {}, zotero?.id ?? workspaceId).catch(
+    // Asked of the workspace being set up (its own code first, then one another workspace saved).
+    const all = (await bridge().workspaces?.().catch(() => [])) ?? [];
+    const own = target ? all.find((w) => w.id === target) : all.find((w) => /\/Zotero$/.test(w.root));
+    const tokenFrom = all.filter((w) => w.id !== own?.id).map((w) => w.root);
+    const answer = await invoke<ZoteroProbe>("store_zotero_plugin_probe", { ...(given ? { token: given } : {}), tokenFrom }, own?.id ?? workspaceId).catch(
       (e): ZoteroProbe => ({ connection: "error", message: message(e), libraries: [] }),
     );
     setProbe(answer);
@@ -238,6 +258,7 @@ export function ZoteroImport({ invoke, workspaceId, target, onClose, onDone, onB
           options: request,
           paused: false,
           ...(probe?.tokenSource === "given" && token ? { token } : {}),
+          tokenFrom: into.others,
           ...(library ?? probe?.defaultLibraryID ? { libraryID: library ?? probe?.defaultLibraryID } : {}),
         },
         workspace.id,
@@ -273,7 +294,9 @@ export function ZoteroImport({ invoke, workspaceId, target, onClose, onDone, onB
           ? `“${existing!.workspace.name}” is kept in sync with Zotero. Key only reads from Zotero.`
           : `Imported into “${existing!.workspace.name}” ${ago(existing?.imported?.at, Date.now())}. Key only reads from Zotero.`
         : step === "mode"
-      ? "Key only reads from Zotero; nothing there is changed."
+      ? into.name
+        ? `Brings Zotero’s items into “${into.name}”. Key only reads from Zotero; nothing there is changed.`
+        : "Key only reads from Zotero; nothing there is changed."
       : mode === "import"
         ? preview
           ? `From ${preview.dataDir.replace(/^\/Users\/[^/]+/, "~")}. Importing again later updates what came across.`

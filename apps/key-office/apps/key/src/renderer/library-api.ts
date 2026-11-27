@@ -536,7 +536,7 @@ export interface ZoteroProbe {
   zoteroVersion?: string | null;
   libraries: { libraryID: number; name: string; type: string }[];
   defaultLibraryID?: number | null;
-  tokenSource?: "given" | "saved" | "found" | null;
+  tokenSource?: "given" | "saved" | "found" | "shared" | null;
 }
 export interface ZoteroSyncStatus {
   configured: boolean;
