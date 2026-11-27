@@ -19,6 +19,7 @@ pub mod templates;
 pub mod views;
 // std-D: advanced synthesis and interop.
 pub mod linalg;
+pub mod metareg;
 pub mod multilevel;
 // std-D end.
 
