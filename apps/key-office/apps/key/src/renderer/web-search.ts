@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FilterToken, WebFilterKey, WebFilters } from "../shared/web-filters";
 import type { WebHit, WebPage, WebProviderInfo, WebResult } from "../shared/web-search";
 import { bridge, type Invoke } from "./library-api";
+import { plainError } from "../shared/plain-error";
 
 /** Every web link the search page opens goes through here (an in-app browser can take them over). */
 export function openWebLink(url: string) {
@@ -29,7 +30,8 @@ export interface ProviderState {
 }
 
 /** IPC errors arrive as "Error invoking remote method 'key:invoke': Error: …". */
-export const errorText = (error: unknown) => String((error as Error)?.message ?? error).replace(/^.*?Error: /, "");
+/** In plain words (shared/plain-error.ts): a technical error says what happened and what to do. */
+export const errorText = (error: unknown) => plainError(error);
 
 let counter = 0;
 

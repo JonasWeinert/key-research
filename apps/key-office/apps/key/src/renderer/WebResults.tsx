@@ -12,6 +12,7 @@ import { WebAddButton, type WebAdd } from "./WebAddButton";
 import { openWebLink, type WebSearchState } from "./web-search";
 import "./web-search.css";
 import { FollowButton } from "./feeds-ui";
+import { couldNot } from "../shared/plain-error";
 
 export function WebPill({ pressed, onClick }: { pressed: boolean; onClick: (e: React.MouseEvent) => void }) {
   return (
@@ -51,7 +52,7 @@ export async function copyCitation(hit: WebHit) {
     await writeRichClipboard({ text: entry.text, html: `<div class="csl-entry">${entry.html}</div>`, rtf: rtfDocument([entry.rtf]) });
     toast("Citation copied");
   } catch (e) {
-    toast(`Could not format the citation: ${String(e).replace(/^Error: /, "")}`);
+    toast(couldNot("format the citation", e));
   }
 }
 
@@ -146,7 +147,7 @@ export default function WebResults({
         <WebAlertButton web={web} />
       </div>
       {!web.online ? (
-        <p className="kx-web-note">You're offline. Web results come back when you reconnect.</p>
+        <p className="kx-web-note">This Mac is offline, so Key cannot search the web. Your library still searches; web results come back when you reconnect.</p>
       ) : web.none ? (
         <p className="kx-web-note">Every web source is turned off in Key Settings › Web & browser.</p>
       ) : query.trim().length < 2 && !web.filtered ? (
@@ -254,8 +255,8 @@ export default function WebResults({
           ))}
           {failed.map((p) => (
             <p key={p.info.id} className="kx-web-note" data-provider={p.info.id} role="status">
-              <span>Couldn't reach {p.info.label}</span>
-              {p.error && !/^couldn't reach/i.test(p.error) && <small>{p.error}</small>}
+              <span>Couldn’t reach {p.info.label}</span>
+              {p.error && !/^couldn[’']t reach/i.test(p.error) && <small>{p.error}</small>}
               <button type="button" onClick={() => web.retry(p.info.id)}>
                 Retry
               </button>

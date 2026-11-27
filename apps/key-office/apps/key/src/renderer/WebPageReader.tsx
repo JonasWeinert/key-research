@@ -20,6 +20,7 @@ import { useStatusItems } from "./status-bar";
 import { useWebReferences } from "./web-reader-references";
 import "./web-page.css";
 import { FirstUseTip } from "./explain";
+import { couldNot } from "../shared/plain-error";
 
 export const HIGHLIGHT_COLORS = ["orange", "green", "blue", "pink", "purple"] as const;
 type Color = (typeof HIGHLIGHT_COLORS)[number];
@@ -161,7 +162,7 @@ export function WebPageReader({
       try {
         await invoke("library_apply_annotations", { hash: sourceId, upserts, deleted }, workspaceId);
       } catch (e) {
-        toast(`Could not save the highlight: ${String(e).replace(/^Error: /, "")}`);
+        toast(`${couldNot("save the highlight", e)} It is shown again as it was saved.`);
         void loadAnnotations();
       }
     },

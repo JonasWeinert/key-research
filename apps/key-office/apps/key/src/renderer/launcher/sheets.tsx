@@ -5,6 +5,7 @@ import { Drawer } from "../motion/Drawer";
 import { Icon, type IconName } from "../icons";
 import { COLORS, ICONS, folderName, join, launcher, ltr, message, tilde, type FolderKind, type LauncherState, type OpenAtLaunch, type Theme } from "./api";
 import { WorkspaceIcon } from "./Launcher";
+import { Hint } from "../explain";
 
 export type Sheet =
   | { kind: "new"; name?: string }
@@ -299,6 +300,7 @@ function SettingsSheet({ state, onClose }: { state: LauncherState; onClose: () =
       <div className="kx-launcher-sheet-body">
         <fieldset className="kx-launcher-choices" role="radiogroup" aria-label="When Key opens">
           <legend>When Key opens</legend>
+          <Hint help="launcher.opening" />
           {OPENING.map(([id, label, detail]) => (
             <label key={id}>
               <input type="radio" name="open-at-launch" checked={opening === id} onChange={() => save({ openAtLaunch: id })} />

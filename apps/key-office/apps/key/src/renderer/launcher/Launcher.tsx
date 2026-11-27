@@ -3,6 +3,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon, type IconName } from "../icons";
 import appIcon from "../../../../../../key/src-tauri/icons/icon.png";
+import { Explain } from "../explain";
 import { key, launcher, ltr, message, tilde, type LauncherState, type LauncherWorkspace } from "./api";
 import type { Sheet } from "./sheets";
 
@@ -194,6 +195,7 @@ export default function Launcher() {
                 <Icon name="search" size={13} />
                 <input ref={search} autoFocus type="search" aria-label="Find a workspace" placeholder="Find a workspace" value={query} onChange={(e) => setQuery(e.target.value)} />
               </label>
+              <Explain help="launcher.workspaces" className="kx-launcher-explain" />
             </header>
             {!!state?.pendingFiles.length && (
               <div className="kx-launcher-banner" role="status">
@@ -223,10 +225,14 @@ export default function Launcher() {
               ))}
               {!shown.length && <p className="kx-launcher-none">No workspace matches “{query}”</p>}
             </div>
-            <footer className="kx-launcher-keys" aria-hidden="true">
-              <span>↩ Open</span>
-              <span>⌘↩ Open in new window</span>
-              <span>⌫ Remove from list</span>
+            <footer className="kx-launcher-keys">
+              <span aria-hidden="true">↩ Open</span>
+              <span aria-hidden="true">⌘↩ Open in new window</span>
+              <span aria-hidden="true">⌫ Remove from list</span>
+              <span className="kx-launcher-keys-help">
+                <Explain help="launcher.remove" label="Removing" />
+                <Explain help="launcher.move" label="Moving" />
+              </span>
             </footer>
           </>
         )}
@@ -369,6 +375,7 @@ function Welcome({ busy, zotero, onCreate, onChoose, onOpen, onZotero }: { busy:
           </button>
         )}
       </div>
+      <Explain help="launcher.workspaces" label className="kx-launcher-welcome-explain" />
     </section>
   );
 }

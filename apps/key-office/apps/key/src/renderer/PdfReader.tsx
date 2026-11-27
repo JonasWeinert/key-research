@@ -23,6 +23,7 @@ import { ReferenceAside } from "./ReferenceAside";
 import { highlightUsage } from "./highlight-usage";
 import type { HighlightUsage } from "@key-reader/pdfjs/HighlightInfo";
 import { FirstUseTip } from "./explain";
+import { couldNot, plainError } from "../shared/plain-error";
 
 
 type Target = {
@@ -224,7 +225,7 @@ export default function PdfReader() {
         });
         setToast("Quote copied");
       } catch (e) {
-        setNotice(`Could not copy the quote: ${String(e)}`);
+        setNotice(couldNot("copy the quote", e));
         setTimeout(() => setNotice(""), 4000);
       }
     },
@@ -385,7 +386,7 @@ export default function PdfReader() {
     return (
       <main className="key-ui-root key-pdf-error">
         <h2>Key could not open this PDF</h2>
-        <p>{error}</p>
+        <p>{plainError(error)}</p>
         <p>The file may be damaged, protected by a password, or no longer where Key expects it. Retry, or open the source’s page to find or attach the file again.</p>
         <button type="button" className="key-pdf-details" onClick={() => location.reload()}>
           Retry

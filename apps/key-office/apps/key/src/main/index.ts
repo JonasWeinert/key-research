@@ -88,6 +88,7 @@ import {
   type WorkspaceTab,
   type WorkspaceTabsState,
 } from "../shared/tab-model";
+import { couldNot } from "../shared/plain-error";
 
 type OwnedView = {
   id: string;
@@ -772,7 +773,7 @@ async function openDownloadedPdf(contents: Electron.WebContents | undefined, fil
     focusShown(w);
   } catch (error) {
     await rm(file.path, { force: true }).catch(() => undefined);
-    emit("browser-notice", { message: `Could not open the PDF: ${String(error).replace(/^Error: /, "")}` });
+    emit("browser-notice", { message: couldNot("open the PDF", error) });
   }
 }
 /** Swaps a temporary PDF's tab for the library's own reader of it, at the same place. */
@@ -2039,7 +2040,7 @@ async function savePageToLibrary() {
     const saved = await webSources.save(v.view.webContents, w.workspaceId);
     emitTo(w, "browser-notice", { message: saved.existing ? "Saved again to your library" : "Saved to your library" });
   } catch (error) {
-    emitTo(w, "browser-notice", { message: `Could not save the page: ${String(error).replace(/^Error: /, "")}` });
+    emitTo(w, "browser-notice", { message: couldNot("save the page", error) });
   }
 }
 /** Passages sent from a PDF selection to a source's note, until its page takes them. */

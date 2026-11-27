@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "./icons";
 import { subscribeStatus } from "./status-poll";
+import { plainError } from "../shared/plain-error";
 
 export interface ModelStatus {
   state: string;
@@ -61,7 +62,7 @@ export function ModelProgressCard({ progress, compact }: { progress?: ModelProgr
   const failed = progress.state === "failed";
   const started = progress.state === "downloading" && progress.total > 0;
   const detail = failed
-    ? `The download stopped (${progress.error || "network error"}). Key retries automatically.`
+    ? `The download stopped. ${progress.error ? plainError(progress.error) : "The connection dropped."} Key tries again by itself; you can keep working.`
     : started
       ? [`${megabytes(progress.received)} of ${megabytes(progress.total)}`, progress.rate > 0 && `${(progress.rate / 1e6).toFixed(1)} MB/s`, timeLeft(progress.secondsLeft)]
           .filter(Boolean)

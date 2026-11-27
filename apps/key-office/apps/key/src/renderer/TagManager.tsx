@@ -260,7 +260,7 @@ export default function TagManager({ invoke, workspaceId, onClose, focus }: { in
     await shown;
     setPending((old) => new Set([...old].filter((id) => !ids.includes(id))));
     if (ok) setLeaving((old) => new Map([...old, ...ids.map((id, i) => [id, i] as [string, number])]));
-    else if (ids.length === 1) setCardErrors((old) => ({ ...old, [ids[0]]: "Could not apply this. The tags may have changed." }));
+    else if (ids.length === 1) setCardErrors((old) => ({ ...old, [ids[0]]: "Could not apply this: the tags changed since it was suggested. The list updates in a moment." }));
   };
 
   // ── Selection ──

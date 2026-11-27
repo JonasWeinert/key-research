@@ -780,6 +780,32 @@ export const HELP = {
   "term.mesh": term("MeSH", "Medical Subject Headings: the labels PubMed's indexers give each article, so a search finds it whatever words its authors used."),
   "term.grey-literature": term("Grey literature", "Reports, working papers, theses and registrations published outside journals. Reviews search it to avoid publication bias."),
   "term.mirror": term("Mirror folder", "A Finder folder showing your PDFs by collection, using hard links so it takes no extra space."),
+
+  // ── Workspaces window and the notes list ───────────────────────────────────────────────
+  "launcher.workspaces": explain(
+    "What is a workspace?",
+    [
+      "A workspace is one folder on this Mac that holds a library: its sources and their files, notes, highlights, collections and search index. Each workspace opens in its own window and knows nothing of the others.",
+      "Use one for everything, or one per project, course or team. This list is only Key’s list of the workspaces it knows about; the folders themselves live wherever you put them.",
+    ],
+    { steps: ["Double-click a workspace, or press Return, to open it.", "Press ⌘Return to open it in a new window.", "Right-click a workspace to rename it, change its look, show it in Finder, move it or remove it from this list."] },
+  ),
+  "launcher.remove": explain(
+    "What does Remove from list do?",
+    [
+      "It takes the workspace off this list and nothing else. Its folder, with every source, file, note and highlight in it, stays on this Mac exactly as it is.",
+      "To use it again, choose Open folder as workspace and pick the folder. To delete a workspace for good, remove it from the list, then move its folder to the Bin in Finder.",
+    ],
+  ),
+  "launcher.move": explain(
+    "Moving a workspace",
+    [
+      "Move… moves the workspace’s whole folder to another place on this Mac, for example to a synced or external drive, and Key follows it there. Close the workspace’s window first.",
+      "If you moved or renamed the folder in Finder yourself, the workspace shows as missing: choose Locate… and pick the folder where it is now.",
+    ],
+  ),
+  "launcher.opening": hint("What Key shows when you start it. Workspaces you open later always open in their own windows."),
+  "empty.notes-list": empty("No notes yet", "Notes, canvases and pages you write in this workspace are listed here, in folders you arrange.", "Create one with New note, or link a folder of Markdown files with +."),
 } satisfies Record<string, HelpEntry>;
 
 export type HelpId = keyof typeof HELP;
