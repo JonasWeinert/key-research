@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "econlit",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "EconLit",
   "description": "The American Economic Association's bibliography of economics journals, books, working papers and dissertations.",
   "homepage": "https://www.aeaweb.org/econlit/",
@@ -13,6 +13,7 @@
   "credentials": [],
   "hosts": [],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",

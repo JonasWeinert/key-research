@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "ipa",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "IPA studies",
   "description": "Innovations for Poverty Action's database of randomised evaluations and other studies in low- and middle-income countries.",
   "homepage": "https://poverty-action.org/our-studies",
@@ -21,6 +21,7 @@
     "maxPages": 30
   },
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": [
       "all"
     ],

@@ -812,13 +812,13 @@ export const HELP = {
   // ── Database search ─────────────────────────────────────────────────────────────────
   "dbsearch.intro": hint("Search PubMed, Scopus, OpenAlex and other databases at once, with one query built from blocks."),
   "dbsearch.concepts": explain(
-    "Concepts and synonyms",
+    "Building a search",
     [
-      "Split your question into its main ideas, such as who (teenagers), what (mindfulness) and the outcome (anxiety). Each idea is a concept: a card here.",
-      "In a card, list every word authors use for that idea: synonyms, spellings, older terms. A work needs only one of them (OR). Across cards, a work must match every concept (AND).",
-      "The count on each card is how many works that concept finds alone. The narrowest one limits the search most: add synonyms there to find more.",
+      "Split your question into its main ideas, such as who (teenagers), what (mindfulness) and the outcome (anxiety). Each idea is a card: list every word authors use for it. A work needs one of them (OR), and must match every card (AND).",
+      "The word between two items is a button: click it to choose AND (both), OR (either) or NOT (leave out). Groups can sit inside groups, like brackets: (health OR doctor) AND ((AI OR machine learning) NOT regression).",
+      "The count on a card is what it finds alone. The narrowest card limits the search most: add synonyms there.",
     ],
-    { example: "(teenager* or adolescen*) and (mindfulness or meditation) and (anxiety or depress*)", steps: ["Type a word in a card and press Return", "Paste a list to add one term per line", "Drag a term to another card, or use ⌥← and ⌥→"] },
+    { example: "(teenager* OR adolescen*) AND (mindfulness OR meditation) NOT protocol", steps: ["Type a word and press Return or a comma", "Click AND / OR / NOT to change it", "⌘-click items, then Group, to bracket them", "Drag terms and groups between groups", "Text shows the same search as a line you can type"] },
   ),
   "dbsearch.term": explain(
     "Phrase, endings and fields",
@@ -857,6 +857,23 @@ export const HELP = {
   ),
   "dbsearch.saved": explain("Saved searches", ["A saved search keeps the query and databases. Run it again later to see what is new since the last run, for example before you submit a review."]),
   "dbsearch.sample": hint("Showing sample data: this build's library has no database search engine yet. Counts and works are made up."),
+  "dbsearch.syntax": explain(
+    "Writing a search as text",
+    [
+      "AND needs both words, OR either, NOT leaves out what follows. Brackets group: (health OR doctor) AND (AI OR ML). Without brackets AND goes first, so add them when you mix the two.",
+      "Quotes keep words together: \"machine learning\". A star finds every ending: nurs* finds nurse, nurses, nursing. Words written side by side must all appear.",
+      "Say where to look with a tag before a word or bracket: title:, abstract:, tiab: (title or abstract), keywords:, mesh: (subject headings), author:, journal:, year:2015-2024, type:review, lang:en.",
+    ],
+    { example: "tiab:(\"vaccine hesitancy\" OR vaccin*) AND (nurse* OR doctor*) NOT title:protocol" },
+  ),
+  "dbsearch.strategy": explain(
+    "The search strategy",
+    [
+      "Reviews report the exact search run in each database, with the date and how many records it gave. This is that record, ready for a methods section or a PRISMA appendix.",
+      "Some databases cannot run every search: no OR, no brackets, one word at a time. Key then sends several simpler queries, combines what they return and keeps only the works that match the whole search. The strategy lists those queries in order and says how the result was put together.",
+      "Approximate means Key could not check a part, for example words in abstracts a database does not return. The JSON file can be imported to run the same search again.",
+    ],
+  ),
   "empty.dbsearch-saved": empty("No saved searches", "Saved searches keep a query and its databases, to run again later.", "Build a query and choose Save search."),
   "empty.dbsearch-results": empty("No search run yet", "Results of a database search show here, without duplicates.", "Build a query, choose databases and press Search."),
 

@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "wos-starter",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "Web of Science",
   "description": "Clarivate's Web of Science Core Collection through the Web of Science Starter API: journal articles, proceedings and books with citation counts.",
   "homepage": "https://www.webofscience.com/",
@@ -62,6 +62,7 @@
     }
   ],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",

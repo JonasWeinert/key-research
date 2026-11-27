@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "cepr",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "CEPR discussion papers",
   "description": "Discussion papers of the Centre for Economic Policy Research (CEPR), a European network of economists.",
   "homepage": "https://cepr.org/publications",
@@ -13,6 +13,7 @@
   "credentials": [],
   "hosts": [],
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all"
     ],

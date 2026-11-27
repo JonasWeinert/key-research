@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "nber",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "NBER working papers",
   "description": "Working papers of the National Bureau of Economic Research, the largest US economics working-paper series.",
   "homepage": "https://www.nber.org/papers",
@@ -21,6 +21,7 @@
     "maxPages": 30
   },
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all"
     ],

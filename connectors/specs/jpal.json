@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "jpal",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "J-PAL evaluations",
   "description": "The Abdul Latif Jameel Poverty Action Lab's database of randomised evaluations by its affiliated researchers.",
   "homepage": "https://www.povertyactionlab.org/evaluations",
@@ -21,6 +21,7 @@
     "maxPages": 1
   },
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": [
       "all"
     ],

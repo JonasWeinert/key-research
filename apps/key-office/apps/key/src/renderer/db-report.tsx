@@ -37,7 +37,7 @@ export function reportMarkdown(page: RunPage, connectors: DbConnector[], query: 
   return lines.join("\n").trim() + "\n";
 }
 
-export function ReportSheet({ api, invoke, workspaceId, runId, page, connectors, query, name, onClose }: { api: DbSearchApi; invoke: Invoke; workspaceId: string; runId: string; page: RunPage; connectors: DbConnector[]; query: DbQuery; name: string; onClose: () => void }) {
+export function ReportSheet({ api, invoke, workspaceId, runId, page, connectors, query, name, onClose, onStrategy }: { api: DbSearchApi; invoke: Invoke; workspaceId: string; runId: string; page: RunPage; connectors: DbConnector[]; query: DbQuery; name: string; onClose: () => void; onStrategy?: () => void }) {
   const [markdown, setMarkdown] = useState(() => reportMarkdown(page, connectors, query, name));
   useEffect(() => {
     let live = true;
@@ -128,6 +128,11 @@ export function ReportSheet({ api, invoke, workspaceId, runId, page, connectors,
           <button type="button" className="kx-page-action" onClick={() => void exportFile("json")} title="The full run log, with each record's provenance">
             JSON
           </button>
+          {onStrategy && (
+            <button type="button" className="kx-page-action" onClick={onStrategy} title="Each database's exact strings, the queries Key split them into, and how the results were combined">
+              Search strategy…
+            </button>
+          )}
           <span className="kx-spacer" />
           <button type="button" className="kx-page-action kx-page-action-primary" onClick={() => void toNote()}>
             <Icon name="note" size={12} /> New note with report

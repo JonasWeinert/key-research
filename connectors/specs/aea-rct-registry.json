@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "aea-rct-registry",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "AEA RCT Registry",
   "description": "The American Economic Association's registry of randomised controlled trials in economics and other social sciences.",
   "homepage": "https://www.socialscienceregistry.org/",
@@ -22,6 +22,7 @@
     "maxResponseBytes": 33554432
   },
   "capabilities": {
+    "boolean": { "and": false, "or": false, "not": false, "nesting": 0 },
     "fields": [
       "all"
     ],

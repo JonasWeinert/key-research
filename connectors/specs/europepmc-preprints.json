@@ -1,8 +1,8 @@
 {
   "format": 1,
   "id": "europepmc-preprints",
-  "version": "1.0.0",
-  "minEngine": "1.0.0",
+  "version": "1.0.1",
+  "minEngine": "1.1.0",
   "name": "Europe PMC preprints",
   "description": "Preprints indexed by Europe PMC: medRxiv, bioRxiv, Research Square, SSRN (health and social science), Preprints.org, SciELO Preprints, PsyArXiv, OSF and others.",
   "homepage": "https://europepmc.org/",
@@ -22,6 +22,7 @@
     "mailtoParam": "email"
   },
   "capabilities": {
+    "boolean": { "and": true, "or": true, "not": true, "nesting": 8 },
     "fields": [
       "all",
       "title",

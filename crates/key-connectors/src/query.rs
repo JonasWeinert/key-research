@@ -360,7 +360,7 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
         local = true;
         render.warn(if spec.kind == "manual" { "Set the years on the site".into() } else { "Years are filtered by Key on the results (the service cannot)".into() });
     }
-    let original = boolean::format(&tree);
+    let original = boolean::format_in(&tree, plan::SHOWN_DEFAULT);
     if q.mode == "harvest" {
         out.chunks = vec![String::new()];
         out.native = String::new();
@@ -401,7 +401,7 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
             }
             for (native, tree) in parts {
                 // A part of a split OR implies the whole OR: what was checked stays checked.
-                infos.push(SubQueryInfo { native, neutral: boolean::format(&tree), verified: sq.verified.clone(), exact: sq.exact });
+                infos.push(SubQueryInfo { native, neutral: boolean::format_in(&tree, plan::SHOWN_DEFAULT), verified: sq.verified.clone(), exact: sq.exact });
             }
         }
         if infos.len() > queries.len() && strategy.kind == "single" {

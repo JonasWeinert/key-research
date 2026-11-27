@@ -126,6 +126,8 @@ struct Ctx<'a> {
     narrow: bool,
     steps: Vec<String>,
     approximate: Vec<String>,
+    /// The terms each "{terms}" step is about, so one line covers them all.
+    grouped: Vec<(String, Vec<String>)>,
 }
 
 fn push_unique(list: &mut Vec<String>, text: String) {
@@ -142,11 +144,43 @@ fn broader(field: &str) -> &'static [&'static str] {
     }
 }
 
+/// How plans and strategies write terms: words in titles and abstracts (the builder's usual
+/// field) without a tag.
+pub const SHOWN_DEFAULT: &str = "title_abstract";
+
 fn label(term: &Term) -> String {
-    boolean::format_term(term)
+    boolean::format_term_in(term, SHOWN_DEFAULT)
+}
+
+fn join_terms(items: &[String]) -> String {
+    match items.len() {
+        0 => String::new(),
+        1 => items[0].clone(),
+        n => format!("{} and {}", items[..n - 1].join(", "), items[n - 1]),
+    }
 }
 
 impl Ctx<'_> {
+    /// A step about several terms: `template` holds "{terms}".
+    fn note(&mut self, template: String, term: String) {
+        push_unique(&mut self.steps, template.clone());
+        match self.grouped.iter_mut().find(|(t, _)| *t == template) {
+            Some((_, list)) => push_unique(list, term),
+            None => self.grouped.push((template, vec![term])),
+        }
+    }
+
+    fn finish_steps(&mut self) -> Vec<String> {
+        let grouped = std::mem::take(&mut self.grouped);
+        std::mem::take(&mut self.steps)
+            .into_iter()
+            .map(|s| match grouped.iter().find(|(t, _)| *t == s) {
+                Some((_, list)) => s.replace("{terms}", &join_terms(list)),
+                None => s,
+            })
+            .collect()
+    }
+
     fn has_field(&self, f: &str) -> bool {
         self.spec.query.fields.contains_key(f)
     }
@@ -155,7 +189,7 @@ impl Ctx<'_> {
     fn push_term(&mut self, term: &Term) -> Option<(Term, bool)> {
         let name = self.spec.name.clone();
         if matches!(term.field.as_str(), "year" | "type" | "language") && !self.has_field(&term.field) {
-            push_unique(&mut self.steps, format!("{} is checked by Key on the records ({name} cannot search it inside a query)", label(term)));
+            self.note(format!("Checked by Key on the records ({name} cannot search these inside a query): {{terms}}"), label(term));
             return None;
         }
         let mut out = term.clone();
@@ -165,14 +199,15 @@ impl Ctx<'_> {
                 Some(f) => {
                     out.field = f.to_string();
                     exact = false;
-                    push_unique(&mut self.steps, format!("{} is searched in {} on {name}; Key keeps the records where it is in the {}", label(term), boolean::field_label(f).to_lowercase(), boolean::field_label(&term.field).to_lowercase()));
+                    let place = if *f == "all" { "all fields".to_string() } else { format!("the {}", boolean::field_label(f).to_lowercase()) };
+                    self.note(format!("Searched in {place} on {name}, then checked by Key in the {}: {{terms}}", boolean::field_label(&term.field).to_lowercase()), label(term));
                 }
                 None if self.narrow => {
                     exact = false;
                     push_unique(&mut self.approximate, format!("{name} cannot search {}; it is searched in {} only", boolean::field_label(&term.field).to_lowercase(), boolean::field_label(&self.spec.query.default_field).to_lowercase()));
                 }
                 None => {
-                    push_unique(&mut self.steps, format!("{} is left out of the query sent to {name} ({} cannot be searched there) and checked by Key", label(term), boolean::field_label(&term.field).to_lowercase()));
+                    self.note(format!("Left out of the query sent to {name} ({} cannot be searched there) and checked by Key: {{terms}}", boolean::field_label(&term.field).to_lowercase()), label(term));
                     return None;
                 }
             }
@@ -183,15 +218,15 @@ impl Ctx<'_> {
             out.proximity = None;
             out.mode = "words".into();
             exact = false;
-            push_unique(&mut self.steps, format!("{name} has no proximity search: all words of {} are searched, and Key checks how close they are", label(term)));
+            self.note(format!("{name} has no proximity search: all the words are searched, and Key checks how close they are: {{terms}}"), label(term));
         } else if term.mode == "phrase" && words > 1 && !caps.phrase {
             out.mode = "words".into();
             exact = false;
-            push_unique(&mut self.steps, format!("{name} has no phrase search: the words of {} are searched, and Key checks the exact phrase", label(term)));
+            self.note(format!("{name} has no phrase search: the words are searched, and Key checks the exact phrase: {{terms}}"), label(term));
         }
         if term.truncate && !caps.truncation {
             if !self.narrow {
-                push_unique(&mut self.steps, format!("{name} has no truncation: {} is left out of the query and checked by Key", label(term)));
+                self.note(format!("{name} has no truncation: left out of the query and checked by Key: {{terms}}"), label(term));
                 return None;
             }
             out.truncate = false;
@@ -209,21 +244,22 @@ impl Ctx<'_> {
             },
             Node::Term { term, not: true } => {
                 if !self.caps.not {
-                    push_unique(&mut self.steps, format!("{} has no NOT: NOT {} is left out of the query and applied by Key", self.spec.name, label(term)));
+                    self.note(format!("{} has no NOT: left out of the query and applied by Key: {{terms}}", self.spec.name), format!("NOT {}", label(term)));
                     return R::True;
                 }
                 let was = self.narrow;
                 self.narrow = false;
-                let (steps, approx) = (self.steps.len(), self.approximate.len());
+                let (steps, approx, grouped) = (self.steps.len(), self.approximate.len(), self.grouped.clone());
                 let pushed = self.push_term(term);
                 self.steps.truncate(steps);
                 self.approximate.truncate(approx);
+                self.grouped = grouped;
                 self.narrow = was;
                 match pushed {
                     // Leaving out more than asked would be wrong: only an exact NOT is sent.
                     Some((t, true)) => R::N(Pushed { node: Node::term(t).negated(true), exact: true, path: path.into(), parts: Vec::new() }),
                     _ => {
-                        push_unique(&mut self.steps, format!("NOT {} is left out of the query sent to {} and applied by Key", label(term), self.spec.name));
+                        self.note(format!("Left out of the query sent to {} and applied by Key: {{terms}}", self.spec.name), format!("NOT {}", label(term)));
                         R::True
                     }
                 }
@@ -381,7 +417,7 @@ pub fn plan(logic: &Node, spec: &Spec) -> (Vec<SubQuery>, Strategy) {
     let caps = caps_of(spec);
     let max = spec.query.max_chunks.max(1);
     let mut strategy = Strategy { logic: logic.clone(), keep_unknown: spec.query.mode == "native", ..Default::default() };
-    let mut ctx = Ctx { spec, caps, narrow: false, steps: Vec::new(), approximate: Vec::new() };
+    let mut ctx = Ctx { spec, caps, narrow: false, steps: Vec::new(), approximate: Vec::new(), grouped: Vec::new() };
     let top = |r: R| match r {
         R::N(p) if !p.node.is_not() => Some(p),
         _ => None,
@@ -390,6 +426,7 @@ pub fn plan(logic: &Node, spec: &Spec) -> (Vec<SubQuery>, Strategy) {
     if pushed.is_none() && !logic.is_empty() {
         ctx.narrow = true;
         ctx.steps.clear();
+        ctx.grouped.clear();
         pushed = top(ctx.sup(logic, "r"));
     }
     let name = spec.name.clone();
@@ -450,7 +487,7 @@ pub fn plan(logic: &Node, spec: &Spec) -> (Vec<SubQuery>, Strategy) {
                         } else {
                             queries.extend(clause.iter().map(|l| SubQuery { tree: l.node.clone(), verified: if l.exact { vec![l.path.clone()] } else { Vec::new() }, exact: l.exact }));
                         }
-                        let words: Vec<String> = clause.iter().map(|l| boolean::format(&l.node)).collect();
+                        let words: Vec<String> = clause.iter().map(|l| boolean::format_in(&l.node, "all")).collect();
                         ctx.steps.insert(0, format!("{name} searches one term at a time: Key sends {} ({}), the narrowest part every match must contain", if queries.len() == 1 { "one query".to_string() } else { format!("{} queries", queries.len()) }, words.join(", ")));
                         if queries.len() > max {
                             strategy.decision = Some(Decision { kind: "tooMany".into(), message: format!("{name} would need {} separate queries for this search. Run them anyway, or simplify the search for {name}.", queries.len()), queries: queries.len() });
@@ -468,7 +505,7 @@ pub fn plan(logic: &Node, spec: &Spec) -> (Vec<SubQuery>, Strategy) {
         if queries.len() > 1 {
             ctx.steps.push("Records found by more than one query are kept once".into());
         }
-        ctx.steps.push(format!("Key keeps only the records that match the full search: {}", boolean::format(logic)));
+        ctx.steps.push(format!("Key keeps only the records that match the full search: {}", boolean::format_in(logic, SHOWN_DEFAULT)));
         // What Key cannot check.
         let returns = |f: &str| spec.capabilities.export_fields.iter().any(|x| x == f);
         for (path, node) in boolean::paths(logic) {
@@ -497,7 +534,7 @@ pub fn plan(logic: &Node, spec: &Spec) -> (Vec<SubQuery>, Strategy) {
             push_unique(&mut ctx.steps, format!("Key matches words as written (case and accents ignored); {name}'s own word stemming is not repeated"));
         }
     }
-    strategy.steps = ctx.steps;
+    strategy.steps = ctx.finish_steps();
     strategy.approximate = ctx.approximate;
     (queries, strategy)
 }

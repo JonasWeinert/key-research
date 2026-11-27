@@ -5,8 +5,10 @@
 // db-translations.tsx, db-results.tsx) for other pages to embed.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
-import { addConcept, addTerms, cleanQuery, describeQuery, emptyQuery, exportQuery, importQuery, isEmptyQuery, makeTerm, splitTerms, TEMPLATES } from "./db-query";
+import { addConcept, addTerms, cleanQuery, describeQuery, emptyQuery, exportQuery, importQuery, isEmptyQuery, makeTerm, readQuery, splitTerms, TEMPLATES, terms as termsOf, topParts } from "./db-query";
 import { QueryBuilder } from "./db-query-builder";
+import { QueryText } from "./db-query-text";
+import { StrategySheet, type StrategySource } from "./db-strategy";
 import { DatabasePicker, DatabaseStrip, readDefaultDatabases } from "./db-picker";
 import { ReportSheet } from "./db-report";
 import { DbResults } from "./db-results";
@@ -22,6 +24,7 @@ import { useStatusItems } from "./status-bar";
 import type { TagIndex } from "./tag-analysis";
 import { openWebLink } from "./web-search";
 import "./db-search.css";
+import "./db-boolean.css";
 
 type View = "build" | "results" | "saved";
 const draftKey = (ws: string) => `key.dbSearch.draft:${ws}`;
@@ -37,7 +40,7 @@ function readDraft(workspaceId: string): Draft {
     const raw = localStorage.getItem(draftKey(workspaceId));
     if (raw) {
       const d = JSON.parse(raw) as Draft;
-      if (d?.query?.concepts) return { ...d, overrides: d.overrides ?? {}, name: d.name ?? "" };
+      if (d?.query) return { ...d, query: readQuery(d.query), overrides: d.overrides ?? {}, name: d.name ?? "" };
     }
   } catch {}
   return { query: emptyQuery(), connectors: readDefaultDatabases(workspaceId), overrides: {}, name: "" };
@@ -45,8 +48,8 @@ function readDraft(workspaceId: string): Draft {
 /** Words handed over from a search field: one term each when it is a list, else the phrase. */
 function withText(draft: Draft, text: string): Draft {
   const terms = splitTerms(text).map((t) => makeTerm(t));
-  const first = draft.query.concepts[0];
-  const query = isEmptyQuery(draft.query) && first ? addTerms(draft.query, first.id, terms) : addConcept(draft.query, terms);
+  const first = draft.query.expr.items[0];
+  const query = isEmptyQuery(draft.query) && first?.type === "group" ? addTerms(draft.query, first.id, terms) : addConcept(draft.query, terms);
   return { ...draft, query };
 }
 const dialectOf = (text: string) => (/\b(TITLE-ABS-KEY|TITLE|ABS|KEY|AUTH)\s*\(/.test(text) ? "scopus" : /\b(TS|TI|AB|AU)\s*=\s*\(/.test(text) ? "wos" : /\[[a-z /]+\]/i.test(text) ? "pubmed" : "auto");
@@ -75,6 +78,9 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
   const { query, overrides, name } = draft;
   const setQuery = useCallback((q: DbQuery) => setDraft((d) => ({ ...d, query: q })), [setDraft]);
   const [view, setView] = useState<View>("build");
+  const [mode, setMode] = useState<"blocks" | "text">(() => (localStorage.getItem("key.dbSearch.mode") === "text" ? "text" : "blocks"));
+  const [allowed, setAllowed] = useState<string[]>([]);
+  const [strategyOf, setStrategyOf] = useState<StrategySource>();
   const [picking, setPicking] = useState(false);
   const [run, setRun] = useState<{ runId: string; label: string; query: DbQuery; connectors: string[] }>();
   const [runPage, setRunPage] = useState<RunPage>();
@@ -111,10 +117,9 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
   const conceptCounts = useMemo(() => {
     const per = countsFrom ? preview.estimates[countsFrom.id]?.perConcept : undefined;
     if (!per) return undefined;
-    // perConcept follows the concepts that have terms; empty cards get no count.
-    let at = 0;
-    return query.concepts.map((c) => (c.terms.some((t) => t.text.trim()) ? (per[at++] ?? null) : undefined)) as (number | null)[];
-  }, [countsFrom, preview.estimates, query.concepts]);
+    // perConcept follows the top-level items that have terms, in order.
+    return topParts(query).map((_, i) => per[i] ?? null);
+  }, [countsFrom, preview.estimates, query]);
 
   // Synonyms from your own tags, and MeSH where the host offers it.
   const tags = useRef<Promise<{ name: string; count: number }[]>>(undefined);
@@ -141,8 +146,9 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
       try {
         const parsed = await api.parse(text, dialect);
         if (parsed.query) {
-          setDraft((d) => ({ ...d, query: { ...parsed.query!, filters: { ...d.query.filters, ...parsed.query!.filters } } }));
-          toast(`Read the pasted query as ${plural(parsed.query.concepts.length, "concept")}${parsed.warnings?.length ? `. ${parsed.warnings[0]}` : ""}`, () => setDraft(() => before));
+          const read = readQuery(parsed.query);
+          setDraft((d) => ({ ...d, query: { ...read, filters: { ...d.query.filters, ...read.filters } } }));
+          toast(`Read the pasted query as ${plural(read.expr.items.length, "block")}${parsed.warnings?.length ? `. ${parsed.warnings[0]}` : ""}`, () => setDraft(() => before));
           return;
         }
         throw new Error(parsed.error);
@@ -161,8 +167,8 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
     if (!api) return;
     const label = from?.name ?? (name.trim() || describeQuery(query).replace(/^Find works about /, "").replace(/\.$/, "").slice(0, 80));
     try {
-      const out = from ? await api.runSaved(from.id) : await api.start({ query: cleanQuery(query), connectors: draft.connectors, overrides, label, savedId: draft.savedId });
-      setRun({ runId: out.runId, label, query: from?.query ?? cleanQuery(query), connectors: from?.connectors ?? draft.connectors });
+      const out = from ? await api.runSaved(from.id) : await api.start({ query: cleanQuery(query), connectors: draft.connectors, overrides, label, savedId: draft.savedId, allow: allowed });
+      setRun({ runId: out.runId, label, query: from ? readQuery(from.query) : cleanQuery(query), connectors: from?.connectors ?? draft.connectors });
       setRunPage(undefined);
       setView("results");
       if (from) refreshSaved();
@@ -179,7 +185,7 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
     toast(draft.savedId ? `Updated “${out.name}”` : `Saved “${out.name}”`);
   };
   const load = (s: SavedSearch) => {
-    setDraft(() => ({ query: s.query, connectors: s.connectors, overrides: s.overrides ?? {}, name: s.name, savedId: s.id }));
+    setDraft(() => ({ query: readQuery(s.query), connectors: s.connectors, overrides: s.overrides ?? {}, name: s.name, savedId: s.id }));
     setView("build");
   };
 
@@ -247,10 +253,28 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
           <div className="kx-db-build-main">
             <DatabaseStrip connectors={connectors} selected={draft.connectors} onOpen={() => setPicking(true)} onRemove={(id) => setDraft((d) => ({ ...d, connectors: d.connectors.filter((c) => c !== id) }))} />
             <div className="kx-db-section-head">
-              <h2>Concepts</h2>
+              <h2>Search</h2>
               <Explain help="dbsearch.concepts" />
-              <span className="kx-db-muted">Every concept must match; any synonym within one may.</span>
+              <span className="kx-db-muted">{mode === "blocks" ? "Click AND, OR or NOT to change it; drag terms between groups." : "Type the search; it becomes blocks as you go."}</span>
+              <span className="kx-spacer" />
+              <SegmentedTabs
+                label="Edit the search as"
+                size="small"
+                value={mode}
+                onChange={(m) => {
+                  setMode(m);
+                  try {
+                    localStorage.setItem("key.dbSearch.mode", m);
+                  } catch {}
+                }}
+                tabs={[
+                  { id: "blocks", label: "Blocks" },
+                  { id: "text", label: "Text" },
+                ]}
+              />
             </div>
+            {mode === "text" && <QueryText api={api} query={query} onChange={setQuery} />}
+            {/* In text mode the blocks stay below, so what was typed is seen as blocks. */}
             <QueryBuilder query={query} onChange={setQuery} connectors={chosen} conceptCounts={conceptCounts} countsFrom={countsFrom?.name} suggest={suggest} onPasteQuery={(t) => void pasteQuery(t)} />
             <p className="kx-db-sentence" aria-live="polite">
               {describeQuery(query)}
@@ -286,6 +310,10 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
               })
             }
             onReportProblem={(c) => void api?.reportProblem(c.id, c.health.lastError).then((r) => openWebLink(r.url))}
+            allowed={allowed}
+            onAllow={(id, on) => setAllowed((a) => (on ? [...a.filter((x) => x !== id), id] : a.filter((x) => x !== id)))}
+            onLeaveOut={(id) => setDraft((d) => ({ ...d, connectors: d.connectors.filter((c) => c !== id) }))}
+            onExport={() => setStrategyOf({ query: cleanQuery(query), connectors: draft.connectors, overrides, label: name.trim() || undefined })}
           />
         </div>
       )}
@@ -321,12 +349,17 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
                 <li key={s.id}>
                   <button type="button" className="kx-db-saved-main" onClick={() => load(s)} title="Open in the query builder">
                     <span className="kx-db-saved-name">{s.name}</span>
-                    <small>{describeQuery(s.query)}</small>
+                    <small>{describeQuery(readQuery(s.query))}</small>
                     <small>
                       {plural(s.connectors.length, "database")} · {s.lastRunAt ? `last run ${new Date(s.lastRunAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}, ${plural(s.lastCount ?? 0, "work")}` : "never run"}
                     </small>
                   </button>
                   {!!s.newCount && <span className="kx-db-badge" data-tone="accent">{s.newCount} new since last run</span>}
+                  {s.lastRunId && (
+                    <button type="button" className="kx-page-action" onClick={() => setStrategyOf({ runId: s.lastRunId!, label: s.name })} title="The last run's exact strings, counts and logic">
+                      <Icon name="download" size={12} /> Strategy
+                    </button>
+                  )}
                   <button type="button" className="kx-page-action" onClick={() => void start(s)}>
                     <Icon name="retry" size={12} /> Run again
                   </button>
@@ -349,7 +382,8 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
       )}
 
       {picking && <DatabasePicker workspaceId={workspaceId} connectors={connectors} selected={draft.connectors} onChange={(ids) => setDraft((d) => ({ ...d, connectors: ids }))} onClose={() => setPicking(false)} />}
-      {reporting && run && runPage && api && <ReportSheet api={api} invoke={invoke} workspaceId={workspaceId} runId={run.runId} page={runPage} connectors={connectors} query={run.query} name={run.label} onClose={() => setReporting(false)} />}
+      {reporting && run && runPage && api && <ReportSheet api={api} invoke={invoke} workspaceId={workspaceId} runId={run.runId} page={runPage} connectors={connectors} query={run.query} name={run.label} onClose={() => setReporting(false)} onStrategy={() => (setReporting(false), setStrategyOf({ runId: run.runId, label: run.label }))} />}
+      {strategyOf && api && <StrategySheet api={api} source={strategyOf} onClose={() => setStrategyOf(undefined)} />}
       {menu?.kind === "templates" && (
         <Popover anchor={menu.anchor} label="Examples" width={320} onClose={() => setMenu(undefined)} className="kx-db-templates">
           <div className="kx-db-menu-label">Start from an example</div>
@@ -381,6 +415,16 @@ export default function DatabaseSearchPage({ invoke, workspaceId, viewId, active
           </button>
           <button type="button" disabled={empty} onClick={() => (setMenu(undefined), downloadText(`${name.trim() || "Database query"}.json`, exportQuery(query, { name, connectors: draft.connectors, overrides }), "application/json"))}>
             <Icon name="download" size={12} /> Export query…
+          </button>
+          <button
+            type="button"
+            disabled={empty || !draft.connectors.length}
+            onClick={() => {
+              setMenu(undefined);
+              setStrategyOf(run && view === "results" ? { runId: run.runId, label: run.label } : { query: cleanQuery(query), connectors: draft.connectors, overrides, label: name.trim() || undefined });
+            }}
+          >
+            <Icon name="copy" size={12} /> Copy / export search strategy…
           </button>
           <button
             type="button"

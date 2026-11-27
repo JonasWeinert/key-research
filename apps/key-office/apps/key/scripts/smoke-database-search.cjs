@@ -4,9 +4,16 @@
 // from blocks; each database's translation and counts appear; it runs on two databases; the
 // results are de-duplicated (fewer than per database); selected works go to the library (to a
 // collection, tagged) and to the Inbox; the search is saved and run again ("new since last
-// run"); the report is exported. Screenshots in light and dark.
+// run"); the report is exported. Nested Boolean logic is built with the blocks (operators are
+// buttons) and typed in the text mode, which round-trips with the blocks and points at a
+// problem where it is. A result row never shows Add to Inbox twice. Then, against the host's
+// real engine and the recorded fixtures (connectors/fixtures, as smoke-database-search-host):
+// a database that searches one term at a time gets a decomposed plan, the run reconstructs the
+// full search on the records, and the exported search strategy (Markdown and JSON) writes out
+// the queries, counts and reconstruction. Screenshots in light and dark.
 const { _electron: electron } = require("playwright-core");
 const { mkdtemp, readFile, readdir } = require("node:fs/promises");
+const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const assert = require("node:assert/strict");
@@ -87,6 +94,7 @@ const assert = require("node:assert/strict");
     await page.keyboard.press("Alt+ArrowRight");
     await second.locator(".kx-db-chip", { hasText: "worry" }).waitFor();
     // Exclude a term and limit the years.
+    await db.getByRole("button", { name: "Leave out…" }).click();
     await db.getByRole("textbox", { name: "Add a term to leave out" }).fill("protocol");
     await db.getByRole("textbox", { name: "Add a term to leave out" }).press("Enter");
     await db.getByRole("textbox", { name: "From year" }).fill("2015");
@@ -166,6 +174,11 @@ const assert = require("node:assert/strict");
     assert.equal(list.length, 3, "filed in the collection");
     assert.ok(list.every((s) => s.tags.includes("Mindfulness and anxiety")), "tagged with the search's name");
     await rows.nth(0).locator(".kx-work-badge", { hasText: "In library" }).waitFor();
+    // A row, also opened (selected), offers Add to Inbox once.
+    await rows.nth(6).locator(".kx-work-head").click();
+    await page.waitForTimeout(200);
+    assert.equal(await rows.nth(6).getByRole("button", { name: "Add to Inbox" }).count(), 1, "the opened row has one Add to Inbox button");
+    assert.ok((await rows.nth(7).getByRole("button", { name: "Add to Inbox" }).count()) <= 1, "a closed row has at most one");
 
     // Two others to the Inbox.
     await rows.nth(4).getByRole("checkbox").check();
@@ -220,8 +233,50 @@ const assert = require("node:assert/strict");
       data.setData("text/plain", '("sleep"[tiab] OR insomnia[tiab]) AND (adolescen*[tiab] OR "Adolescent"[MeSH Terms])');
       document.activeElement.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
     });
-    await page.getByText(/Read the pasted query as 2 concepts/).waitFor();
+    await page.getByText(/Read the pasted query as 2 blocks/).waitFor();
     await concepts.nth(1).locator(".kx-db-chip", { hasText: "Adolescent" }).locator(".kx-db-chip-field", { hasText: "MeSH" }).waitFor();
+
+    // Nested logic with the blocks: (health OR doctor) AND ((AI OR ML) NOT regression).
+    await db.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: "New query" }).click();
+    const one = concepts.first().getByRole("textbox", { name: /Add a term/ });
+    await one.fill("health,");
+    await one.fill("doctor");
+    await one.press("Enter");
+    await db.getByRole("button", { name: "Add concept" }).click();
+    const two = concepts.nth(1).getByRole("textbox", { name: /Add a term/ });
+    for (const w of ["AI,", "ML,", "regression,"]) await two.fill(w);
+    assert.equal(await concepts.nth(1).locator(".kx-db-chip").count(), 3, "a comma adds a term");
+    // The word between ML and regression is a button: NOT brackets what comes before it.
+    await concepts.nth(1).locator(".kx-db-joiner").nth(1).click();
+    await page.getByRole("dialog", { name: "Operator" }).getByRole("menuitemradio", { name: /NOT/ }).click();
+    await concepts.nth(1).locator(".kx-db-group").waitFor();
+    await concepts.nth(1).locator('.kx-db-joiner[data-joiner="not"]').waitFor();
+    assert.match(await db.locator(".kx-db-sentence").textContent(), /\(health or doctor\) and \(\(AI or ML\) but not regression\)/);
+    // Each database's preview gets the nested string.
+    await page.waitForFunction(() => /NOT regression/.test(document.querySelector('.kx-db-how-item[data-connector="pubmed"] .kx-db-native')?.textContent ?? ""));
+    assert.match(await pubmed.locator(".kx-db-native").textContent(), /\(health\[tiab\] OR doctor\[tiab\]\) AND \(\(AI\[tiab\] OR ML\[tiab\]\) NOT regression\[tiab\]\)/);
+    await shot(page, "db-nested-blocks-light");
+
+    // The text mode shows the same search, and typing changes the blocks.
+    await db.getByRole("radio", { name: "Text" }).or(db.getByRole("tab", { name: "Text" })).first().click();
+    const textBox = db.getByRole("textbox", { name: "The search as text" });
+    await page.waitForFunction(() => document.querySelector(".kx-db-text-input")?.value.includes("regression"));
+    assert.equal(await textBox.inputValue(), "(health OR doctor) AND (AI OR ML) NOT regression", "the blocks as text");
+    await textBox.fill('(nurse* OR midwife) AND (title:"hand hygiene" OR handwashing) NOT protocol');
+    await concepts.first().locator(".kx-db-chip", { hasText: "midwife" }).waitFor();
+    await concepts.nth(1).locator(".kx-db-chip", { hasText: "hand hygiene" }).locator(".kx-db-chip-field", { hasText: "Ti" }).waitFor();
+    // A problem is named at its place, and the blocks keep the last good search.
+    await textBox.fill("(nurse* OR midwife AND handwashing");
+    const problem = db.locator(".kx-db-text-problem");
+    await problem.waitFor();
+    assert.match(await problem.textContent(), /never closed/);
+    assert.equal(await problem.locator("mark").textContent(), "(");
+    await concepts.first().locator(".kx-db-chip", { hasText: "midwife" }).waitFor();
+    await shot(page, "db-text-problem-light");
+    await textBox.fill("(nurse* OR midwife) AND handwashing");
+    await problem.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelectorAll(".kx-db-concept").length === 2);
 
     // Dark.
     await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
@@ -232,11 +287,132 @@ const assert = require("node:assert/strict");
     await shot(page, "db-results-dark");
     await db.getByRole("button", { name: "Choose…" }).waitFor({ state: "detached" }).catch(() => {});
     assert.deepEqual(errors, []);
-    console.log(`Database search smoke passed. Screenshots in ${temp}`);
   } finally {
     await app.close();
   }
+  await enginePart(temp);
+  console.log(`Database search smoke passed. Screenshots in ${temp}`);
 })().catch((e) => {
   console.error(e);
   process.exit(1);
 });
+
+// ── Part 2: decomposed plans on the host's engine, answered from the recorded fixtures ──
+async function enginePart(temp) {
+  const fixtures = path.resolve(__dirname, "../../../../../connectors/fixtures");
+  const exchanges = [];
+  for (const dir of await readdir(fixtures)) {
+    for (const file of await readdir(path.join(fixtures, dir)).catch(() => [])) {
+      if (!file.endsWith(".json")) continue;
+      const data = JSON.parse(await readFile(path.join(fixtures, dir, file), "utf8"));
+      for (const e of data.exchanges ?? []) {
+        const url = new URL(e.url);
+        exchanges.push({ key: `/${url.host}${url.pathname}`, retmax0: url.searchParams.get("retmax") === "0", e });
+      }
+    }
+  }
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, "http://mock");
+    const counting = url.searchParams.get("retmax") === "0";
+    const hit = exchanges.find((x) => x.key === url.pathname && (!url.pathname.includes("esearch") || x.retmax0 === counting)) ?? exchanges.find((x) => x.key === url.pathname);
+    if (!hit) return res.writeHead(404, { "content-type": "text/plain" }).end("not recorded");
+    res.writeHead(hit.e.status, hit.e.headers);
+    res.end(hit.e.body);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const downloads = path.join(temp, "engine-downloads");
+  const app = await electron.launch({
+    executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
+    args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
+    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_USER_DATA: path.join(temp, "profile-engine"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces-engine"), KEY_DB_SEARCH_MOCK: "0", KEY_CONNECTORS_MOCK: `http://127.0.0.1:${server.address().port}` },
+  });
+  const shot = async (page, name) => (await page.waitForTimeout(450), page.screenshot({ path: path.join(temp, `${name}.png`) }));
+  try {
+    await app.evaluate(({ session }, dir) => {
+      session.defaultSession.on("will-download", (_e, item) => item.setSavePath(`${dir}/${item.getFilename()}`));
+    }, downloads);
+    const page = await app.firstWindow();
+    page.setDefaultTimeout(30000);
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 920));
+    await page.getByRole("region", { name: "Home", exact: true }).waitFor();
+    const [ws] = await page.evaluate(() => window.key.workspaces());
+    const call = (command, args = {}) => page.evaluate(({ command, args, id }) => window.key.invoke(command, args, id), { command, args, id: ws.id });
+    const connectors = await call("db_connectors");
+    await page.evaluate((id) => window.key.tabAction("open-content", { section: "databases", workspaceId: id }), ws.id);
+    const db = page.getByRole("region", { name: "Database search" });
+    await db.locator(".kx-db-concept").first().waitFor();
+    // PubMed (full Boolean) and the Crossref series (one term at a time).
+    await db.getByRole("button", { name: /^Choose/ }).click();
+    const picker = page.getByRole("dialog", { name: "Choose databases" });
+    for (const c of connectors) {
+      const box = picker.locator(`.kx-db-option[data-connector="${c.id}"]`).getByRole("checkbox");
+      if (["pubmed", "crossref-series"].includes(c.id)) await box.check();
+      else if (await box.isChecked()) await box.uncheck();
+    }
+    await picker.getByRole("button", { name: "Done" }).click();
+    await picker.waitFor({ state: "detached" });
+    // Typed as text: nested logic with a NOT.
+    await db.getByRole("radio", { name: "Text" }).or(db.getByRole("tab", { name: "Text" })).first().click();
+    const textBox = db.getByRole("textbox", { name: "The search as text" });
+    await textBox.fill("(vaccine OR vaccination OR immunisation) AND (hesitancy OR confidence) NOT influenza");
+    await db.locator(".kx-db-concept").nth(1).locator(".kx-db-chip", { hasText: "confidence" }).waitFor();
+    const series = db.locator('.kx-db-how-item[data-connector="crossref-series"]');
+    const pubmed = db.locator('.kx-db-how-item[data-connector="pubmed"]');
+    await series.locator(".kx-db-how-parts").waitFor();
+    const parts = await series.locator(".kx-db-how-parts .kx-db-native").allTextContents();
+    assert.ok(parts.length >= 2, `the series gets one query per term of a concept (${parts.join(" | ")})`);
+    await series.locator(".kx-db-badge", { hasText: "Checked by Key" }).waitFor();
+    await series.locator(".kx-db-plan summary").click();
+    assert.match(await series.locator(".kx-db-plan").textContent(), /match the full search/);
+    assert.equal(await pubmed.locator(".kx-db-how-parts").count(), 0, "PubMed runs the whole search as one query");
+    assert.match(await pubmed.locator(".kx-db-native").textContent(), /\(vaccine\[tiab\] OR vaccination\[tiab\] OR immunisation\[tiab\]\) AND \(hesitancy\[tiab\] OR confidence\[tiab\]\)\) NOT influenza\[tiab\]/);
+    await shot(page, "db-engine-plan-light");
+    // The plan before running, as a strategy.
+    const before = await call("db_strategy", { query: { expr: { type: "group", op: "and", items: [{ type: "term", text: "vaccine" }] } }, connectors: ["crossref-series"], format: "markdown" });
+    assert.match(before.content, /### .*Crossref/);
+
+    // Run, then the strategy of the run.
+    await db.getByRole("textbox", { name: "Name of this search" }).fill("Vaccine hesitancy");
+    await db.getByRole("button", { name: /^Search/ }).click();
+    await db.locator(".kx-db-progress .kx-db-progress-foot", { hasText: /Done\.|Stopped\./ }).waitFor({ timeout: 60000 });
+    const runs = await call("db_runs", { limit: 1 });
+    const run = await call("db_run", { runId: runs[0].runId });
+    const src = run.sources.find((s) => s.connector === "crossref-series");
+    assert.ok(src.strategy.postFilter && src.chunks.length >= 2 && src.chunkRaw.length === src.chunks.length, "the run keeps each query's counts");
+    assert.ok(src.raw >= src.fetched, "Key's check keeps at most what came back");
+    await db.getByRole("button", { name: "More" }).click();
+    await page.getByRole("button", { name: /Copy \/ export search strategy/ }).click();
+    const sheet = page.getByRole("dialog", { name: "Search strategy" });
+    const text = sheet.getByLabel("The search strategy");
+    await text.waitFor();
+    const md = await text.textContent();
+    for (const want of ["Full search: `(vaccine OR vaccination OR immunisation) AND (hesitancy OR confidence) NOT influenza`", "| 1 | `", "| 2 | `", "How Key reconstructed the full search:", "Records kept:"]) assert.ok(md.includes(want), `strategy has ${want}\n${md}`);
+    await shot(page, "db-engine-strategy-light");
+    await sheet.getByRole("button", { name: ".json" }).click();
+    await sheet.getByRole("button", { name: ".md" }).click();
+    let files = [];
+    for (let i = 0; i < 30 && files.length < 2; i++) {
+      await page.waitForTimeout(200);
+      files = await readdir(downloads).catch(() => []);
+    }
+    const json = JSON.parse(await readFile(path.join(downloads, files.find((f) => f.endsWith(".json"))), "utf8"));
+    assert.equal(json.format, "key-search-strategy");
+    const db2 = json.databases.find((d) => d.connector === "crossref-series");
+    assert.ok(db2.queries.length >= 2 && db2.queries.every((q) => q.native && typeof q.read === "number") && db2.reconstruction.length > 0, "the JSON has every query with its counts and the reconstruction");
+    assert.deepEqual(json.rerun.connectors.sort(), ["crossref-series", "pubmed"]);
+    assert.ok(files.some((f) => f.endsWith(".md")));
+    // Dark.
+    await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+    await shot(page, "db-engine-strategy-dark");
+    await sheet.getByRole("button", { name: "Close" }).click();
+    await db.getByRole("tab", { name: /Query/ }).click();
+    await series.locator(".kx-db-how-parts").waitFor();
+    await shot(page, "db-engine-plan-dark");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    server.close();
+  }
+}
