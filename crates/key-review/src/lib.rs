@@ -22,6 +22,7 @@ pub mod linalg;
 pub mod metareg;
 pub mod multilevel;
 pub mod pubbias;
+pub mod sensitivity;
 // std-D end.
 
 pub use ops::{Library, NoLibrary};
