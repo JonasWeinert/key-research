@@ -1,0 +1,15 @@
+/* Shared SVG charts (charts.tsx). Colours come from tokens set on each element. */
+.kx-chart {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  font-family: var(--kx-font);
+  user-select: none;
+}
+.kx-chart text {
+  font-family: var(--kx-font);
+}
+.kx-chart .kx-chart-num {
+  font-variant-numeric: tabular-nums;
+}
