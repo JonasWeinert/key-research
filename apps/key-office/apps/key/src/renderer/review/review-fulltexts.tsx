@@ -13,6 +13,7 @@ import { GlobalDialog } from "../GlobalDrawer";
 import { plural, type CsvRow, type DroppedFile, type FullTextRow, type MatchProposal, type ReviewApi } from "./review-api";
 import { Btn, errorText } from "./review-ui";
 import type { StageProps } from "./ReviewPage";
+import { onFullTextChanged, requestBrowse } from "./review-browser";
 
 /** Attaches files to records: each file's path on disk goes to the host, which keeps a copy. */
 export async function attachFiles(api: ReviewApi, viewer: string, items: { record: string; file?: File; path?: string; name?: string }[], origin: string) {
@@ -64,7 +65,16 @@ export function FullTexts(props: StageProps & { onOpen: (id: string) => void }) 
       .catch((e) => notify(errorText(e), "error"));
   }, [api, notify]);
   useEffect(reload, [reload]);
+  useEffect(() => onFullTextChanged(reload), [reload]);
   const stopRef = useRef(false);
+  // Pages the bulk run ended on (no tabs opened): each opens in the record's browser.
+  const [pages, setPages] = useState<Record<string, string>>({});
+  const pageOf = (r: FullTextRow) => pages[r.id] ?? (r.doi ? `https://doi.org/${r.doi}` : "");
+  const openPage = (r: FullTextRow) => {
+    const list = (data?.rows ?? []).filter((x) => x.state === "need" && pageOf(x)).map((x) => ({ id: x.id, url: pageOf(x) }));
+    requestBrowse({ recordId: r.id, url: pageOf(r), fromList: true }, props.onOpen, list);
+    props.onOpen(r.id);
+  };
 
   const dropped = async (files: File[]) => {
     const pdfs = files.filter((f) => /\.(pdf|html?)$/i.test(f.name));
@@ -85,11 +95,14 @@ export function FullTexts(props: StageProps & { onOpen: (id: string) => void }) 
       const r = need[i];
       try {
         // Find PDF without making a library source (Key's browser chain); a temp file we own.
-        const res = await props.invoke<{ status: string; path?: string }>("web_find_pdf_for", { doi: r.doi ?? undefined, title: r.title ?? undefined }, props.workspaceId);
+        const res = await props.invoke<{ status: string; path?: string; url?: string }>("web_find_pdf_for", { doi: r.doi ?? undefined, title: r.title ?? undefined }, props.workspaceId);
         if (res.status === "downloaded" && res.path) {
           await api.attach(r.id, res.path, `${(r.title ?? "full text").slice(0, 60)}.pdf`, "find", viewer, true);
           found++;
-        } else await api.fulltext(r.id, { status: "sought" }, viewer);
+        } else {
+          await api.fulltext(r.id, { status: "sought" }, viewer);
+          if (res.status === "browser" && res.url) setPages((all) => ({ ...all, [r.id]: res.url! }));
+        }
       } catch (e) {
         if (/Unknown Key command/.test(errorText(e))) {
           notify("Finding in bulk needs a newer Key: open each record's Full text and use Find full text", "error");
@@ -197,6 +210,11 @@ export function FullTexts(props: StageProps & { onOpen: (id: string) => void }) 
                 {r.state === "have" ? (r.file ? <span title={`Kept with the review (${r.file.origin})`}>{r.file.name}</span> : "In the library") : r.state === "notRetrievable" ? `Not retrieved: ${r.reason}` : <span className="kx-rv-muted">Needed</span>}
               </td>
               <td className="kx-rv-row-actions">
+                {r.state === "need" && pageOf(r) && (
+                  <Btn small quiet icon="globe" onClick={() => openPage(r)} title="Opens the record with Key's browser on its page; the PDF you open there is attached to it">
+                    Open page
+                  </Btn>
+                )}
                 {r.state === "have" && (
                   <Btn small quiet onClick={() => void api.detach(r.id, viewer).then(() => (reload(), onChanged()))}>
                     Remove
