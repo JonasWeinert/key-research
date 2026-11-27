@@ -1551,6 +1551,14 @@ function citationPreview(
     : linkPreviewText(link);
 }
 
+/** A host's action on the selected passage. */
+export interface ReaderSelectionAction {
+  id: string;
+  label: string;
+  title?: string;
+  run(passage: { text: string; page: number; rects: number[][] }): void;
+}
+
 interface PdfJsBenchmarkAppProps {
   initialFile?: File;
   embedded?: boolean;
@@ -1573,6 +1581,9 @@ interface PdfJsBenchmarkAppProps {
   /** When set, the selection toolbar offers Cite: the host copies the passage as a quote that
    * links back here. `rects` are on the passage's first page, [x, y, width, height] in 0–65535. */
   onCite?: (passage: { text: string; page: number; rects: number[][]; color?: string }) => void;
+  /** Extra actions on the selection toolbar, given by the host (a systematic review's "Does not
+   * meet…", "Use for field…"). The passage is as for Cite: page 0-based, rects 0–65535. */
+  selectionActions?: ReaderSelectionAction[];
   /** Opens a cited work in the library when the host has it there (the citation card's action). */
   referenceInLibrary?: (number: number) => (() => void) | null | undefined;
   /** Lets the citation cards add a cited work to the library in one click. */
@@ -1700,6 +1711,7 @@ function PdfJsBenchmarkApp({
   onRequestControlMode,
   onAddToNote,
   onCite,
+  selectionActions,
   referenceInLibrary,
   libraryWorks,
   highlightUsage,
@@ -2482,31 +2494,37 @@ function PdfJsBenchmarkApp({
     }
   }, [activeAnnotation, selection]);
 
-  /** The passage under the selection toolbar, for Cite: its text, first page and boxes there. */
-  const citeContext = useCallback(() => {
-    if (!onCite) return;
+  /** The passage under the selection toolbar: its text, first page and boxes there. */
+  const selectedPassage = useCallback(() => {
     const range = selection?.range ?? activeAnnotation?.range;
     const text = (selection?.text ?? activeAnnotation?.text ?? '').trim();
-    if (!range || !text) return;
+    if (!range || !text) return null;
     const page = range.start.page;
     const pageText = overlayRef.current?.textPages.get(page);
     const bounds =
       activeAnnotation?.anchor?.pages.find(entry => entry.page === page)?.bounds ??
       (pageText ? boundsForRange(pageText, range) : []);
     const unit = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 65535);
-    onCite({
+    return {
       text,
       page,
-      color: activeAnnotation?.color,
       rects: bounds.map(bound => [
         unit(bound.left),
         unit(bound.top),
         unit(bound.right - bound.left),
         unit(bound.bottom - bound.top),
       ]),
-    });
+    };
+  }, [activeAnnotation, selection]);
+
+  /** Cite: the passage, copied as a quote by the host. */
+  const citeContext = useCallback(() => {
+    if (!onCite) return;
+    const passage = selectedPassage();
+    if (!passage) return;
+    onCite({ ...passage, color: activeAnnotation?.color });
     setStatus('Quote copied');
-  }, [activeAnnotation, onCite, selection]);
+  }, [activeAnnotation, onCite, selectedPassage]);
 
   const activateSearch = useCallback(
     (matches: ReaderSearchMatch[], index: number) => {
@@ -3245,6 +3263,21 @@ function PdfJsBenchmarkApp({
               <Icon name="quote" />
             </button>
           )}
+          {selection && selectionActions?.map(action => (
+            <button
+              key={action.id}
+              type="button"
+              className="pdfjs-selection-action pdfjs-selection-host"
+              data-action={action.id}
+              title={action.title ?? action.label}
+              onClick={() => {
+                const passage = selectedPassage();
+                if (passage) action.run(passage);
+              }}
+            >
+              <span>{action.label}</span>
+            </button>
+          ))}
           {onAddToNote ? (
             <button
               type="button"
