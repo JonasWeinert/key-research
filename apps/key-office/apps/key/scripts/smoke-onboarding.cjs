@@ -4,7 +4,7 @@
 // appearance choice apply and persist, it fits a small window; finishing opens the library.
 // Key Settings opens from the sidebar: every section, keyboard and search, a search that
 // finds Workspace Settings; Workspace Settings edits one workspace of two, the other unchanged.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

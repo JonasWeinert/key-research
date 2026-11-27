@@ -4,7 +4,7 @@
 // The reader's References panel shows how far that got and can run it again; Settings
 // turns the layout model off; in-text citations are stored and the reader shows them
 // without analysing the PDF again; "Show in PDF" on a highlight goes there without a search bar.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

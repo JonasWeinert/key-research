@@ -6,7 +6,7 @@
 // closes with its last tab; an open document is focused where it is; a reader's details and
 // notes are a panel in its own tab that pops out into a tab and docks back; and the
 // arrangement survives a relaunch, as do the split tabs of an older version (as tabs).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

@@ -4,7 +4,7 @@
 // states. OpenAlex lookups by DOI point at a dead port so adding takes the card's own
 // metadata (the card's metadata itself comes from the host's scholarly lookups, which reach
 // the network). Screenshots land in the temp dir printed at the end (light and dark).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir } = require("node:fs/promises");
 const path = require("node:path");
 const { tmpdir } = require("node:os");

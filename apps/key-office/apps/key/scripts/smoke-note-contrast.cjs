@@ -3,7 +3,7 @@
 // light and the dark theme, resolved to real colours with getComputedStyle (backgrounds
 // composited up the tree) and held to WCAG AA: 4.5:1 for text (placeholders too), 3:1 for
 // large text, icons and the edges of controls. KEY_CONTRAST_REPORT=1 prints every pair.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

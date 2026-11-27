@@ -4,7 +4,7 @@
 // scene comes back, and the note lists the canvas and the source under "Linked from".
 // Then drag and drop: the canvas from the sidebar into the note becomes a link, a note
 // from the sidebar onto the canvas becomes a card, and a web link dropped on it a source.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

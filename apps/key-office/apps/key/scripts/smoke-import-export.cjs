@@ -2,7 +2,7 @@
 // (preview, import, summary, undo), a pasted RIS file, export and re-import giving the
 // same file, citation keys (kept from the file, unique, in the column and the details),
 // the export sheet and Settings, and an auto-export file that follows an edit.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile, copyFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

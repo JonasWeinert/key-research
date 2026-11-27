@@ -5,7 +5,7 @@
 // panel stays; a passage found in a PDF goes in as a quote with its source and page; a row
 // dragged into the note cites it where it lands. Esc clears the search, then closes the
 // panel and the cursor is back in the note. A narrow pane gets the panel over the note.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

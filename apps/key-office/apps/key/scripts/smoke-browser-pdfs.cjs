@@ -3,7 +3,7 @@
 // ends in the app's reader as a temporary PDF that knows the page it came from. Annotations
 // made on a temporary PDF carry over when it is added to the library. Article pages offer
 // Add to library in the bar, and a bot check that stalls offers a reload.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile } = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");

@@ -3,7 +3,7 @@
 // sync"). Covers the sheet's two steps and three scopes, installing and pairing the plugin,
 // the first sync, deltas (edit, new item, trash, leaving the scope), "Zotero is not
 // running" and pause in Settings. Screenshots in light and dark.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, copyFile, writeFile, readFile, access } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
 const { tmpdir } = require("node:os");

@@ -2,7 +2,7 @@
 // The sidebar: the workspace in the title bar (name goes Home, switching asks where),
 // Search, the Library row with its folded collections, and the Workspace section arranged by dragging rows and filing
 // them into folders, kept in the store across a reload. Screenshots in light and dark.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

@@ -5,7 +5,7 @@
 //    created and used, with no notice;
 // 3. Continue in browser + Bring sign-in over copies only the sign-in's cookies from a fixture
 //    Firefox profile (KEY_COOKIE_IMPORT_HOME; never a real profile) and reopens the page.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, mkdir } = require("node:fs/promises");
 const { execFileSync } = require("node:child_process");
 const http = require("node:http");

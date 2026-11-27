@@ -4,7 +4,7 @@
 // URL) the DOI the PDF carries is found and its metadata attached, a PDF for a reference
 // already in the library joins that reference, a PDF without a DOI is matched by its title
 // only when its authors agree, and a PDF whose only DOIs are in its references gets none.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, writeFile } = require("node:fs/promises");
 const { createReadStream } = require("node:fs");
 const { createServer } = require("node:http");

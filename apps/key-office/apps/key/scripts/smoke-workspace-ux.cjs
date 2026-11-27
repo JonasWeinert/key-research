@@ -3,7 +3,7 @@
 // Open Quickly's sections, [[ / @ / ![[ in notes (link, cite with a page, live embed),
 // following a link in place and going back, Send to…, unfolding a source on a canvas,
 // all highlights, and drops on the tab bar, a sidebar canvas and the window (Inbox).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

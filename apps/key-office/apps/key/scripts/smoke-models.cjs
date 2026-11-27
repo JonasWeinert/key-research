@@ -4,7 +4,7 @@
 // indexing lists each model, Download shows progress there and in the status bar, the model
 // becomes ready and the PDF is analysed again with it; Remove frees the disk and the model
 // returns to "Not downloaded". Needs the dev cache: node tools/models/fetch.mjs.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { existsSync } = require("node:fs");
 const { tmpdir } = require("node:os");

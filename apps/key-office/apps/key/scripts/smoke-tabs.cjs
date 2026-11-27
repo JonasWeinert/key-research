@@ -3,7 +3,7 @@
 // the sash and the window edge as the sidebar collapses and the sash moves, keyboard reorder,
 // the menu's shortcuts, next/previous tab and Cmd-1…9 within the focused group, and pinned
 // tabs surviving Close Other Tabs (which leaves other groups alone).
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

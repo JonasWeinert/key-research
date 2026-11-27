@@ -5,7 +5,7 @@
 // cached counts; a second launch shows it again; rename, the look and Remove from list (the
 // folder stays); keyboard opening; "Reopen windows from last time" restores as before.
 // Screenshots (light and dark, small and large) go to the temp folder printed at the end.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { spawn } = require("node:child_process");
 const { mkdtemp, mkdir, access, readFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");

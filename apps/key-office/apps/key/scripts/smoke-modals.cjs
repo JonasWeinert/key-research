@@ -4,7 +4,7 @@
 // margin; typing or filtering inside one does not change its size. The library's tab bars
 // fill their row with the pill under the chosen tab; the active main tab is marked; native
 // full screen drops the traffic-light inset. Screenshots in light and dark.
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { mkdtemp, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");

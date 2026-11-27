@@ -1,6 +1,6 @@
 // Contact sheet for Key's icon set: every glyph at 12/14/16/20, outline and filled, light and dark.
 // node scripts/icon-sheet.cjs [out.png]  (default: <tmp>/key-icon-sheet.png)
-const { _electron: electron } = require("playwright-core");
+const { electron } = require("./lib/launch.cjs");
 const { buildSync } = require("esbuild");
 const { mkdtempSync, writeFileSync } = require("node:fs");
 const path = require("node:path");
