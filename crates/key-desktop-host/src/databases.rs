@@ -2,8 +2,8 @@
 // crates/key-connectors run here. A search is a run in the background (one thread per
 // connector, polite to each service); the app polls `db_results`, which merges what came in
 // with key-store's duplicate matcher and marks what the library already has. Runs, saved
-// searches and connector health are kept on disk; connector updates are signed bundles
-// (key_connectors::bundle) checked on demand and at most daily.
+// searches and connector health are kept on disk; connector updates are bundles
+// (key_connectors::bundle; unsigned while signing is postponed) checked on demand and at most daily.
 //
 // Keys come from the app (`db_options`, like `web_options`); nothing here reads a keychain.
 use super::web_search::{self, Library, library::Asked, types::{Ids, WebResult}};
@@ -72,6 +72,12 @@ struct Progress {
     warnings: Vec<String>,
     started_at: Option<i64>,
     finished_at: Option<i64>,
+    /// Ruled out by the check of the full search, kept unverifiable, found again by a later query.
+    rejected: usize,
+    unverified: usize,
+    repeats: usize,
+    /// How the search is run here (key_connectors::plan).
+    strategy: Option<key_connectors::plan::Strategy>,
 }
 
 struct RunData {
@@ -206,7 +212,7 @@ impl Databases {
     }
 
     /// A minute after start, and then every few hours, checks for connector updates (at most
-    /// once a day; nothing is fetched until updates are set up in connectors/trust.json).
+    /// once a day; nothing is fetched without an update address in connectors/trust.json).
     pub fn start_background_checks(self: &Arc<Self>) {
         if std::env::var("KEY_CONNECTORS_NO_AUTO_CHECK").is_ok() {
             return;
@@ -352,6 +358,8 @@ impl Databases {
             "health": self.health_of(&spec.id),
             "updatedAt": if l.origin == "update" { state.activated_at.map(|t| t * 1000) } else { None },
             "origin": l.origin,
+            // Built-in connectors ship inside the app; downloaded ones carry their bundle's state.
+            "signature": if l.origin == "update" { if self.loaded.read().unwrap_or_else(|e| e.into_inner()).1.as_ref().is_some_and(|v| v.signed) { "signed" } else { "unsigned" } } else { "built-in" },
         })
     }
 
@@ -371,7 +379,8 @@ impl Databases {
         json!({
             "sequence": sequence, "created": created, "origin": origin, "activatedAt": state.activated_at.map(|t| t * 1000),
             "lastCheckAt": state.last_check_at.map(|t| t * 1000), "lastResult": state.last_result, "lastError": state.last_error,
-            "updatesConfigured": trust.configured() && !trust.update_url.is_empty(), "updateUrl": trust.update_url,
+            "updatesConfigured": trust.configured(), "updateUrl": trust.update_url,
+            "signed": loaded.1.as_ref().map(|v| v.signed), "signingKey": loaded.1.as_ref().and_then(|v| v.key_id.clone()), "signatureRequired": trust.requires_signature(),
             "engine": key_connectors::ENGINE_VERSION, "connectors": loaded.0.len(), "warnings": loaded.1.as_ref().map(|v| v.warnings.clone()).unwrap_or_default(),
         })
     }
@@ -395,12 +404,14 @@ impl Databases {
             let response = transport.send(&request, &key_connectors::engine::CancellationToken::active()).map_err(|e| format!("{e:?}"))?;
             match response.status {
                 304 => Ok(None),
+                // Nothing published yet: the built-in connectors are current.
+                404 if rel == "index.json" => Ok(None),
                 404 => Err(format!("{rel} was not found at the update address")),
                 200..=299 => Ok(Some((response.body.clone(), response.header("etag").map(String::from)))),
                 s => Err(format!("The update address answered {s}")),
             }
         };
-        let fetch = |rel: &str| get(rel, None).map(|o| o.map(|(b, _)| b)).or_else(|e| if e.contains("was not found") && rel == "keys.json" { Ok(None) } else { Err(e) });
+        let fetch = |rel: &str| get(rel, None).map(|o| o.map(|(b, _)| b)).or_else(|e| if e.contains("was not found") && (rel == "keys.json" || rel == "index.sig") { Ok(None) } else { Err(e) });
         let conditional = |etag: Option<&str>| get("index.json", etag);
         let result = self.store().check(&trust, &fetch, key_connectors::time::now_secs(), force, &conditional);
         if result.state == "updated" {
@@ -504,8 +515,8 @@ impl Databases {
                         match count(query) {
                             Ok(total) => {
                                 self.record_health(id, Ok(()));
-                                let per: Option<Vec<Json>> = (per_concept && exact && query.concepts.len() > 1 && !overrides.contains_key(id))
-                                    .then(|| (0..query.concepts.len()).map(|i| count(&query.only_concept(i)).ok().flatten().map(Json::from).unwrap_or(Json::Null)).collect());
+                                let per: Option<Vec<Json>> = (per_concept && exact && query.parts().len() > 1 && !overrides.contains_key(id))
+                                    .then(|| (0..query.parts().len()).map(|i| count(&query.only_part(i)).ok().flatten().map(Json::from).unwrap_or(Json::Null)).collect());
                                 json!({ "connector": id, "total": total, "perConcept": per, "exact": exact })
                             }
                             Err(e) => {
@@ -555,6 +566,8 @@ impl Databases {
         }
         let limit = args.get("limit").and_then(Json::as_u64).map(|l| l as usize).unwrap_or(DEFAULT_LIMIT).clamp(1, MAX_LIMIT);
         let background = arg::<Option<bool>>(args, "background")?.unwrap_or(false);
+        // Databases whose plan needs the user's OK (many queries, or nothing to send) that they gave.
+        let allowed: HashSet<String> = arg::<Option<Vec<String>>>(args, "allow")?.unwrap_or_default().into_iter().collect();
         let id = format!("run-{}-{}", now_ms(), self.counter.fetch_add(1, Ordering::Relaxed));
         let saved_id = saved.map(|s| s.id.clone()).or(arg::<Option<String>>(args, "savedId")?);
         let previous: HashSet<String> = match saved_id.as_deref().and_then(|s| self.saved_list().into_iter().find(|x| x.id == s)) {
@@ -581,14 +594,18 @@ impl Databases {
                 let spec = &l.connector.spec;
                 let opts = self.options_for(spec, &run.options);
                 let t = self.translate_one(spec, &run.query, &opts, &run.overrides);
-                let mut p = Progress { connector: cid.clone(), state: "queued".into(), native: t.native.clone(), chunks: t.chunks.len(), warnings: t.warnings.clone(), ..Default::default() };
+                let mut p = Progress { connector: cid.clone(), state: "queued".into(), native: t.native.clone(), chunks: t.chunks.len(), warnings: t.warnings.clone(), strategy: Some(t.strategy.clone()), ..Default::default() };
                 let creds = self.credentials(spec);
+                let decision = t.strategy.decision.as_ref().filter(|_| !t.overridden);
                 if spec.kind == "manual" {
                     p.state = "skipped".into();
                     p.error = Some("This source is searched in its own website".into());
                 } else if spec.credentials.iter().any(|c| c.required && !creds.contains_key(&c.id)) {
                     p.state = "skipped".into();
                     p.error = Some("Needs an API key (Settings)".into());
+                } else if let Some(d) = decision.filter(|d| d.kind == "nothing" || !allowed.contains(cid)) {
+                    p.state = "skipped".into();
+                    p.error = Some(d.message.clone());
                 } else {
                     d.searches.insert(cid.clone(), SearchState::new(&t, &run.query, &opts));
                 }
@@ -703,6 +720,9 @@ impl Databases {
                         p.requests += page.requests;
                         p.quota_remaining = page.quota_remaining.or(p.quota_remaining);
                         p.undated += page.undated;
+                        p.rejected += page.rejected;
+                        p.unverified += page.unverified;
+                        p.repeats += page.repeats;
                         p.has_more = !page.done;
                     }
                 }
@@ -746,6 +766,9 @@ impl Databases {
             }
             if p.undated > 0 && !p.warnings.iter().any(|w| w.contains("without a year")) {
                 p.warnings.push(format!("{} records without a year were kept", p.undated));
+            }
+            if p.unverified > 0 && !p.warnings.iter().any(|w| w.contains("could not be checked")) {
+                p.warnings.push(format!("{} records were kept although part of the search could not be checked on them (missing abstract or keywords)", p.unverified));
             }
         }
         d.searches.insert(cid.to_string(), state);
@@ -799,6 +822,7 @@ impl Databases {
             .filter_map(|c| d.progress.get(c))
             .map(|p| {
                 let spec = loaded.0.get(&p.connector).map(|l| l.connector.spec.clone());
+                let state = d.searches.get(&p.connector);
                 SourceLog {
                     connector: p.connector.clone(),
                     name: spec.as_ref().map(|s| s.name.clone()).unwrap_or_default(),
@@ -814,6 +838,13 @@ impl Databases {
                     error: p.error.clone(),
                     started_at: p.started_at,
                     finished_at: p.finished_at,
+                    strategy: p.strategy.clone(),
+                    chunk_totals: state.map(|s| s.totals.clone()).unwrap_or_default(),
+                    chunk_raw: state.map(|s| s.chunk_raw.clone()).unwrap_or_default(),
+                    chunk_kept: state.map(|s| s.chunk_kept.clone()).unwrap_or_default(),
+                    rejected: p.rejected,
+                    unverified: p.unverified,
+                    repeats: p.repeats,
                 }
             })
             .collect();
@@ -830,6 +861,7 @@ impl Databases {
             unique: d.merger.groups.len(),
             duplicates_removed: d.merger.duplicates_removed(),
             records: RunReport::records_from(&d.merger),
+            rerun: json!({ "query": run.query, "connectors": run.connectors, "options": run.options, "overrides": run.overrides, "label": run.label, "savedId": run.saved_id }),
         }
     }
 
@@ -1009,6 +1041,55 @@ impl Databases {
         Ok(json!({ "filename": format!("database-search-{date}.{ext}"), "content": content, "mime": mime }))
     }
 
+    /// A run's report, live or from disk.
+    fn report_by_id(&self, id: &str) -> Result<RunReport, String> {
+        match self.run(id) {
+            Ok(run) => {
+                let d = run.data.lock().unwrap_or_else(|e| e.into_inner());
+                Ok(self.report_of(&run, &d))
+            }
+            Err(e) => std::fs::read(self.data_dir().join("runs").join(format!("{id}.json"))).ok().and_then(|b| serde_json::from_slice(&b).ok()).ok_or(e),
+        }
+    }
+
+    /// The search strategy (exact strings per database, counts, reconstruction) of a run, or of
+    /// a search not run yet (`query` + `connectors`: the plan only).
+    fn strategy(&self, args: &Json) -> Result<Json, String> {
+        let format = arg::<Option<String>>(args, "format")?.unwrap_or_else(|| "markdown".into());
+        let report = match arg::<Option<String>>(args, "runId")? {
+            Some(id) => self.report_by_id(&id)?,
+            None => {
+                let query: Query = arg::<Option<Query>>(args, "query")?.unwrap_or_default().cleaned();
+                let ids: Vec<String> = arg::<Option<Vec<String>>>(args, "connectors")?.unwrap_or_default();
+                let overrides: BTreeMap<String, String> = arg::<Option<_>>(args, "overrides")?.unwrap_or_default();
+                let options: BTreeMap<String, Vars> = arg::<Option<_>>(args, "options")?.unwrap_or_default();
+                let mut sources = Vec::new();
+                for id in &ids {
+                    let l = self.connector(id)?;
+                    let spec = &l.connector.spec;
+                    let t = self.translate_one(spec, &query, &self.options_for(spec, &options), &overrides);
+                    sources.push(SourceLog { connector: id.clone(), name: spec.name.clone(), version: spec.version.clone(), native: t.native.clone(), chunks: t.chunks.clone(), warnings: t.warnings.clone(), strategy: Some(t.strategy), ..Default::default() });
+                }
+                RunReport {
+                    label: arg::<Option<String>>(args, "label")?.unwrap_or_default(),
+                    engine: key_connectors::ENGINE_VERSION.into(),
+                    rerun: json!({ "query": query, "connectors": ids, "options": options, "overrides": overrides }),
+                    query,
+                    sources,
+                    ..Default::default()
+                }
+            }
+        };
+        let date = if report.started_at > 0 { key_connectors::time::format(report.started_at / 1000)[..10].to_string() } else { key_connectors::time::format(key_connectors::time::now_secs())[..10].to_string() };
+        let (content, ext, mime) = match format.as_str() {
+            "json" => (report.strategy_json(), "json", "application/json"),
+            "csv" => (report.strategy_csv(), "csv", "text/csv"),
+            "text" => (report.strategy_text(), "txt", "text/plain"),
+            _ => (report.strategy_markdown(), "md", "text/markdown"),
+        };
+        Ok(json!({ "filename": format!("search-strategy-{date}.{ext}"), "content": content, "mime": mime }))
+    }
+
     fn runs_list(&self, args: &Json) -> Result<Json, String> {
         let limit = args.get("limit").and_then(Json::as_u64).unwrap_or(20) as usize;
         let mut files: Vec<PathBuf> = std::fs::read_dir(self.data_dir().join("runs")).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
@@ -1020,7 +1101,7 @@ impl Databases {
             .filter_map(|f| std::fs::read(f).ok().and_then(|b| serde_json::from_slice::<RunReport>(&b).ok()))
             .map(|r| {
                 let per: BTreeMap<String, usize> = r.sources.iter().map(|s| (s.connector.clone(), s.fetched)).collect();
-                json!({ "runId": r.run_id, "label": r.label, "startedAt": r.started_at, "finishedAt": r.finished_at, "state": r.state, "total": r.unique, "perConnector": per })
+                json!({ "runId": r.run_id, "label": r.label, "startedAt": r.started_at, "finishedAt": r.finished_at, "state": r.state, "total": r.unique, "perConnector": per, "fetched": r.fetched, "duplicatesRemoved": r.duplicates_removed, "savedId": r.rerun.get("savedId").cloned().unwrap_or(Json::Null) })
             })
             .collect();
         Ok(Json::Array(out))
@@ -1125,6 +1206,21 @@ impl Databases {
                 self.start(args, Some(&saved)).and_then(json_output)
             })(),
             "db_report" => self.report(args).and_then(json_output),
+            "db_strategy" => self.strategy(args).and_then(json_output),
+            // The whole run (strategy, counts per database and query, records with provenance):
+            // the stable read for PRISMA identification numbers.
+            "db_run" => arg::<String>(args, "runId").and_then(|id| self.report_by_id(&id)).and_then(|r| json_output(serde_json::to_value(&r).unwrap_or(Json::Null))),
+            "db_query_parse" => (|| {
+                let text: String = arg(args, "text")?;
+                json_output(match key_connectors::boolean::parse(&text) {
+                    Ok(parsed) => json!({ "ok": true, "tree": parsed.tree, "text": parsed.text, "notes": parsed.notes }),
+                    Err(error) => json!({ "ok": false, "error": error }),
+                })
+            })(),
+            "db_query_format" => (|| {
+                let tree: key_connectors::Node = arg(args, "tree")?;
+                json_output(json!({ "text": key_connectors::boolean::format(&tree) }))
+            })(),
             "db_runs" => self.runs_list(args).and_then(json_output),
             "db_report_problem" => self.report_problem(args).and_then(json_output),
             "db_recall" => self.recall(args).and_then(json_output),

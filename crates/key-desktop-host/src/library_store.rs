@@ -133,10 +133,16 @@ impl Library {
         report
     }
 
-    /// One sync through the Key Sync Zotero plugin; skipped while another run holds the lock.
+    /// One sync through the Key Sync Zotero plugin. A scheduled one is skipped while another
+    /// run holds the lock; a forced one (set up, "Sync now") waits for it, so it is never lost.
     fn zotero_plugin_sync(&self, force: bool) -> Result<key_zotero::plugin::Outcome, String> {
-        let Ok(_running) = self.zotero.try_lock() else {
-            return Ok(key_zotero::plugin::Outcome::default());
+        let _running = if force {
+            self.zotero.lock().map_err(|e| e.to_string())?
+        } else {
+            match self.zotero.try_lock() {
+                Ok(guard) => guard,
+                Err(_) => return Ok(key_zotero::plugin::Outcome::default()),
+            }
         };
         let progress = self.zotero_progress.clone();
         let outcome = key_zotero::plugin::sync(&self.store, force, &|p| {
@@ -403,10 +409,11 @@ impl Library {
             })(),
             // Sync through the Key Sync plugin: whether Zotero and the plugin answer, the
             // sync's settings, one sync, and its status.
-            "store_zotero_plugin_probe" => json_output(key_zotero::plugin::probe(
+            "store_zotero_plugin_probe" => json_output(key_zotero::plugin::probe_with(
                 Some(&self.store),
                 arg::<Option<u16>>(args, "port").ok().flatten(),
                 arg::<Option<String>>(args, "token").ok().flatten(),
+                &arg::<Option<Vec<PathBuf>>>(args, "tokenFrom").ok().flatten().unwrap_or_default(),
             )),
             "store_zotero_plugin_configure" => (|| {
                 let configure: key_zotero::plugin::Configure = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;

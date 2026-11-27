@@ -1,5 +1,6 @@
 // The editors a source's details are made of (fields, creators, tags, typed properties),
 // shared by the source page, which is also the library's details panel, and other pages.
+import { FillCellMark, useSourceFillCells } from "./fill-cells";
 import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { Creator } from "./citation";
 import { FilterButton, FilterLink, FilterLinks, fieldFilter, sourceFilter } from "./filter-links";
@@ -284,6 +285,7 @@ export function TypedProperties({
   formula?: (d: PropertyDefinition) => string;
 }) {
   const defined = new Set(definitions.map((d) => d.name));
+  const filled = useSourceFillCells(source.id);
   const extra = Object.fromEntries(Object.entries(source.properties).filter(([key]) => !defined.has(key)));
   const glyph = (type: string) => <Icon name={propertyTypeIcon(type)} size={11} />;
   // Rows only: they sit in the Details list under the bibliographic fields.
@@ -329,6 +331,7 @@ export function TypedProperties({
                 onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
               />
             )}
+            {filled[definition.name] && <FillCellMark sourceId={source.id} property={definition.name} mark={filled[definition.name]} />}
             <FilterButton filter={definition.type !== "formula" && definition.type !== "boolean" && text ? sourceFilter.property(definition.name, text) : undefined} />
             {onFill ? (
               definition.type !== "formula" && (

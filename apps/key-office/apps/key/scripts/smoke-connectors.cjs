@@ -2,7 +2,9 @@
 // a local mock stands in for PubMed, Crossref and EconStor (their recorded fixtures) and for
 // the connector update server. Checks: the built-in connectors load; a newer dev-signed bundle
 // is accepted and activated; a tampered one is refused and the active one kept; a search over
-// all three streams, merges and reports; saved searches re-run and mark nothing new.
+// all three streams, merges and reports; saved searches re-run and mark nothing new. Then, as a
+// build that trusts no signing key yet (signing postponed): an unsigned bundle is accepted and
+// labelled unsigned, while the dev-trusting host refuses it.
 //
 //   node scripts/smoke-connectors.cjs [host binary] [key-connectors binary]
 //
@@ -59,6 +61,10 @@ const tampered = path.join(temp, "bundle-tampered");
 tool("dev-bundle", "--specs", specsCopy, "--out", tampered, "--sequence", "6");
 const evil = path.join(tampered, "specs/econstor.json");
 fs.writeFileSync(evil, fs.readFileSync(evil, "utf8").replace("EconStor (updated)", "EconStor (tampered)"));
+// v7 unsigned (no index.sig): what the publish workflow makes while signing is postponed.
+fs.writeFileSync(econstorCopy, fs.readFileSync(econstorCopy, "utf8").replace('"version": "1.0.2"', '"version": "1.0.3"').replace("EconStor (updated)", "EconStor (unsigned)"));
+const unsignedBundle = path.join(temp, "bundle-unsigned");
+tool("bundle", "--specs", specsCopy, "--out", unsignedBundle, "--sequence", "7");
 let serving = good;
 let updateRequests = 0;
 
@@ -96,7 +102,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(e.status, { "content-type": e.headers?.["content-type"] || "application/octet-stream" }).end(e.body);
 });
 
-function host(port) {
+function host(port, extraEnv = {}, dir = "connectors") {
   const library = path.join(temp, "library");
   const child = spawn(hostBin, ["--library", library], {
     stdio: ["pipe", "pipe", "inherit"],
@@ -109,7 +115,8 @@ function host(port) {
       KEY_CONNECTORS_DEV_TRUST: "1",
       KEY_CONNECTORS_NO_AUTO_CHECK: "1",
       KEY_CONNECTORS_UPDATE_URL: "https://connectors.test/bundle",
-      KEY_CONNECTORS_DIR: path.join(temp, "connectors"),
+      KEY_CONNECTORS_DIR: path.join(temp, dir),
+      ...extraEnv,
     },
   });
   let buffer = Buffer.alloc(0);
@@ -225,6 +232,26 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const problem = await h.invoke("db_report_problem", { connector: "econstor", error: "EconStor answered 500" });
     ok(problem.url.startsWith("https://github.com/") && problem.url.includes("connector%3Aeconstor"), "Report problem builds an issue link");
     ok(updateRequests > 0, "updates came from the configured address only");
+
+    // Signing postponed: the dev-trusting host (a root is trusted) refuses an unsigned bundle…
+    serving = unsignedBundle;
+    check = await h.invoke("db_connectors_check", { force: true });
+    ok(check.state === "failed" && /index\.sig/.test(check.error || ""), `a host that trusts a root refuses an unsigned bundle (${JSON.stringify(check)})`);
+    ok((await h.invoke("db_connectors_status")).signed === true, "the signed bundle stays active and is labelled signed");
+    // …and a build with no trusted root accepts it, labelled unsigned.
+    const u = host(port, { KEY_CONNECTORS_DEV_TRUST: "0" }, "connectors-unsigned");
+    try {
+      check = await u.invoke("db_connectors_check", { force: true });
+      ok(check.state === "updated" && check.sequence === 7, `an unsigned bundle is accepted without a trusted root (${JSON.stringify(check)})`);
+      const st = await u.invoke("db_connectors_status");
+      ok(st.signed === false && st.signatureRequired === false && st.updatesConfigured === true, `status labels it unsigned (${JSON.stringify({ signed: st.signed, required: st.signatureRequired })})`);
+      const ul = await u.invoke("db_connectors");
+      const ue = ul.find((c) => c.id === "econstor");
+      ok(ue.name === "EconStor (unsigned)" && ue.origin === "update" && ue.signature === "unsigned", "the unsigned connector is active and labelled");
+      ok(ul.find((c) => c.id === "pubmed").signature === "unsigned" || ul.find((c) => c.id === "pubmed").origin === "baseline", "every connector carries its signature state");
+    } finally {
+      u.child.kill();
+    }
     console.log("smoke-connectors passed");
   } catch (e) {
     process.exitCode = 1;

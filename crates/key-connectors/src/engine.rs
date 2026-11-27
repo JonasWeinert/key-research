@@ -148,13 +148,37 @@ pub struct Fetched {
     pub quota_remaining: Option<u64>,
     /// Records without a year, kept although a year filter was asked (applied locally).
     pub undated: usize,
+    /// Records the full search ruled out (Key's check after a broader query).
+    pub rejected: usize,
+    /// Records kept although a part of the search could not be checked on them.
+    pub unverified: usize,
+    /// Records an earlier query of the same search had already brought.
+    pub repeats: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Chunk {
     pub native: String,
     pub vars: Vars,
     pub local_filter: bool,
+    /// Parts of the search (paths in `SearchState::logic`) the service checks for this query.
+    pub verified: Vec<String>,
+    /// Keep records the local check cannot decide (a missing abstract...).
+    pub keep_unknown: bool,
+}
+
+fn chunks_of(t: &Translation) -> Vec<Chunk> {
+    t.chunks
+        .iter()
+        .enumerate()
+        .map(|(i, native)| Chunk {
+            native: native.clone(),
+            vars: t.vars.clone(),
+            local_filter: t.local_filter,
+            verified: if t.overridden { Vec::new() } else { t.strategy.subqueries.get(i).map(|s| s.verified.clone()).unwrap_or_default() },
+            keep_unknown: t.strategy.keep_unknown && !t.overridden,
+        })
+        .collect()
 }
 
 /// Where a search is: which chunk, where its paging stands, what was seen.
@@ -163,6 +187,14 @@ pub struct SearchState {
     pub chunks: Vec<Chunk>,
     pub chunk: usize,
     pub query: Query,
+    /// The tree the local check evaluates (the strategy's `logic`).
+    pub logic: crate::boolean::Node,
+    /// Per query: items read, and records kept after the check and de-duplication.
+    pub chunk_raw: Vec<usize>,
+    pub chunk_kept: Vec<usize>,
+    pub rejected: usize,
+    pub unverified: usize,
+    pub repeats: usize,
     pub options: Vars,
     offset: u64,
     page: u64,
@@ -186,9 +218,16 @@ pub struct SearchState {
 
 impl SearchState {
     pub fn new(translation: &Translation, query: &Query, options: &Vars) -> Self {
-        let chunks: Vec<Chunk> = translation.chunks.iter().map(|native| Chunk { native: native.clone(), vars: translation.vars.clone(), local_filter: translation.local_filter }).collect();
+        let chunks = chunks_of(translation);
+        let logic = if translation.strategy.kind.is_empty() { query.tree().nnf() } else { translation.strategy.logic.clone() };
         Self {
             totals: vec![None; chunks.len()],
+            chunk_raw: vec![0; chunks.len()],
+            chunk_kept: vec![0; chunks.len()],
+            logic,
+            rejected: 0,
+            unverified: 0,
+            repeats: 0,
             chunks,
             chunk: 0,
             query: query.clone(),
@@ -518,6 +557,8 @@ impl Engine {
                 let at = state.chunk;
                 state.chunks.splice(at..=at, years.clone());
                 state.totals.splice(at..=at, vec![None; years.len()]);
+                state.chunk_raw.splice(at..=at, vec![0; years.len()]);
+                state.chunk_kept.splice(at..=at, vec![0; years.len()]);
                 state.offset = 0;
                 state.page = 0;
                 state.cursor = None;
@@ -542,6 +583,10 @@ impl Engine {
         let mut matched_any = false;
         let mut new_any = false;
         let year_asked = state.query.filters.year_from.is_some() || state.query.filters.year_to.is_some();
+        let at = state.chunk;
+        if let Some(n) = state.chunk_raw.get_mut(at) {
+            *n += records.len();
+        }
         for mut record in records {
             if state.record_cap.is_some_and(|cap| state.kept + kept.len() >= cap) {
                 state.done = true;
@@ -553,21 +598,43 @@ impl Engine {
             if record.title.trim().is_empty() {
                 continue;
             }
-            if !state.seen.insert(record.source_id.clone()) {
+            if state.seen.contains(&record.source_id) {
+                if at > 0 {
+                    out.repeats += 1;
+                    state.repeats += 1;
+                }
                 continue;
             }
             new_any = true;
             if let Some(detail) = plan.detail.as_ref().filter(|d| d.per_record && plan.adapter != "html-listing") {
                 self.per_record(spec, detail, &mut record, chunk, creds, state, ctl, out)?;
             }
-            if chunk.local_filter && !query::matches(&state.query, &record) {
-                continue;
+            if chunk.local_filter {
+                let verified = &chunk.verified;
+                let truth = if query::passes_filters(&state.query.filters, &record) { crate::boolean::eval(&state.logic, &record, &|p| verified.iter().any(|v| v == p)) } else { crate::boolean::Truth::False };
+                match truth {
+                    crate::boolean::Truth::True => {}
+                    crate::boolean::Truth::Unknown if chunk.keep_unknown => {
+                        out.unverified += 1;
+                        state.unverified += 1;
+                    }
+                    // Not marked as seen: a later query may bring it with more checked.
+                    _ => {
+                        out.rejected += 1;
+                        state.rejected += 1;
+                        continue;
+                    }
+                }
             }
+            state.seen.insert(record.source_id.clone());
             matched_any = true;
             if year_asked && record.year.is_none() {
                 out.undated += 1;
             }
             kept.push(record);
+        }
+        if let Some(n) = state.chunk_kept.get_mut(at) {
+            *n += kept.len();
         }
         state.kept += kept.len();
         if !state.done && out.raw > 0 {
@@ -858,7 +925,7 @@ impl Engine {
     /// One record by its id at the source.
     pub fn lookup(&self, spec: &Spec, id: &str, creds: &Credentials, ctl: &RunControl) -> Result<Option<Record>, EngineError> {
         let plan = spec.lookup.as_ref().ok_or_else(|| EngineError::new("config", "This connector cannot look records up"))?;
-        let chunk = Chunk { native: String::new(), vars: Vars::new(), local_filter: false };
+        let chunk = Chunk::default();
         let mut vars = self.base_vars(spec, &chunk, creds, &Vars::new());
         vars.insert("id".into(), id.to_string());
         vars.insert("ids".into(), id.to_string());
@@ -912,8 +979,12 @@ fn year_chunks(spec: &Spec, state: &SearchState) -> Option<Vec<Chunk>> {
         q.filters.year_to = Some(year);
         let t = query::translate(spec, &q, &state.options);
         // The year-split chunk is the one that was too large; its OR-split siblings stay.
-        let native = t.chunks.get(state.chunk).cloned().or_else(|| t.chunks.first().cloned())?;
-        out.push(Chunk { native, vars: t.vars, local_filter: t.local_filter });
+        let mut all = chunks_of(&t);
+        let i = state.chunk.min(all.len().saturating_sub(1));
+        if all.is_empty() {
+            return None;
+        }
+        out.push(all.swap_remove(i));
     }
     Some(out)
 }
