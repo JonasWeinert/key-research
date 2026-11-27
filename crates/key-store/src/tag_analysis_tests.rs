@@ -284,3 +284,130 @@ fn convert_form_defaults_take_the_shared_root_off() {
     assert_eq!(one["name"], "Important");
     assert!(one["common"].is_null());
 }
+
+/// A library of a few thousand tags with variants, families, co-occurrence and titles.
+fn large(n: usize) -> (Vec<String>, Vec<Vec<String>>) {
+    let words: Vec<&str> =
+        "health economics policy insurance labour market climate energy migration education poverty inequality trade finance banking housing urban rural gender ageing".split(' ').collect();
+    let tags: Vec<String> = (0..n).map(|i| format!("{} {} {}{i}", words[i % words.len()], words[(i * 7) % words.len()], if i % 3 != 0 { "" } else { "s" })).collect();
+    let items: Vec<Vec<String>> = (0..n).map(|i| vec![tags[i].clone(), tags[(i * 13) % n].clone(), tags[(i * 31) % n].clone(), tags[i % 50].clone()]).collect();
+    (tags, items)
+}
+
+fn index_from(items: &[Vec<String>]) -> TagIndex {
+    let refs: Vec<Vec<&str>> = items.iter().map(|tags| tags.iter().map(String::as_str).collect()).collect();
+    index_of(&refs, json!({}))
+}
+
+fn summary(list: &[Suggestion]) -> Vec<String> {
+    list.iter().map(|s| format!("{} {} {} {:.3} {} {}", s.id, s.title, s.evidence, s.confidence, s.items, serde_json::to_string(&s.change).unwrap())).collect()
+}
+
+#[test]
+fn reanalyses_only_what_a_tag_edit_touched() {
+    let (tags, mut items) = large(3000);
+    let mut cache = AnalysisCache::default();
+    let options = AnalysisOptions::default();
+    let (first, stats) = suggestions_cached(&index_from(&items), &options, &mut cache);
+    assert_eq!(stats.touched, 3000);
+    assert_eq!(stats.recounted, 3000);
+    assert_eq!(stats.planned, first.len());
+    // Nothing changed: nothing is done again.
+    let (same, stats) = suggestions_cached(&index_from(&items), &options, &mut cache);
+    assert_eq!(summary(&same), summary(&first));
+    assert_eq!((stats.touched, stats.compared, stats.recounted, stats.read, stats.planned), (0, 0, 0, 0, 0), "{stats:?}");
+    // One tag renamed on its items: only it, its new name and their neighbours.
+    let old = tags[1234].clone();
+    for item in &mut items {
+        for t in item.iter_mut() {
+            if *t == old {
+                *t = format!("{old}x");
+            }
+        }
+    }
+    let index = index_from(&items);
+    let start = std::time::Instant::now();
+    let (after, stats) = suggestions_cached(&index, &options, &mut cache);
+    let incremental = start.elapsed();
+    let start = std::time::Instant::now();
+    let fresh = suggestions_with_changes(&index, &options);
+    let full = start.elapsed();
+    eprintln!("one rename at 3k tags: {stats:?} in {incremental:?} (fresh run {full:?}, {} suggestions)", after.len());
+    assert_eq!(summary(&after), summary(&fresh), "an incremental run finds exactly what a fresh one does");
+    // The renamed tag, its new name, and the other tags on its three items.
+    assert!(stats.touched <= 12, "{stats:?}");
+    let (_, full_stats) = suggestions_cached(&index, &options, &mut AnalysisCache::default());
+    assert!(stats.compared * 10 < full_stats.compared, "{stats:?} against {full_stats:?}");
+    assert!(stats.recounted <= 4, "{stats:?}");
+    assert!(stats.read <= 12, "{stats:?}");
+    assert!(stats.planned * 4 <= after.len().max(4), "{stats:?} of {}", after.len());
+    // A tree change (a nest) touches the tags it moves and their parents only.
+    let mut index = index_from(&items);
+    index.tree = tree(json!({tags[10].clone(): {"parent": tags[11].clone()}}));
+    let (nested, stats) = suggestions_cached(&index, &options, &mut cache);
+    assert_eq!(summary(&nested), summary(&suggestions_with_changes(&index, &options)));
+    assert!(stats.touched <= 2 && stats.recounted == 0, "{stats:?}");
+}
+
+fn edits(change: &crate::tag_plan::PlannedChange) -> Vec<(String, Vec<String>, Vec<String>)> {
+    change.predicted.items.iter().map(|e| (e.id.clone(), e.remove.clone(), e.add.clone())).collect()
+}
+
+#[test]
+fn predicts_how_the_tags_will_look() {
+    let index = index_of(&[vec!["ML", "Methods"], vec!["ML", "Machine learning"], vec!["Methods"]], json!({"ML": {"parent": "Methods"}}));
+    // A merge renames on items (once per item) and moves the tree entry.
+    let merged = plan(&index, TagPlan::Merge { from: strings(&["ML"]), to: "Machine learning".into() }).unwrap();
+    assert_eq!(edits(&merged), vec![("s0".into(), strings(&["ML"]), strings(&["Machine learning"])), ("s1".into(), strings(&["ML"]), vec![])]);
+    assert_eq!(merged.predicted.tree.get("ML"), Some(&Json::Null));
+    assert_eq!(merged.predicted.tree["Machine learning"]["parent"], "Methods");
+    // A nest only moves the tree.
+    let nested = plan(&index, TagPlan::Nest { parent: "Methods".into(), children: strings(&["Machine learning"]), rename_parent: None }).unwrap();
+    assert!(nested.predicted.items.is_empty());
+    assert_eq!(nested.predicted.tree["Machine learning"]["parent"], "Methods");
+    // A removal takes the tag off every item.
+    let removed = plan(&index, TagPlan::Delete { tags: strings(&["Methods"]) }).unwrap();
+    assert_eq!(edits(&removed), vec![("s0".into(), strings(&["Methods"]), vec![]), ("s2".into(), strings(&["Methods"]), vec![])]);
+    // A property that removes its tags: an item holding two takes the first value and keeps the other tag.
+    let status = index_of(&[vec!["to read", "x"], vec!["read", "to read"]], json!({}));
+    let property = plan(
+        &status,
+        TagPlan::Property { name: "Status".into(), property_type: "select".into(), values: vec![("read".into(), json!("Read")), ("to read".into(), json!("To read"))], remove_tags: true },
+    )
+    .unwrap();
+    assert_eq!(edits(&property), vec![("s0".into(), strings(&["to read"]), vec![]), ("s1".into(), strings(&["read"]), vec![])]);
+}
+
+#[test]
+fn predictions_match_what_the_store_applies() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = crate::Store::open(dir.path()).unwrap();
+    for (title, tags) in [("A", vec!["ML", "machine learning", "survey"]), ("B", vec!["machine-learning"]), ("C", vec!["status: read", "survey"])] {
+        let mut fields = Map::new();
+        fields.insert("title".into(), Json::from(title));
+        store.insert_source(crate::SourceInput { kind: "reference".into(), tags: tags.iter().map(|t| t.to_string()).collect(), fields, ..Default::default() }).unwrap();
+    }
+    for p in [
+        TagPlan::Merge { from: strings(&["ML", "machine-learning"]), to: "machine learning".into() },
+        TagPlan::Delete { tags: strings(&["survey"]) },
+        TagPlan::Hierarchy { splits: vec![Split { tag: "status: read".into(), path: strings(&["status", "read"]) }] },
+    ] {
+        let before = store.tag_index_typed().unwrap();
+        let change = store.tag_plan(&p).unwrap();
+        let mut expected: HashMap<String, Vec<String>> =
+            before.items.iter().map(|i| (i.id.clone(), i.tags.iter().map(|&t| before.tags[t].name.clone()).collect())).collect();
+        for edit in &change.predicted.items {
+            let tags = expected.get_mut(&edit.id).unwrap();
+            tags.retain(|t| !edit.remove.contains(t));
+            for a in &edit.add {
+                if !tags.contains(a) {
+                    tags.push(a.clone());
+                }
+            }
+        }
+        store.apply_tags(&change.operation).unwrap();
+        for (id, tags) in expected {
+            assert_eq!(store.source(&id).unwrap().unwrap().tags, tags, "{p:?}");
+        }
+    }
+}
