@@ -427,6 +427,8 @@ pub fn suggestions_for_source(library: &dyn LinkLibrary, reviews: &Reviews, sour
 struct ChangeLog {
     entries: VecDeque<(i64, String, String)>,
     last: i64,
+    /// Changes up to here fell out of the log (a view behind them reloads everything).
+    dropped: i64,
 }
 /// One log per library store (the host has one; tests several at once).
 static CHANGES: Mutex<Vec<(usize, ChangeLog)>> = Mutex::new(Vec::new());
@@ -441,7 +443,7 @@ fn with_log<R>(library: &dyn LinkLibrary, f: impl FnOnce(&mut ChangeLog) -> R) -
     let key = store_key(library);
     let mut all = CHANGES.lock().ok()?;
     if !all.iter().any(|(k, _)| *k == key) {
-        all.push((key, ChangeLog { entries: VecDeque::new(), last: 0 }));
+        all.push((key, ChangeLog { entries: VecDeque::new(), last: 0, dropped: 0 }));
     }
     all.iter_mut().find(|(k, _)| *k == key).map(|(_, log)| f(log))
 }
@@ -455,7 +457,9 @@ fn pump(library: &dyn LinkLibrary) {
                 log.entries.push_back((c.seq, c.source_id, c.kind));
             }
             while log.entries.len() > KEEP_CHANGES {
-                log.entries.pop_front();
+                if let Some((seq, ..)) = log.entries.pop_front() {
+                    log.dropped = seq;
+                }
             }
             log.last = log.last.max(last);
             let _ = library.store().changes_ack(CONSUMER, last);
@@ -478,15 +482,14 @@ fn kind_of(kind: &str) -> Option<&'static str> {
 /// further behind than the log reaches (it reloads everything).
 pub fn changes(library: &dyn LinkLibrary, reviews: &Reviews, review: &str, since: i64) -> Result<Json, String> {
     pump(library);
-    let (last, oldest, entries) = with_log(library, |log| {
-        let oldest = log.entries.front().map(|(s, ..)| *s).unwrap_or(log.last + 1);
-        (log.last, oldest, log.entries.iter().filter(|(s, ..)| *s > since).cloned().collect::<Vec<_>>())
+    let (last, dropped, entries) = with_log(library, |log| {
+        (log.last, log.dropped, log.entries.iter().filter(|(s, ..)| *s > since).cloned().collect::<Vec<_>>())
     })
     .ok_or("The change log is busy")?;
-    if since <= 0 || since > last {
-        return Ok(json!({ "latest": last, "records": {}, "all": since > last && since > 0 }));
+    if since < 0 || since > last {
+        return Ok(json!({ "latest": last, "records": {}, "all": since > last }));
     }
-    let all = since + 1 < oldest;
+    let all = since < dropped;
     let by_source: HashMap<String, Vec<String>> = reviews.read(review, |s, _| {
         let mut m: HashMap<String, Vec<String>> = HashMap::new();
         for r in &s.records {
