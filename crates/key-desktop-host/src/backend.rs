@@ -47,6 +47,9 @@ mod web_reflow_commands;
 mod power;
 #[path = "review_commands.rs"]
 mod review_commands;
+// std-B: citation searching, AI use and audit, conduct checks, extraction pilots, contacts.
+#[path = "review_std_b.rs"]
+mod review_std_b;
 use crate::ipc;
 use crate::ipc::{HostState, Output, arg, json_output};
 use key_pdf_core::{

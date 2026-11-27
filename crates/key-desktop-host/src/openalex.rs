@@ -379,6 +379,14 @@ fn fixture(dir: &std::path::Path, path: &str, query: &[(&str, &str)]) -> Result<
         } else if let Some(dois) = filter.strip_prefix("doi:") {
             let dois: Vec<String> = dois.split('|').map(str::to_ascii_lowercase).collect();
             records().into_iter().filter(|r| r.get("doi").and_then(Json::as_str).is_some_and(|d| dois.iter().any(|x| d.to_ascii_lowercase().ends_with(x.as_str())))).collect()
+        } else if let Some(ids) = filter.strip_prefix("cites:") {
+            // std-B (citation searching): the works whose reference lists name any of these.
+            let ids: Vec<String> = ids.split('|').map(str::to_ascii_uppercase).collect();
+            let mut seen = std::collections::HashSet::new();
+            records()
+                .into_iter()
+                .filter(|r| r["referenced_works"].as_array().is_some_and(|refs| refs.iter().filter_map(Json::as_str).any(|w| ids.contains(&w.rsplit('/').next().unwrap_or(w).to_ascii_uppercase()))) && seen.insert(short(r)))
+                .collect()
         } else if let Some(title) = filter.strip_prefix("title.search:") {
             // Like OpenAlex's search, loose: what to accept is the caller's decision.
             records().into_iter().filter(|r| r.get("display_name").and_then(Json::as_str).is_some_and(|t| title_similarity(t, title) >= 0.6)).take(5).collect()

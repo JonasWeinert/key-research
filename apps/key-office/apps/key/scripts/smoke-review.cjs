@@ -6,10 +6,14 @@
 // screen a full text in the embedded reader and exclude it from a selected passage, extract a
 // value from a selection with its required source, a conditional form (Qualitative brings the
 // method question; Quantitative hides it and it is not required), run the meta-analysis and
-// look at the PRISMA diagram and forest plot. Screenshots (light and dark) go to the printed
-// temp folder.
+// look at the PRISMA diagram and forest plot. The network is a local mock: Crossref answers
+// "Look up" and "Complete metadata", Unpaywall gives one PDF to "Find automatically", a mock
+// journal (journal.example) serves the page "Save the page as full text" keeps, and the
+// database connectors replay their recorded fixtures for a search run inside the review.
+// Screenshots (light and dark) go to the printed temp folder.
 const { electron } = require("./lib/launch.cjs");
-const { mkdtemp, writeFile } = require("node:fs/promises");
+const { mkdir, mkdtemp, readFile, readdir, writeFile } = require("node:fs/promises");
+const { createServer } = require("node:http");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const assert = require("node:assert/strict");
@@ -62,10 +66,57 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
   await writeFile(pilatesPdf, pdfWith(["Pilates versus usual care for neck pain: a randomised trial", "Participants were adolescents aged 12 to 16 at one school.", "Neck pain was measured at twelve weeks."]));
   const taichiPdf = path.join(temp, "taichi.pdf");
   await writeFile(taichiPdf, pdfWith(["Tai chi and balance in older people", "Falls were fewer with tai chi."]));
+  // The local network: web lookups (Crossref, Unpaywall; OpenAlex knows nothing), a journal's
+  // page, a PDF, and the database connectors' recorded exchanges.
+  const stretchPdf = pdfWith(["Stretching breaks at work: a cluster randomised trial", "Offices were randomised to stretching breaks."]);
+  const fixtures = path.resolve(__dirname, "../../../../../connectors/fixtures");
+  const exchanges = [];
+  for (const dir of await readdir(fixtures)) {
+    for (const f of await readdir(path.join(fixtures, dir)).catch(() => [])) {
+      if (!f.endsWith(".json")) continue;
+      const data = JSON.parse(await readFile(path.join(fixtures, dir, f), "utf8"));
+      for (const e of data.exchanges ?? []) exchanges.push({ key: `/${new URL(e.url).host}${new URL(e.url).pathname}`, e });
+    }
+  }
+  const crossref = (doi, title, journal, abstract) => ({ message: { DOI: doi, title: [title], "container-title": [journal], abstract: `<jats:p>${abstract}</jats:p>`, author: [{ given: "Ian", family: "Kerr" }], issued: { "date-parts": [[2022]] }, type: "journal-article" } });
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, "http://mock");
+    const json = (status, body) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+    const hit = exchanges.find((x) => x.key === url.pathname);
+    if (hit) return res.writeHead(hit.e.status, hit.e.headers).end(hit.e.body);
+    if (url.pathname === "/works/10.9999/ed.9") return json(200, crossref("10.9999/ed.9", "Editorial: why we should all walk more", "Journal of Walking Studies", "An editorial on walking."));
+    if (url.pathname === "/works/10.9999/cycle.4") return json(200, crossref("10.9999/cycle.4", "Cycling to school and fitness in children", "Journal of Child Health", "A cohort of children who cycled to school had higher fitness scores."));
+    if (url.pathname === "/v2/10.9999/stretch.2") return json(200, { best_oa_location: { url_for_pdf: `http://127.0.0.1:${server.address().port}/files/stretch.pdf` } });
+    if (url.pathname === "/files/stretch.pdf") return res.writeHead(200, { "content-type": "application/pdf", "content-length": stretchPdf.length }).end(stretchPdf);
+    if (url.pathname === "/aqua")
+      return res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`<!doctype html><html><head><title>Aquatic exercise for knee osteoarthritis</title><meta name="citation_title" content="Aquatic exercise for knee osteoarthritis: a randomised trial"></head><body><h1>Aquatic exercise for knee osteoarthritis</h1><h2>Methods</h2><p>Adults with knee osteoarthritis were randomised to pool exercise or education for twelve weeks.</p><h2>Results</h2><p>Pain fell more with pool exercise.</p></body></html>`);
+    json(404, { error: "not found" });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const mock = `http://127.0.0.1:${server.address().port}`;
+  const noOpenAlex = path.join(temp, "no-openalex");
+  await mkdir(noOpenAlex);
   const app = await electron.launch({
     executablePath: process.env.KEY_ELECTRON_EXECUTABLE,
-    args: process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")],
-    env: { ...process.env, KEY_SKIP_ONBOARDING: "1", KEY_USER_DATA: path.join(temp, "profile"), KEY_WORKSPACE_PARENT: path.join(temp, "workspaces") },
+    args: [...(process.env.KEY_ELECTRON_EXECUTABLE ? [] : [path.resolve(__dirname, "..")]), `--host-resolver-rules=MAP journal.example 127.0.0.1:${server.address().port}`],
+    env: {
+      ...process.env,
+      KEY_SKIP_ONBOARDING: "1",
+      KEY_BROWSER_SMOKE: "1",
+      KEY_USER_DATA: path.join(temp, "profile"),
+      KEY_WORKSPACE_PARENT: path.join(temp, "workspaces"),
+      KEY_DB_SEARCH_MOCK: "0",
+      KEY_CONNECTORS_MOCK: mock,
+      KEY_OPENALEX_FIXTURES: noOpenAlex,
+      KEY_WEB_OPENALEX_URL: mock,
+      KEY_WEB_UNPAYWALL_URL: mock,
+      KEY_WEB_CROSSREF_URL: mock,
+      KEY_WEB_NCBI_URL: mock,
+      KEY_WEB_ARXIV_URL: mock,
+      KEY_WEB_OPENLIBRARY_URL: mock,
+    },
   });
   const report = {};
   const shot = async (page, name) => {
@@ -83,6 +134,7 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1360, 880));
     const [ws] = await page.evaluate(() => window.key.workspaces());
     const call = (command, args = {}) => page.evaluate(({ command, args, id }) => window.key.invoke(command, args, id), { command, args, id: ws.id });
+    await page.evaluate(() => window.key.setAppSettings({ openalexMailto: "smoke@example.org" }));
 
     // Create from the sidebar's Reviews row.
     await page.getByRole("navigation", { name: "Systematic reviews" }).getByRole("button", { name: "Reviews", exact: true }).click();
@@ -137,6 +189,15 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await recordSheet.getByText("kept with the review").waitFor();
     await recordSheet.getByRole("button", { name: "Remove", exact: true }).click();
     await recordSheet.getByText("None yet").waitFor();
+    // Look up: Crossref's answer, field by field; the journal it gives is taken.
+    await recordSheet.getByRole("button", { name: "Look up" }).click();
+    const diff = recordSheet.getByRole("group", { name: "Lookup results" });
+    await diff.getByText("From crossref").waitFor();
+    await diff.locator("label", { hasText: "Journal or source" }).locator("input").check();
+    await shot(page, "04a-sources-record-lookup");
+    await diff.getByRole("button", { name: /^Take/ }).click();
+    await recordSheet.getByRole("textbox", { name: "Journal or source" }).and(page.locator('[value="Journal of Walking Studies"]')).waitFor();
+    await recordSheet.getByText("from crossref").first().waitFor();
     await shot(page, "04a-sources-record-panel");
     await recordSheet.getByRole("button", { name: "Remove…" }).click();
     await page.getByRole("button", { name: "Remove record" }).click();
@@ -145,6 +206,21 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-notice button", { hasText: "Undo" }).click();
     await page.locator(".kx-rv-records .kx-rv-muted", { hasText: /^10 records$/ }).waitFor();
     assert.equal((await call("review_prisma", { reviewId })).removedOther, 0);
+    // Complete metadata for a selection: looked up, every difference offered.
+    await page.getByRole("checkbox", { name: /Select Cycling to school/ }).check();
+    await page.getByRole("checkbox", { name: /Select Editorial/ }).check();
+    await page.locator(".kx-rv-bulk").getByRole("button", { name: "Complete metadata…" }).click();
+    const complete = page.getByRole("dialog", { name: "Complete metadata" });
+    await complete.getByRole("button", { name: "Look up" }).click();
+    await complete.getByText("2 of 2 looked up").waitFor();
+    await complete.locator("li", { hasText: "Cycling to school" }).locator("label", { hasText: "Journal or source" }).locator("input").check();
+    await shot(page, "04d-sources-complete-metadata");
+    await complete.getByRole("button", { name: /^Take 1/ }).click();
+    await complete.waitFor({ state: "detached" });
+    const cycling = (await call("review_records", { reviewId, viewer: "", query: { stage: "ta", filter: "all", text: "Cycling", scope: "sources" } })).rows[0];
+    assert.equal(cycling.journal, "Journal of Child Health");
+    assert.equal(cycling.filled.journal, "crossref");
+    await page.locator(".kx-rv-bulk").getByRole("button", { name: "Clear" }).click();
     // Duplicates: the automatic decision, with why; split, then merged again.
     await page.getByRole("radio", { name: /^Duplicates/ }).click();
     const dupGroup = page.locator(".kx-rv-dup-groups > li").first();
@@ -304,9 +380,25 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     const recordOf = async (re) => (await ftRows()).find((r) => re.test(r.title)).id;
     await call("review_fulltext", { reviewId, recordId: await recordOf(/Pilates/), status: "retrieved", sourceId: source.id, actor: s.team[0].id });
     const librarySources = (await call("store_sources", { limit: 50 })).items.length;
+    // The aquatic trial is known only by its journal page (no DOI).
+    await call("review_record_edit", { reviewId, recordId: await recordOf(/Aquatic/), fields: { doi: "", url: "http://journal.example/aqua" }, actor: s.team[0].id });
     await page.getByRole("tab", { name: /Full text/ }).click();
     await page.getByRole("radio", { name: /Full texts/ }).click();
     await page.locator(".kx-rv-fulltext-table tbody tr").first().waitFor();
+    // Find automatically: Unpaywall (the mock) has the stretching trial's PDF; it is kept with
+    // the review, the others stay needed.
+    await page.getByRole("button", { name: "Find automatically" }).click();
+    const stretchId = await recordOf(/Stretching/);
+    for (let i = 0; i < 300; i++) {
+      const row = (await ftRows()).find((r) => r.id === stretchId);
+      if (row.state === "have" && !(await page.locator(".kx-rv-finding").count())) break;
+      await page.waitForTimeout(200);
+    }
+    const stretch = (await ftRows()).find((r) => r.id === stretchId);
+    assert.equal(stretch.state, "have");
+    assert.equal(stretch.file.origin, "find");
+    assert.equal(stretch.sourceId, null);
+    await shot(page, "10c-fulltexts-found");
     await page.locator(".kx-rv-fulltexts input[type=file]").first().setInputFiles([yogaPdf, notesPdf]);
     const matchSheet = page.getByRole("dialog", { name: "Match files to records" });
     await matchSheet.locator("li[data-level=confident]", { hasText: "moreau-2018.pdf" }).waitFor();
@@ -342,7 +434,18 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     await page.locator(".kx-rv-record-title").first().waitFor();
     for (let i = 0; i < 12 && !(await page.locator(".kx-rv-done").count()); i++) {
       const title = await page.locator(".kx-rv-compact .kx-rv-record-title").textContent();
-      if (/Pilates/.test(title)) {
+      if (/Aquatic/.test(title)) {
+        // Its journal page saved as its full text (Key's browser, off screen), shown as saved.
+        await page.getByRole("button", { name: "Save the page as full text" }).click();
+        await page.locator(".kx-rv-reader[data-kind=page]").waitFor({ timeout: 60000 });
+        const aquatic = (await ftRows()).find((r) => /Aquatic/.test(r.title));
+        assert.equal(aquatic.file.origin, "snapshot");
+        assert.equal(aquatic.file.mime, "text/html");
+        await shot(page, "10d-fulltext-saved-page");
+        await page.locator(".kx-rv-decide-head").click();
+        await page.keyboard.press("i");
+        await page.waitForFunction((b) => document.querySelector(".kx-rv-compact .kx-rv-record-title")?.textContent !== b || document.querySelector(".kx-rv-done"), title);
+      } else if (/Pilates/.test(title)) {
         // The PDF renders in the review layout; a passage selected there shows the population
         // criterion is not met, and the record is excluded from it.
         const span = page.locator(".kx-rv-reader .pdfjs-text-layer span", { hasText: "adolescents" }).first();
@@ -566,6 +669,26 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
     pc = await call("review_prisma", { reviewId: counts });
     assert.deepEqual([pc.identified, pc.screened, pc.screeningPending, pc.otherMethods.length], [3717, 75, 3642, 0]);
     await shot(page, "26-prisma-origin-fixed");
+    // A database search run from inside the review (Crossref, answered from its recorded
+    // fixture): imported as a batch with its counts; "Update search" brings nothing new.
+    const query = { expr: { type: "group", id: "g1", op: "and", items: [{ type: "group", id: "g2", op: "or", items: [{ type: "term", id: "t1", text: "school feeding", field: "title_abstract" }] }] }, filters: {} };
+    await call("review_search_save", { reviewId: counts, search: { id: "s-smoke", name: "School feeding (Crossref)", query, connectors: ["crossref"], overrides: {} }, actor: owner });
+    await page.getByRole("tab", { name: /Sources/ }).click();
+    await page.getByRole("radio", { name: /^Database searches/ }).click();
+    const searchRow = page.locator(".kx-rv-search-row", { hasText: "School feeding (Crossref)" });
+    await searchRow.getByRole("button", { name: "Run" }).click();
+    for (let i = 0; i < 300 && !((await call("review_get", { reviewId: counts, viewer: owner })).searches[0].runs?.length > 0); i++) await page.waitForTimeout(200);
+    let rs = await call("review_get", { reviewId: counts, viewer: owner });
+    const imported = rs.batches.find((b) => b.batch.dbRunId);
+    assert(imported && imported.records > 0, "the run came in as an import");
+    assert(Object.keys(imported.batch.perSource).length > 0, "with each database's count");
+    await searchRow.getByText(/last run/).waitFor();
+    await shot(page, "27-sources-search-run");
+    await searchRow.getByRole("button", { name: "Update search" }).click();
+    for (let i = 0; i < 300 && (await call("review_get", { reviewId: counts, viewer: owner })).searches[0].runs.length < 2; i++) await page.waitForTimeout(200);
+    rs = await call("review_get", { reviewId: counts, viewer: owner });
+    assert.equal(rs.searches[0].runs[1].update, true);
+    assert.equal(rs.searches[0].runs[1].added, 0, "nothing new: the same recorded answer");
 
     // Back to the first review (its tab comes forward).
     await page.evaluate(({ ws, id }) => window.key.tabAction("open-content", { section: "review", workspaceId: ws, entityId: id }), { ws: ws.id, id: reviewId });
@@ -596,6 +719,8 @@ const ris = STUDIES.map(([title, author, year, doi, abstract]) => ["TY  - JOUR",
   } finally {
     console.log(JSON.stringify({ temp, ...report }, null, 2));
     await app.close();
+    server.close();
+    server.closeAllConnections?.();
   }
 })().catch((e) => {
   console.error(e);

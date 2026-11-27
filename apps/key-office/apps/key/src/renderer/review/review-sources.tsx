@@ -14,6 +14,9 @@ import { OTHER_METHODS, plural, type Batch, type ImportReport, type RecordMeta }
 import { Btn, Confirm, MenuButton, errorText, formatDate, useLoad } from "./review-ui";
 import { DuplicatesView, RecordsTable } from "./review-records";
 import { Searches } from "./review-search";
+// std-B
+import { CitationSearching } from "./review-chasing";
+import { takeSourcesView } from "./review-conduct";
 import type { StageProps } from "./ReviewPage";
 
 const GROUPS: [Batch["group"], string, string][] = [
@@ -138,16 +141,19 @@ export function reportText(r: ImportReport) {
   return parts.join(" · ");
 }
 
-type SourcesView = "records" | "duplicates" | "imports" | "searches";
+// std-B: "chase" is Citation searching (review-chasing.tsx).
+type SourcesView = "records" | "duplicates" | "imports" | "searches" | "chase";
 
 export function Sources(props: StageProps) {
   const { summary } = props;
-  const [view, setView] = useState<SourcesView>(() => (summary.records ? "records" : "imports"));
+  const [view, setView] = useState<SourcesView>(() => (takeSourcesView() as SourcesView | undefined) ?? (summary.records ? "records" : "imports"));
   const tabs: [SourcesView, string, string][] = [
     ["records", "Records", summary.records ? summary.active.toLocaleString() : ""],
     ["duplicates", "Duplicates", summary.openPairs ? `${summary.openPairs} to check` : summary.duplicates ? summary.duplicates.toLocaleString() : ""],
     ["imports", "Imports", summary.batches.filter((b) => !b.removed).length.toLocaleString()],
     ["searches", "Database searches", ((summary as unknown as { searches?: unknown[] }).searches ?? []).length.toLocaleString()],
+    // std-B
+    ["chase", "Citation searching", ""],
   ];
   return (
     <div className="kx-rv-sources-page" data-view={view}>
@@ -166,6 +172,8 @@ export function Sources(props: StageProps) {
       {view === "duplicates" && <DuplicatesView {...props} pairs={summary.openPairs > 0 ? <Duplicates {...props} /> : null} />}
       {view === "imports" && <Imports {...props} onSearch={() => setView("searches")} />}
       {view === "searches" && <Searches {...props} />}
+      {/* std-B */}
+      {view === "chase" && <CitationSearching {...props} />}
     </div>
   );
 }

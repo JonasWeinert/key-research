@@ -169,7 +169,9 @@ impl Reviews {
                 "flagged": r.flagged[stage.index()].is_some(),
                 "suggestions": suggestions,
                 "checks": rules::checks(&state.protocol, stage, &ctx),
-                "ai": r.ai[stage.index()],
+                // std-B: hidden while the record is in a blind AI audit the viewer has not decided.
+                "ai": if crate::ai_audit::hidden(state, record, stage, viewer) { None } else { r.ai[stage.index()].clone() },
+                "aiBlind": crate::ai_audit::hidden(state, record, stage, viewer),
                 "pilot": state.pilot_of(record, stage).map(|p| json!({ "id": p.id, "name": p.name, "open": p.open })),
                 "assigned": state.assigned(record, stage).iter().map(|id| json!({ "id": id, "name": state.member_name(id) })).collect::<Vec<_>>(),
                 "duplicateOf": r.dup_of,
@@ -295,7 +297,7 @@ impl Reviews {
                         "fulltext": r.fulltext.status,
                         "sourceId": r.source_id,
                         "suggestion": suggestion,
-                        "ai": r.ai[stage.index()].as_ref().map(|a| json!({ "value": a.value, "score": a.score })),
+                        "ai": r.ai[stage.index()].as_ref().filter(|_| !crate::ai_audit::hidden(state, &r.id, stage, viewer)).map(|a| json!({ "value": a.value, "score": a.score })),
                         "duplicateOf": r.dup_of,
                         "batch": r.batch,
                         "batchName": state.batch(&r.batch).map(|b| b.name.clone()),
@@ -391,7 +393,8 @@ impl Reviews {
                 for f in form.fields() {
                     let key = (form.id.clone(), f.id.clone());
                     let all = ex.and_then(|e| e.values.get(&key));
-                    let suggestion = all.and_then(|v| v.get("ai"));
+                    // std-B: no AI suggestion while the study is in a blind coding audit.
+                    let suggestion = all.and_then(|v| v.get("ai")).filter(|_| !crate::ai_audit::hidden_extraction(state, record, viewer));
                     let people: Option<BTreeMap<String, crate::derive::Extracted>> = all.map(|v| v.iter().filter(|(who, _)| who.as_str() != "ai").map(|(k, x)| (k.clone(), x.clone())).collect());
                     let values = people.as_ref();
                     let mine = values.and_then(|v| v.get(viewer));

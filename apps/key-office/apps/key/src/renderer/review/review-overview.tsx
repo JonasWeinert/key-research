@@ -10,6 +10,8 @@ import { PrismaDiagram } from "./prisma-diagram";
 import { Btn, Confirm, MenuButton, errorText, useLoad } from "./review-ui";
 import { OriginSheet } from "./review-sources";
 import type { StageId, StageProps } from "./ReviewPage";
+// std-B
+import { ConductPanel } from "./review-conduct";
 
 function nextStep(s: Summary, viewer: string): { title: string; body: string; action: string; stage: StageId; icon: IconName } {
   const ta = s.stages.ta,
@@ -108,6 +110,8 @@ export function Overview(props: StageProps) {
             )}
           </dl>
         </section>
+        {/* std-B: soft conduct warnings and AI use */}
+        <ConductPanel {...props} />
       </div>
       <section className="kx-rv-section kx-rv-prisma-card">
         <div className="kx-rv-section-head">

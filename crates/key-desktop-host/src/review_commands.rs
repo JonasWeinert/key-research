@@ -538,6 +538,27 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                 }
                 json!({ "report": reviews.import(&review()?, batch, records, &actor()?, &lookup)? })
             }
+            // A record's metadata looked up by DOI or PMID (OpenAlex, then Crossref or PubMed),
+            // through web search's own lookups; null when not found. Title-only records use the
+            // reader's scholarly lookup in the renderer.
+            "review_lookup" => {
+                let doi = key_store::normalize::doi(text(args, "doi")).unwrap_or_default();
+                let pmid = text(args, "pmid").trim().to_string();
+                let id = if !doi.is_empty() {
+                    Some(key_store::smart_query::Identifier { kind: "doi", value: doi })
+                } else if !pmid.is_empty() {
+                    Some(key_store::smart_query::Identifier { kind: "pmid", value: pmid })
+                } else {
+                    None
+                };
+                match id.map(|id| web_search::identifiers::resolve(web, &id)).transpose()?.flatten() {
+                    Some((w, _)) => json!({
+                        "source": if w.provider.is_empty() { "Crossref".to_string() } else { w.provider.clone() },
+                        "title": w.title, "abstractText": w.abstract_, "authors": w.authors, "year": w.year, "journal": w.venue, "doi": w.doi, "pmid": w.ids.pmid,
+                    }),
+                    None => Json::Null,
+                }
+            }
             // Database searches that belong to the review (Sources › Search databases).
             "review_search_save" => {
                 reviews.save_search(&review()?, args.get("search").cloned().unwrap_or(Json::Null), &actor()?)?;
@@ -780,13 +801,26 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
                     let form = state.protocol.forms.iter().find(|f| f.id == form_id).ok_or("This form no longer exists")?;
                     key_review::ai::parse_extraction(text(args, "content"), form, &passages)
                 })?;
-                json!({ "suggested": reviews.ai_extract(&id, &record, &form_id, &suggested, text(args, "model"))? })
+                // std-B: logged with the call (provider, model as reported, prompt version and hash).
+                let call: key_review::ai_audit::CallInfo = args.get("call").cloned().and_then(|c| serde_json::from_value(c).ok()).unwrap_or_else(|| key_review::ai_audit::CallInfo { model: text(args, "model").into(), ..Default::default() });
+                let request = reviews.read(&id, |state, _| Ok(state.protocol.forms.iter().find(|f| f.id == form_id).map(|form| key_review::ai::extraction_request(form, &meta, &passages)).unwrap_or(Json::Null)))?;
+                let labels: Vec<String> = passages.iter().map(|(l, _)| l.clone()).collect();
+                json!({ "suggested": reviews.ai_log_extraction(&id, &record, &form_id, &suggested, &request, &call, &labels)? })
             }
             "review_ai_answer" => {
                 let suggestion = key_review::ai::parse_answer(text(args, "content"), text(args, "model"))?;
-                reviews.ai_suggest(&review()?, text(args, "recordId"), stage(args)?, suggestion.clone(), "ai")?;
+                // std-B: logged with the call (provider, model as reported, prompt version and hash).
+                let id = review()?;
+                let record = text(args, "recordId").to_string();
+                let stage = stage(args)?;
+                let call: key_review::ai_audit::CallInfo = args.get("call").cloned().and_then(|c| serde_json::from_value(c).ok()).unwrap_or_else(|| key_review::ai_audit::CallInfo { model: text(args, "model").into(), ..Default::default() });
+                let meta = reviews.metas(&id, std::slice::from_ref(&record))?.remove(&record).ok_or("This record no longer exists")?;
+                let request = reviews.read(&id, |state, _| Ok(key_review::ai::screening_request(&state.protocol, stage, &meta)))?;
+                reviews.ai_log_screening(&id, &record, stage, suggestion.clone(), &request, &call)?;
                 suggestion
             }
+            // std-B: citation searching, AI use and audit, conduct checks, extraction pilots, contacts.
+            c if super::review_std_b::handles(c) => super::review_std_b::dispatch(reviews, library, &lookup, c, args)?,
             _ => return Err(format!("Unknown Key command: {command}")),
         })
     })();

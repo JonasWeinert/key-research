@@ -158,6 +158,40 @@ export const REVIEW_HELP = {
   "empty.review.fulltext": { kind: "empty", title: "Nothing at full text yet", what: "Records included or kept as maybe at title and abstract come here to be read in full.", todo: "Screen titles and abstracts first." },
   "empty.review.sources": { kind: "empty", title: "No records yet", what: "Each import is listed here with its source and counts for PRISMA.", todo: "Drop a RIS, BibTeX, EndNote XML, PubMed or CSV file on this page." },
   "empty.review.extraction": { kind: "empty", title: "No included studies yet", what: "Studies included at full text are listed here for data extraction.", todo: "Include studies at full-text screening." },
+  // std-B: citation searching, conduct checks, AI use and audit, extraction pilots.
+  "review.chase": {
+    kind: "explain",
+    title: "Citation searching",
+    body: [
+      "Studies you include point to others: the works they cite (backward) and the works citing them (forward). Cochrane requires checking reference lists; TARCiS recommends both directions.",
+      "Key looks the studies up in OpenAlex, removes what the review already has and shows the counts before adding anything. Repeat on newly included studies until a round finds nothing new.",
+    ],
+    privacy: "Sends the studies' DOIs, OpenAlex ids or titles to OpenAlex. Nothing else leaves this Mac.",
+  },
+  "review.conduct": {
+    kind: "explain",
+    title: "Conduct checks",
+    body: [
+      "Soft reminders of what Cochrane's conduct standards (MECIR) and the Campbell standards expect of a review like yours, in Key's own words with a link to each standard.",
+      "They never block. If one does not apply, dismiss it with the reason: the reason is kept for the methods section. The review type in Setup changes which checks apply.",
+    ],
+  },
+  "review.ai.audit": {
+    kind: "explain",
+    title: "Reporting AI use",
+    body: [
+      "Journals and the Cochrane, Campbell and JBI position on AI ask which tool and version was used, for what, with which prompts, and how well it agreed with people.",
+      "Key logs every suggestion with the model, its version, the date and the prompt, compares it with the reviewers' final decisions, and drafts the statement. A blind audit sample measures how many includes the AI would have missed.",
+    ],
+  },
+  "review.xpilot": {
+    kind: "explain",
+    title: "Piloting the extraction forms",
+    body: [
+      "Before the main extraction, everyone who extracts fills in the same few studies on their own. Fields with low agreement need clearer wording or guidance.",
+      "Agreement is the share of studies with the same value; kappa corrects choices for chance, and the ICC does the same for numbers. Closing the pilot records the date and number of studies for the methods.",
+    ],
+  },
   "empty.review.analysis": { kind: "empty", title: "Nothing to analyse yet", what: "Outcome data extracted from included studies is pooled here.", todo: "Include studies, then extract their outcome data." },
   "empty.review.outcomes": { kind: "empty", title: "No outcome data yet", what: "Add the Outcome data form in Setup › Extraction forms, then fill it in for each study.", todo: "Rows need an outcome name and events, means or an estimate." },
 } satisfies Record<string, HelpEntry>;
