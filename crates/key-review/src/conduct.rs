@@ -93,9 +93,12 @@ pub fn observe(s: &mut StdB, e: &Event) {
                 s.retraction_checks.push(c);
             }
         }
-        k if k.starts_with("rob.") => {
-            if let Some(r) = &e.record_id {
-                s.rob.entry(r.clone()).or_default().insert(e.actor.clone());
+        // std-C's independent assessments: a completed assessment or an answer (not the tool
+        // choice `rob.study`, nor the consensus `rob.final`).
+        "rob.answer" | "rob.complete" if e.kind == "rob.answer" || p.get("complete").and_then(Json::as_bool).unwrap_or(false) => {
+            let study = e.record_id.clone().or_else(|| p.get("study").and_then(Json::as_str).map(str::to_string));
+            if let Some(r) = study.filter(|_| e.actor != "system") {
+                s.rob.entry(r).or_default().insert(e.actor.clone());
             }
         }
         _ => {}
