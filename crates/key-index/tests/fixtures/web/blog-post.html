@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="key-snapshot" content='{"url":"https://notes.example.net/2026/01/winter-sourdough","capturedAt":"2026-01-20T18:00:00.000Z"}'>
+<title>Why my sourdough stopped rising in winter — Kitchen notes</title>
+<meta property="og:site_name" content="Kitchen notes">
+<style>body{font:16px/1.5 Georgia,serif;margin:0;color:#222}header,footer,nav{font-family:system-ui}main{max-width:720px;margin:0 auto;padding:16px}.ad{background:#eee;padding:40px;text-align:center}</style>
+</head>
+<body>
+<header class="site-header"><a href="/">Kitchen notes</a> <nav><a href="/">Home</a> <a href="/about">About</a> <a href="/archive">Archive</a></nav></header>
+<main>
+<article class="post">
+<h1>Why my sourdough stopped rising in winter</h1>
+<p class="post-meta"><time datetime="2026-01-12">12 January 2026</time></p>
+<p>Every winter my starter sulks. It bubbles a little, smells fine, and then my loaves come out flat and dense. This year I finally measured what was going on instead of blaming the flour.</p>
+<p>The kitchen sits at about 16 °C at night. At that temperature the yeast and bacteria in the starter work at maybe half their summer pace, so a feeding schedule that worked in July leaves the starter underfed and sour by the time I bake.</p>
+<p>The fix was boring: feed it with warm water, keep the jar on top of the fridge, and wait for it to double before mixing the dough. I wrote myself a tiny script to remind me how long to wait:</p>
+<pre><code>def hours_to_double(temp_c):
+    # roughly halves for every 8 degrees warmer
+    return 4 * 2 ** ((24 - temp_c) / 8)
+
+print(round(hours_to_double(16), 1))</code></pre>
+<p>Six and a half hours at sixteen degrees sounds about right, and the last three loaves have risen properly. Next I want to try a stiffer starter, which is said to cope better with the cold.</p>
+</article>
+<nav class="post-nav"><a href="/2025/12">Older posts</a></nav>
+</main>
+<footer><p>Written in a small kitchen.</p></footer>
+</body></html>

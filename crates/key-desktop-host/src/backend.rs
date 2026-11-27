@@ -39,6 +39,8 @@ mod models_commands;
 mod formula_worker;
 #[path = "reflow_commands.rs"]
 mod reflow_commands;
+#[path = "web_reflow_commands.rs"]
+mod web_reflow_commands;
 #[path = "power.rs"]
 mod power;
 #[path = "review_commands.rs"]
@@ -3001,6 +3003,9 @@ impl Host {
             }));
         }
         if let Some(result) = tokio::task::block_in_place(|| reflow_commands::dispatch(&self.library, &self.native, command, args)) {
+            return Some(result);
+        }
+        if let Some(result) = tokio::task::block_in_place(|| web_reflow_commands::dispatch(&self.library, command, args)) {
             return Some(result);
         }
         if command.starts_with("store_") {
