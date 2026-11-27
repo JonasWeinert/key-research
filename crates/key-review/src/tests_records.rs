@@ -567,3 +567,35 @@ fn update_searches_import_only_what_is_new() {
     assert_eq!(none.added, 0);
     assert_eq!(reviews.summary(&id, &a).unwrap()["searches"][0]["runs"].as_array().unwrap().len(), 3);
 }
+
+#[test]
+fn every_kind_of_selection_evidence_and_paired_sources_round_trip() {
+    let (reviews, id, a) = setup();
+    let recs = active(&reviews, &id);
+    to_full_text(&reviews, &id, &a, &recs[..1]);
+    let r = &recs[0];
+    let c = criterion(&reviews, &id, Stage::Ft, 0);
+    // Met, not met, for include and a note; a saved page's passage has no page or boxes.
+    let evidence = vec![
+        json!({ "kind": "notMet", "criterion": c, "quote": "aged 12 to 16", "text": "aged 12 to 16", "page": 0, "rects": [[6553, 13107, 32767, 1310]] }),
+        json!({ "kind": "met", "criterion": c, "quote": "a randomised trial", "text": "a randomised trial", "page": 1, "rects": [[0, 0, 100, 100], [0, 120, 100, 100]] }),
+        json!({ "kind": "include", "quote": "on a web page", "text": "on a web page", "page": -1, "rects": [] }),
+        json!({ "kind": "note", "quote": "check the dose", "text": "check the dose", "page": 2, "rects": [], "note": "dose differs from the protocol" }),
+    ];
+    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Exclude, vec![c.clone()], "", "", evidence.clone(), &a).unwrap();
+    let seen = reviews.record_view(&id, r, &a, Stage::Ft, &NoLibrary).unwrap();
+    assert_eq!(seen["mine"]["evidence"], json!(evidence));
+    // A mean and its SD from one selection: both values keep the same source.
+    reviews.decide(&id, &[r.clone()], Stage::Ft, Choice::Include, vec![], "", "", vec![], &a).unwrap();
+    let form = reviews.read(&id, |s, _| Ok(s.protocol.forms[0].clone())).unwrap();
+    let numbers: Vec<_> = form.fields().filter(|f| f.kind == "number").take(2).cloned().collect();
+    let pos = json!({ "page": 4, "rects": [[100, 200, 3000, 900]], "text": "12.3 (4.5)" });
+    for (f, v) in numbers.iter().zip([12.3, 4.5]) {
+        reviews.extract(&id, r, &form.id, &f.id, json!(v), "12.3 (4.5)", Some(5), None, Some(pos.clone()), false, false, &a).unwrap();
+    }
+    let view = reviews.extraction_view(&id, r, &a).unwrap();
+    for (f, v) in numbers.iter().zip([12.3, 4.5]) {
+        let mine = &view["values"][format!("{}/{}", form.id, f.id)]["mine"];
+        assert_eq!((&mine["value"], &mine["sourcePos"], &mine["quote"]), (&json!(v), &pos, &json!("12.3 (4.5)")));
+    }
+}

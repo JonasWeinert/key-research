@@ -672,6 +672,8 @@ pub fn dispatch(root: &Path, library: &Library, databases: &Arc<Databases>, web:
             }
             // A selection in the reader read as numbers ("12.3 (4.5)", "n = 120", "45%", CI).
             "review_parse_selection" => key_review::logic::parse_selection(text(args, "text")),
+            // Where a selection can go in a study's forms (the reader's extraction menu).
+            "review_selection_targets" => key_review::selection::targets(&serde_json::from_value(args.clone()).map_err(|e| e.to_string())?),
             // Records: removed and restored by hand, corrected, grouped into studies.
             "review_records_remove" => {
                 reviews.remove_records(&review()?, &strings(args, "recordIds"), args.get("removed").and_then(Json::as_bool).unwrap_or(true), text(args, "reason"), &actor()?)?;

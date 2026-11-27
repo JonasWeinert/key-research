@@ -411,43 +411,9 @@ fn yes(b: bool) -> String {
     if b { "yes".into() } else { "no".into() }
 }
 
-/// Numbers in a passage selected in the reader, read the way papers write them.
+/// Numbers in a passage selected in the reader, read the way papers write them (selection.rs).
 pub fn parse_selection(text: &str) -> Json {
-    let t = text.replace('\u{2212}', "-").replace(['–', '—'], "-").replace('·', ".");
-    let number = r"-?\d+(?:[.,]\d+)?";
-    let re = |p: &str| regex::Regex::new(p).unwrap();
-    let num = |s: &str| s.replace(',', ".").parse::<f64>().ok();
-    let mut out = Map::new();
-    let all: Vec<f64> = re(number).find_iter(&t).filter_map(|m| num(m.as_str())).collect();
-    out.insert("numbers".into(), json!(all));
-    // An estimate with its interval: 0.52 (0.31 to 0.88), 0.52 [0.31, 0.88], 0.52 (0.31-0.88).
-    if let Some(c) = re(&format!(r"({number})\s*[\(\[]\s*(?:95\s*%\s*CI[:,]?\s*)?({number})\s*(?:to|,|;|-)\s*({number})\s*[\)\]]")).captures(&t) {
-        out.insert("estimate".into(), json!(num(&c[1])));
-        out.insert("lower".into(), json!(num(&c[2])));
-        out.insert("upper".into(), json!(num(&c[3])));
-    } else if let Some(c) = re(&format!(r"({number})\s*\(\s*(?:SD\s*[=:]?\s*)?({number})\s*\)")).captures(&t) {
-        // Mean (SD): 12.3 (4.5).
-        out.insert("mean".into(), json!(num(&c[1])));
-        out.insert("sd".into(), json!(num(&c[2])));
-    } else if let Some(c) = re(&format!(r"({number})\s*(?:±|\+/-)\s*({number})")).captures(&t) {
-        out.insert("mean".into(), json!(num(&c[1])));
-        out.insert("sd".into(), json!(num(&c[2])));
-    }
-    if let Some(c) = re(&format!(r"(?i)\bn\s*=\s*({number})")).captures(&t) {
-        out.insert("n".into(), json!(num(&c[1])));
-    }
-    if let Some(c) = re(&format!(r"({number})\s*/\s*({number})")).captures(&t) {
-        out.insert("events".into(), json!(num(&c[1])));
-        out.insert("total".into(), json!(num(&c[2])));
-    }
-    if let Some(c) = re(&format!(r"({number})\s*%")).captures(&t) {
-        out.insert("percent".into(), json!(num(&c[1])));
-    }
-    if let Some(c) = re(&format!(r"^\s*({number})\s*-\s*({number})\s*$")).captures(&t) {
-        out.insert("lower".into(), json!(num(&c[1])));
-        out.insert("upper".into(), json!(num(&c[2])));
-    }
-    Json::Object(out)
+    crate::selection::parse(text)
 }
 
 #[cfg(test)]

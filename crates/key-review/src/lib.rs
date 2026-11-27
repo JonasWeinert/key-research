@@ -13,6 +13,7 @@ pub mod ops;
 pub mod prisma;
 pub mod records;
 pub mod rules;
+pub mod selection;
 pub mod stats;
 pub mod store;
 pub mod templates;
