@@ -272,6 +272,12 @@ pub struct State {
     pub analyses: Vec<Json>,
     pub events: usize,
     pub last_event: Option<(i64, String)>,
+    /// Old exclusion reason ids → the criteria they became (criteria and reasons are one list).
+    pub aliases: BTreeMap<String, String>,
+    /// Whether an old protocol was migrated on replay, and whether a `criteria.alias` event
+    /// records it in the log.
+    pub migrated: bool,
+    pub alias_recorded: bool,
     /// Retracted decision event ids (so a replay of a retract before its target still works).
     retracted: HashSet<String>,
 }
@@ -306,6 +312,9 @@ impl State {
             analyses: Vec::new(),
             events: 0,
             last_event: None,
+            aliases: BTreeMap::new(),
+            migrated: false,
+            alias_recorded: false,
             retracted: HashSet::new(),
         }
     }
@@ -362,7 +371,15 @@ impl State {
             "review.rename" => self.info.name = text("name"),
             "review.archive" => self.info.archived = p.get("archived").and_then(Json::as_bool).unwrap_or(true),
             "protocol.set" => {
-                if let Ok(protocol) = serde_json::from_value::<Protocol>(p.get("protocol").cloned().unwrap_or(Json::Null)) {
+                if let Ok(mut protocol) = serde_json::from_value::<Protocol>(p.get("protocol").cloned().unwrap_or(Json::Null)) {
+                    // A protocol from before criteria and reasons were one list.
+                    if protocol.is_legacy() {
+                        let aliases = protocol.migrate();
+                        self.migrated = true;
+                        for (from, to) in aliases {
+                            self.aliases.entry(from).or_insert(to);
+                        }
+                    }
                     let amend = p.get("amend").and_then(Json::as_bool).unwrap_or(false) && !self.versions.is_empty();
                     if amend {
                         if let Some(v) = self.versions.last_mut() {
@@ -375,6 +392,16 @@ impl State {
                     }
                     self.protocol = protocol;
                 }
+            }
+            "criteria.alias" => {
+                if let Some(Json::Object(map)) = p.get("aliases") {
+                    for (from, to) in map {
+                        if let Some(to) = to.as_str() {
+                            self.aliases.insert(from.clone(), to.to_string());
+                        }
+                    }
+                }
+                self.alias_recorded = true;
             }
             "team.set" => {
                 if let Ok(team) = serde_json::from_value::<Vec<Member>>(p.get("members").cloned().unwrap_or(Json::Null)) {
@@ -462,7 +489,9 @@ impl State {
                 if self.retracted.contains(&e.id) {
                     return;
                 }
-                let decision = Decision { event: e.id.clone(), at: e.at, reviewer: e.actor.clone(), value, reasons: d.reasons, note: d.note, version: e.version.clone(), evidence: d.evidence, auto: d.auto };
+                // Reasons are criterion ids; old decisions name old reason ids, resolved here.
+                let reasons = d.reasons.into_iter().map(|r| self.aliases.get(&r).cloned().unwrap_or(r)).collect();
+                let decision = Decision { event: e.id.clone(), at: e.at, reviewer: e.actor.clone(), value, reasons, note: d.note, version: e.version.clone(), evidence: d.evidence, auto: d.auto };
                 let resolve = e.kind == "resolve";
                 let Some(id) = e.record_id.clone() else { return };
                 if let Some(r) = self.record_mut(&id) {
@@ -699,20 +728,37 @@ impl State {
         assigned.is_empty() || assigned.iter().any(|a| a == reviewer)
     }
 
-    /// The final reasons of an excluded record at a stage.
+    /// The final reasons (criterion ids) of an excluded record at a stage: the resolution's, or
+    /// every criterion the excluding reviewers chose.
     pub fn final_reasons(&self, r: &RecState, stage: Stage) -> Vec<String> {
+        let alias = |id: &String| self.aliases.get(id).cloned().unwrap_or_else(|| id.clone());
         if let Some(res) = r.resolution(stage) {
-            return res.reasons.clone();
+            return res.reasons.iter().map(alias).collect();
         }
         let mut reasons: Vec<String> = Vec::new();
-        for d in r.current(stage) {
-            for reason in &d.reasons {
-                if !reasons.contains(reason) {
-                    reasons.push(reason.clone());
+        for d in r.current(stage).into_iter().filter(|d| d.value == Choice::Exclude) {
+            for reason in d.reasons.iter().map(alias) {
+                if !reasons.contains(&reason) {
+                    reasons.push(reason);
                 }
             }
         }
         reasons
+    }
+
+    /// Reviewers agree to exclude but chose different criteria. Not a conflict (the record is
+    /// excluded either way, and PRISMA reports the first criterion in the list); full-text
+    /// screening shows it so the team can settle the reason.
+    pub fn reasons_differ(&self, r: &RecState, stage: Stage) -> bool {
+        if r.resolution(stage).is_some() {
+            return false;
+        }
+        let current = r.current(stage);
+        if current.len() < 2 || current.iter().any(|d| d.value != Choice::Exclude) {
+            return false;
+        }
+        let sets: Vec<std::collections::BTreeSet<&String>> = current.iter().map(|d| d.reasons.iter().collect()).collect();
+        sets.iter().any(|x| *x != sets[0])
     }
 
     /// Counts per stage for the top bar.

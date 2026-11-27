@@ -9,8 +9,8 @@ pub fn screening_request(protocol: &Protocol, stage: Stage, meta: &RecordMeta) -
     let criteria: Vec<Json> = protocol
         .criteria
         .iter()
-        .filter(|c| c.stages.contains(&stage))
-        .map(|c| json!({ "kind": c.kind, "label": c.label, "guidance": c.guidance }))
+        .filter(|c| c.applies(stage))
+        .map(|c| json!({ "mustMeet": c.label, "guidance": c.guidance }))
         .collect();
     let question = if protocol.question.text.trim().is_empty() {
         protocol.question.parts.iter().filter(|(_, v)| !v.trim().is_empty()).map(|(k, v)| format!("{}: {v}", k.to_uppercase())).collect::<Vec<_>>().join("; ")

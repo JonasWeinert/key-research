@@ -4,10 +4,6 @@
 // the official guidance documents alongside them.
 use crate::model::*;
 
-fn reason(id: &str, label: &str, guidance: &str) -> Reason {
-    Reason { id: id.into(), label: label.into(), guidance: guidance.into(), stages: Vec::new() }
-}
-
 fn field(id: &str, label: &str, kind: &str) -> Field {
     Field { id: id.into(), label: label.into(), kind: kind.into(), ..Default::default() }
 }
@@ -25,18 +21,109 @@ fn section(id: &str, title: &str, fields: Vec<Field>) -> Section {
     Section { id: id.into(), title: title.into(), guidance: String::new(), fields }
 }
 
-pub fn default_reasons() -> Vec<Reason> {
-    vec![
-        reason("r-design", "Wrong study design", "The design is not one the protocol includes."),
-        reason("r-population", "Wrong population", "Participants or setting outside the protocol."),
-        reason("r-intervention", "Wrong intervention or exposure", ""),
-        reason("r-comparator", "Wrong comparator", ""),
-        reason("r-outcome", "Wrong outcomes", "None of the protocol's outcomes is reported."),
-        reason("r-publication", "Wrong publication type", "Editorial, comment, conference abstract only, protocol …"),
-        reason("r-duplicate", "Duplicate report", "Another report of a study already included."),
-        reason("r-language", "Language", "Written in a language the team cannot assess."),
-        reason("r-other", "Other", "Say why in the note."),
-    ]
+/// A suggested criterion: element, id, what a study must meet, the reason's wording, stages.
+struct Suggestion {
+    element: &'static str,
+    id: &'static str,
+    label: &'static str,
+    reason: &'static str,
+    guidance: &'static str,
+    full_text_only: bool,
+    /// The question part whose words become its guidance ("Include: …").
+    part: Option<&'static str>,
+}
+
+const fn s(element: &'static str, id: &'static str, label: &'static str, reason: &'static str, guidance: &'static str, part: Option<&'static str>) -> Suggestion {
+    Suggestion { element, id, label, reason, guidance, full_text_only: false, part }
+}
+
+const SUGGESTIONS: &[Suggestion] = &[
+    s("population", "c-population", "Population as in the question", "Wrong population", "Participants and setting the question is about.", Some("p")),
+    s("intervention", "c-intervention", "Intervention as in the question", "Wrong intervention", "", Some("i")),
+    s("exposure", "c-exposure", "Exposure as in the question", "Wrong exposure", "", Some("e")),
+    s("comparator", "c-comparator", "Comparator as in the question", "Wrong comparator", "", Some("c")),
+    s("outcome", "c-outcome", "Reports an outcome of interest", "Wrong outcome", "", Some("o")),
+    s("sample", "c-sample", "Sample as in the question", "Wrong sample", "", Some("s")),
+    s("phenomenon", "c-phenomenon", "Phenomenon of interest as in the question", "Wrong phenomenon of interest", "", Some("pi")),
+    s("evaluation", "c-evaluation", "Evaluation as in the question", "Wrong evaluation", "", Some("e")),
+    s("research", "c-research", "Research type as in the question", "Wrong research type", "", Some("r")),
+    s("design", "c-design", "An eligible study design", "Wrong study design", "Say which designs count, for example randomised controlled trials.", Some("d")),
+    s("other", "c-language", "In an included language", "Not in an included language", "Languages the team can read or translate.", None),
+    s("other", "c-dates", "Within the date range", "Outside the date range", "", None),
+    s("other", "c-publication", "An eligible publication type", "Wrong publication type", "Not an editorial, comment, letter, protocol or conference abstract alone.", None),
+    s("other", "c-duplicate", "Not a duplicate report", "Duplicate", "Another report of a study already in the review.", None),
+    Suggestion { element: "other", id: "c-fulltext", label: "Full text available", reason: "Full text not available", guidance: "", full_text_only: true, part: None },
+];
+
+fn criterion_of(x: &Suggestion, parts: &std::collections::BTreeMap<String, String>, framework: &str) -> Criterion {
+    // SPIDER's "d" is the design part; PICO has none.
+    let part = x.part.filter(|p| !(*p == "d" && framework != "spider")).and_then(|p| parts.get(p)).map(|t| t.trim()).filter(|t| !t.is_empty());
+    Criterion {
+        id: x.id.into(),
+        element: x.element.into(),
+        label: x.label.into(),
+        reason: x.reason.into(),
+        guidance: match part {
+            Some(text) => format!("Include: {text}"),
+            None => x.guidance.into(),
+        },
+        stages: if x.full_text_only { vec![Stage::Ft] } else { vec![Stage::Ta, Stage::Ft] },
+        ..Default::default()
+    }
+}
+
+/// Criteria to start from for a question: one per part of its framework, then the usual others
+/// (language, dates, publication type, duplicates, full text). Each carries the question's own
+/// words as guidance when they were filled in.
+pub fn suggested_criteria(question: &Question) -> Vec<Criterion> {
+    let wanted = elements_of(&question.framework);
+    let mut out: Vec<Criterion> = Vec::new();
+    for element in wanted {
+        for x in SUGGESTIONS.iter().filter(|x| x.element == *element) {
+            out.push(criterion_of(x, &question.parts, &question.framework));
+        }
+    }
+    out
+}
+
+/// The question element an old default reason belonged to.
+pub fn legacy_element(reason_id: &str) -> &'static str {
+    match reason_id {
+        "r-design" => "design",
+        "r-population" => "population",
+        "r-intervention" => "intervention",
+        "r-comparator" => "comparator",
+        "r-outcome" => "outcome",
+        _ => "other",
+    }
+}
+
+/// An old reason no criterion named, as a criterion: Key's own defaults become their suggested
+/// criteria; any other keeps its wording as the reason.
+pub fn legacy_criterion(r: &LegacyReason) -> Criterion {
+    let known = match r.id.as_str() {
+        "r-design" => Some("c-design"),
+        "r-population" => Some("c-population"),
+        "r-intervention" => Some("c-intervention"),
+        "r-comparator" => Some("c-comparator"),
+        "r-outcome" => Some("c-outcome"),
+        "r-publication" => Some("c-publication"),
+        "r-duplicate" => Some("c-duplicate"),
+        "r-language" => Some("c-language"),
+        _ => None,
+    };
+    let stages = if r.stages.is_empty() { vec![Stage::Ta, Stage::Ft] } else { r.stages.clone() };
+    if let Some(x) = known.and_then(|id| SUGGESTIONS.iter().find(|x| x.id == id)) {
+        // Keep the wording the team used ("Wrong outcomes"), and its guidance if it had one.
+        return Criterion {
+            reason: r.label.clone(),
+            guidance: if r.guidance.is_empty() { x.guidance.into() } else { r.guidance.clone() },
+            stages,
+            ..criterion_of(x, &Default::default(), "pico")
+        };
+    }
+    let label = if r.id == "r-other" { "No other reason to exclude".to_string() } else { r.label.clone() };
+    Criterion { id: format!("c-{}", r.id.trim_start_matches("r-")), element: "other".into(), label, reason: r.label.clone(), guidance: r.guidance.clone(), stages, ..Default::default() }
 }
 
 pub fn default_protocol() -> Protocol {
@@ -46,7 +133,7 @@ pub fn default_protocol() -> Protocol {
         notes: String::new(),
         rules: Rules::default(),
         criteria: Vec::new(),
-        reasons: default_reasons(),
+        reasons: Vec::new(),
         keywords: Keywords::default(),
         labels: vec!["Background".into(), "Check later".into()],
         forms: vec![characteristics_form()],
@@ -242,6 +329,22 @@ mod tests {
         p.forms.last_mut().unwrap().id = "f-custom-1".into();
         p.validate().unwrap();
         assert!(outcomes_form().fields().any(|f| f.role == "outcomes"));
-        assert_eq!(p.top_reason(&["r-other".into(), "r-population".into()]).unwrap(), "r-population");
+    }
+
+    #[test]
+    fn suggestions_follow_the_question() {
+        let mut q = Question::default();
+        q.parts.insert("p".into(), "adults with type 2 diabetes".into());
+        let c = suggested_criteria(&q);
+        assert_eq!(c[0].element, "population");
+        assert_eq!(c[0].guidance, "Include: adults with type 2 diabetes");
+        assert!(c.iter().any(|c| c.id == "c-intervention") && !c.iter().any(|c| c.id == "c-exposure"));
+        assert_eq!(c.last().unwrap().stages, vec![Stage::Ft]);
+        q.framework = "spider".into();
+        assert_eq!(suggested_criteria(&q)[0].element, "sample");
+        let mut p = default_protocol();
+        p.criteria = suggested_criteria(&Question::default());
+        p.validate().unwrap();
+        assert_eq!(p.top_reason(&["c-language".into(), "c-population".into()]).unwrap(), "c-population");
     }
 }

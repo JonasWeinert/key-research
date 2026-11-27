@@ -234,7 +234,8 @@ pub fn template_json(protocol: &Protocol) -> Result<String> {
     serde_json::to_string_pretty(&json!({ "format": "key-review-template", "version": FORMAT, "protocol": protocol })).map_err(|e| e.to_string())
 }
 
-/// A template's protocol (rules, criteria, reasons, forms, keywords); the question and
+/// A template's protocol (rules, criteria, forms, keywords; an old template's reasons become
+/// criteria); the question and
 /// registration of the review it is applied to stay.
 pub fn read_template(text: &str) -> Result<Protocol> {
     let v: Json = serde_json::from_str(text).map_err(|_| "This is not a review template")?;
@@ -243,7 +244,8 @@ pub fn read_template(text: &str) -> Result<Protocol> {
         _ if v.get("rules").is_some() || v.get("criteria").is_some() => v,
         _ => return Err("This is not a review template".into()),
     };
-    let protocol: Protocol = serde_json::from_value(p).map_err(|e| format!("The template is damaged: {e}"))?;
+    let mut protocol: Protocol = serde_json::from_value(p).map_err(|e| format!("The template is damaged: {e}"))?;
+    protocol.migrate();
     protocol.validate()?;
     Ok(protocol)
 }
@@ -269,13 +271,13 @@ fn status_label(s: &Status) -> &'static str {
 }
 
 fn reason_labels(state: &State, ids: &[String]) -> String {
-    ids.iter().map(|id| state.protocol.reason(id).map(|r| r.label.clone()).unwrap_or_else(|| id.clone())).collect::<Vec<_>>().join("; ")
+    ids.iter().map(|id| state.protocol.reason_label(state.aliases.get(id).unwrap_or(id))).collect::<Vec<_>>().join("; ")
 }
 
 fn screening_csv(state: &State, conn: &rusqlite::Connection) -> Result<String> {
     let metas = all_metas(conn, &state.info.id)?;
     let reviewers: Vec<&Member> = state.team.iter().collect();
-    let mut head = vec!["Record ID", "Title", "Authors", "Year", "Journal", "DOI", "PMID", "Import", "Duplicate of", "Title/abstract", "Title/abstract reasons", "Full text", "Full-text reasons", "Full text retrieval"].into_iter().map(String::from).collect::<Vec<_>>();
+    let mut head = vec!["Record ID", "Title", "Authors", "Year", "Journal", "DOI", "PMID", "Import", "Duplicate of", "Title/abstract", "Title/abstract criteria not met", "Full text", "Full-text criteria not met", "Full text retrieval"].into_iter().map(String::from).collect::<Vec<_>>();
     for m in &reviewers {
         head.push(format!("Title/abstract: {}", m.name));
         head.push(format!("Full text: {}", m.name));
@@ -438,7 +440,7 @@ pub fn describe(state: &State, e: &Event) -> String {
     let p = &e.payload;
     let s = |k: &str| p.get(k).and_then(Json::as_str).unwrap_or("");
     let stage = p.get("stage").and_then(Json::as_str).map(|x| if x == "ft" { "full text" } else { "title and abstract" }).unwrap_or("");
-    let reasons = p.get("reasons").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(|id| state.protocol.reason(id).map(|r| r.label.clone()).unwrap_or_else(|| id.into())).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+    let reasons = p.get("reasons").and_then(Json::as_array).map(|a| a.iter().filter_map(Json::as_str).map(|id| state.protocol.reason_label(state.aliases.get(id).map(String::as_str).unwrap_or(id))).collect::<Vec<_>>().join(", ")).unwrap_or_default();
     let reasons = if reasons.is_empty() { String::new() } else { format!(" ({reasons})") };
     match e.kind.as_str() {
         "review.create" => format!("Created the review \"{}\"", s("name")),
@@ -446,6 +448,7 @@ pub fn describe(state: &State, e: &Event) -> String {
         "review.archive" => if p.get("archived").and_then(Json::as_bool).unwrap_or(true) { "Archived the review".into() } else { "Restored the review".into() },
         "protocol.set" => if p.get("amend").and_then(Json::as_bool).unwrap_or(false) { "Edited the protocol".into() } else { format!("Saved protocol version: {}", s("note")) },
         "team.set" => "Changed the team".into(),
+        "criteria.alias" => "Merged the exclusion reasons into the criteria".into(),
         "batch.add" => format!("Imported {} records from {}", p.pointer("/batch/count").and_then(Json::as_u64).unwrap_or(0), p.pointer("/batch/name").and_then(Json::as_str).unwrap_or("a file")),
         "batch.remove" => "Removed an import".into(),
         "records.add" => format!("Added {} records", p.get("records").and_then(Json::as_array).map(|a| a.len()).unwrap_or(0)),

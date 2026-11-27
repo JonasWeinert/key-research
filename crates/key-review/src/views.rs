@@ -142,6 +142,7 @@ impl Reviews {
                 "mine": mine,
                 "others": others,
                 "unblinded": open,
+                "reasonsDiffer": open && state.reasons_differ(r, stage),
                 "needed": state.needed(record, stage),
                 "resolution": r.resolution(stage).map(|d| decision_json(state, d)),
                 "earlier": if stage == Stage::Ft { json!({ "resolution": r.resolution(Stage::Ta).map(|d| decision_json(state, d)), "decisions": other_others, "mine": r.mine(Stage::Ta, viewer).map(|d| decision_json(state, d)) }) } else { Json::Null },

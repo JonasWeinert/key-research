@@ -134,7 +134,7 @@ pub fn compute(state: &State) -> Prisma {
                 column.excluded += 1;
                 let reasons = state.final_reasons(r, Stage::Ft);
                 let top = state.protocol.top_reason(&reasons).cloned();
-                let label = top.and_then(|id| state.protocol.reason(&id).map(|x| x.label.clone())).unwrap_or_else(|| "No reason given".into());
+                let label = top.map(|id| state.protocol.reason_label(&id)).unwrap_or_else(|| "No criterion given".into());
                 *(if other { &mut reasons_other } else { &mut reasons_main }).entry(label).or_default() += 1;
             }
             _ => {
@@ -145,7 +145,7 @@ pub fn compute(state: &State) -> Prisma {
     }
     let order = |map: BTreeMap<String, usize>| -> Vec<Named> {
         let mut v: Vec<Named> = map.into_iter().map(|(name, count)| Named { name, count }).collect();
-        let pos = |n: &Named| state.protocol.reasons.iter().position(|r| r.label == n.name).unwrap_or(usize::MAX);
+        let pos = |n: &Named| state.protocol.criteria.iter().position(|c| c.reason_text() == n.name).unwrap_or(usize::MAX);
         v.sort_by_key(pos);
         v
     };

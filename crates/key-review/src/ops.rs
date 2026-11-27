@@ -47,14 +47,15 @@ fn validate_reasons(protocol: &Protocol, stage: Stage, value: Choice, reasons: &
         return Err(format!("\"Maybe\" is turned off for {}", stage.label().to_lowercase()));
     }
     for r in reasons {
-        if protocol.reason(r).is_none() {
-            return Err("That exclusion reason is not in the protocol".into());
+        if !protocol.criteria_at(stage).any(|c| &c.id == r) {
+            return Err("That criterion is not one of this stage's criteria".into());
         }
     }
-    if value == Choice::Exclude {
+    // With no criteria yet there is nothing to choose from.
+    if value == Choice::Exclude && protocol.criteria_at(stage).next().is_some() {
         match rule.reasons.as_str() {
-            "one" if reasons.len() != 1 => return Err("Choose one exclusion reason".into()),
-            "all" if reasons.is_empty() => return Err("Choose the exclusion reasons that apply".into()),
+            "one" if reasons.len() != 1 => return Err("Choose the criterion it fails".into()),
+            "all" if reasons.is_empty() => return Err("Choose the criteria it fails".into()),
             _ => {}
         }
     }
@@ -90,7 +91,7 @@ pub struct ChangeImpact {
     pub ta: usize,
     pub ft: usize,
     /// "linked" (only rules linked to metadata changed: exactly the records whose suggestion
-    /// changes) or "criteria" (wording, stages or reasons changed: every decided record).
+    /// changes) or "criteria" (wording, stages or order changed: every decided record).
     pub basis: String,
 }
 
@@ -543,12 +544,11 @@ impl Reviews {
 /// Which decided records a protocol change could affect at a stage.
 fn affected(state: &State, conn: &Connection, new: &Protocol, stage: Stage, library: &dyn Library) -> Result<Vec<String>> {
     let old = &state.protocol;
-    let relevant = |p: &Protocol| -> Vec<Criterion> { p.criteria.iter().filter(|c| c.stages.contains(&stage)).cloned().collect() };
+    let relevant = |p: &Protocol| -> Vec<Criterion> { p.criteria_at(stage).cloned().collect() };
     let (a, b) = (relevant(old), relevant(new));
     let strip = |cs: &[Criterion]| -> Vec<Criterion> { cs.iter().map(|c| Criterion { link: None, ..c.clone() }).collect() };
-    let reasons_changed = old.reasons.iter().map(|r| (&r.id, &r.label)).collect::<Vec<_>>() != new.reasons.iter().map(|r| (&r.id, &r.label)).collect::<Vec<_>>();
     let decided: Vec<&crate::derive::RecState> = state.records.iter().filter(|r| !r.current(stage).is_empty() || r.resolution(stage).is_some_and(|d| d.auto.is_none())).collect();
-    if strip(&a) != strip(&b) || (reasons_changed && stage == Stage::Ft) {
+    if strip(&a) != strip(&b) {
         return Ok(decided.iter().map(|r| r.id.clone()).collect());
     }
     if a == b {
