@@ -137,6 +137,8 @@ pub fn dispatch(library: &Library, command: &str, args: &Json, root: &Path) -> O
             }
             json_output(json!({ "config": file_mirror::mirror_config(store)?, "last": file_mirror::mirror_summary(store) }))
         })(),
+        // The settings' read: quick, so it never waits behind slow work for a bridge slot.
+        "store_file_mirror_config" => (|| json_output(json!({ "config": file_mirror::mirror_config(store)?, "last": file_mirror::mirror_summary(store) })))(),
         "store_file_mirror_run" => (|| json_output(file_mirror::mirror_sync(store, &filenames::rules(store)?)?))(),
         _ => return None,
     };

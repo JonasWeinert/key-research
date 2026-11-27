@@ -58,7 +58,7 @@ const BACKGROUND: &[&str] = &[
 const SLOW_PREFIXES: &[&str] = &["db_estimate", "db_connectors_check", "store_model_download", "store_model_import", "web_search", "web_lookup", "web_find_pdf", "web_add_identifiers", "web_merge", "feeds_", "store_zotero_", "store_cite_check", "store_biblio_import", "store_biblio_export", "store_md_export_", "store_autoexport_", "store_file_mirror", "store_file_rename_apply", "store_openalex_", "store_refresh_metadata", "store_retraction_check", "store_reanalyze", "store_web_page_find", "store_web_references_detect", "scholarly_", "global_search", "semantic_library", "preprocess_", "begin_pdfjs_companion", "disposable_", "workspace_scan_linked_folder", "library_import_file", "store_import_files", "store_import_zotero", "store_tag_suggestions", "store_tag_plan", "store_duplicates", "store_find_duplicates_for", "store_merge_suggestions", "benchmark_", "web_read_page", "review_import", "review_link_library", "review_db_runs"];
 
 /// Exceptions to the prefixes: quick despite their family.
-const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_md_export_restore", "store_autoexport_targets"];
+const QUICK: &[&str] = &["feeds_mark_read", "feeds_set", "feeds_counts", "feeds_subscriptions", "feeds_from_library", "feeds_arxiv_categories", "store_zotero_progress", "store_zotero_status", "store_zotero_location", "store_zotero_plugin_status", "begin_pdfjs_companion_managed", "web_search_cancel", "db_estimate_cancel", "store_duplicates_summary", "store_md_export_status", "store_md_export_config", "store_md_export_preview", "store_md_export_restore", "store_file_mirror_config", "store_autoexport_targets"];
 
 pub fn is_slow(command: &str) -> bool {
     !QUICK.contains(&command) && SLOW_PREFIXES.iter().any(|p| command.starts_with(p))
@@ -143,6 +143,8 @@ mod tests {
         // A screening decision is a keystroke; an import of 20,000 records is long.
         assert_eq!(resolve("review_decide", None), Class::Interactive);
         assert!(is_slow("review_import_file") && !is_slow("review_record"));
+        // Settings read the mirror's state at once; turning it on syncs.
+        assert!(!is_slow("store_file_mirror_config") && is_slow("store_file_mirror") && is_slow("store_file_mirror_run"));
     }
 
     #[test]
