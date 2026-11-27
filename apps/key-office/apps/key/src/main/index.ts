@@ -497,6 +497,14 @@ function snapshot(w: ShellWindow) {
     activeViewId: activeViewId(w),
   };
 }
+/** Review commands that only read: everything else changes a review and tells its tabs. */
+const REVIEW_READS = new Set([
+  "review_list", "review_get", "review_stamp", "review_record", "review_queue", "review_records", "review_pairs", "review_prisma", "review_studies",
+  "review_extraction", "review_outcomes", "review_analyse", "review_export", "review_audit", "review_db_runs", "review_preview_file", "review_template_read",
+  "review_form_templates", "review_criteria_suggestions", "review_protocol_impact", "review_duplicates", "review_fulltexts", "review_fulltext_match",
+  "review_fulltext_csv_read", "review_fulltext_info", "review_fulltext_bytes", "review_parse_selection", "review_form_preview", "review_agreement",
+  "review_ai_request", "review_ai_extract_request",
+]);
 /** Library-wide events reach every window. */
 function emit(event: string, value?: unknown) {
   for (const w of liveShells()) w.window.webContents.send(event, value);
@@ -2615,6 +2623,9 @@ else
               .catch(() => {});
           }
           const result = await operation;
+          // A review changed: its open tabs (this window or another) read it again.
+          if (command.startsWith("review_") && !REVIEW_READS.has(command))
+            emit("review-changed", { workspaceId: targetWorkspace, reviewId: args?.reviewId ?? args?.id ?? (result as any)?.reviewId });
           if (
             [
               "workspace_save_attribute",

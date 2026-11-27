@@ -2,12 +2,12 @@
 // Sources · Title & abstract · Full text · Extraction · Analysis) with live counts, and the
 // stage. Everything it shows comes from the review host (review-api.ts); every change goes
 // back as an event and the summary reloads.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SegmentedTabs } from "@key-reader/ui/SegmentedTabs";
 import { downloadText } from "../db-ui";
 import { Explain } from "../explain";
 import { Icon } from "../icons";
-import type { Invoke } from "../library-api";
+import { bridge, type Invoke } from "../library-api";
 import { reviewApi, savedViewer, saveViewer, type Summary } from "./review-api";
 import { Confirm, MenuButton, errorText, useLoad, useNotice } from "./review-ui";
 import { Overview } from "./review-overview";
@@ -71,17 +71,25 @@ export default function ReviewPage({ invoke, workspaceId, reviewId, viewId, acti
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summary?.team]);
-  // Changes made elsewhere (another window, an imported review file) show here too.
+  // Changes made elsewhere (another window, an imported review file) show here too: the main
+  // process tells every window when a review command changed something; the stamp says whether
+  // this tab has seen it already.
   const seen = summary?.events;
+  const seenRef = useRef(seen);
+  seenRef.current = seen;
   useEffect(() => {
-    if (!active || seen === undefined) return;
-    const timer = setInterval(() => {
+    const check = () =>
       void invoke<{ events: number }>("review_stamp", { reviewId }, workspaceId)
-        .then((s) => s.events !== seen && reload())
+        .then((s) => seenRef.current !== undefined && s.events !== seenRef.current && reload())
         .catch(() => {});
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [active, seen, invoke, reviewId, workspaceId, reload]);
+    const off = bridge().on?.("review-changed", (v) => {
+      const id = (v as { reviewId?: string } | undefined)?.reviewId;
+      if (!id || id === reviewId) check();
+    });
+    // A tab coming back into view catches up too.
+    if (active) check();
+    return () => off?.();
+  }, [active, invoke, reviewId, workspaceId, reload]);
   // The tab shows the review's name.
   useEffect(() => {
     if (summary?.review.name) void (window as any).key?.tabAction?.("content-title", { viewId, title: summary.review.name });
