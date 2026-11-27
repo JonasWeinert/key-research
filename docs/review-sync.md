@@ -69,6 +69,15 @@ workspace that has the review already adds the events it lacks — the same merg
 | `checklist.note` | `{ list, item, location, text }` (last writer wins per list and item; both empty removes it) |
 | `search.source` | `{ batchId, source, platform?, coverage?, searchedAt?, strategy?, limits?, noLimits?, filters?, notes?, searcher? }` (a patch per import and database) |
 | `search.peer_review`, `search.prior` | `{ id, … }` or `{ id, deleted: true }` |
+| `rob.tool` | `{ tool }` (a tool defined or edited in the review) or `{ id, deleted }` |
+| `rob.setup` | `{ assessors?, blind?, tool }` |
+| `rob.study` (record) | `{ tool, results? }` |
+| `rob.answer` (record) | `{ result, tool, toolVersion, domain, question?, value, reason, support, migratedFrom? }`: one assessor's answer, or (no question) domain or overall judgement |
+| `rob.evidence` (record) | `{ result, tool, domain, id, text, page, rects, hash, removed? }` |
+| `rob.complete` (record) | `{ result, tool, complete }` |
+| `rob.final` (record) | `{ result, tool, toolVersion, domain, value, note }`: the agreed judgement |
+| `grade.set` | `{ key: "outcome\|time point", rating }` or `{ key, deleted }` |
+| `grade.order` | `{ order: [key] }` |
 
 ### Why merging never conflicts
 

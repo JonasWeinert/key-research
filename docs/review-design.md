@@ -76,6 +76,9 @@ Event kinds (payload fields in `docs/review-sync.md`):
 | `protocol.register` | the protocol's registration (registry, id, date, address), or its withdrawal |
 | `checklist.note` | where the manuscript reports a checklist item, and notes |
 | `search.source`, `search.peer_review`, `search.prior` | PRISMA-S details of a source, a peer review of the strategies, reused prior work |
+| `rob.tool`, `rob.setup`, `rob.study` | risk-of-bias tools of the review, assessors and blind mode, a study's tool and results |
+| `rob.answer`, `rob.evidence`, `rob.complete`, `rob.final` | one assessor's answers, judgements and supporting passages; done; the agreed judgement |
+| `grade.set`, `grade.order` | an outcome's certainty rating (GRADE); the Summary of findings order |
 
 **Derived state** (`derive.rs`) is a fold over events: current decision per (record, stage,
 reviewer), each record's status per stage (undecided, needs another reviewer, conflict, included,
@@ -206,14 +209,54 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   source column per field and a data dictionary (field, type, options, show-when, checks). Form
   builder (sections; text, long text, number, choice, multi-choice, date,
   yes/no, table / repeating group; guidance, required, quote required), templates (study
-  characteristics, dichotomous / continuous / generic outcomes, RoB 2-style, ROBINS-I-style,
-  Newcastle–Ottawa-style — Key's own wording), dual extraction with comparison and consensus,
+  characteristics, dichotomous / continuous / generic outcomes; risk of bias has its own
+  stage), dual extraction with comparison and consensus,
   AI pre-fill as suggestions with source passages. Export: wide CSV, an outcome table for RevMan-style entry (not a RevMan import file), tidy
   long CSV for R.
 - **Analysis**: pick an outcome; effect measure (RR, OR, RD, MD, SMD/Hedges' g, generic inverse
   variance); fixed and random effects (DerSimonian–Laird, REML; Hartung–Knapp); heterogeneity (Q,
   I², τ², prediction interval); subgroups; leave-one-out; Egger's test; forest and funnel plots
   (`src/renderer/charts/`), exportable.
+- **Risk of bias** (`rob.rs`, `certainty.rs`, `review-rob.tsx`): an assessment belongs to a study
+  and, for result-level tools (RoB 2, ROBINS-I, ROBINS-E), to one result: an outcome and time
+  point of the outcome tables ("whole study" otherwise, and the fallback for a result without
+  its own). A tool is data (`crates/key-review/rob-tools/*.json`, editable per review, exported
+  and imported as JSON, built from scratch in the tool builder): judgement levels (colour,
+  symbol, what they count as in analyses), domains, points to consider with response options,
+  and a suggestion rule per domain (the answer raising most concern, or stars) and overall (the
+  least favourable domain, or none). Shipped: Key's own basic checklist (its own questions and
+  suggestion rule), and the structure only of RoB 2, ROBINS-I v2, ROBINS-E, Newcastle–Ottawa and
+  QUADAS-2: Key's neutral domain labels, the judgement scale, a worst-domain overall default and
+  a link per domain. Their questions and algorithms stay in the official tools (RoB 2 and the
+  ROBINS tools are CC BY-NC-ND; the others state no licence; see LICENSES.md): the assessor
+  answers there and records each judgement, its basis and supporting passages in Key. Anyone
+  holding the rights to a fuller version imports it as a tool definition (JSON) into their
+  review. A judgement that differs from a suggestion needs a reason. The reader is the main
+  panel, the assessment the sidebar; a selection becomes support for the domain in focus with
+  its page and boxes. Two (or more) assessors work independently; blind until all have
+  finished; then differing domains are conflicts (a queue) agreed by consensus or a
+  tie-breaker. Answers in old RoB extraction forms are brought in on request ("Bring them in",
+  once per study and form). Plots: traffic light (studies × domains) and summary bars, unweighted
+  and weighted by an outcome's analysis, light and dark on screen, print palette in SVG/PNG.
+  In Analysis: the per-domain judgements beside the forest plot, a flag for studies without an
+  assessment, the analysis without the studies at high risk, and subgroups by overall risk.
+  Other analyses read `rob::covariates` (or the `rob-covariates` export).
+- **Certainty** (`grade.rs`, `review-grade.tsx`): GRADE per outcome, linked to that outcome's
+  analysis (measure and model). Start high (randomised) or low (non-randomised; high when rated
+  with ROBINS-I); five domains to rate down, three to rate up for non-randomised evidence; each
+  judgement other than "not serious", or other than Key's suggestion, needs a footnote. Key
+  suggests from the data and says why, never applying it: risk of bias from the share of
+  weight at high (or some) risk and the estimate without those studies; inconsistency from I²,
+  the prediction interval and overlap of intervals; imprecision from the interval against no
+  effect and the smallest important difference (per 1,000 for dichotomous outcomes) and the
+  optimal information size; publication bias from Egger's test with ten or more studies;
+  indirectness by hand. The Summary of findings: outcomes in the reviewer's order with
+  importance, assumed risk (studies' median control risk, or entered), risk with the
+  intervention and the difference per 1,000 with intervals (odds ratios converted through the
+  odds), relative effect, participants and studies, certainty with GRADE's circles and
+  footnotes, and a plain-language statement ("probably", "may"). Export for Word (HTML),
+  Markdown, CSV. GRADEpro has no public import format for such a table (it imports RevMan
+  data packages), so Key writes none.
 
 ## Standards in conduct (citation searching, AI use, conduct checks, pilots)
 
@@ -247,6 +290,7 @@ with live counts. A reviewer switcher ("Screening as …") sits at the right.
   choices; ICC(2,1) and mean absolute difference for numbers); "Forms piloted" records the date,
   studies and agreement, and later changes to a piloted form show with their protocol versions. The
   contact log feeds the missing-data reporting and exports (CSV).
+
 ## Reporting (PRISMA checklist, protocol, search report)
 
 - **Overview › PRISMA checklist** (`checklist.rs`): PRISMA 2020's 42 rows and its 12 abstract
