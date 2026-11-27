@@ -71,29 +71,29 @@ window.addEventListener(
 try {
   contextBridge.exposeInMainWorld("__keyTestClipboard", { read, write });
   contextBridge.executeInMainWorld({
-  func: () => {
-    const bridge = (window as unknown as { __keyTestClipboard: { read(): Types; write(t: Types): void } }).__keyTestClipboard;
-    const clip = {
-      readText: async () => bridge.read()["text/plain"] ?? "",
-      writeText: async (text: string) => bridge.write({ "text/plain": String(text) }),
-      read: async () => {
-        const types = bridge.read();
-        const parts: Record<string, Blob> = {};
-        for (const [t, v] of Object.entries(types)) parts[t] = new Blob([v], { type: t });
-        return Object.keys(parts).length ? [new ClipboardItem(parts)] : [];
-      },
-      write: async (items: ClipboardItem[]) => {
-        const types: Types = {};
-        for (const item of items) for (const t of item.types) types[t] = await (await item.getType(t)).text();
-        bridge.write(types);
-      },
-      addEventListener() {},
-      removeEventListener() {},
-      dispatchEvent: () => true,
-    };
-    Object.defineProperty(Navigator.prototype, "clipboard", { configurable: true, get: () => clip });
-  },
-});
+    func: () => {
+      const bridge = (window as unknown as { __keyTestClipboard: { read(): Types; write(t: Types): void } }).__keyTestClipboard;
+      const clip = {
+        readText: async () => bridge.read()["text/plain"] ?? "",
+        writeText: async (text: string) => bridge.write({ "text/plain": String(text) }),
+        read: async () => {
+          const types = bridge.read();
+          const parts: Record<string, Blob> = {};
+          for (const [t, v] of Object.entries(types)) parts[t] = new Blob([v], { type: t });
+          return Object.keys(parts).length ? [new ClipboardItem(parts)] : [];
+        },
+        write: async (items: ClipboardItem[]) => {
+          const types: Types = {};
+          for (const item of items) for (const t of item.types) types[t] = await (await item.getType(t)).text();
+          bridge.write(types);
+        },
+        addEventListener() {},
+        removeEventListener() {},
+        dispatchEvent: () => true,
+      };
+      Object.defineProperty(Navigator.prototype, "clipboard", { configurable: true, get: () => clip });
+    },
+  });
 } catch {
   // A page without context isolation: copy and paste above still use the run's clipboard.
 }

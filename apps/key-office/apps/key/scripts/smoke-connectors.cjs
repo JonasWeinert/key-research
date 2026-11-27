@@ -18,6 +18,11 @@ const path = require("node:path");
 const repo = path.resolve(__dirname, "../../../../..");
 const hostBin = process.argv[2] || process.env.KEY_HOST_EXECUTABLE || path.join(repo, "target-agent/debug/key-desktop-host");
 const toolBin = process.argv[3] || process.env.KEY_CONNECTORS_BIN || path.join(repo, "target-agent/debug/key-connectors");
+if (!fs.existsSync(toolBin)) {
+  // Exit 77: skipped (run-smokes.cjs). Build it with `cargo build -p key-connectors`.
+  console.log(`skip: no key-connectors tool at ${toolBin} (set KEY_CONNECTORS_BIN)`);
+  process.exit(77);
+}
 const pdfium = path.join(repo, "vendor/pdfium/lib/libpdfium.dylib");
 const temp = fs.mkdtempSync(path.join(tmpdir(), "key-smoke-connectors-"));
 const fail = (m) => {

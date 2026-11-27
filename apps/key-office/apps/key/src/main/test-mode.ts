@@ -12,7 +12,8 @@
 //   Dock are recorded in `globalThis.__keyTest` instead of happening.
 // - Chromium keeps no secrets in the login Keychain (--use-mock-keychain).
 // Must be imported first in main/index.ts: it sets Chromium switches before the app is ready.
-import { app, BaseWindow, BrowserWindow, Menu, clipboard, globalShortcut, ipcMain, nativeImage, session, shell, type NativeImage } from "electron";
+import { app, BaseWindow, BrowserWindow, Menu, clipboard, globalShortcut, ipcMain, nativeImage, screen, session, shell, type NativeImage } from "electron";
+import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -62,6 +63,11 @@ function setFocus(next: BaseWindow | undefined) {
   if (focused === next) return;
   const previous = focused;
   focused = next;
+  // As from the OS: the events come after the call (a window shown as it is created has its
+  // listeners by then).
+  setImmediate(() => focusEvents(previous, next));
+}
+function focusEvents(previous: BaseWindow | undefined, next: BaseWindow | undefined) {
   if (alive(previous)) {
     previous!.emit("blur");
     if (previous instanceof BrowserWindow) app.emit("browser-window-blur", {}, previous);
@@ -134,6 +140,14 @@ function installWindows() {
   };
   proto.setSimpleFullScreen = proto.setFullScreen;
   proto.isSimpleFullScreen = proto.isFullScreen;
+  // A hidden window renders at the scale of the display it is on; macOS centres it on the one
+  // the person is using (maybe an external 1x screen). Runs stay on the main display, so
+  // screenshots have the same resolution whatever the person does.
+  proto.center = function (this: BaseWindow) {
+    const area = screen.getPrimaryDisplay().workArea;
+    const [width, height] = this.getSize();
+    this.setPosition(Math.round(area.x + (area.width - width) / 2), Math.round(area.y + (area.height - height) / 2));
+  };
   proto.moveTop = function () {};
   proto.flashFrame = function () {};
   proto.setAlwaysOnTop = function () {};
@@ -273,7 +287,47 @@ function installNetwork() {
   void app.whenReady().then(() => watch(session.defaultSession));
 }
 
+/** A test app whose driver died (a killed smoke, a crashed runner) quits itself: no test app
+ *  outlives its run. KEY_TEST_PARENT_PID is the driver (scripts/lib/launch.cjs). */
+function watchParent() {
+  const parent = Number(process.env.KEY_TEST_PARENT_PID) || process.ppid;
+  const timer = setInterval(() => {
+    try {
+      process.kill(parent, 0);
+      return;
+    } catch {}
+    clearInterval(timer);
+    note("driver gone: quitting");
+    // Its hosts and helpers first, then the app itself.
+    try {
+      const rows = execFileSync("/bin/ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8" })
+        .trim()
+        .split("\n")
+        .map((l) => l.trim().split(/\s+/).map(Number));
+      const mine = new Set([process.pid]);
+      for (let grew = true; grew; ) {
+        grew = false;
+        for (const [pid, ppid] of rows)
+          if (mine.has(ppid) && !mine.has(pid)) {
+            mine.add(pid);
+            grew = true;
+          }
+      }
+      mine.delete(process.pid);
+      for (const pid of mine) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {}
+      }
+    } catch {}
+    setTimeout(() => process.kill(process.pid, "SIGKILL"), 3000).unref();
+    app.exit(0);
+  }, 1000);
+  timer.unref();
+}
+
 if (testMode) {
+  watchParent();
   // Timers, animations and painting as for a front-most window, whatever the OS thinks.
   for (const s of ["disable-renderer-backgrounding", "disable-backgrounding-occluded-windows", "disable-background-timer-throttling", "use-mock-keychain"]) app.commandLine.appendSwitch(s);
   app.commandLine.appendSwitch("disable-features", "CalculateNativeWinOcclusion,MacWebContentsOcclusion");
