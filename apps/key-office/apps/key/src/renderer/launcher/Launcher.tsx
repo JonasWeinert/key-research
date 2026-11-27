@@ -33,7 +33,16 @@ export default function Launcher() {
   const sheetsUsed = useRef(false);
   if (sheet) sheetsUsed.current = true;
 
-  const refresh = useCallback(() => launcher<LauncherState>("state").then(setState, (e) => setError(message(e))), []);
+  // Reading the state can be slow (workspace summaries): an older answer that lands after a
+  // newer one would bring back the list from before a change, so only the latest counts.
+  const latest = useRef(0);
+  const refresh = useCallback(() => {
+    const ask = ++latest.current;
+    return launcher<LauncherState>("state").then(
+      (next) => void (ask === latest.current && setState(next)),
+      (e) => void (ask === latest.current && setError(message(e))),
+    );
+  }, []);
   useEffect(() => {
     void refresh();
     return key().on("launcher-changed", () => void refresh());
