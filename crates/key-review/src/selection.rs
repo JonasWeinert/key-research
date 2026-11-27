@@ -521,7 +521,9 @@ pub fn targets(req: &TargetsRequest) -> Json {
                     row,
                     new_row,
                     source_only: false,
-                    score: score + if focused { 1000 } else { 0 },
+                    // The focused field first when the passage fits it; a weak fit (words into a
+                    // text field when the passage is a date) only moves it up a little.
+                    score: score + if !focused { 0 } else if score >= 30 { 1000 } else { 50 },
                 };
                 let before = out.len();
                 let fill = |f: &Field, value: Json| Fill { field_id: f.id.clone(), label: f.label.clone(), display: display(&value), value };
@@ -865,6 +867,9 @@ mod tests {
         assert_eq!(t[0]["fieldId"], "country");
         let start = t.iter().find(|x| x["fieldId"] == "start").unwrap();
         assert_eq!((start["sourceOnly"].as_bool(), start["fills"].as_array().unwrap().len()), (Some(true), 0));
+        // Focused on the country, a date still goes to the date field first.
+        let out = r("between 2012 and 2014", Some("country"));
+        assert_eq!(out["targets"][0]["fieldId"], "start");
         // A range fills both ends.
         let out = r("between 2012 and 2014", None);
         let first = &out["targets"][0];

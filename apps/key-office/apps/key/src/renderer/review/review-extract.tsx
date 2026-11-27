@@ -223,7 +223,7 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
       const many = (v?.forms.length ?? 0) > 1;
       const icon = (t: SelectionTarget) => (t.kind === "table" ? (t.newRow ? "plus" : "table") : t.kind === "number" ? "hash" : t.kind === "choice" || t.kind === "multi" ? "list" : t.kind === "date" ? "clock" : t.kind === "yesno" ? "check" : "text");
       return targets.slice(0, 60).map((t) => {
-        const value = t.fills.length > 1 ? t.fills.map((f) => f.display).join(" · ") : (t.fills[0]?.display ?? "");
+        const value = t.kind === "table" && t.fills.length > 1 ? `${t.fills.length} cells` : (t.fills[0]?.display ?? "");
         // A field that has a value shows what changes: old → new (Enter replaces, Esc keeps).
         const was = t.sourceOnly || t.kind === "table" ? "" : display(v?.values[`${t.formId}/${t.fills[0]?.fieldId ?? t.fieldId}`]?.mine?.value);
         return {
@@ -232,12 +232,13 @@ function StudyWorkspace(props: StageProps & { study: StudyRow; onSaved: () => vo
           prefix: many ? `${t.form} · ${t.section}` : t.section,
           title: t.sourceOnly ? `Keep ${t.label}'s value and add this passage as its source` : `Fill ${t.label} and keep this passage as its source`,
           aside: t.sourceOnly ? "source only" : was && was !== value ? `${was} → ${value}` : value,
-          detail: t.fills.length > 1 ? t.fills.map((f) => `${f.label} ${f.display}`).join(" · ") : undefined,
+          // What comes with it: the SD with a mean, the end of a range, a row's cells.
+          detail: t.kind === "table" ? t.fills.map((f) => `${f.label} ${f.display}`).join(" · ") : t.fills.length > 1 ? `with ${t.fills.slice(1).map((f) => `${f.label} ${f.display}`).join(", ")}` : undefined,
           icon: icon(t),
           tone: "source",
           folded: t.sourceOnly,
           keywords: `${t.form} ${t.section} ${t.fills.map((f) => f.label).join(" ")}`,
-          quick: t.sourceOnly ? undefined : [{ id: `source-${t.id}`, label: "Source only", key: "alt+enter", quiet: true, title: "Keep the value, add this passage as its source", run: (pp: ReaderPassage) => void fill(t, pp, true) }],
+          quick: t.sourceOnly ? undefined : [{ id: `source-${t.id}`, label: "Source", key: "alt+enter", quiet: true, title: "Keep the value, add this passage as its source", run: (pp: ReaderPassage) => void fill(t, pp, true) }],
           run: (pp: ReaderPassage) => void fill(t, pp, t.sourceOnly),
         } satisfies ReaderSelectionAction;
       });
@@ -600,7 +601,7 @@ function FieldInput({ form, field, slot, onSave, onFocus, onShow, onPick, focuse
         );
       case "date":
         // Papers give dates to a month or a year as often as to a day: 2015, 2015-03, 2015-03-12.
-        return <input className="kx-rv-input kx-rv-date" aria-label={field.label} placeholder="2015-03-12" value={String(value ?? "")} onFocus={onFocus} onChange={(e) => setValue(e.target.value)} onBlur={() => commit()} />;
+        return <input className="kx-rv-input kx-rv-date" aria-label={field.label} placeholder="yyyy-mm-dd" value={String(value ?? "")} onFocus={onFocus} onChange={(e) => setValue(e.target.value)} onBlur={() => commit()} />;
       case "yesno":
         return (
           <span className="kx-rv-seg" role="radiogroup" aria-label={field.label}>

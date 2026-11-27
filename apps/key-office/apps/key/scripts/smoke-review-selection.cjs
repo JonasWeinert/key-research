@@ -309,7 +309,7 @@ const menuGeometry = () => {
     await page.locator(".ksm[data-mode=extract] .ksm-row").first().waitFor();
     const first = page.locator(".ksm[data-mode=extract] .ksm-row").first();
     assert.match(await first.textContent(), /Mean pain score/);
-    assert.match(await first.textContent(), /12\.3 · 4\.5/);
+    assert.match(await first.textContent(), /12\.3/);
     assert.match(await first.textContent(), /SD pain score 4\.5/);
     const noModal = async (what) => assert.equal(await page.locator(".kx-rv-dialog, .key-global-drawer.key-modal, [role=dialog][aria-modal=true]").count(), 0, `no dialog: ${what}`);
     await noModal("the extraction menu");

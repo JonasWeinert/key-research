@@ -1918,7 +1918,8 @@ kbd,
 }
 
 .kx-rv-date {
-  width: 150px;
+  width: 110px;
+  max-width: 100%;
 }
 /* An optional quote is offered on the field being worked on; a required one always shows. */
 .kx-rv-quote-add {
@@ -3114,7 +3115,7 @@ td.kx-rv-roles {
   background: color-mix(in srgb, var(--kx-indigo) 7%, transparent);
 }
 .kx-rv-xfield-label .kx-rv-pick {
-  display: inline-grid;
+  display: none;
   width: 18px;
   height: 18px;
   margin-left: 4px;
@@ -3125,6 +3126,7 @@ td.kx-rv-roles {
 .kx-rv-xfield[data-focused] .kx-rv-pick,
 .kx-rv-pick[aria-pressed="true"],
 .kx-rv-pick:focus-visible {
+  display: inline-grid;
   opacity: 1;
 }
 .kx-rv-pick[aria-pressed="true"] {
@@ -3174,4 +3176,16 @@ td.kx-rv-roles {
 }
 .kx-rv-criteria-item .kx-rv-evidence-chips {
   margin-left: 59px;
+}
+
+/* A source chip stays on one line in a narrow column. */
+.kx-rv-xfield .kx-rv-source-chip {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.kx-rv-xfield .kx-rv-source-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

@@ -316,6 +316,7 @@
 .ksm-row-label {
   overflow-wrap: anywhere;
 }
+
 .ksm-row-detail {
   overflow: hidden;
   color: var(--ksm-text-2);
@@ -572,12 +573,16 @@
 
 /* A row's muted lead-in, its value at the end, the closed group of further rows. */
 .ksm-row-prefix {
-  margin-right: 5px;
+  overflow: hidden;
   color: var(--ksm-text-3);
+  font-size: 10.5px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ksm-row-aside {
   flex: 0 1 auto;
-  max-width: 45%;
+  max-width: 36%;
   overflow: hidden;
   color: var(--ksm-text-2);
   font-size: 12px;

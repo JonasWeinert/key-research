@@ -500,10 +500,8 @@ export function SelectionMenu(props: Props) {
           >
             {a.icon ? <Glyph name={a.icon} size={13} className="ksm-row-icon" /> : null}
             <span className="ksm-row-text">
-              <span className="ksm-row-label">
-                {a.prefix && <span className="ksm-row-prefix">{a.prefix}</span>}
-                {a.label}
-              </span>
+              {a.prefix && <small className="ksm-row-prefix">{a.prefix}</small>}
+              <span className="ksm-row-label">{a.label}</span>
               {a.detail && <small className="ksm-row-detail">{a.detail}</small>}
             </span>
             {a.aside && <span className="ksm-row-aside">{a.aside}</span>}
