@@ -113,10 +113,22 @@ export interface WebReadingBackend {
   /** A picture of the page, by its resource number (the page's own inlined copy). */
   resource(n: number): Promise<string>;
   /** Highlights the selection on the page: its id, or null when Key cannot place it for certain. */
-  highlight(selection: ReadingSelection, color: HighlightColor): Promise<string | null>;
+  highlight(selection: ReadingSelection, color: HighlightColor, comment?: string): Promise<string | null>;
+  /** A highlight's colour or comment changed, or it is removed. */
+  updateAnnotation(id: string, patch: { color?: HighlightColor; comment?: string }): Promise<void>;
+  removeAnnotation(id: string): Promise<void>;
   cite(selection: ReadingSelection): Promise<void>;
   copy(selection: ReadingSelection): Promise<void>;
   openLink(href: string): void;
+}
+
+/** An action a reader's host adds to the selection menu (a review's "Evidence", say): run with
+ *  the passage (for a web page `page` is -1 and `rects` empty). */
+export interface ReaderSelectionAction {
+  id: string;
+  label: string;
+  title?: string;
+  run(passage: { text: string; page: number; rects: number[][] }): void;
 }
 
 export interface Typography {
@@ -307,6 +319,8 @@ interface Props {
   onUnreadable?(reason: string): void;
   onCite?(passage: { text: string; page: number; rects: number[][]; color?: string }): void;
   onAddToNote?(passage: { text: string; page: number; color?: string }): void;
+  /** Actions the reader's host adds to the selection menu, after Cite. */
+  selectionActions?: ReaderSelectionAction[];
 }
 
 /** Case and no-break spaces aside, as Find compares. */
@@ -530,7 +544,7 @@ function rich(text: string, spans: Span[] | undefined, web: WebReadingBackend | 
 }
 
 const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
-  { hash, reader, web, start, typography, invoke, analyse, onExit, onState, onNotice, onUnreadable, onCite, onAddToNote },
+  { hash, reader, web, start, typography, invoke, analyse, onExit, onState, onNotice, onUnreadable, onCite, onAddToNote, selectionActions },
   ref,
 ) {
   const [reply, setReply] = useState<ReadingReply>();
@@ -798,9 +812,9 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
   }, [items, usable, isWeb]);
   useDismiss(!!selection, { refs: [toolbar], onDismiss: () => setSelection(null), kind: "passive", scroll: false });
 
-  const located = async () => {
-    if (!selection) return null;
-    return call.current<Located>("store_reflow_locate", { hash, item: selection.item, caption: selection.caption, start: selection.start, end: selection.end });
+  const located = async (chosen = selection) => {
+    if (!chosen) return null;
+    return call.current<Located>("store_reflow_locate", { hash, item: chosen.item, caption: chosen.caption, start: chosen.start, end: chosen.end });
   };
   const uncertain = (found: { page: number; quote: string }) => {
     onNotice(
@@ -810,23 +824,22 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     );
     onExit({ page: found.page, quote: found.quote });
   };
-  const highlight = async (color: HighlightColor) => {
-    const chosen = selection;
+  const highlight = async (color: HighlightColor, comment?: string, chosen = selection) => {
     try {
       if (!chosen) return;
       let id: string | null | undefined;
       if (web) {
-        id = await web.highlight(chosen, color);
+        id = await web.highlight(chosen, color, comment);
         if (!id) return uncertain({ page: 0, quote: chosen.text });
       } else {
-        const found = await located();
+        const found = await located(chosen);
         if (!found) return;
         if (!found.certain || !found.range) return uncertain(found);
-        id = reader?.current?.addHighlightAt(found.range, found.text, color);
+        id = reader?.current?.addHighlightAt(found.range, found.text, color, comment);
         if (!id) return onNotice("The page view is not ready yet. Try again in a moment.");
       }
       const made = id;
-      setReply((r) => r && { ...r, marks: [...(r.marks ?? []), { annotationId: made, item: chosen.item, part: chosen.part || undefined, start: chosen.start, end: chosen.end, color }] });
+      setReply((r) => r && { ...r, marks: [...(r.marks ?? []), { annotationId: made, item: chosen.item, part: chosen.part || undefined, start: chosen.start, end: chosen.end, color, ...(comment?.trim() ? { comment: comment.trim() } : {}) }] });
       document.getSelection()?.removeAllRanges();
       setSelection(null);
       setTimeout(() => void load(), 1200);
@@ -856,6 +869,57 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
     const found = await located().catch(() => null);
     if (found) onExit({ page: found.page, quote: found.quote });
   };
+  /** An action the caller added to the selection menu (selection-actions in the reader). */
+  const runAction = async (action: ReaderSelectionAction) => {
+    const chosen = selection;
+    if (!chosen) return;
+    if (web) action.run({ text: chosen.text, page: -1, rects: [] });
+    else {
+      const found = await located(chosen).catch(() => null);
+      action.run({ text: found?.certain ? found.text : chosen.text, page: found?.page ?? 0, rects: found?.rects ?? [] });
+    }
+    setSelection(null);
+  };
+
+  // Comments: a new one on the selection (a highlight with its comment), or a highlight's own,
+  // opened by clicking its words or the comment mark beside them.
+  const [draft, setDraft] = useState<{ chosen: NonNullable<typeof selection>; comment: string } | null>(null);
+  const [card, setCard] = useState<{ id: string; rect: DOMRect } | null>(null);
+  const cardMark = card ? marks.find((m) => m.annotationId === card.id) : undefined;
+  const editAnnotation = async (id: string, patch: { color?: HighlightColor; comment?: string } | null) => {
+    try {
+      if (web) await (patch ? web.updateAnnotation(id, patch) : web.removeAnnotation(id));
+      else if (!(patch ? reader?.current?.updateAnnotation(id, patch) : reader?.current?.removeAnnotation(id))) return onNotice("The page view is not ready yet. Try again in a moment.");
+      setReply((r) =>
+        r && {
+          ...r,
+          marks: patch
+            ? (r.marks ?? []).map((m) => (m.annotationId === id ? { ...m, ...(patch.color ? { color: patch.color } : {}), ...(patch.comment !== undefined ? { comment: patch.comment.trim() || undefined } : {}) } : m))
+            : (r.marks ?? []).filter((m) => m.annotationId !== id),
+        },
+      );
+      setTimeout(() => void load(), 1200);
+    } catch (e) {
+      onNotice(`Could not change the highlight: ${String(e)}`);
+    }
+  };
+  useEffect(() => {
+    const host = article.current;
+    if (!host) return;
+    const click = (event: MouseEvent) => {
+      if (document.getSelection()?.isCollapsed === false || (event.target as Element).closest?.("a, button")) return;
+      const caret = (document as unknown as { caretRangeFromPoint?(x: number, y: number): Range | null }).caretRangeFromPoint?.(event.clientX, event.clientY);
+      const el = caret && textTarget(caret.startContainer);
+      if (!caret || !el) return;
+      const item = Number(el.dataset.text ?? el.dataset.caption);
+      const part = el.dataset.part ?? (el.dataset.caption !== undefined ? "caption" : "");
+      const offset = offsetIn(el, caret.startContainer, caret.startOffset);
+      const hit = marks.find((m) => m.item === item && (m.part ?? "") === part && m.start <= offset && offset < m.end);
+      if (hit) setCard({ id: hit.annotationId, rect: rangeIn(el, hit.start, hit.end)?.getBoundingClientRect() ?? el.getBoundingClientRect() });
+    };
+    host.addEventListener("click", click);
+    return () => host.removeEventListener("click", click);
+  }, [marks, usable]);
 
   const style = {
     "--reading-size": `${typography.size}px`,
@@ -961,9 +1025,15 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
           );
           const notes = commented.get(item.id);
           const comment = notes && (
-            <span className="kx-reading-comment" title={notes.map((n) => n.comment).join("\n\n")} aria-label={`${notes.length === 1 ? "Comment" : `${notes.length} comments`}: ${notes.map((n) => n.comment).join(" · ")}`}>
+            <button
+              type="button"
+              className="kx-reading-comment"
+              title={notes.map((n) => n.comment).join("\n\n")}
+              aria-label={`${notes.length === 1 ? "Comment" : `${notes.length} comments`}: ${notes.map((n) => n.comment).join(" · ")}`}
+              onClick={(event) => setCard({ id: notes[0].annotationId, rect: event.currentTarget.getBoundingClientRect() })}
+            >
               <Icon name="comment" size={13} />
-            </span>
+            </button>
           );
           const body = (text: string, spans?: Span[]) => rich(text, spans, web, onTarget);
           // Under a web page's title (and byline): its site and date.
@@ -1114,6 +1184,18 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
                 <Icon name="copy" size={14} />
               </button>
             )}
+            <button
+              type="button"
+              className="kx-reading-selection-action"
+              aria-label="Add comment"
+              title="Highlight with a comment"
+              onClick={() => {
+                setDraft({ chosen: selection, comment: "" });
+                setSelection(null);
+              }}
+            >
+              <Icon name="comment" size={14} />
+            </button>
             {(onCite || web) && (
               <button type="button" className="kx-reading-selection-action" aria-label="Cite" title={web ? "Copy as a quote with its source" : "Copy as a quote that links back here"} onClick={() => void cite()}>
                 <Icon name="quote" size={14} />
@@ -1124,6 +1206,11 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
                 <Icon name="note" size={14} />
               </button>
             )}
+            {selectionActions?.map((action) => (
+              <button key={action.id} type="button" className="kx-reading-selection-text" title={action.title} onClick={() => void runAction(action)}>
+                {action.label}
+              </button>
+            ))}
             <button
               type="button"
               className="kx-reading-selection-action"
@@ -1136,8 +1223,126 @@ const ReadingMode = forwardRef<ReadingModeHandle, Props>(function ReadingMode(
           </div>,
           portalRoot(),
         )}
+      {draft && (
+        <CommentPopover
+          rect={draft.chosen.rect}
+          quote={draft.chosen.text}
+          comment={draft.comment}
+          onChange={(comment) => setDraft({ ...draft, comment })}
+          onCancel={() => setDraft(null)}
+          onSave={() => {
+            const { chosen, comment } = draft;
+            setDraft(null);
+            if (comment.trim()) void highlight("orange", comment, chosen);
+          }}
+        />
+      )}
+      {card && cardMark && (
+        <CommentPopover
+          key={card.id}
+          rect={card.rect}
+          comment={cardMark.comment ?? ""}
+          color={cardMark.color}
+          editing
+          onColor={(color) => void editAnnotation(card.id, { color })}
+          onCancel={() => setCard(null)}
+          onSave={(comment) => {
+            setCard(null);
+            if ((comment ?? "") !== (cardMark.comment ?? "")) void editAnnotation(card.id, { comment: comment ?? "" });
+          }}
+          onDelete={() => {
+            setCard(null);
+            void editAnnotation(card.id, null);
+          }}
+        />
+      )}
     </div>
   );
 });
+
+/** A comment on a new highlight (quote and text), or a highlight's colour, comment and delete. */
+function CommentPopover({
+  rect,
+  quote,
+  comment,
+  color,
+  editing,
+  onChange,
+  onColor,
+  onCancel,
+  onSave,
+  onDelete,
+}: {
+  rect: DOMRect;
+  quote?: string;
+  comment: string;
+  color?: string;
+  editing?: boolean;
+  onChange?(comment: string): void;
+  onColor?(color: HighlightColor): void;
+  onCancel(): void;
+  onSave(comment?: string): void;
+  onDelete?(): void;
+}) {
+  const box = useRef<HTMLFormElement>(null);
+  const [text, setText] = useState(comment);
+  const value = onChange ? comment : text;
+  useDismiss(true, { refs: [box], onDismiss: onCancel, scroll: false });
+  const width = 320;
+  const left = Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, innerWidth - width - 8));
+  const below = rect.bottom + 10;
+  const top = below + 220 < innerHeight ? below : Math.max(8, rect.top - 230);
+  return createPortal(
+    <form
+      ref={box}
+      className="kx-reading-popover kx-reading-comment-card"
+      role="dialog"
+      aria-label={editing ? "Highlight" : "Add comment"}
+      style={{ left, top, width }}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(value);
+      }}
+    >
+      {editing && (
+        <div className="kx-reading-comment-colors" role="group" aria-label="Colour">
+          {HIGHLIGHT_COLORS.map((c) => (
+            <button key={c} type="button" className="kx-reading-swatch" data-color={c} aria-pressed={c === color} aria-label={`Make it ${c}`} title={c} onClick={() => onColor?.(c)} />
+          ))}
+        </div>
+      )}
+      {quote && <blockquote>{quote}</blockquote>}
+      <textarea
+        autoFocus
+        aria-label="Comment"
+        placeholder={editing ? "Add a comment…" : "Your comment…"}
+        value={value}
+        onChange={(event) => (onChange ? onChange(event.target.value) : setText(event.target.value))}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            onSave(value);
+          }
+          if (event.key === "Escape") onCancel();
+        }}
+      />
+      <footer>
+        {onDelete && (
+          <button type="button" className="kx-reading-button" data-danger onClick={onDelete}>
+            Delete highlight
+          </button>
+        )}
+        <span className="kx-reading-spacer" />
+        <button type="button" className="kx-reading-button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className="kx-reading-button" data-primary disabled={!editing && !value.trim()}>
+          Save
+        </button>
+      </footer>
+    </form>,
+    portalRoot(),
+  );
+}
 
 export default ReadingMode;
