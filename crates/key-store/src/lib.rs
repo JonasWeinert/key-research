@@ -12,6 +12,7 @@ mod links;
 pub mod matching;
 pub mod normalize;
 pub mod fill;
+pub mod fill_cells;
 pub mod changes;
 pub mod formula;
 pub mod formula_catalog;

@@ -57,6 +57,8 @@ import "./reference-library.css";
 import { isBibliographyPath, openBibExport, openBibImport } from "./BiblioSheets";
 import { readablePaths } from "./file-names";
 import { EmptyState as Guide } from "./explain";
+import { FillCellsProvider } from "./fill-cells";
+import { registerSelectionAction } from "./selection-actions";
 
 const PAGE = 300;
 const ROW = 58;
@@ -131,6 +133,23 @@ export default function ReferenceLibrary({
   const model = useModelProgress(invoke, workspaceId, active);
   const [sheet, setSheet] = useState<PropertySheetState>();
   const [agent, setAgent] = useState<{ targets: Source[]; name?: string }>();
+  // "Fill with AI…" for the selection panel and context menu (selection-actions.ts).
+  const fillTargets = useRef<(ids: string[]) => Source[]>(() => []);
+  fillTargets.current = (ids) => items.filter((s) => ids.includes(s.id));
+  useEffect(
+    () =>
+      registerSelectionAction({
+        id: "fill.run",
+        label: "Fill with AI…",
+        icon: "sparkle",
+        group: "ai",
+        title: "Fill a property with AI or a rule",
+        run: ({ workspaceId: ws, sourceIds }) => {
+          if (ws === workspaceId) setAgent({ targets: fillTargets.current(sourceIds) });
+        },
+      }),
+    [workspaceId],
+  );
   const [tagManager, setTagManager] = useState(false);
   /** Add by identifier is open (with this text prefilled). */
   const [identifier, setIdentifier] = useState<string | false>(false);
@@ -681,6 +700,7 @@ export default function ReferenceLibrary({
 
   return (
     <FilterLinks.Provider value={addFilter}>
+    <FillCellsProvider invoke={invoke} workspaceId={workspaceId} version={items}>
     <section
       ref={libraryRef}
       className={`kx-library ${dropping ? "dropping" : ""}`}
@@ -1042,6 +1062,7 @@ export default function ReferenceLibrary({
         />
       )}
     </section>
+    </FillCellsProvider>
     </FilterLinks.Provider>
   );
 }

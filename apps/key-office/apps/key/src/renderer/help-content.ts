@@ -223,6 +223,15 @@ export const HELP = {
   "browser.signin.waiting": hint("This page asked for a passkey. Touch your security key if you use one, or continue in your browser."),
   "browser.signin.handoff": hint("Sign in there as usual. Then bring the sign-in over: Key shows which sites’ cookies it copies first."),
 
+  // ── Settings: Database connectors ───────────────────────────────────────────────────
+  "settings.services.connectors": explain(
+    "Database connectors",
+    [
+      "A connector tells Key how to search one database, such as PubMed or EconStor. Key ships with a set of them and can download newer versions when a database changes how it answers.",
+      "Updates are not signed yet. Key still checks every downloaded file against the update’s list and never installs an older update, but it cannot prove who published it. Signing comes later; nothing changes for you then.",
+    ],
+    { privacy: "Checking for updates downloads a small list from Key’s update address. Your searches are not sent." },
+  ),
   // ── Settings: Services & API keys ───────────────────────────────────────────────────
   "settings.services.intro": hint("Optional keys that give Key a higher allowance at some scholarly services. Key works without them."),
   "settings.services.api-key": explain(
@@ -416,6 +425,21 @@ export const HELP = {
   "fill.recipes": explain(
     "Saved recipes",
     ["A recipe remembers what to fill, from where and how. Copy it as text to share it or to use it in another workspace, and paste one to import it."],
+  ),
+  "fill.onchange": explain(
+    "When a source changes",
+    [
+      "Key remembers what each answer was worked out from: the recipe, the model and the exact text it read. When that text changes (you edit the abstract, the PDF is read again, a note is added) or you change the recipe, the answer may no longer fit.",
+      "Choose to do nothing, to mark such answers as out of date with a small clock so you can fill them again when you like, or to fill them again automatically in the background, within a daily limit. Changes the recipe does not read mark nothing, and values you edited yourself are never replaced.",
+    ],
+    { privacy: "Filling again sends the same parts of the source as the first fill, to the same provider." },
+  ),
+  "fill.cell": explain(
+    "Your value and the AI answer",
+    [
+      "When you change a value the AI filled in, Key keeps both: your value is what the library shows, exports and cites; the AI's answer stays beside it with the passages it came from, so you can compare them later.",
+      "Use AI answer again puts the AI's answer back (undoable). Keep mine leaves your value and clears the out-of-date mark. Earlier answers show what the recipe said before it was filled again.",
+    ],
   ),
   "fill.cost": explain(
     "Tokens and cost",

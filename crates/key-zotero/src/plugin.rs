@@ -270,6 +270,17 @@ pub struct Configure {
     pub paused: Option<bool>,
     /// Stops syncing. What came from Zotero stays in Key.
     pub remove: bool,
+    /// Other workspaces (folders) whose saved pairing code this one may take: Zotero has
+    /// one code, so a workspace set up later does not ask for it again.
+    pub token_from: Vec<PathBuf>,
+}
+
+/// The pairing code another workspace saved, read without changing anything there.
+pub fn saved_token(workspace: &Path) -> Option<String> {
+    let file = [workspace.join(".key/zotero-sync.sqlite"), workspace.join("zotero-sync.sqlite")].into_iter().find(|f| f.is_file())?;
+    let db = rusqlite::Connection::open_with_flags(&file, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).ok()?;
+    let config: String = db.query_row("SELECT value FROM meta WHERE key = 'pluginConfig'", [], |r| r.get(0)).ok()?;
+    serde_json::from_str::<Config>(&config).ok()?.token.filter(|t| !t.trim().is_empty())
 }
 
 pub fn configure(store: &Store, args: Configure) -> Result<Status> {
@@ -290,6 +301,8 @@ pub fn configure(store: &Store, args: Configure) -> Result<Status> {
     }
     if let Some(token) = args.token.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) {
         config.token = Some(token);
+    } else if config.token.is_none() {
+        config.token = args.token_from.iter().find_map(|w| saved_token(w));
     }
     if args.port.is_some() {
         config.port = args.port;
@@ -334,6 +347,11 @@ pub struct Probe {
 /// Whether Zotero runs, has the plugin, and accepts a pairing code (the given one, the
 /// saved one or the one in Zotero's prefs).
 pub fn probe(store: Option<&Store>, port_override: Option<u16>, token: Option<String>) -> Probe {
+    probe_with(store, port_override, token, &[])
+}
+
+/// `probe`, also trying the codes other workspaces saved ("shared").
+pub fn probe_with(store: Option<&Store>, port_override: Option<u16>, token: Option<String>, token_from: &[PathBuf]) -> Probe {
     let saved = store.and_then(|s| State::open(s.root()).ok()).and_then(|s| config(&s));
     let port = port(port_override.or(saved.as_ref().and_then(|c| c.port)));
     let open = HttpTransport { port, token: None };
@@ -350,6 +368,7 @@ pub fn probe(store: Option<&Store>, port_override: Option<u16>, token: Option<St
         ("given", token.filter(|t| !t.trim().is_empty()).map(|t| t.trim().to_string())),
         ("saved", saved.and_then(|c| c.token)),
         ("found", discovered_token()),
+        ("shared", token_from.iter().find_map(|w| saved_token(w))),
     ];
     for (source, candidate) in candidates {
         let Some(candidate) = candidate else { continue };
@@ -825,6 +844,9 @@ pub fn sync_with(store: &Store, t: &dyn Transport, force: bool, reconcile: bool,
     if changed > 0 || status.synced_at.is_none() {
         status.synced_at = Some(key_store::now_ms());
     }
+    // What this workspace keeps in sync (its scope), not the whole mirror: the mirror also
+    // holds items fetched for a change outside the scope.
+    status.items = report.items;
     status.report = Some(report.clone());
     save_status(&state, &status)?;
     Ok(Outcome { ran: true, connection: Some(Connection::Ok), message: None, report: Some(report), next_ms: None })

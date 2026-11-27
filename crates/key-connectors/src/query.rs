@@ -1,6 +1,8 @@
 // The neutral query (what the visual builder makes), its translation into a service's own
 // syntax by the spec's `query` block, chunking of long queries, and local evaluation of the
 // query on a record (relevance-only and harvest connectors, and `localFilter`).
+use crate::boolean::{self, Node, Op, Truth};
+use crate::plan::{self, Strategy, SubQueryInfo};
 use crate::record::Record;
 use crate::spec::{QuerySpec, Spec};
 use crate::template::{self, Vars};
@@ -12,7 +14,13 @@ pub type Field = String;
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Query {
+    /// The Boolean tree (see `boolean`). When present it is the search; `concepts` and
+    /// `exclude` are the older AND-of-ORs form, still read from saved searches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr: Option<Node>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub concepts: Vec<Concept>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub exclude: Vec<Term>,
     pub filters: Filters,
 }
@@ -63,23 +71,41 @@ pub struct Filters {
 }
 
 impl Query {
-    pub fn terms(&self) -> impl Iterator<Item = &Term> {
-        self.concepts.iter().flat_map(|c| c.terms.iter()).chain(self.exclude.iter())
+    pub fn from_tree(tree: Node, filters: Filters) -> Query {
+        Query { expr: Some(tree), concepts: Vec::new(), exclude: Vec::new(), filters }
     }
 
-    /// The query without empty terms and concepts.
+    /// The search as a tree (normalized; the older concept form converted).
+    pub fn tree(&self) -> Node {
+        if let Some(e) = &self.expr {
+            return e.normalized().unwrap_or_default();
+        }
+        let mut items: Vec<Node> = self.concepts.iter().map(|c| Node::Group { id: c.id.clone(), op: Op::Or, items: c.terms.iter().cloned().map(Node::term).collect(), not: false, label: c.label.clone() }).collect();
+        items.extend(self.exclude.iter().cloned().map(|t| Node::term(t).negated(true)));
+        Node::group(Op::And, items).normalized().unwrap_or_default()
+    }
+
+    pub fn terms(&self) -> Vec<Term> {
+        self.tree().terms().into_iter().cloned().collect()
+    }
+
+    /// The query without empty terms and groups, always in tree form.
     pub fn cleaned(&self) -> Query {
-        let keep = |t: &&Term| !t.text.trim().is_empty();
-        Query {
-            concepts: self.concepts.iter().map(|c| Concept { terms: c.terms.iter().filter(keep).cloned().collect(), ..c.clone() }).filter(|c| !c.terms.is_empty()).collect(),
-            exclude: self.exclude.iter().filter(keep).cloned().collect(),
-            filters: self.filters.clone(),
+        Query::from_tree(self.tree(), self.filters.clone())
+    }
+
+    /// The top-level AND parts ("concepts"), for per-part counts.
+    pub fn parts(&self) -> Vec<Node> {
+        match self.tree() {
+            Node::Group { op: Op::And, items, not: false, .. } => items,
+            other if other.is_empty() => Vec::new(),
+            other => vec![other],
         }
     }
 
-    /// Only one concept (and the filters), for per-concept counts.
-    pub fn only_concept(&self, index: usize) -> Query {
-        Query { concepts: self.concepts.get(index).cloned().into_iter().collect(), exclude: Vec::new(), filters: self.filters.clone() }
+    /// Only one top-level part (and the filters).
+    pub fn only_part(&self, index: usize) -> Query {
+        Query::from_tree(self.parts().get(index).cloned().map(|n| n.negated(false)).unwrap_or_default(), self.filters.clone())
     }
 }
 
@@ -106,6 +132,9 @@ pub struct Translation {
     /// The user typed the native string (an override).
     #[serde(default)]
     pub overridden: bool,
+    /// The queries in order, what Key checks afterwards and why (see `plan`).
+    #[serde(default)]
+    pub strategy: Strategy,
 }
 
 struct Render<'a> {
@@ -204,32 +233,32 @@ impl Render<'_> {
         self.fill(&field, &[("q", &q)])
     }
 
-    fn group(&self, items: &[String], op: &str) -> String {
-        if items.len() == 1 { items[0].clone() } else { self.fill(&self.spec.group, &[("q", &items.join(op))]) }
-    }
-
-    fn boolean(&mut self, query: &Query) -> String {
-        let concepts: Vec<String> = query
-            .concepts
-            .iter()
-            .map(|c| {
-                let terms: Vec<String> = c.terms.iter().map(|t| self.term(t)).collect();
-                self.group(&terms, &self.spec.or.clone())
-            })
-            .collect();
-        let positive = if concepts.len() == 1 { concepts[0].clone() } else { concepts.join(&self.spec.and) };
-        if query.exclude.is_empty() {
-            return positive;
+    /// A pushed tree in the service's syntax. Negated items only appear in AND groups that
+    /// also have a positive item (the planner sees to that).
+    fn node(&mut self, n: &Node, nested: bool) -> String {
+        match n {
+            Node::Term { term, .. } => self.term(term),
+            Node::Group { op, items, .. } => {
+                let positives: Vec<String> = items.iter().filter(|i| !i.is_not()).map(|i| self.node(i, true)).collect();
+                let negatives: Vec<String> = items.iter().filter(|i| i.is_not()).map(|i| self.node(i, true)).collect();
+                let join = if *op == Op::And { self.spec.and.clone() } else { self.spec.or.clone() };
+                let mut out = positives.join(&join);
+                if !negatives.is_empty() {
+                    if positives.len() > 1 {
+                        out = self.fill(&self.spec.group, &[("q", &out)]);
+                    }
+                    for neg in negatives {
+                        out = format!("{out}{}{neg}", self.spec.not);
+                    }
+                }
+                if (nested || *op == Op::Or) && items.len() > 1 { self.fill(&self.spec.group, &[("q", &out)]) } else { out }
+            }
         }
-        let excluded: Vec<String> = query.exclude.iter().map(|t| self.term(t)).collect();
-        let excluded = self.group(&excluded, &self.spec.or.clone());
-        let positive = if query.concepts.len() > 1 { self.fill(&self.spec.group, &[("q", &positive)]) } else { positive };
-        format!("{positive}{}{excluded}", self.spec.not)
     }
 }
 
-fn count_terms(query: &Query) -> usize {
-    query.terms().map(|t| t.text.split_whitespace().count().max(1)).sum()
+fn count_terms(tree: &Node) -> usize {
+    tree.terms().iter().map(|t| t.text.split_whitespace().count().max(1)).sum()
 }
 
 /// The service's query for one connector. `options` are the connector's option values.
@@ -256,7 +285,9 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
         vars.insert(format!("opt.{k}"), v.clone());
     }
     let mut local = q.local_filter || q.mode != "native";
-    if query.concepts.is_empty() && q.mode != "harvest" {
+    let tree = query.tree();
+    let logic = tree.nnf();
+    if tree.is_empty() && q.mode != "harvest" {
         render.warn("The query has no terms".into());
     }
     // Neutral filters: into the native string, into a variable, or applied locally.
@@ -329,37 +360,38 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
         local = true;
         render.warn(if spec.kind == "manual" { "Set the years on the site".into() } else { "Years are filtered by Key on the results (the service cannot)".into() });
     }
-    match q.mode.as_str() {
-        "harvest" => {
-            out.chunks = vec![String::new()];
-            out.native = String::new();
-            if !query.concepts.is_empty() {
-                render.warn("This source is harvested; Key applies the query to every record it reads".into());
-            }
+    let original = boolean::format(&tree);
+    if q.mode == "harvest" {
+        out.chunks = vec![String::new()];
+        out.native = String::new();
+        if !tree.is_empty() {
+            render.warn("This source is harvested; Key applies the query to every record it reads".into());
         }
-        "terms" => {
-            // One request series per term of the smallest concept; the rest is filtered here.
-            let smallest = query.concepts.iter().min_by_key(|c| c.terms.len());
-            let chunks: Vec<String> = smallest.map(|c| c.terms.iter().map(|t| wrap(render.term(t), &render)).collect()).unwrap_or_default();
-            if query.concepts.len() > 1 || !query.exclude.is_empty() {
-                render.warn("This source has no Boolean search; Key sends each term and applies the full query to the results".into());
-            }
-            out.native = chunks.join(" | ");
-            out.chunks = chunks;
-        }
-        _ => {
-            let full = wrap(render.boolean(&query), &render);
-            let too_long = |text: &str, part: &Query| {
-                q.max_length.is_some_and(|m| text.chars().count() > m) || q.max_terms.is_some_and(|m| count_terms(part) > m) || q.max_operators.is_some_and(|m| count_terms(part) > m + 1)
-            };
-            out.native = full.clone();
-            out.chunks = vec![full.clone()];
-            if too_long(&full, &query) {
+        out.strategy = Strategy {
+            original,
+            kind: "harvest".into(),
+            subqueries: vec![SubQueryInfo::default()],
+            post_filter: true,
+            steps: vec![format!("{} has no search: Key reads every record of the chosen scope and keeps those that match the full search", spec.name)],
+            logic,
+            ..Default::default()
+        };
+    } else {
+        let (queries, mut strategy) = plan::plan(&logic, spec);
+        strategy.original = original;
+        let too_long = |text: &str, part: &Node| {
+            q.max_length.is_some_and(|m| text.chars().count() > m) || q.max_terms.is_some_and(|m| count_terms(part) > m) || q.max_operators.is_some_and(|m| count_terms(part) > m + 1)
+        };
+        let mut infos: Vec<SubQueryInfo> = Vec::new();
+        for sq in &queries {
+            let native = wrap(render.node(&sq.tree, false), &render);
+            let mut parts = vec![(native.clone(), sq.tree.clone())];
+            if too_long(&native, &sq.tree) {
                 if q.chunk == "or-split" {
-                    match or_split(&query, &mut render, &wrap, &too_long, q.max_chunks) {
-                        Some(chunks) => {
-                            render.warn(format!("The query is too long for this service; it is sent in {} parts and the results are combined", chunks.len()));
-                            out.chunks = chunks;
+                    match or_split(&sq.tree, &mut render, &wrap, &too_long, q.max_chunks) {
+                        Some(split) => {
+                            render.warn(format!("The query is too long for this service; it is sent in {} parts and the results are combined", split.len()));
+                            parts = split;
                         }
                         None => render.warn("The query is too long for this service even when split".into()),
                     }
@@ -367,7 +399,36 @@ pub fn translate(spec: &Spec, query: &Query, options: &Vars) -> Translation {
                     render.warn("The query may be too long for this service".into());
                 }
             }
+            for (native, tree) in parts {
+                // A part of a split OR implies the whole OR: what was checked stays checked.
+                infos.push(SubQueryInfo { native, neutral: boolean::format(&tree), verified: sq.verified.clone(), exact: sq.exact });
+            }
         }
+        if infos.len() > queries.len() && strategy.kind == "single" {
+            strategy.kind = "split".into();
+            strategy.steps.insert(0, format!("The search is too long for {} in one go: it is sent in {} parts and the results are combined", spec.name, infos.len()));
+        }
+        if queries.len() > 1 || strategy.kind == "terms" {
+            render.warn(match strategy.kind.as_str() {
+                "terms" => "This source has no Boolean search; Key sends each term and applies the full query to the results".into(),
+                _ => format!("Sent as {} queries; Key combines them and applies the full query to the results", infos.len()),
+            });
+        }
+        if strategy.post_filter {
+            local = true;
+        }
+        out.native = match infos.len() {
+            0 => String::new(),
+            1 => infos[0].native.clone(),
+            _ if strategy.kind == "split" && queries.len() == 1 => wrap(render.node(&queries[0].tree, false), &render),
+            _ => infos.iter().map(|i| i.native.as_str()).collect::<Vec<_>>().join(" | "),
+        };
+        out.chunks = infos.iter().map(|i| i.native.clone()).collect();
+        for a in &strategy.approximate {
+            render.warn(a.clone());
+        }
+        strategy.subqueries = infos;
+        out.strategy = strategy;
     }
     out.length = out.native.chars().count();
     out.local_filter = local;
@@ -394,22 +455,42 @@ fn spec_uses_year_vars(spec: &Spec) -> bool {
     templates.iter().any(|t| t.contains("{yearFrom") || t.contains("{yearTo") || vars_with_years.iter().any(|v| t.contains(&format!("{{{v}"))))
 }
 
-fn or_split(query: &Query, render: &mut Render, wrap: &dyn Fn(String, &Render) -> String, too_long: &dyn Fn(&str, &Query) -> bool, max_chunks: usize) -> Option<Vec<String>> {
-    let (index, concept) = query.concepts.iter().enumerate().max_by_key(|(_, c)| c.terms.len())?;
-    let n = concept.terms.len();
+/// Splits the largest OR group (the root, or a top-level AND part) into parts short enough.
+fn or_split(tree: &Node, render: &mut Render, wrap: &dyn Fn(String, &Render) -> String, too_long: &dyn Fn(&str, &Node) -> bool, max_chunks: usize) -> Option<Vec<(String, Node)>> {
+    let (at, alternatives): (Option<usize>, Vec<Node>) = match tree {
+        Node::Group { op: Op::Or, items, .. } => (None, items.clone()),
+        Node::Group { op: Op::And, items, .. } => {
+            let (i, n) = items.iter().enumerate().filter_map(|(i, n)| match n {
+                Node::Group { op: Op::Or, items, not: false, .. } => Some((i, items.len())),
+                _ => None,
+            }).max_by_key(|(_, n)| *n)?;
+            let _ = n;
+            let Node::Group { items: inner, .. } = &items[i] else { return None };
+            (Some(i), inner.clone())
+        }
+        _ => return None,
+    };
+    let n = alternatives.len();
     for parts in 2..=n.min(max_chunks.max(2)) {
         let size = n.div_ceil(parts);
         let mut chunks = Vec::new();
         let mut ok = true;
-        for terms in concept.terms.chunks(size) {
-            let mut part = query.clone();
-            part.concepts[index].terms = terms.to_vec();
-            let text = wrap(render.boolean(&part), render);
+        for group in alternatives.chunks(size) {
+            let or = if group.len() == 1 { group[0].clone() } else { Node::group(Op::Or, group.to_vec()) };
+            let part = match (at, tree) {
+                (Some(i), Node::Group { items, .. }) => {
+                    let mut items = items.clone();
+                    items[i] = or;
+                    Node::group(Op::And, items)
+                }
+                _ => or,
+            };
+            let text = wrap(render.node(&part, false), render);
             if too_long(&text, &part) {
                 ok = false;
                 break;
             }
-            chunks.push(text);
+            chunks.push((text, part));
         }
         if ok {
             return Some(chunks);
@@ -481,14 +562,8 @@ pub fn term_matches(term: &Term, record: &Record) -> bool {
 
 /// Whether the record meets the query (and the year, type and language filters).
 pub fn matches(query: &Query, record: &Record) -> bool {
-    let query = query.cleaned();
-    if !query.concepts.iter().all(|c| c.terms.iter().any(|t| term_matches(t, record))) {
-        return false;
-    }
-    if query.exclude.iter().any(|t| term_matches(t, record)) {
-        return false;
-    }
-    passes_filters(&query.filters, record)
+    let tree = query.tree();
+    (tree.is_empty() || boolean::eval(&tree, record, &|_| false) == Truth::True) && passes_filters(&query.filters, record)
 }
 
 pub fn passes_filters(filters: &Filters, record: &Record) -> bool {
@@ -557,9 +632,18 @@ mod tests {
         let mut s = pubmed();
         s.query.max_length = None;
         let t = translate(&s, &query, &Vars::new());
-        assert_eq!(t.native, "((\"vaccine hesitancy\"[tiab] OR vaccin*[ti]) AND \"Health Personnel\"[mh]) NOT mice[tiab] AND (review[pt]) AND (2020:3000[dp])");
-        assert!(t.warnings.iter().any(|w| w.contains("keywords")), "{:?}", t.warnings);
-        assert!(!t.local_filter);
+        // The test spec cannot search keywords: the NOT is applied by Key afterwards.
+        assert_eq!(t.native, "(\"vaccine hesitancy\"[tiab] OR vaccin*[ti]) AND \"Health Personnel\"[mh] AND (review[pt]) AND (2020:3000[dp])");
+        assert!(t.strategy.steps.iter().any(|w| w.contains("NOT keywords:mice")), "{:?}", t.strategy);
+        assert!(t.local_filter && t.strategy.post_filter);
+        assert_eq!(t.strategy.subqueries[0].verified, vec!["r.0", "r.1"]);
+        let exact = translate(&s, &q(serde_json::json!({"expr": {"type": "group", "op": "and", "items": [
+            {"type": "group", "op": "or", "items": [{"type": "term", "text": "health"}, {"type": "term", "text": "doctor"}]},
+            {"type": "group", "op": "or", "items": [{"type": "term", "text": "ai"}, {"type": "term", "text": "ml"}]},
+            {"type": "term", "text": "regression", "field": "title", "not": true}
+        ]}})), &Vars::new());
+        assert_eq!(exact.native, "((health[all] OR doctor[all]) AND (ai[all] OR ml[all])) NOT regression[ti]");
+        assert!(!exact.local_filter);
     }
 
     #[test]
@@ -570,7 +654,9 @@ mod tests {
         let t = translate(&plain, &q(serde_json::json!({"concepts": [{"terms": [{"text": "school meals", "mode": "phrase", "truncate": true, "field": "title"}]}], "filters": {"yearFrom": 2001}})), &Vars::new());
         assert_eq!(t.native, "school meals");
         assert!(t.local_filter);
-        assert_eq!(t.warnings.len(), 4, "{:?}", t.warnings);
+        assert!(t.strategy.approximate.iter().any(|a| a.contains("truncation")), "{:?}", t.strategy);
+        assert!(t.strategy.steps.iter().any(|a| a.contains("phrase")), "{:?}", t.strategy);
+        assert!(t.warnings.iter().any(|w| w.contains("years")), "{:?}", t.warnings);
     }
 
     #[test]

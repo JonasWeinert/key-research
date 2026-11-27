@@ -23,7 +23,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
   const isLauncher = (p) => /launcher\.html$/.test(p.url());
   const isShell = (p) => /index\.html$/.test(p.url());
   const windows = (app) =>
-    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({ title: w.getTitle(), url: w.webContents.getURL().split("/").pop(), visible: w.isVisible() })));
+    app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && !w.webContents.isDestroyed()).map((w) => ({ title: w.getTitle(), url: w.webContents.getURL().split("/").pop(), visible: w.isVisible() })));
   const waitFor = async (app, test, what) => {
     for (let i = 0; i < 150; i++) {
       const found = app.windows().find(test);

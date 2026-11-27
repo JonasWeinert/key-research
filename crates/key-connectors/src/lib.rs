@@ -7,6 +7,7 @@
 //! and sends every request through a [`Transport`] (the safe HTTP client, or recorded answers).
 
 pub mod baseline;
+pub mod boolean;
 pub mod bundle;
 pub mod engine;
 pub mod extract;
@@ -15,6 +16,7 @@ pub mod merge;
 pub mod net;
 pub mod parse;
 pub mod paths;
+pub mod plan;
 pub mod query;
 pub mod record;
 pub mod report;
@@ -31,6 +33,7 @@ pub const ENGINE_VERSION: &str = "1.0.0";
 pub const SPEC_FORMAT: u64 = 1;
 
 pub use engine::{Connector, Credentials, Engine, Fetched, Request, Response, RunControl, SearchState, Transport, TransportError};
+pub use boolean::{Node, Op};
 pub use query::{Field, Query, Term, Translation};
 pub use record::Record;
 pub use spec::Spec;

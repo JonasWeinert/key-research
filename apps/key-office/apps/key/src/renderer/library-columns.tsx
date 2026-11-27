@@ -10,6 +10,7 @@ import { indexLabel } from "./SourceInspector";
 import { ZoteroMark, isZoteroSource } from "./zotero-badge";
 import type { Invoke, ZoteroSyncStatus } from "./library-api";
 import { ReadingStatusControl, STATUS_LABEL, statusOf } from "./reading-ui";
+import { FillCellMark } from "./fill-cells";
 
 export const SOURCE_SORTS: [string, string][] = [
   ["added", "Date added"],
@@ -188,29 +189,36 @@ function PropertyCell({ definition: d, source, onCommit }: { definition: Propert
         <FormulaValue value={source.formulaValues?.[d.name]} resultType={d.resultType} display={d.display} />
       </span>
     );
+  // An AI answer the user edited, or one that is out of date, carries a mark (fill-cells.tsx).
+  const mark = <FillCellMark sourceId={source.id} property={d.name} />;
   if (d.type === "multiselect" || Array.isArray(raw))
     return (
-      <span className="kx-cell-property" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to edit">
-        <FormulaValue value={Array.isArray(raw) ? raw : raw == null || raw === "" ? null : [String(raw)]} resultType="list" />
+      <span className="kx-cell-property has-fill-mark" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to edit">
+        <span className="kx-cell-text">
+          <FormulaValue value={Array.isArray(raw) ? raw : raw == null || raw === "" ? null : [String(raw)]} resultType="list" />
+        </span>
+        {mark}
       </span>
     );
   if (d.type === "boolean")
     return (
-      <span className="kx-cell-property" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to edit">
+      <span className="kx-cell-property has-fill-mark" onDoubleClick={(e) => (e.stopPropagation(), setEditing(true))} title="Double-click to edit">
         {raw ? <FormulaValue value={true} resultType="boolean" display="check" /> : null}
+        {mark}
       </span>
     );
   const text = raw === undefined || raw === null ? "" : String(raw);
   return (
     <span
-      className="kx-cell-property"
+      className="kx-cell-property has-fill-mark"
       onDoubleClick={(e) => {
         e.stopPropagation();
         setEditing(true);
       }}
       title="Double-click to edit"
     >
-      {text}
+      <span className="kx-cell-text">{text}</span>
+      {mark}
     </span>
   );
 }

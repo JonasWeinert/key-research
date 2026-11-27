@@ -189,7 +189,7 @@ fn first_sync_brings_the_library_across() {
     assert!(bodies.iter().any(|b| b.contains("A highlighted sentence")), "{bodies:?}");
     assert!(store.note_by_origin("zotero:NOTE9").unwrap().is_some());
     let st = status(&store).unwrap();
-    assert_eq!((st.connection, st.items, st.library_name.as_deref()), (None, 4, Some("My Library")));
+    assert_eq!((st.connection, st.items, st.library_name.as_deref()), (None, 3, Some("My Library")));
 
     // Nothing new: one request, no merge.
     plugin.calls();
@@ -410,4 +410,79 @@ fn sync_pace_backs_off_and_recovers() {
     assert_eq!(next_delay(root, Some(&Connection::Paused), false), SYNC_IDLE_MS);
     reset_delay(root);
     assert_eq!(next_delay(root, Some(&Connection::Unpaired), false), SYNC_EVERY_MS * 2);
+}
+
+/// Keys of the Zotero items a workspace has, not in its trash.
+fn present(store: &Store) -> Vec<String> {
+    let mut keys: Vec<String> = store
+        .origin_index(ORIGIN)
+        .unwrap()
+        .into_iter()
+        .filter(|(_, (id, _))| store.source(id).unwrap().is_some_and(|s| s.trashed_at.is_none()))
+        .map(|(k, _)| k)
+        .collect();
+    keys.sort();
+    keys
+}
+
+/// Everything a single-workspace sync brings with ITEM1: its file, note and highlights.
+fn has_item1_in_full(store: &Store) {
+    let article = source(store, "ITEM1").unwrap();
+    assert_eq!(article.fields["filePath"], "/nowhere/paper.pdf");
+    let bodies: Vec<String> = store.notes(&article.id).unwrap().into_iter().map(|n| n.body).collect();
+    assert!(bodies.iter().any(|b| b.contains("**Bold** idea")), "{bodies:?}");
+    assert!(bodies.iter().any(|b| b.contains("A highlighted sentence")), "{bodies:?}");
+}
+
+/// Two workspaces syncing the same Zotero library, with nested or overlapping scopes and in
+/// either order: each has all of its own scope, and later changes reach every workspace
+/// whose scope holds them.
+#[test]
+fn workspaces_with_the_same_or_nested_scopes_each_get_their_own_items() {
+    let everything = ImportOptions::default();
+    let thesis = ImportOptions { collection_keys: Some(vec!["COLL1".into(), "COLL2".into()]), ..Default::default() };
+    let chapter = ImportOptions { collection_keys: Some(vec!["COLL2".into()]), ..Default::default() };
+    let other_and_chapter = ImportOptions { collection_keys: Some(vec!["COLL2".into(), "COLL3".into()]), ..Default::default() };
+    let all = vec!["ITEM1", "ITEM2", "ITEM3"];
+    let cases: Vec<(&str, ImportOptions, Vec<&str>, ImportOptions, Vec<&str>)> = vec![
+        ("same library", everything.clone(), all.clone(), everything.clone(), all.clone()),
+        ("a collection inside", everything.clone(), all.clone(), thesis.clone(), vec!["ITEM1"]),
+        ("a sub-collection inside", everything.clone(), all.clone(), chapter.clone(), vec!["ITEM1"]),
+        ("overlapping collections", thesis.clone(), vec!["ITEM1"], other_and_chapter.clone(), vec!["ITEM1", "ITEM2"]),
+        ("narrow first", thesis.clone(), vec!["ITEM1"], everything.clone(), all.clone()),
+        ("overlapping, the other way", other_and_chapter.clone(), vec!["ITEM1", "ITEM2"], thesis.clone(), vec!["ITEM1"]),
+    ];
+    for (case, a_scope, a_keys, b_scope, b_keys) in cases {
+        let plugin = Plugin::new();
+        let (a_dir, a) = setup(a_scope);
+        sync(&a, &plugin);
+        assert_eq!(present(&a), a_keys, "{case}: A");
+        // A keeps syncing while B is set up.
+        plugin.edit("ITEM3", |r| r["fields"]["title"] = json!("Report, revised"));
+        sync(&a, &plugin);
+        // B takes the pairing code A saved: Zotero has one code.
+        let _b_dir = tempfile::tempdir().unwrap();
+        let b = Store::open(_b_dir.path()).unwrap();
+        configure(&b, Configure { options: Some(b_scope), token_from: vec![_b_dir.path().join("nowhere"), a_dir.path().to_path_buf()], ..Default::default() }).unwrap();
+        assert_eq!(saved_token(_b_dir.path()), Some("t".repeat(48)), "{case}: B has the code");
+        let report = sync(&b, &plugin);
+        assert_eq!(present(&b), b_keys, "{case}: B");
+        assert_eq!(report.added, b_keys.len(), "{case}: B adds its scope");
+        assert_eq!(status(&b).unwrap().items, b_keys.len(), "{case}: B counts its own scope");
+        has_item1_in_full(&a);
+        has_item1_in_full(&b);
+
+        // Later changes in Zotero reach both, in whatever order they ask.
+        plugin.edit("ITEM1", |r| r["fields"]["title"] = json!("Health and income"));
+        plugin.put(json!({"key": "ITEM4", "itemType": "journalArticle", "fields": {"title": "New in the chapter"}, "collections": ["COLL2"]}));
+        sync(&b, &plugin);
+        sync(&a, &plugin);
+        for (name, store) in [("A", &a), ("B", &b)] {
+            assert_eq!(source(store, "ITEM1").unwrap().title(), "Health and income", "{case}: {name} has the edit");
+            assert!(source(store, "ITEM4").is_some(), "{case}: {name} has the new item");
+        }
+        // Each asks the journal from where it got to: nothing more for either.
+        assert!(!sync_with(&a, &plugin, false, false, &|_| {}).unwrap().ran, "{case}: A quiet");
+        assert!(!sync_with(&b, &plugin, false, false, &|_| {}).unwrap().ran, "{case}: B quiet");
+    }
 }

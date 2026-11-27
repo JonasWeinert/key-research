@@ -29,6 +29,7 @@ import { SavePageOffer, saveSourceWebPage } from "./source-web-page";
 import { findPdf as findPdfFor, findPdfMessage } from "./find-pdf";
 import { PropertySheet, usePropertyDefinitions, type PropertySheetState } from "./PropertySheets";
 import { ZoteroMark, ZoteroSourceLine, isZoteroCollection, isZoteroSource, useZoteroSync } from "./zotero-badge";
+import { FillCellsProvider } from "./fill-cells";
 import { AutoText, Creators, DEFAULT_FIELDS, FIELDS, FieldRow, MORE_FIELDS, TagEditor, TypedProperties, indexLabel } from "./SourceInspector";
 import MetadataUpdateSheet from "./MetadataUpdateSheet";
 import { RetractionNotice, VersionsLine } from "./source-notices";
@@ -498,13 +499,15 @@ export default function SourcePage({ invoke, workspaceId, sourceId, viewId, side
               </select>
             </div>
           </div>
-          <TypedProperties
-            source={source}
-            definitions={definitions}
-            onCommit={(properties) => void save({ properties })}
-            onEdit={(definition) => setSheet({ mode: "edit", definition, targets: [source] })}
-            onFill={side?.onAgentFill ?? (() => {})}
-          />
+          <FillCellsProvider invoke={invoke} workspaceId={workspaceId} version={source}>
+            <TypedProperties
+              source={source}
+              definitions={definitions}
+              onCommit={(properties) => void save({ properties })}
+              onEdit={(definition) => setSheet({ mode: "edit", definition, targets: [source] })}
+              onFill={side?.onAgentFill ?? (() => {})}
+            />
+          </FillCellsProvider>
           <div className="kx-page-properties-foot">
             {(hidden > 0 || moreFields) && (
               <button onClick={() => setMoreFields(!moreFields)}>{moreFields ? "Hide empty fields" : `${hidden} empty ${hidden === 1 ? "field" : "fields"}`}</button>

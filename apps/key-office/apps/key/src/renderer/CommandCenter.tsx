@@ -27,6 +27,7 @@ export const SHORTCUTS: [string, [string, string][]][] = [
       ["⌘[ ⌘]", "Back and forward in a pane"],
       ["⌘⇧T", "Reopen the last closed tab"],
       ["⌘1 … ⌘9", "Go to a tab"],
+      ["⌃⇥ / ⌃⇧⇥", "Switch tabs, most recent first: hold ⌃, press ⇥ or a number, let go"],
     ],
   ],
   [
