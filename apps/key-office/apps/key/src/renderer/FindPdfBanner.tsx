@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent } from "react";
 import { Icon } from "./icons";
 import { Explain } from "./explain";
+import { hintText } from "./help-content";
 import { FIND_PDF_BANNER_HEIGHT } from "../shared/browser-layout";
 import "./find-pdf-banner.css";
 
@@ -116,7 +117,7 @@ export function FindPdfBanner({ state, style, onOp }: { state: FindPdfBannerStat
           </button>
         )}
         {state.stage === "landed" && (
-          <button type="button" className="kx-fpb-more" aria-label="More" aria-haspopup="menu" title="Save this page instead, or say the PDF isn’t available" onClick={more}>
+          <button type="button" className="kx-fpb-more" aria-label="More" aria-haspopup="menu" title={`Save this page instead, or: ${hintText("browser.find-pdf.unavailable")}`} onClick={more}>
             More
             <Icon name="chevronDown" size={10} />
           </button>

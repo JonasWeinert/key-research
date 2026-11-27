@@ -253,7 +253,7 @@ export const HELP = {
     { privacy: "The page is saved on this Mac only." },
   ),
   "browser.find-pdf.save": hint("Keep this page as the source’s full text: you can read, search, quote and highlight it like a PDF."),
-  "browser.find-pdf.unavailable": hint("Stop looking here. Key deletes its copy of the page; the source stays without full text."),
+  "browser.find-pdf.unavailable": hint("say the PDF isn’t available, and Key deletes its copy of the page."),
   "source.full-text": explain(
     "Full text",
     [
