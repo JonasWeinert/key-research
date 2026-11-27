@@ -50,8 +50,22 @@
 }
 .kx-library .kx-page-actions {
   flex: 1 1 240px;
+  align-items: flex-start;
   justify-content: flex-end;
   min-width: 0;
+}
+/* The title keeps its place and Add its line while the search field grows downwards. */
+.kx-library .kx-page-head {
+  align-items: flex-start;
+}
+.kx-library .kx-page-head > .kx-page-title {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 42px;
+}
+.kx-library .kx-page-head > .kx-page-actions {
+  margin-top: 7px;
 }
 .kx-library .kx-search {
   flex: 0 1 clamp(200px, 30vw, 340px);
@@ -1567,15 +1581,22 @@
 .kx-library .kx-search[data-tokens="true"] {
   width: clamp(300px, 44vw, 580px);
 }
+/* Tokens and the query wrap onto more lines when they do not fit on one (up to five, then
+   it scrolls); the field's icons and buttons stay on its first line. */
 .kx-search-field {
   display: flex;
   flex: 1;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  align-content: flex-start;
+  gap: 3px 4px;
   min-width: 0;
   min-height: 28px;
+  max-height: calc(5 * 22px + 6px);
   padding: 2px 34px 2px 29px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
   border: 1px solid transparent;
   border-radius: 7px;
   background: var(--kx-fill);
@@ -1588,14 +1609,52 @@
 }
 .kx-search-field .kx-search-input,
 .kx-search-field .kx-search-input:focus {
-  flex: 1;
+  flex: 1 1 auto;
   width: auto;
   min-width: 90px;
-  height: 22px;
-  padding: 0;
+  max-width: 100%;
+  height: auto;
+  min-height: 22px;
+  padding: 3px 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+  line-height: 16px;
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
+  overflow-wrap: anywhere;
+}
+/* An empty field is one line: its placeholder ellipsizes rather than wrapping. */
+.kx-search-field .kx-search-input[data-empty] {
+  flex-basis: 90px;
+  height: 22px;
+  field-sizing: fixed;
+  white-space: nowrap;
+}
+.kx-search-field .kx-search-input::placeholder {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.kx-search {
+  --kx-search-line: 28px;
+  align-items: flex-start;
+}
+.kx-search > svg {
+  top: calc(var(--kx-search-line) / 2 - 7px);
+}
+.kx-search kbd {
+  top: calc(var(--kx-search-line) / 2 - 8px);
+}
+.kx-search > .kx-search-clear {
+  top: calc(var(--kx-search-line) / 2 - 8px);
+}
+.kx-search > .kx-search-build {
+  top: calc(var(--kx-search-line) / 2 - 10px);
+}
+.kx-search > .kx-search-spinner {
+  top: calc(var(--kx-search-line) / 2 - 6px);
 }
 .kx-token {
   display: inline-flex;

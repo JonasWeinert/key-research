@@ -157,7 +157,8 @@ export default function SearchField({
   filters: SearchFilter[];
   onFilters: (filters: SearchFilter[]) => void;
   busy?: boolean;
-  inputRef: RefObject<HTMLInputElement | null>;
+  /** The query field: a one-line text area that wraps onto more lines as the query grows. */
+  inputRef: RefObject<HTMLTextAreaElement | null>;
   onSubmit: () => void;
   onArrowIntoResults: () => void;
   label?: string;
@@ -173,7 +174,7 @@ export default function SearchField({
    *  the first; the arrow keys stay with the results. */
   menu?: "dropdown" | "inline";
   /** Keys the field does not use itself; return true when handled. */
-  onFieldKey?: (e: KeyboardEvent<HTMLInputElement>) => boolean;
+  onFieldKey?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
 }) {
   const fields = useFilterFields(invoke, workspaceId);
   const [building, setBuilding] = useState(false);
@@ -381,7 +382,7 @@ export default function SearchField({
     setIndex(-1);
     inputRef.current?.focus();
   };
-  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // The search window: ⇥ applies the first suggestion; everything else goes to the results.
     if (inline && e.key === "Tab" && !e.shiftKey && strip.length && strip[0].detected) {
       e.preventDefault();
@@ -401,6 +402,10 @@ export default function SearchField({
     } else if (e.key === "Enter" && showMenu && index >= 0) {
       e.preventDefault();
       pick(items[index]);
+    } else if (e.key === "Enter") {
+      // One line of query, however it wraps: Enter submits as it did in a text field.
+      e.preventDefault();
+      if (!e.nativeEvent.isComposing) formRef.current?.requestSubmit();
     } else if (e.key === "Escape") {
       e.stopPropagation();
       if (showMenu) setOpen(false);
@@ -478,9 +483,12 @@ export default function SearchField({
           </span>
           );
         })}
-        <input
+        <textarea
           ref={inputRef}
+          rows={1}
+          spellCheck={false}
           className="kx-search-input"
+          data-empty={!text || undefined}
           aria-label={label}
           aria-expanded={showMenu}
           aria-controls="kx-suggest"
@@ -489,7 +497,7 @@ export default function SearchField({
           placeholder={filters.length ? "Search within these filters" : placeholder}
           value={text}
           onChange={(e) => {
-            onText(e.target.value);
+            onText(e.target.value.replace(/[\r\n]+/g, " "));
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
