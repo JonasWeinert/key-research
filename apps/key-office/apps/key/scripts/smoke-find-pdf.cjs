@@ -84,7 +84,7 @@ const publisherPage = (doi) => `<!doctype html><html><head><title>${ARTICLE.titl
 ${ARTICLE.authors.map((a) => `<meta name="citation_author" content="${a}">`).join("")}
 <meta name="citation_abstract" content="${ARTICLE.abstract}"></head>
 <body style="font:15px system-ui;margin:0"><nav style="padding:8px 24px;background:#eef"><a href="/">Journal of Examples</a> · <a href="/about">About</a></nav>
-<main style="padding:16px 24px;max-width:760px"><div class="tools"><a class="btn" id="pdf" href="/article/rivers.pdf">Download PDF</a> · <a href="/supplement/c.pdf">Supplementary material (PDF)</a></div>
+<main style="padding:16px 24px;max-width:760px"><div style="height:1500px;background:linear-gradient(#f4f4f6,#fff)">Journal home · Issue 12 · Rivers</div><div class="tools"><a class="btn" id="pdf" href="/article/rivers.pdf">Download PDF</a> · <a href="/supplement/c.pdf">Supplementary material (PDF)</a></div>
 <article><h1>${ARTICLE.title}</h1><section><h2>Abstract</h2><p>${ARTICLE.abstract}</p></section>
 ${ARTICLE.sections.map(([h, ps], i) => `<h2>${h}</h2>${ps.map((p) => `<p>${p}</p>`).join("")}${i === 1 ? `<figure><img src="${PIXEL}" width="200" height="100" alt="map"><figcaption>${ARTICLE.figure}</figcaption></figure>` : ""}`).join("")}
 <section class="references"><h2>References</h2><ol>${ARTICLE.references.map((r) => `<li>${r}</li>`).join("")}</ol></section></article></main></body></html>`;
@@ -134,6 +134,10 @@ const BULK_PAGE = `<!doctype html><html><head><title>Bulk publisher page</title>
     if (url.pathname === "/landing-c") return html(publisherPage("10.5555/landing-c"));
     if (url.pathname === "/landing-f") return html(ABSTRACT_PAGE);
     if (url.pathname === "/landing-g") return html(BULK_PAGE);
+    if (url.pathname === "/epdf-h")
+      return html(`<!doctype html><html><head><title>Reader | Journal of Examples</title><meta name="citation_title" content="A viewer page"></head><body style="margin:0;font:14px system-ui">
+<div style="display:flex;gap:8px;padding:8px 12px;background:#2b2b30"><button id="dl" aria-label="Download PDF" onclick="location.href='/files/h.pdf'" style="width:28px;height:28px">&#8595;</button><button>Print</button></div>
+<div id="viewer" style="height:900px;background:#55555a;color:#fff;padding:40px">Page 1 of the article</div></body></html>`);
     if (url.pathname === "/action/login") return html(`<!doctype html><html><body><h1>Sign in</h1><form><input type="password"></form></body></html>`);
     if (url.pathname === "/works/doi:10.18653/v1/n19-1423") return json(200, JSON.parse(JSON.stringify(bert).replace(/https:\/\/aclanthology\.org\/[^"]+/g, `${base}/files/bert.pdf`)));
     if (url.pathname.startsWith("/works")) return json(404, { error: "not found" });
@@ -230,11 +234,22 @@ const BULK_PAGE = `<!doctype html><html><head><title>Bulk publisher page</title>
     await cCard.getByRole("button", { name: "Find PDF" }).click();
     const landing = await until(async () => app.windows().find((p) => p.url() === "http://journal.example/landing-c"), "the landing page in the browser");
     await landing.waitForSelector("#pdf");
-    // The banner: what happened, for this source, with the page's own PDF link.
+    // The banner's nudge: click the page's own PDF link, which Key points at on the page.
     const banner = page.locator(".kx-find-pdf-banner", { hasText: "Only on the publisher" });
-    await banner.getByRole("button", { name: "Open PDF", exact: true }).waitFor();
-    assert.match(await banner.textContent(), /Key couldn’t download the PDF for Only on the publisher's page directly/);
-    assert.match(await banner.getByRole("button", { name: "Open PDF", exact: true }).getAttribute("title"), /\/article\/rivers\.pdf/, "the Download PDF link, not the supplement");
+    await banner.getByRole("button", { name: "Show me" }).waitFor();
+    assert.match(await banner.textContent(), /Click the highlighted PDF link on this page/);
+    const pointed = () => landing.evaluate(() => !!document.querySelector("[data-key-pdf-pointer]"));
+    await until(pointed, "the halo on the page's PDF link");
+    const inView = () => landing.evaluate(() => { const r = document.querySelector("#pdf").getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; });
+    // Off screen at first (below the fold) it is scrolled to; "Show me" brings it back.
+    await until(inView, "the PDF link scrolled into view");
+    await landing.screenshot({ path: path.join(temp, "page-pointer-light.png") });
+    await landing.evaluate(() => scrollTo(0, 0));
+    await wait(200);
+    assert.equal(await inView(), false, "the link is below the fold");
+    await landing.screenshot({ path: path.join(temp, "page-above-fold-light.png") });
+    await banner.getByRole("button", { name: "Show me" }).click();
+    await until(inView, "Show me scrolled to the PDF link");
     await until(async () => (await call("find_pdf_page", { sourceId: c.id })).kept, "the page's snapshot kept for the attempt");
     await wait(300);
     await shot(page, "banner-light");
@@ -242,8 +257,9 @@ const BULK_PAGE = `<!doctype html><html><head><title>Bulk publisher page</title>
     await wait(300);
     await shot(page, "banner-dark");
     await page.emulateMedia({ colorScheme: "light" });
-    // The person opens the PDF: it attaches to this source by itself.
-    await banner.getByRole("button", { name: "Open PDF", exact: true }).click();
+    // The person clicks the page's own link: the PDF attaches to this source by itself.
+    await landing.click("#pdf");
+    await until(async () => !(await pointed()), "the halo gone once the link is clicked");
     await until(() => hasFile(c.id), "the PDF from the page attached to the source");
     const attached = await call("store_source", { id: c.id });
     assert.equal(attached.kind, "pdf");
@@ -274,7 +290,11 @@ const BULK_PAGE = `<!doctype html><html><head><title>Bulk publisher page</title>
     await page.locator(".kx-find-pdf").last().getByRole("button", { name: "Find PDF" }).click();
     const fBanner = page.locator(".kx-find-pdf-banner", { hasText: "Glaciers" });
     await fBanner.getByRole("button", { name: "Sign in" }).waitFor();
-    assert.equal(await fBanner.getByRole("button", { name: "Open PDF", exact: true }).count(), 0);
+    assert.match(await fBanner.textContent(), /Look for a PDF or Download button on this page/);
+    // One primary action (the likely next step); the rest wait in More.
+    assert.equal(await fBanner.locator(".kx-button-primary").count(), 1);
+    assert.equal(await fBanner.getByRole("button", { name: "Show me" }).count(), 0);
+    await fBanner.getByRole("button", { name: "More" }).waitFor();
     await until(async () => (await call("find_pdf_page", { sourceId: f.id })).kept, "the abstract page kept");
     await shot(page, "banner-no-pdf-light");
     await openSource(f.id);
@@ -313,6 +333,17 @@ const BULK_PAGE = `<!doctype html><html><head><title>Bulk publisher page</title>
     await list.getByRole("button", { name: "Make primary" }).click();
     await until(async () => (await call("store_source", { id: f.id }))?.kind === "web", "the saved page primary again");
     report.savedPage = true;
+
+    // 3c. A PDF viewer page: its Download button (no address, a script) is pointed at.
+    const h = await create({ title: "Read in the journal's viewer" });
+    await page.evaluate(({ ws, id }) => window.key.tabAction("open-url", { url: "http://journal.example/epdf-h", pdfFor: { workspaceId: ws, sourceId: id, title: "Read in the journal's viewer" } }), { ws: ws.id, id: h.id });
+    const viewer = await until(async () => app.windows().find((p) => p.url() === "http://journal.example/epdf-h"), "the viewer page");
+    await until(() => viewer.evaluate(() => !!document.querySelector("[data-key-pdf-pointer]")), "the halo on the viewer's Download button");
+    await page.locator(".kx-find-pdf-banner", { hasText: "Read in the journal" }).getByRole("button", { name: "Show me" }).waitFor();
+    await viewer.screenshot({ path: path.join(temp, "viewer-pointer-light.png") });
+    await viewer.click("#dl");
+    await until(() => hasFile(h.id), "the viewer's PDF attached to its source");
+    report.viewer = true;
 
     // 4. Bulk Find PDFs from the library: one found, one with nothing to be had.
     const d = await create({ title: "Bulk with a link", oaUrl: `${mock}/files/d.pdf` });

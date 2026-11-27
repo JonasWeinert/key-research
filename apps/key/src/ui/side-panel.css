@@ -19,7 +19,7 @@
   gap: 6px;
   min-width: 0;
   height: 40px;
-  padding: 0 8px 0 10px;
+  padding: 0 10px 0 14px;
   border-bottom: 1px solid var(--key-ui-border);
 }
 .key-side-panel-title {
@@ -34,9 +34,16 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The switch is the shared SegmentedTabs; in the header it takes the width the actions leave. */
+/* The switch is the shared SegmentedTabs, as wide as its tabs (the library's view tabs), never
+   stretched across the header; when the panel is too narrow it scrolls with faded edges. */
 .key-side-panel-head > .key-side-panel-switch {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
+  align-self: center;
+}
+.key-side-panel-head > .key-side-panel-switch .key-segmented-track > [role="tab"] {
+  flex: 0 0 auto;
+  min-width: 0;
+  padding: 0 10px;
 }
 .key-side-panel-title svg {
   flex: none;

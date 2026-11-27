@@ -76,6 +76,8 @@ type Claim = { directory: string; resolve(file: { path: string; url: string; fil
 export interface DownloadHooks {
   /** A PDF a page downloaded (a link, or a navigation to it), saved at `path`. */
   pdf(contents: WebContents | undefined, file: { path: string; url: string; filename: string }): void;
+  /** A PDF download a page started (it is on its way to `pdf`). */
+  started?(contents: WebContents | undefined): void;
   /** Any other download, saved in Downloads (`ok` false when it failed or was cancelled). */
   file?(contents: WebContents | undefined, path: string, ok: boolean): void;
 }
@@ -101,6 +103,7 @@ export class BrowserService {
       return;
     }
     if (looksLikePdf(item.getMimeType(), filename)) {
+      this.hooks.started?.(contents);
       const path = this.incomingPath(randomUUID());
       item.setSavePath(path);
       item.once("done", (_event, state) => {

@@ -159,6 +159,44 @@
 .kx-signin-link:hover {
   text-decoration: underline;
 }
+/* "Where were you signing in to?": the tab's recent pages. */
+.kx-signin-entries {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 0 16px;
+}
+.kx-signin-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--kx-fill);
+  color: var(--kx-text);
+  font: 13px var(--kx-font);
+  text-align: left;
+}
+.kx-signin-entry > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kx-signin-entry > svg {
+  flex: none;
+  color: var(--kx-text-3);
+}
+.kx-signin-entry:hover {
+  background: var(--kx-fill-2);
+}
+.kx-signin-entry:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--kx-accent-soft), inset 0 0 0 1px var(--kx-accent);
+}
+
 /* "Sign in with passkey…" in the browser bar on a sign-in page. */
 .key-web-signin[data-offer-window] > button {
   display: inline-flex;
