@@ -174,7 +174,25 @@ fn count(n: Option<u64>) -> String {
 /// counts per query, and where Key split or checked the search, the reconstruction in words.
 impl RunReport {
     pub fn original(&self) -> String {
-        crate::boolean::format(&self.query.tree())
+        crate::boolean::format_in(&self.query.tree(), crate::plan::SHOWN_DEFAULT)
+    }
+
+    /// What the field tags in the search mean, for readers who do not know Key's syntax.
+    fn legend(&self) -> String {
+        let tree = self.query.tree();
+        let mut fields: Vec<&str> = Vec::new();
+        for t in tree.terms() {
+            if t.field != crate::plan::SHOWN_DEFAULT && !fields.contains(&t.field.as_str()) {
+                fields.push(&t.field);
+            }
+        }
+        let mut out = String::from("Words without a tag are searched in titles and abstracts");
+        if !fields.is_empty() {
+            let tags: Vec<String> = fields.iter().map(|f| format!("{}: {}", crate::boolean::tag_of_field(f), crate::boolean::field_label(f).to_lowercase())).collect();
+            out.push_str(&format!("; {}", tags.join(", ")));
+        }
+        out.push_str(". AND binds before OR; * finds any ending; quotes mark a phrase.");
+        out
     }
 
     fn queries(s: &SourceLog) -> Vec<(String, String)> {
@@ -190,7 +208,7 @@ impl RunReport {
         if self.started_at > 0 {
             out.push_str(&format!("Run on {} with Key (search engine {}).\n\n", when(self.started_at), self.engine));
         }
-        out.push_str(&format!("Full search: `{}`\n\n", self.original().replace('`', "'")));
+        out.push_str(&format!("Full search: `{}`\n\n{}\n\n", self.original().replace('`', "'"), self.legend()));
         let l = limits(&self.query);
         if !l.is_empty() {
             out.push_str(&format!("Limits: {}.\n\n", l.join("; ")));
@@ -366,7 +384,7 @@ mod tests {
 
     #[test]
     fn the_strategy_export_writes_out_queries_counts_and_reconstruction() {
-        let tree = crate::boolean::parse("(health OR doctor) AND (ai OR ml) NOT regression").unwrap().tree;
+        let tree = crate::boolean::parse_in("(health OR doctor) AND (ai OR ml) NOT title:regression", "title_abstract").unwrap().tree;
         let query = Query::from_tree(tree.clone(), crate::query::Filters { year_from: Some(2015), ..Default::default() });
         let strategy = Strategy {
             kind: "split".into(),
@@ -390,7 +408,7 @@ mod tests {
             ..Default::default()
         };
         let md = report.strategy_markdown();
-        for want in ["Full search: `(health OR doctor) AND (ai OR ml) NOT regression`", "Limits: from 2015", "| 2 | `doctor AND ml` | 5 | 5 | 3 |", "1. Split into 2 queries", "Approximate:", "ruled out by Key's check: 2", "kept once): 2"] {
+        for want in ["Full search: `(health OR doctor) AND (ai OR ml) NOT title:regression`", "tag are searched in titles and abstracts; title: title.", "Limits: from 2015", "| 2 | `doctor AND ml` | 5 | 5 | 3 |", "1. Split into 2 queries", "Approximate:", "ruled out by Key's check: 2", "kept once): 2"] {
             assert!(md.contains(want), "{want}\n{md}");
         }
         let text = report.strategy_text();

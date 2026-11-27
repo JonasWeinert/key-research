@@ -538,7 +538,8 @@ impl Engine {
             out.done = true;
             return Ok(out);
         }
-        let chunk = state.chunks[state.chunk].clone();
+        let at = state.chunk;
+        let chunk = state.chunks[at].clone();
         let mut vars = self.base_vars(spec, &chunk, creds, &state.options);
         let size = state.page_size.unwrap_or_else(|| Self::page_size(plan, &vars)).clamp(1, 10_000);
         vars.insert("pageSize".into(), size.to_string());
@@ -569,7 +570,7 @@ impl Engine {
                 return self.next_page(spec, state, creds, ctl);
             }
         }
-        let kept = self.finish_records(spec, plan, &chunk, state, records, creds, ctl, &mut out)?;
+        let kept = self.finish_records(spec, plan, &chunk, at, state, records, creds, ctl, &mut out)?;
         out.records = kept;
         out.total = state.total();
         out.done = state.done;
@@ -577,13 +578,13 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn finish_records(&self, spec: &Spec, plan: &Plan, chunk: &Chunk, state: &mut SearchState, records: Vec<Record>, creds: &Credentials, ctl: &RunControl, out: &mut Fetched) -> Result<Vec<Record>, EngineError> {
+    fn finish_records(&self, spec: &Spec, plan: &Plan, chunk: &Chunk, at: usize, state: &mut SearchState, records: Vec<Record>, creds: &Credentials, ctl: &RunControl, out: &mut Fetched) -> Result<Vec<Record>, EngineError> {
         out.raw = records.len();
         let mut kept = Vec::new();
         let mut matched_any = false;
         let mut new_any = false;
         let year_asked = state.query.filters.year_from.is_some() || state.query.filters.year_to.is_some();
-        let at = state.chunk;
+        // `at`: the query these records came from (the adapter may have moved on already).
         if let Some(n) = state.chunk_raw.get_mut(at) {
             *n += records.len();
         }

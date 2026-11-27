@@ -318,7 +318,7 @@ fn lex(text: &str) -> Result<Vec<Spanned>, ParseError> {
             let close = chars[i + 1..].iter().position(|c| matches!(c, '"' | '\u{201c}' | '\u{201d}')).map(|p| p + i + 1).ok_or_else(|| err("This quotation mark is never closed", start, start + 1))?;
             let inner: String = chars[i + 1..close].iter().collect();
             i = close + 1;
-            let mut term = Term { text: inner.trim().to_string(), mode: "phrase".into(), ..Default::default() };
+            let mut term = Term { text: inner.trim().to_string(), mode: "phrase".into(), field: String::new(), ..Default::default() };
             if term.text.ends_with('*') {
                 term.text = term.text.trim_end_matches('*').trim().to_string();
                 term.truncate = true;
@@ -393,7 +393,7 @@ fn lex(text: &str) -> Result<Vec<Spanned>, ParseError> {
             }
         }
         let field = field.or_else(|| pending_field.take().map(|(f, _)| f));
-        let mut term = Term { text: body.clone(), ..Default::default() };
+        let mut term = Term { text: body.clone(), field: String::new(), ..Default::default() };
         if body.ends_with('*') && body.len() > 1 {
             term.text = body.trim_end_matches('*').to_string();
             term.truncate = true;
@@ -572,7 +572,7 @@ impl P<'_> {
                 self.at += 1;
                 let mut term = term.clone();
                 if let Some(f) = field {
-                    if term.field == "all" {
+                    if term.field.is_empty() {
                         term.field = f.to_string();
                     }
                 }
@@ -591,6 +591,24 @@ fn strip_marks(n: Node) -> Node {
 
 /// Reads the text mode into a tree. Errors point at the place of the problem.
 pub fn parse(text: &str) -> Result<Parsed, ParseError> {
+    parse_in(text, "all")
+}
+
+fn fill_field(n: Node, default: &str) -> Node {
+    match n {
+        Node::Term { mut term, not } => {
+            if term.field.is_empty() {
+                term.field = default.to_string();
+            }
+            Node::Term { term, not }
+        }
+        Node::Group { id, op, items, not, label } => Node::Group { id, op, items: items.into_iter().map(|i| fill_field(i, default)).collect(), not, label },
+    }
+}
+
+/// [`parse`] where untagged words are searched in `default` (the builder's usual field, such
+/// as title_abstract), so the text and the blocks agree.
+pub fn parse_in(text: &str, default: &str) -> Result<Parsed, ParseError> {
     let toks = lex(text)?;
     let len = text.chars().count();
     if toks.is_empty() {
@@ -604,12 +622,12 @@ pub fn parse(text: &str) -> Result<Parsed, ParseError> {
             _ => err("This part could not be read", t.start, t.end),
         });
     }
-    let tree = strip_marks(tree).normalized().unwrap_or_default();
+    let tree = fill_field(strip_marks(tree), default).normalized().unwrap_or_default();
     let tree = match tree {
         g @ Node::Group { not: false, .. } => g,
         other => Node::group(Op::And, vec![other]),
     };
-    let text = format(&tree);
+    let text = format_in(&tree, default);
     Ok(Parsed { tree, notes: p.notes, text })
 }
 
@@ -620,26 +638,32 @@ fn needs_quotes(word: &str) -> bool {
 }
 
 pub fn format_term(term: &Term) -> String {
+    format_term_in(term, "all")
+}
+
+/// A term with its field tag left out when it is `default`.
+pub fn format_term_in(term: &Term, default: &str) -> String {
+    let untagged = term.field == default || term.field.is_empty();
     let words: Vec<&str> = term.text.split_whitespace().collect();
     let star = if term.truncate { "*" } else { "" };
     let body = if term.mode == "phrase" || term.proximity.is_some() || words.iter().any(|w| needs_quotes(w)) {
         let prox = term.proximity.map(|n| format!("~{n}")).unwrap_or_default();
         format!("\"{}{}\"{}", term.text.replace('"', ""), star, prox)
-    } else if words.len() > 1 && term.field != "all" {
+    } else if words.len() > 1 && !untagged {
         format!("({}{star})", words.join(" "))
     } else {
         format!("{}{star}", words.join(" "))
     };
-    if term.field == "all" || term.field.is_empty() { body } else { format!("{}:{body}", tag_of_field(&term.field)) }
+    if untagged { body } else { format!("{}:{body}", tag_of_field(&term.field)) }
 }
 
-fn format_node(n: &Node, nested: bool) -> String {
+fn format_node(n: &Node, nested: bool, default: &str) -> String {
     match n {
-        Node::Term { term, .. } => format_term(term),
+        Node::Term { term, .. } => format_term_in(term, default),
         Node::Group { op, items, .. } => {
             let mut out = String::new();
             for (i, item) in items.iter().enumerate() {
-                let inner = format_node(item, true);
+                let inner = format_node(item, true, default);
                 if i == 0 {
                     if item.is_not() {
                         out.push_str("NOT ");
@@ -661,12 +685,17 @@ fn format_node(n: &Node, nested: bool) -> String {
 
 /// The canonical text for a tree (what the text mode shows for the blocks).
 pub fn format(n: &Node) -> String {
+    format_in(n, "all")
+}
+
+/// [`format`] with `default` written without a tag (see [`parse_in`]).
+pub fn format_in(n: &Node, default: &str) -> String {
     match n.normalized() {
         None => String::new(),
-        Some(n @ Node::Group { not: false, .. }) => format_node(&n, false),
-        Some(n @ Node::Group { .. }) => format!("NOT {}", format_node(&n, true)),
+        Some(n @ Node::Group { not: false, .. }) => format_node(&n, false, default),
+        Some(n @ Node::Group { .. }) => format!("NOT {}", format_node(&n, true, default)),
         Some(n) => {
-            let t = format_node(&n, false);
+            let t = format_node(&n, false, default);
             if n.is_not() { format!("NOT {t}") } else { t }
         }
     }
@@ -834,6 +863,14 @@ mod tests {
             assert_eq!(rt(&once), once, "{text}");
             assert_eq!(p(&once), p(text), "{text}");
         }
+    }
+
+    #[test]
+    fn a_default_field_is_left_untagged() {
+        let t = parse_in("health OR all:doctor OR title:nurse", "title_abstract").unwrap();
+        assert_eq!(t.tree.terms().iter().map(|t| t.field.as_str()).collect::<Vec<_>>(), ["title_abstract", "all", "title"]);
+        assert_eq!(t.text, "health OR all:doctor OR title:nurse");
+        assert_eq!(parse_in(&t.text, "title_abstract").unwrap().tree, t.tree);
     }
 
     #[test]
